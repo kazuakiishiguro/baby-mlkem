@@ -17,29 +17,45 @@ void test_randombytes() {
   printf("[PASS]: randombytes\n");
 }
 
+typedef void (*sha3_func)(const uint8_t*, size_t, uint8_t*);
+typedef void (*shake_func)(const uint8_t*, size_t, uint8_t*, size_t);
+
+typedef enum {
+  SHA3,
+  SHAKE
+} func_mode;
+
 typedef struct {
   const char *input;
   size_t input_len;
   const uint8_t *expected;
-} sha3_test_vec;
+} test_vec;
 
 // helpers
-static void run_sha3_test_vec(
-    void (*sha3_func)(const uint8_t*, size_t, uint8_t*),
-    const sha3_test_vec *test_vecs,
+static void run_test_vec(
+    void *func_ptr,
+    func_mode mode,
+    const test_vec *test_vecs,
     size_t num_vecs,
     size_t digest_size
 ) {
   for (size_t i = 0; i < num_vecs; i++) {
     uint8_t output[64];
     memset(output, 0, sizeof(output));
-    sha3_func((const uint8_t*)test_vecs[i].input, test_vecs[i].input_len, output);
+    if (mode == SHA3) {
+      sha3_func f = (sha3_func)func_ptr;
+      f((const uint8_t*)test_vecs[i].input, test_vecs[i].input_len, output);
+    } else {
+      shake_func f = (shake_func)func_ptr;
+      f((const uint8_t*)test_vecs[i].input, test_vecs[i].input_len, output, digest_size);      
+    }
     assert(memcmp(output, test_vecs[i].expected, digest_size) == 0);
   }
 }
 
 static void run_large_input_test(
-    void (*sha3_func)(const uint8_t*, size_t, uint8_t*),
+    void *func_ptr,
+    func_mode mode,
     size_t large_size,
     uint8_t fill_byte,
     const uint8_t* expected,
@@ -53,7 +69,13 @@ static void run_large_input_test(
   memset(input, fill_byte, large_size);
 
   uint8_t output[64];
-  sha3_func(input, large_size, output);
+  if (mode == SHA3) {
+    sha3_func f = (sha3_func)func_ptr;
+    f(input, large_size, output);
+  } else {
+    shake_func f = (shake_func)func_ptr;
+    f(input, large_size, output, digest_size);
+  }
   assert(memcmp(output, expected, digest_size) == 0);
 
   free(input);
@@ -86,9 +108,10 @@ static void run_repeated_string_test(
 }
 
 /**
- * All test vectors from https://www.di-mgt.com.au/sha_testvectors.html
+ * All test vectors from:
+ * https://www.di-mgt.com.au/sha_testvectors.html
+ * https://core.tcl-lang.org/tcltls/file?name=tests/test_vectors/Hash/SHAKE128.txt
  */
-
 static const uint8_t sha3_256_0[] = {
   0xa7, 0xff, 0xc6, 0xf8, 0xbf, 0x1e, 0xd7, 0x66,
   0x51, 0xc1, 0x47, 0x56, 0xa0, 0x61, 0xd6, 0x62,
@@ -161,15 +184,51 @@ static const uint8_t sha3_512_long2[] = {
   0x27, 0x0c, 0xb4, 0x55, 0xf2, 0x1d, 0xd1, 0x85,
 };
 
+static const uint8_t sha3_shake_128_0[] = {
+  0x7f, 0x9c, 0x2b, 0xa4, 0xe8, 0x8f, 0x82, 0x7d,
+  0x61, 0x60, 0x45, 0x50, 0x76, 0x05, 0x85, 0x3e,
+  0xd7, 0x3b, 0x80, 0x93, 0xf6, 0xef, 0xbc, 0x88,
+  0xeb, 0x1a, 0x6e, 0xac, 0xfa, 0x66, 0xef, 0x26,
+};
+
+static const uint8_t sha3_shake_128_lazy_dog[] = {
+  0xf4, 0x20, 0x2e, 0x3c, 0x58, 0x52, 0xf9, 0x18,
+  0x2a, 0x04, 0x30, 0xfd, 0x81, 0x44, 0xf0, 0xa7,
+  0x4b, 0x95, 0xe7, 0x41, 0x7e, 0xca, 0xe1, 0x7d,
+  0xb0, 0xf8, 0xcf, 0xee, 0xd0, 0xe3, 0xe6, 0x6e,
+};
+
+static const uint8_t sha3_shake_256_0[] = {
+  0x46, 0xb9, 0xdd, 0x2b, 0x0b, 0xa8, 0x8d, 0x13,
+  0x23, 0x3b, 0x3f, 0xeb, 0x74, 0x3e, 0xeb, 0x24,
+  0x3f, 0xcd, 0x52, 0xea, 0x62, 0xb8, 0x1b, 0x82,
+  0xb5, 0x0c, 0x27, 0x64, 0x6e, 0xd5, 0x76, 0x2f,
+  0xd7, 0x5d, 0xc4, 0xdd, 0xd8, 0xc0, 0xf2, 0x00,
+  0xcb, 0x05, 0x01, 0x9d, 0x67, 0xb5, 0x92, 0xf6,
+  0xfc, 0x82, 0x1c, 0x49, 0x47, 0x9a, 0xb4, 0x86,
+  0x40, 0x29, 0x2e, 0xac, 0xb3, 0xb7, 0xc4, 0xbe,
+};
+
+static const uint8_t sha3_shake_256_lazy_dog[] = {
+  0x2f, 0x67, 0x13, 0x43, 0xd9, 0xb2, 0xe1, 0x60,
+  0x4d, 0xc9, 0xdc, 0xf0, 0x75, 0x3e, 0x5f, 0xe1,
+  0x5c, 0x7c, 0x64, 0xa0, 0xd2, 0x83, 0xcb, 0xbf,
+  0x72, 0x2d, 0x41, 0x1a, 0x0e, 0x36, 0xf6, 0xca,
+  0x1d, 0x01, 0xd1, 0x36, 0x9a, 0x23, 0x53, 0x9c,
+  0xd8, 0x0f, 0x7c, 0x05, 0x4b, 0x6e, 0x5d, 0xaf,
+  0x9c, 0x96, 0x2c, 0xad, 0x5b, 0x8e, 0xd5, 0xbd,
+  0x11, 0x99, 0x8b, 0x40, 0xd5, 0x73, 0x44, 0x42,
+};
+
 void test_sha3_256() {
-  sha3_test_vec vec[] = {
+  test_vec vec[] = {
     { "", 0, sha3_256_0 },
     { "abc", 3, sha3_256_abc },
     { "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56, sha3_256_long1 },
     { "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", 112, sha3_256_long2}
   };
 
-  run_sha3_test_vec(sha3_256, vec, sizeof(vec)/sizeof(vec[0]), 32);
+  run_test_vec(sha3_256, SHA3, vec, sizeof(vec)/sizeof(vec[0]), 32);
 
   // extremely large input tests
   static const uint8_t expected1[32] = {
@@ -178,7 +237,7 @@ void test_sha3_256() {
     0x61, 0xf3, 0x2a, 0xca, 0x75, 0xc6, 0xd6, 0x99,
     0xd0, 0xcd, 0xcb, 0x6c, 0x11, 0x58, 0x91, 0xc1
   };
-  run_large_input_test(sha3_256, 1000000, 0x61, expected1, 32);
+  run_large_input_test(sha3_256, SHA3, 1000000, 0x61, expected1, 32);
 
   static const uint8_t expected2[32] = {
     0xec, 0xbb, 0xc4, 0x2c, 0xbf, 0x29, 0x66, 0x03,
@@ -195,14 +254,14 @@ void test_sha3_256() {
 }
 
 void test_sha3_512() {
-  sha3_test_vec vec[] = {
+  test_vec vec[] = {
     { "", 0, sha3_512_0 },
     { "abc", 3, sha3_512_abc },
     { "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56, sha3_512_long1 },
     { "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", 112, sha3_512_long2}
   };
 
-  run_sha3_test_vec(sha3_512, vec, sizeof(vec)/sizeof(vec[0]), 64);
+  run_test_vec(sha3_512, SHA3, vec, sizeof(vec)/sizeof(vec[0]), 64);
 
   // extremely large input tests
   const uint8_t expected1[64] = {
@@ -215,7 +274,7 @@ void test_sha3_512() {
     0xa8, 0xaa, 0x18, 0xac, 0xe8, 0x28, 0x2a, 0x0e,
     0x0d, 0xb5, 0x96, 0xc9, 0x0b, 0x0a, 0x7b, 0x87,
   };
-  run_large_input_test(sha3_512, 1000000, 0x61, expected1, 64);  
+  run_large_input_test(sha3_512, SHA3, 1000000, 0x61, expected1, 64);
 
   const uint8_t expected2[64] = {
     0x23, 0x5f, 0xfd, 0x53, 0x50, 0x4e, 0xf8, 0x36,
@@ -233,6 +292,42 @@ void test_sha3_512() {
       16777216,
       expected2,
       64);
+}
+
+void test_shake128() {
+  const test_vec vec[] = {
+    { "", 0, sha3_shake_128_0 },
+    { "The quick brown fox jumps over the lazy dog", 43, sha3_shake_128_lazy_dog },
+  };
+  run_test_vec(shake128, SHAKE, vec, sizeof(vec)/sizeof(vec[0]), 32);
+
+  const uint8_t expected[32] = {
+    0x13, 0x1a, 0xb8, 0xd2, 0xb5, 0x94, 0x94, 0x6b,
+    0x9c, 0x81, 0x33, 0x3f, 0x9b, 0xb6, 0xe0, 0xce,
+    0x75, 0xc3, 0xb9, 0x31, 0x04, 0xfa, 0x34, 0x69,
+    0xd3, 0x91, 0x74, 0x57, 0x38, 0x5d, 0xa0, 0x37,
+  };
+  run_large_input_test(shake128, SHAKE, 200, 0xa3, expected, 32);
+}
+
+void test_shake256() {
+  const test_vec vec[] = {
+    { "", 0, sha3_shake_256_0 },
+    { "The quick brown fox jumps over the lazy dog", 43, sha3_shake_256_lazy_dog },
+  };
+  run_test_vec(shake256, SHAKE, vec, sizeof(vec)/sizeof(vec[0]), 64);
+
+  const uint8_t expected[64] = {
+    0xcd, 0x8a, 0x92, 0x0e, 0xd1, 0x41, 0xaa, 0x04,
+    0x07, 0xa2, 0x2d, 0x59, 0x28, 0x86, 0x52, 0xe9,
+    0xd9, 0xf1, 0xa7, 0xee, 0x0c, 0x1e, 0x7c, 0x1c,
+    0xa6, 0x99, 0x42, 0x4d, 0xa8, 0x4a, 0x90, 0x4d,
+    0x2d, 0x70, 0x0c, 0xaa, 0xe7, 0x39, 0x6e, 0xce,
+    0x96, 0x60, 0x44, 0x40, 0x57, 0x7d, 0xa4, 0xf3,
+    0xaa, 0x22, 0xae, 0xb8, 0x85, 0x7f, 0x96, 0x1c,
+    0x4c, 0xd8, 0xe0, 0x6f, 0x0a, 0xe6, 0x61, 0x0b,
+  };
+  run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);  
 }
 
 void test_bitrev7() {
@@ -325,6 +420,8 @@ int main(int argc, char *argv[]) {
   test_randombytes();
   test_sha3_256();
   test_sha3_512();
+  test_shake128();
+  test_shake256();
   test_bitrev7();
   test_modexp();
   test_init_ntt_roots();

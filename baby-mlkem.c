@@ -36,8 +36,6 @@
  *    - Reference:  https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
  * =============================================================================
  */
-#define DELIM         0x06
-
 static const uint64_t rc[24] = {
   0x0000000000000001ULL, 0x0000000000008082ULL,
   0x800000000000808aULL, 0x8000000080008000ULL,
@@ -176,7 +174,7 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
   keccak_ctx ctx;
   keccak_init(&ctx, 136);
   keccak_absorb(&ctx, in, inlen);
-  keccak_finalize(&ctx, DELIM);
+  keccak_finalize(&ctx, 0x06);
   keccak_squeeze(&ctx, out32, 32);
 }
 
@@ -185,8 +183,26 @@ static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
   keccak_ctx ctx;
   keccak_init(&ctx, 72);
   keccak_absorb(&ctx, in, inlen);
-  keccak_finalize(&ctx, DELIM);
+  keccak_finalize(&ctx, 0x06);
   keccak_squeeze(&ctx, out64, 64);
+}
+
+static void shake128(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
+  // Shake128 => rate=168 bytes, domain=0x1F
+  keccak_ctx ctx;
+  keccak_init(&ctx, 168);
+  keccak_absorb(&ctx, in, inlen);
+  keccak_finalize(&ctx, 0x1F);
+  keccak_squeeze(&ctx, out, outlen);
+}
+
+static void shake256(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
+  // Shake256 => rate=136 bytes, domain=0x1F
+  keccak_ctx ctx;
+  keccak_init(&ctx, 136);
+  keccak_absorb(&ctx, in, inlen);
+  keccak_finalize(&ctx, 0x1F);
+  keccak_squeeze(&ctx, out, outlen);
 }
 
 /**
