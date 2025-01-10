@@ -337,3 +337,19 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
 static void ntt_add(const poly256 a, const poly256 b, poly256 out) {
   poly256_add(a,b,out);
 }
+
+/* ntt_mul function is pairwise approach with gamma */
+static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
+  for (int i = 0; i < 128; i++) {
+    int idx0 = 2 * i, idx1 = 2 * i + 1;
+    int16_t a0 = a[idx0], a1 = a[idx1];
+    int16_t b0 = b[idx0], b1 = b[idx1];
+    uint16_t g = GAMMA[i];
+    int32_t c0 = (int32_t)a0 * b0 + (int32_t)a1 * b1 * g;
+    c0 %= Q; if (c0 < 0) c0 += Q;
+    out[idx0] = (int16_t)c0;
+    int32_t c1 = (int32_t)a0 * b1 + (int32_t)a1 * b0;
+    c1 %= Q; if (c1 < 0) c1 += Q;
+    out[idx1] = (int16_t)c1;
+  }
+}

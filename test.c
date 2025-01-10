@@ -402,7 +402,7 @@ void test_ntts() {
   poly256 a,b, ntt_res, poly_res;
   for (int i = 0; i < N; i++){
     a[i] = (int16_t)i;
-    b[i] = (int16_t)(1024+i);
+    b[i] = (int16_t)(1024 + i);
   }
   /* test ntt_inv(ntt(a)+ntt(b)) == a+b */
   static poly256 an, bn, sum;
@@ -411,7 +411,7 @@ void test_ntts() {
   ntt_add(an, bn, sum);
   ntt_inv(sum, ntt_res);
   poly256_add(a, b, poly_res);
-  for (int i = 0; i < N; i++){
+  for (int i = 0; i < N; i++) {
     assert(ntt_res[i] == poly_res[i]);
   }
 }
