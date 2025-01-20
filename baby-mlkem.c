@@ -415,3 +415,37 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
     if (d2 < Q && count < N) out[count++] = (int16_t)d2;
   }
 }
+
+/**
+ * =============================================================================
+ * 5) Byte/Bit encode/decode, compress, etc.
+ * =============================================================================
+ */
+static void byte_encode(int d, const poly256 f, uint8_t *out) {
+  // store 256*d bits => 256*d/8 bytes
+  size_t bytelen = (size_t)(N * d) / 8;
+  memset(out, 0, bytelen);
+  uint32_t bitpos = 0;
+  for (int i = 0 ; i < N; i++) {
+    uint16_t val = (uint16_t)( f[i] & ((1 << d) - 1) );
+    for (int j = 0; j < d; j++) {
+      int bit = (val >> j) & 1;
+      out[bitpos >> 3] |= bit << (bitpos & 7);
+      bitpos++;
+    }
+  }
+}
+
+static void byte_decode(int d, const uint8_t *in, poly256 out) {
+  memset(out, 0, sizeof(poly256));
+  uint32_t bitpos = 0;
+  for (int i = 0 ; i < N; i++) {
+    uint16_t val = 0;
+    for (int j = 0; j < d; j++) {
+      int bit = (in[bitpos>>3]>>(bitpos&7)) & 1;
+      val |= (bit<<j);
+      bitpos++;
+    }
+    out[i] = (int16_t)val;
+  }
+}

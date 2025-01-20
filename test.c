@@ -434,6 +434,48 @@ static void test_sample_ntt() {
   }
 }
 
+static void test_byte_encode() {
+  {
+    poly256 f, f_decoded;
+    memset(f, 0, sizeof(f));
+    for (int i = 0; i < N/2; i++) {
+      f[i] = 1;
+    }
+    uint8_t out[32];
+    memset(out, 0, sizeof(out));
+    
+    byte_encode(1, f, out);
+    byte_decode(1, out, f_decoded);
+    
+    for(int i=0; i<N; i++){
+      /* Because d=1, we only care about (f[i] & 1). But let's assume f[i] was 0 or 1 anyway. */
+      assert(f_decoded[i] == (f[i] & 1));
+    }
+  }
+
+  {
+    poly256 f, f_decoded;
+    memset(f, 0, sizeof(f));
+    /* fill random values in [0..4095] */
+    for(int i=0; i<N; i++){
+      f[i] = rand() & 0xFFF;  /* 12 bits of randomness */
+    }
+    
+    /* output array has 256 * 12 bits => 3072 bits => 384 bytes */
+    uint8_t out[384];
+    memset(out, 0, sizeof(out));
+    
+    byte_encode(12, f, out);
+    byte_decode(12, out, f_decoded);
+    
+    for(int i=0; i<N; i++){
+      /* Because d=12, we only care about the lower 12 bits.
+         But we stored that in f[i] anyway, so just compare directly. */
+      assert( (f_decoded[i] & 0xFFF) == (f[i] & 0xFFF) );
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   test_randombytes();
   test_sha3_256();
@@ -446,5 +488,6 @@ int main(int argc, char *argv[]) {
   test_poly256_add();
   test_ntts();
   test_sample_ntt();
+  test_byte_encode();
   printf("OK\n");
 }
