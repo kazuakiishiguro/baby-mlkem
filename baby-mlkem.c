@@ -441,6 +441,22 @@ static void byte_encode(int d, const poly256 f, uint8_t *out) {
   }
 }
 
+/* Overload for compress result (which is also up to 12 bits). */
+static void byte_encode_u16(int d, const uint16_t *vals, uint8_t *out){
+  /* same logic, but reading from 16-bit array. */
+  size_t bytelen=(size_t)(N*d)/8;
+  memset(out,0,bytelen);
+  uint32_t bitpos=0;
+  for(int i=0; i<N; i++){
+    uint16_t val=(uint16_t)( vals[i] & ((1<<d)-1) );
+    for(int b=0; b<d; b++){
+      int bit=(val>>b) & 1;
+      out[bitpos>>3] |= bit<<(bitpos&7);
+      bitpos++;
+    }
+  }
+}
+
 static void byte_decode(int d, const uint8_t *in, poly256 out) {
   memset(out, 0, sizeof(poly256));
   uint32_t bitpos = 0;
@@ -528,4 +544,100 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   for(int i=0; i<K; i++){
     byte_encode(12, shat[i], dk_pke + i*384);
   }
+}
+
+static void kpke_encrypt(const uint8_t *ek_pke,
+                         const uint8_t *m, size_t mlen,
+                         const uint8_t *r, size_t rlen,
+                         uint8_t *out_c, size_t *out_clen){
+  /* parse ek_pke => that[K], rho */
+  static poly256 that[K];
+  for(int i=0; i<K; i++){
+    byte_decode(12, ek_pke + i*384, that[i]);
+  }
+  uint8_t rho[32];
+  memcpy(rho, ek_pke + K*384, 32);
+
+  /* ahat => KxK from sample_ntt(rho,i,j) */
+  static poly256 ahat[K][K];
+  for(int i=0; i<K; i++){
+    for(int j=0; j<K; j++){
+      sample_ntt(rho, i, j, ahat[i][j]);
+    }
+  }
+
+  /* rhat => K polynomials => ntt(...) */
+  static poly256 rhat[K];
+  for(int i=0; i<K; i++){
+    uint8_t prfout[64*ETA1];
+    mlkem_prf(ETA1, r, rlen, (uint8_t)i, prfout);
+    sample_poly_cbd(ETA1, prfout, rhat[i]);
+    ntt(rhat[i], rhat[i]);
+  }
+  /* e1 => K polynomials => sample_poly_cbd(ETA2, prf(r,i+K)) */
+  static poly256 e1[K];
+  for(int i=0; i<K; i++){
+    uint8_t prfout[64*ETA2];
+    mlkem_prf(ETA2, r, rlen, (uint8_t)(i+K), prfout);
+    sample_poly_cbd(ETA2, prfout, e1[i]);
+  }
+  /* e2 => 1 polynomial => sample_poly_cbd(ETA2, prf(r,2K)) */
+  static poly256 e2;
+  {
+    uint8_t prfout[64*ETA2];
+    mlkem_prf(ETA2, r, rlen, (uint8_t)(2*K), prfout);
+    sample_poly_cbd(ETA2, prfout, e2);
+  }
+
+  /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
+  static poly256 u[K];
+  static poly256 accum, tmp;
+  for(int i=0; i<K; i++){
+    memset(accum,0,sizeof(accum));
+    for(int j=0; j<K; j++){
+      ntt_mul(ahat[i][j], rhat[j], tmp);
+      ntt_add(accum, tmp, accum);
+    }
+    ntt_inv(accum, tmp);
+    poly256_add(tmp, e1[i], u[i]);
+  }
+
+  /* mu => interpret m as 256 bits => each coefficient 0/1 */
+  static poly256 mu;
+  memset(mu,0,sizeof(mu));
+  if(mlen==32) {
+    for(int i=0; i<256; i++){
+      int bit=(m[i>>3]>>(i&7)) & 1;
+      mu[i]=(int16_t)bit;
+    }
+  }
+
+  /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */
+  static poly256 v;
+  {
+    memset(accum,0,sizeof(accum));
+    for(int i=0; i<K; i++){
+      ntt_mul(that[i], rhat[i], tmp);
+      ntt_add(accum, tmp, accum);
+    }
+    ntt_inv(accum, tmp);
+    poly256_add(tmp, e2, accum);
+    poly256_add(accum, mu, v);
+  }
+
+  /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
+  uint8_t *p=out_c;
+  for(int i=0; i<K; i++){
+    uint16_t cbuf[N];
+    compress_poly(DU, u[i], cbuf);
+    byte_encode_u16(DU, cbuf, p);
+    p+=(N*DU)/8;
+  }
+  {
+    uint16_t cbuf[N];
+    compress_poly(DV, v, cbuf);
+    byte_encode_u16(DV, cbuf, p);
+    p+=(N*DV)/8;
+  }
+  *out_clen=(size_t)(p - out_c);
 }
