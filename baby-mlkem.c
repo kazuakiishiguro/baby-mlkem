@@ -449,3 +449,19 @@ static void byte_decode(int d, const uint8_t *in, poly256 out) {
     out[i] = (int16_t)val;
   }
 }
+
+static void compress_poly(int d, const poly256 x, uint16_t *out) {
+  for (int i = 0; i < N; i++) {
+    int32_t tmp = x[i];
+    int64_t big = ((int64_t)tmp * (1 << d) + Q / 2) / Q;
+    out[i] = (uint16_t)(big & ((1 << d) - 1));
+  }
+}
+
+static void decompress_poly(int d, const uint16_t *in, poly256 out) {
+  for (int i = 0; i < N; i++) {
+    int64_t val = in[i];
+    int64_t big = (val * Q + (1 << (d - 1))) >> d;
+    out[i] = (int16_t)(big % Q);
+  }
+}
