@@ -210,8 +210,13 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out, size_t outle
  * 3) ML-KEM parameters, NTT polynomials, etc.
  * =============================================================================
  */
-#define N 256
-#define Q 3329
+#define N     256
+#define Q     3329
+#define K     3
+#define ETA1  2
+#define ETA2  2
+#define DU    10
+#define DV    4
 
 /* ZETA, GAMMA arrays: We'll compute them at init. */
 static uint16_t ZETA[128];
@@ -463,5 +468,64 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
     int64_t val = in[i];
     int64_t big = (val * Q + (1 << (d - 1))) >> d;
     out[i] = (int16_t)(big % Q);
+  }
+}
+
+/**
+ * =============================================================================
+ * 6) K-PKE (Keygen, Encrypt, Decrypt)
+ * =============================================================================
+ */
+static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
+  /* ghash = sha3_512(seed) => (rho||sigma) */
+  uint8_t ghash[64];
+  sha3_512(seed, 32, ghash);
+  uint8_t rho[32], sigma[32];
+  memcpy(rho, ghash, 32);
+  memcpy(sigma, ghash+32, 32);
+
+  /* ahat => KxK polynomials */
+  static poly256 ahat[K][K];
+  for(int i=0; i<K; i++){
+    for(int j=0; j<K; j++){
+      sample_ntt(rho, i, j, ahat[i][j]);
+    }
+  }
+
+  /* s-hat, e-hat => each K polynomials => ntt(...) */
+  static poly256 shat[K], ehat[K];
+  for(int i=0; i<K; i++){
+    uint8_t prfout[64*ETA1];
+    mlkem_prf(ETA1, sigma, 32, (uint8_t)i, prfout);
+    sample_poly_cbd(ETA1, prfout, shat[i]);
+    ntt(shat[i], shat[i]);
+
+    mlkem_prf(ETA1, sigma, 32, (uint8_t)(i+K), prfout);
+    sample_poly_cbd(ETA1, prfout, ehat[i]);
+    ntt(ehat[i], ehat[i]);
+  }
+
+  /* that[i] = sum_{j}(ahat[j][i]*shat[j]) + ehat[i], in NTT domain. */
+  static poly256 that[K];
+  for(int i=0; i<K; i++){
+    static poly256 accum, tmp;
+    memset(accum, 0, sizeof(accum));
+    for(int j=0; j<K; j++){
+      ntt_mul(ahat[j][i], shat[j], tmp);
+      ntt_add(accum, tmp, accum);
+    }
+    ntt_add(accum, ehat[i], accum);
+    memcpy(that[i], accum, sizeof(accum));
+  }
+
+  /* ek_pke = encode(that[0..K-1], 12 bits each) + rho(32 bytes) => K*384 + 32 total */
+  for(int i=0; i<K; i++){
+    byte_encode(12, that[i], ek_pke + i*384);
+  }
+  memcpy(ek_pke + K*384, rho, 32);
+
+  /* dk_pke = encode(shat[0..K-1], 12 bits each) => K*384 */
+  for(int i=0; i<K; i++){
+    byte_encode(12, shat[i], dk_pke + i*384);
   }
 }
