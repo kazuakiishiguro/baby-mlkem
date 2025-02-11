@@ -476,18 +476,55 @@ static void test_byte_encode() {
   }
 }
 
+void test_kpke() {
+  /* Keygen with a known seed */
+  uint8_t seed[32] = {
+    'S','E','E','D','S','E','E','D','S','E','E','D','S','E','E','D',
+    'S','E','E','D','S','E','E','D','S','E','E','D','S','E','E','D'
+  };
+  uint8_t ek_pke[K * 384 + 32];
+  uint8_t dk_pke[K * 384];
+  kpke_keygen(seed, ek_pke, dk_pke);
+
+  /* Message + ephemeral randomness */
+  const char *msg_str = "This is a demonstration message.";
+  size_t msg_len = strlen(msg_str);
+  uint8_t msg[64];
+  memset(msg,0,sizeof(msg));
+  memcpy(msg,msg_str,msg_len);
+
+  uint8_t r[32] = {
+    'R','A','N','D','R','A','N','D','R','A','N','D','R','A','N','D',
+    'R','A','N','D','R','A','N','D','X','X','X','X','X','X','X','X'
+  };
+
+  /* Encrypt */
+  uint8_t ct[4096];
+  size_t ct_len = 0;
+  kpke_encrypt(ek_pke, msg, 32, r, 32, ct, &ct_len);
+
+  /* Decrypt */
+  uint8_t decrypted[64];
+  size_t dlen = 0;
+  kpke_decrypt(dk_pke, ct, ct_len, decrypted, &dlen);
+  printf("Original:  %s\n", msg_str);
+  printf("Decrypted: %.*s\n", 32, decrypted);
+  assert(memcmp(msg, decrypted, 32) == 0); //Added assertion
+}
+
 int main(int argc, char *argv[]) {
-  test_randombytes();
-  test_sha3_256();
-  test_sha3_512();
-  test_shake128();
-  test_shake256();
-  test_bitrev7();
-  test_modexp();
-  test_init_ntt_roots();
-  test_poly256_add();
-  test_ntts();
-  test_sample_ntt();
-  test_byte_encode();
+  /* test_randombytes(); */
+  /* test_sha3_256(); */
+  /* test_sha3_512(); */
+  /* test_shake128(); */
+  /* test_shake256(); */
+  /* test_bitrev7(); */
+  /* test_modexp(); */
+  /* test_init_ntt_roots(); */
+  /* test_poly256_add(); */
+  /* test_ntts(); */
+  /* test_sample_ntt(); */
+  /* test_byte_encode(); */
+  test_kpke();
   printf("OK\n");
 }

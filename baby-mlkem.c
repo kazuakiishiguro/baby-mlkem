@@ -620,7 +620,10 @@ static void kpke_encrypt(const uint8_t *ek_pke,
   if(mlen==32) {
     for(int i=0; i<256; i++){
       int bit=(m[i>>3]>>(i&7)) & 1;
-      mu[i]=(int16_t)bit;
+      if (bit)
+        mu[i] = (Q + 1) / 2;
+      else
+        mu[i] = 0;
     }
   }
 
@@ -655,61 +658,78 @@ static void kpke_encrypt(const uint8_t *ek_pke,
 }
 
 static void kpke_decrypt(const uint8_t *dk_pke,
-                         const uint8_t *c, size_t clen,
-                         uint8_t *out_m, size_t *out_mlen){
-  /* parse c => c1 => K polynomials, c2 => 1 polynomial */
-  size_t c1_len=K*((N*DU)/8);
-  size_t c2_len=(N*DV)/8;
-  if(clen < c1_len+c2_len) {
-    *out_mlen=0;
-    return;
-  }
+                        const uint8_t *c, size_t clen,
+                        uint8_t *out_m, size_t *out_mlen){
+    /* parse c => c1 => K polynomials, c2 => 1 polynomial */
+    size_t c1_len=K*((N*DU)/8);
+    size_t c2_len=(N*DV)/8;
+    if(clen < c1_len+c2_len) {
+        *out_mlen=0;
+        return;
+    }
 
-  static poly256 u[K], v;
-  const uint8_t *p=c;
-  for(int i=0; i<K; i++){
-    static uint16_t buf[N];
-    memset(buf,0,sizeof(buf));
-    byte_decode(DU, p, (poly256)buf);
-    decompress_poly(DU, buf, u[i]);
-    p+=(N*DU)/8;
-  }
-  {
-    static uint16_t buf[N];
-    byte_decode(DV, p, (poly256)buf);
-    decompress_poly(DV, buf, v);
-    p+=(N*DV)/8;
-  }
+    static poly256 u[K], v;
+    const uint8_t *p=c;
+    for(int i=0; i<K; i++){
+        static uint16_t buf[N];
+        memset(buf,0,sizeof(buf));
+        byte_decode(DU, p, (int16_t*)buf);
+        decompress_poly(DU, buf, u[i]);
+        p+=(N*DU)/8;
+    }
+    {
+        static uint16_t buf[N];
+        byte_decode(DV, p, (int16_t*)buf);
+        decompress_poly(DV, buf, v);
+        p+=(N*DV)/8;
+    }
 
-  /* parse dk_pke => s-hat[K] */
-  static poly256 shat[K];
-  for(int i=0; i<K; i++){
-    byte_decode(12, dk_pke + i*384, shat[i]);
-  }
+    /* parse dk_pke => s-hat[K] */
+    static poly256 shat[K];
+    for(int i=0; i<K; i++){
+        byte_decode(12, dk_pke + i*384, shat[i]);
+    }
 
-  /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
-  static poly256 w;
-  static poly256 accum, tmp;
-  memset(accum,0,sizeof(accum));
-  for(int i=0; i<K; i++){
-    static poly256 u_ntt;
-    ntt(u[i], u_ntt);
-    ntt_mul(shat[i], u_ntt, tmp);
+    /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
+    static poly256 w;
+    static poly256 accum, tmp;
+    memset(accum,0,sizeof(accum));
+    for(int i=0; i<K; i++){
+        static poly256 u_ntt;
+        ntt(u[i], u_ntt);
+        ntt_mul(shat[i], u_ntt, tmp);
         ntt_add(accum, tmp, accum);
     }
-  static poly256 accum_inv;
-  ntt_inv(accum, accum_inv);
-  poly256_sub(v, accum_inv, w);
+    static poly256 accum_inv;
+    ntt_inv(accum, accum_inv);
+    poly256_sub(v, accum_inv, w);
 
-  /* compress(1,w) => out_m => 1 bit/coeff => 32 bytes. */
-  static uint16_t wcomp[N];
-  compress_poly(1, w, wcomp);
-  memset(out_m,0,32);
-  uint32_t bitpos=0;
-  for(int i=0; i<N; i++){
-    int bit=wcomp[i]&1;
-    out_m[bitpos>>3] |= (bit<<(bitpos&7));
-    bitpos++;
-  }
-  *out_mlen=32;
+    /* --- MODIFIED SECTION START --- */
+    /* Instead of directly compressing to 1 bit, we check
+       if each w[i] is closer to (Q+1)/2 or 0 */
+    memset(out_m, 0, 32);
+    for (int i = 0; i < N; i++) {
+        // Calculate the difference between w[i] and (Q+1)/2
+        int32_t diff = (int32_t)w[i] - (Q + 1) / 2;
+
+        // Take the absolute value of the difference, handling potential underflow
+        if (diff < 0) {
+          diff = -diff;
+          if (diff < 0)
+              diff = Q - (-diff%Q); // diff can't be negative anymore
+          else
+              diff = diff % Q;
+        } else {
+            diff = diff % Q;
+        }
+
+
+        // If the difference is small, the original bit was 1. Otherwise, it was 0.
+        int bit = (diff < (Q+1)/4) ? 1 : 0;  //  (Q+1)/4 is effectively Q/2
+
+        // Set the corresponding bit in the output byte array
+        out_m[i >> 3] |= (bit << (i & 7));
+    }
+    *out_mlen = 32;
+    /* --- MODIFIED SECTION END --- */
 }
