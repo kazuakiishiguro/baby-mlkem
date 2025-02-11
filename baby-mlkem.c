@@ -687,13 +687,13 @@ static void kpke_decrypt(const uint8_t *dk_pke,
   for(int i=0; i<K; i++){
     static uint16_t buf[N];
     memset(buf,0,sizeof(buf));
-    byte_decode(DU, p, (poly256)buf);
+    byte_decode(DU, p, (int16_t*)buf);
     decompress_poly(DU, buf, u[i]);
     p+=(N*DU)/8;
   }
   {
     static uint16_t buf[N];
-    byte_decode(DV, p, (poly256)buf);
+    byte_decode(DV, p, (int16_t*)buf);
     decompress_poly(DV, buf, v);
     p+=(N*DV)/8;
   }
