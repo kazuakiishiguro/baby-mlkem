@@ -637,7 +637,10 @@ static void kpke_encrypt(const uint8_t *ek_pke,
   if(mlen==32) {
     for(int i=0; i<256; i++){
       int bit=(m[i>>3]>>(i&7)) & 1;
-      mu[i]=(int16_t)bit;
+      if (bit)
+        mu[i] = (Q + 1) / 2;
+      else
+        mu[i] = 0;
     }
   }
 

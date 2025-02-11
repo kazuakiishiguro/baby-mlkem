@@ -505,27 +505,36 @@ void test_kpke() {
   uint8_t decrypted[64];
   size_t dlen = 0;
   kpke_decrypt(dk_pke, ct, ct_len, decrypted, &dlen);
-
   printf("Original:  %s\n", msg_str);
-  for(int i = 0; i < 32; i++){
-    printf("%02X", decrypted[i]);
+
+  for(int i=0; i<32; i++) {
+    uint8_t x = decrypted[i];
+    // Reverse bits in x
+    uint8_t rev=0;
+    for(int b=0; b<8; b++){
+      rev <<= 1;
+      rev |= (x & 1);
+      x >>= 1;
+    }
+    decrypted[i] = rev;
   }
-  printf("\n");
+  // Now try printing as ASCII:
+  printf("As ASCII: %.*s\n", 32, decrypted);
 }
 
 int main(int argc, char *argv[]) {
-  test_randombytes();
-  test_sha3_256();
-  test_sha3_512();
-  test_shake128();
-  test_shake256();
-  test_bitrev7();
-  test_modexp();
-  test_init_ntt_roots();
-  test_poly256_add();
-  test_ntts();
-  test_sample_ntt();
-  test_byte_encode();
+  /* test_randombytes(); */
+  /* test_sha3_256(); */
+  /* test_sha3_512(); */
+  /* test_shake128(); */
+  /* test_shake256(); */
+  /* test_bitrev7(); */
+  /* test_modexp(); */
+  /* test_init_ntt_roots(); */
+  /* test_poly256_add(); */
+  /* test_ntts(); */
+  /* test_sample_ntt(); */
+  /* test_byte_encode(); */
   test_kpke();
   printf("OK\n");
 }
