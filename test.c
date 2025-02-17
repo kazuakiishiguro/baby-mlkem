@@ -512,19 +512,45 @@ void test_kpke() {
   assert(memcmp(msg, decrypted, 32) == 0); //Added assertion
 }
 
+void test_mlkem() {
+  uint8_t ek[K*384+32];
+  uint8_t dk[768*K+96];
+  mlkem_keygen(NULL, NULL, ek, dk);
+
+  uint8_t k1[32], c[4096];
+  size_t clen=0;
+  mlkem_encaps(ek, NULL, k1, c, &clen);
+  printf("Encapsulated k1: ");
+  for(int i=0; i<32; i++){
+       printf("%02x", k1[i]);
+  }
+  printf("\n");
+  
+  uint8_t k2[32];
+  mlkem_decaps(c, clen, dk, k2);
+  printf("Decapsulated k2: ");
+  for(int i=0; i<32; i++){
+       printf("%02x", k2[i]);
+  }
+  printf("\n");
+  
+  assert(memcmp(k1,k2,32)==0);
+}
+
 int main(int argc, char *argv[]) {
-  /* test_randombytes(); */
-  /* test_sha3_256(); */
-  /* test_sha3_512(); */
-  /* test_shake128(); */
-  /* test_shake256(); */
-  /* test_bitrev7(); */
-  /* test_modexp(); */
-  /* test_init_ntt_roots(); */
-  /* test_poly256_add(); */
-  /* test_ntts(); */
-  /* test_sample_ntt(); */
-  /* test_byte_encode(); */
+  test_randombytes();
+  test_sha3_256();
+  test_sha3_512();
+  test_shake128();
+  test_shake256();
+  test_bitrev7();
+  test_modexp();
+  test_poly256_add();
+  test_sample_ntt();
+  test_byte_encode();
   test_kpke();
+  test_mlkem();
+  test_init_ntt_roots();
+  test_ntts();
   printf("OK\n");
 }

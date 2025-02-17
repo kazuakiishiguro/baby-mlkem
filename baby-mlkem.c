@@ -733,3 +733,122 @@ static void kpke_decrypt(const uint8_t *dk_pke,
     *out_mlen = 32;
     /* --- MODIFIED SECTION END --- */
 }
+
+/**
+ * =============================================================================
+ * 7) ML-KEM top-level
+ * =============================================================================
+ */
+static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
+                         uint8_t *ek, uint8_t *dk){
+    uint8_t z[32];
+    if(!seed1){
+        randombytes(z,32);
+    } else {
+        memcpy(z, seed1, 32);
+    }
+    uint8_t seed_for_kpke[32];
+    if(!seed2){
+        randombytes(seed_for_kpke,32);
+    } else {
+        memcpy(seed_for_kpke, seed2, 32);
+    }
+
+    uint8_t ek_pke[K*384 + 32];
+    uint8_t dk_pke[K*384];
+    kpke_keygen(seed_for_kpke, ek_pke, dk_pke);
+
+    /* ek = ek_pke,
+       dk = dk_pke || ek_pke || H(ek_pke) || z
+       => lengths:
+         - dk_pke => K*384
+         - ek_pke => K*384+32
+         - H(ek_pke) => 32
+         - z => 32
+       => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
+    */
+    memcpy(ek, ek_pke, K*384+32);
+
+    memcpy(dk,               dk_pke,     K*384);
+    memcpy(dk + (K*384),     ek_pke,     K*384+32);
+    uint8_t h[32];
+    sha3_256(ek_pke, K*384+32, h);
+    memcpy(dk + (K*384) + (K*384+32), h, 32);
+    memcpy(dk + (K*384) + (K*384+32) + 32, z, 32);
+}
+
+static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed,
+                         uint8_t *k, uint8_t *c, size_t *clen){
+    /* m = random 32 if seed==NULL, else seed. */
+    uint8_t m[32];
+    if(!seed){
+        randombytes(m,32);
+    } else {
+        memcpy(m, seed, 32);
+    }
+    /* H(ek) => 32 */
+    uint8_t h[32];
+    sha3_256(ek, K*384+32, h);
+
+    /* ghash = sha3_512( m||h ) => 64 => k||r */
+    uint8_t inbuf[64];
+    memcpy(inbuf, m, 32);
+    memcpy(inbuf+32, h, 32);
+    uint8_t ghash[64];
+    sha3_512(inbuf, 64, ghash);
+    uint8_t *k_out=ghash;
+    uint8_t *r_out=ghash+32;
+    memcpy(k, k_out, 32);
+
+    /* c = kpke_encrypt(ek, m, r) */
+    kpke_encrypt(ek, m, 32, r_out, 32, c, clen);
+}
+
+static void mlkem_decaps(const uint8_t *c, size_t clen,
+                         const uint8_t *dk, uint8_t *k_out){
+    /* parse dk =>
+       dk_pke=0..K*384
+       ek_pke=K*384..(K*384 + (K*384+32))
+       h => next 32
+       z => next 32
+    */
+    const uint8_t *dk_pke=dk;
+    const uint8_t *ek_pke=dk + K*384;
+    const uint8_t *h=dk + K*384 + (K*384+32);
+    const uint8_t *z=dk + K*384 + (K*384+32) + 32;
+
+    /* mdash = kpke_decrypt(dk_pke, c) => 32 bytes */
+    uint8_t mdash[32];
+    size_t mdash_len=0;
+    kpke_decrypt(dk_pke, c, clen, mdash, &mdash_len);
+    if(mdash_len!=32){
+        /* fallback => k_out= all zero or something. */
+        memset(k_out,0,32);
+        return;
+    }
+
+    /* ghash = sha3_512(mdash||h) => 64 => kdash||rdash */
+    uint8_t inbuf[64];
+    memcpy(inbuf, mdash, 32);
+    memcpy(inbuf+32, h, 32);
+    uint8_t ghash[64];
+    sha3_512(inbuf,64,ghash);
+    uint8_t *kdash=ghash;
+    uint8_t *rdash=ghash+32;
+
+    /* cdash = kpke_encrypt(ek_pke, mdash, rdash) => compare with c */
+    uint8_t cdash[4096];
+    size_t cdash_len=0;
+    kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len);
+    if(cdash_len!=clen || memcmp(c, cdash, clen)!=0){
+        /* kbar = shake256(z||c) => 32 */
+        size_t tmp_len=32+clen;
+        uint8_t *tmp=(uint8_t*)malloc(tmp_len);
+        memcpy(tmp, z, 32);
+        memcpy(tmp+32, c, clen);
+        shake256(tmp, tmp_len, k_out, 32);
+        free(tmp);
+    } else {
+        memcpy(k_out, kdash, 32);
+    }
+}
