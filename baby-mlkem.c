@@ -4,7 +4,8 @@
  * Contains:
  *   1) Minimal Keccak-based SHA3/Shake
  *   2) ML-KEM K-PKE logic (NTT polynomials, etc.)
- *   3) A simple randombytes() using /dev/urandom
+ *   3) A cross-platform randombytes() using getrandom on Linux and
+ * arc4random_buf on macOS
  *
  * Compile:
  *   gcc -O3 -std=c11 baby-mlkem.c -o baby-mlkem
