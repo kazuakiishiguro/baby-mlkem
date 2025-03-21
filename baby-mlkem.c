@@ -14,11 +14,16 @@
  *   - Incomplete side-channel protections, no constant-time, etc.
  *****************************************************************************/
 #include <assert.h>
+#if defined(__linux__)
+#include <linux/random.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <time.h>
+#include <unistd.h>
 
 /**
  * =============================================================================
@@ -26,15 +31,19 @@
  * =============================================================================
  */
 static void randombytes(uint8_t *out, size_t outlen) {
+#if defined(__linux__)
+  /* Use getrandom syscall on Linux */
+  if (syscall(SYS_getrandom, out, outlen, 0) == -1) {
+    perror("getrandom failed");
+    exit(EXIT_FAILURE);
+  }
+#else
   /* Attempt to read from /dev/urandom (POSIX-like).
      For other OS, replace with your own RNG. */
   FILE *f = fopen("/dev/urandom", "rb");
   if (!f) {
-    /* fallback: this is insecure but just a demonstration. */
-    srand((unsigned)time(NULL));
-    for (size_t i = 0; i < outlen; i++) {
-      out[i] = (uint8_t)(rand() & 0xFF);
-    }
+    /* Secure fallback using arc4random_buf */
+    arc4random_buf(out, outlen);
     return;
   }
   size_t ret = fread(out, 1, outlen, f);
@@ -43,6 +52,7 @@ static void randombytes(uint8_t *out, size_t outlen) {
     exit(EXIT_FAILURE);
   }
   fclose(f);
+#endif
 }
 
 /**
