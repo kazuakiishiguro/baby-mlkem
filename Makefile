@@ -1,13 +1,33 @@
-.PHONY: test
-test:
-	$(CC) -O3 -o testc test.c
-	./testc
+BLAKE3_DIR = include/blake3
+BLAKE3_SRCS = \
+	$(BLAKE3_DIR)/blake3.c \
+	$(BLAKE3_DIR)/blake3_portable.c \
+	$(BLAKE3_DIR)/blake3_dispatch.c \
+	$(BLAKE3_DIR)/blake3_sse2.c \
+	$(BLAKE3_DIR)/blake3_sse41.c \
+	$(BLAKE3_DIR)/blake3_avx2.c \
+	$(BLAKE3_DIR)/blake3_avx512.c
 
-.PHONY: bench
-bench:
-	$(CC) -O3 -o testc test.c
-	/usr/bin/time ./testc
+CC = gcc
+CFLAGS = -O3 -Wall -Wextra -std=c99 -I$(BLAKE3_DIR)
+ARCH_CFLAGS = -march=native
+TARGET = blake3_test
+SRCS = test.c $(BLAKE3_SRCS)
+OBJS := $(SRCS:.c=.o)
 
-.PHONY: clean
+.PHONY: all clean test
+
+all: $(TARGET)
+
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
+%.o: %.c
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
+
 clean:
-	rm -f testc
+	rm -f $(OBJS) $(TARGET)
+
+test: $(TARGET)
+	./$(TARGET)
