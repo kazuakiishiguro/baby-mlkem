@@ -341,7 +341,7 @@ void test_blake3() {
   };
   uint8_t out[BLAKE3_OUT_LEN];
 
-  blake3((const uint8_t*)in, inlen, out);
+  blake3((const uint8_t*)in, inlen, out, BLAKE3_OUT_LEN);
   assert(memcmp(empty_hash, out, BLAKE3_OUT_LEN) == 0);
 }
 

@@ -206,11 +206,11 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
  * =============================================================================
  */
 
-static void blake3(const uint8_t *in, size_t inlen, uint8_t *out) {
+static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen) {
   blake3_hasher hasher;
   blake3_hasher_init(&hasher);
   blake3_hasher_update(&hasher, in, inlen);
-  blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
+  blake3_hasher_finalize(&hasher, out, outlen);
 }
 
 /**
