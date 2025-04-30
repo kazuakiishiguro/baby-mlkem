@@ -341,7 +341,7 @@ void test_blake3() {
   };
   uint8_t out[BLAKE3_OUT_LEN];
 
-  blake3(in, inlen, out);
+  blake3((const uint8_t*)in, inlen, out);
   assert(memcmp(empty_hash, out, BLAKE3_OUT_LEN) == 0);
 }
 
@@ -552,7 +552,7 @@ void test_mlkem() {
   assert(memcmp(k1,k2,32)==0);
 }
 
-int main(int argc, char *argv[]) {
+int main(void) {
   test_randombytes();
   test_sha3_256();
   test_sha3_512();
