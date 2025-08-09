@@ -1,4 +1,5 @@
 #include "baby-mlkem.c"
+#include "random.h"
 
 void test_randombytes() {
   size_t outlen = 16;
@@ -13,6 +14,7 @@ void test_randombytes() {
   }
 
   assert(!(memcmp(buffer1, buffer2, outlen) == 0));
+  printf("[PASS]: randombytes\n");
 }
 
 void test_bitrev7() {
@@ -108,5 +110,4 @@ int main(int argc, char *argv[]) {
   test_init_ntt_roots();
   test_poly256_add();
   test_ntts();
-  printf("OK\n");
 }
