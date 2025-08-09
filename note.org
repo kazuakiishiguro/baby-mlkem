@@ -1,0 +1,29 @@
+* Notes
+** Benchmarks
+*** =random_bytes=
+**** Regular C code implementation
+#+begin_src c
+ void randombytes(uint8_t *out, size_t outlen) {
+  FILE *f = fopen("/dev/urandom", "rb");
+  if (!f) {
+    arc4random_buf(out, outlen);
+    return;
+  }
+  size_t ret = fread(out, 1, outlen, f);
+  if (!ret) {
+    fprintf(stderr, "fread() failed: %zu\n", ret);
+    exit(EXIT_FAILURE);
+  }
+  fclose(f);
+}
+#+end_src
+***** Result
+#+begin_src bash
+ gcc bench-random.c random.c && ./a.out
+ ----------------------------------------
+ Total elapsed time:       12.8768 seconds
+ Average time per call:    12876.77 nanoseconds
+ Throughput:               77659 calls/second
+ ----------------------------------------
+#+end_src
+**** Assembly
