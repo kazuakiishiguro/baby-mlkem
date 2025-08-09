@@ -27,3 +27,36 @@
  ----------------------------------------
 #+end_src
 **** Assembly
+Optimized assembly
+#+begin_src asm
+section .text
+global randombytes
+
+randombytes:
+	;; rdi: buffer pointer
+	;; rsi: buffer length
+	mov eax, 318		; syscall number for getrandom
+	xor edx, edx		; flags = 0
+	syscall
+
+	;; exit(1) if getrandom did not fill the entire buffer
+	cmp rax, rsi
+	jne .Lerror
+	ret
+
+.Lerror:
+	mov edi, 1 		; exit status
+	mov eax, 60 		; syscall number for exit
+	syscall
+
+#+end_src
+***** Result
+#+begin_src bash
+ nasm -f elf64 -o random.o random.s
+ gcc bench-random.c random.o && ./a.out
+ ----------------------------------------
+ Total elapsed time:       0.2994 seconds
+ Average time per call:    299.44 nanoseconds
+ Throughput:               3339512 calls/second
+ ----------------------------------------
+#+end_src
