@@ -1,9 +1,11 @@
+#+title: Notes on Random Byte Generation Benchmarks
+
 * Notes
 ** Benchmarks
 *** =random_bytes=
 **** Regular C code implementation
 #+begin_src c
- void randombytes(uint8_t *out, size_t outlen) {
+void randombytes(uint8_t *out, size_t outlen) {
   FILE *f = fopen("/dev/urandom", "rb");
   if (!f) {
     arc4random_buf(out, outlen);
@@ -19,12 +21,12 @@
 #+end_src
 ***** Result
 #+begin_src bash
- gcc bench-random.c random.c && ./a.out
- ----------------------------------------
- Total elapsed time:       12.8768 seconds
- Average time per call:    12876.77 nanoseconds
- Throughput:               77659 calls/second
- ----------------------------------------
+gcc bench-random.c random.c && ./a.out
+----------------------------------------
+Total elapsed time:       12.8768 seconds
+Average time per call:    12876.77 nanoseconds
+Throughput:               77659 calls/second
+----------------------------------------
 #+end_src
 **** Assembly
 Optimized assembly
@@ -48,15 +50,92 @@ randombytes:
 	mov edi, 1 		; exit status
 	mov eax, 60 		; syscall number for exit
 	syscall
-
 #+end_src
 ***** Result
 #+begin_src bash
- nasm -f elf64 -o random.o random.s
- gcc bench-random.c random.o && ./a.out
- ----------------------------------------
- Total elapsed time:       0.2994 seconds
- Average time per call:    299.44 nanoseconds
- Throughput:               3339512 calls/second
- ----------------------------------------
+nasm -f elf64 -o random.o random.s
+gcc bench-random.c random.o && ./a.out
+----------------------------------------
+Total elapsed time:       0.2994 seconds
+Average time per call:    299.44 nanoseconds
+Throughput:               3339512 calls/second
+----------------------------------------
 #+end_src
+**** Description
+The assembly code appears so much simpler than the C code because it is performing a much more direct, specific, and lower-level task. The C code, by contrast, is operating at a higher level of abstraction and includes portability features and more user-friendly error handling. Let's break down the key reasons for this difference in complexity.
+
+1.  *Level of Abstraction: Direct Syscall vs. C Library (libc)*
+
+    This is the most significant difference.
+
+    - *The Assembly Code:* This code speaks directly to the Linux kernel. It uses the ~syscall~ instruction, which is the fundamental way a user-space program asks the operating system kernel to perform a privileged task.
+      - It places the syscall number for ~getrandom~ (=318=) into the =eax= register.
+      - It sets up the arguments in the other registers (=rdi=, =rsi=, =rdx=) according to the x86-64 syscall calling convention.
+      - It executes ~syscall~. This is a single, atomic operation from the program's perspective.
+
+        #+begin_src asm
+         mov eax, 318		# syscall number for getrandom
+         xor edx, edx		# flags = 0
+         syscall
+        #+end_src
+
+    - *The C Code:* This code does not speak directly to the kernel. It uses the C Standard Library (~libc~), which is a layer of abstraction between your program and the OS.
+      - ~fopen("/dev/urandom", "rb")~: This single line does a lot of work. It asks the C library to open a file. The library then makes a ~open~ or ~openat~ syscall to the kernel, manages a ~FILE~ struct in memory, sets up internal buffers for I/O, and returns a pointer to you.
+      - ~fread(...)~: This asks the C library to read from the file stream. The library might read from its internal buffer first, or it might make one or more ~read~ syscalls to the kernel to fill its buffer and then copy the data to your buffer.
+      - ~fclose(f)~: This flushes any remaining buffered data and asks the library to make a ~close~ syscall to the kernel to release the file handle.
+
+    The C library adds layers of complexity (and features, like buffering) that are completely absent in the direct syscall approach.
+
+2.  *Functionality: A Direct Request vs. A Multi-step, Fallback Strategy*
+
+    The two pieces of code are *not functionally identical*.
+
+    - *The Assembly Code's Logic:*
+      1. Ask the kernel for ~N~ random bytes using ~getrandom~.
+      2. If the kernel didn't return exactly ~N~ bytes, exit with an error code.
+      3. Otherwise, return successfully.
+
+    - *The C Code's Logic:*
+      1. /Try/ to open ~/dev/urandom~ as a file.
+      2. If that fails (e.g., the file doesn't exist), *fall back* to a completely different function: ~arc4random_buf~. This is a crucial addition for portability or for running in restricted environments (like a ~chroot~ jail) where ~/dev/~ might not be available.
+      3. If opening succeeded, read from the file.
+      4. Check if the read operation failed.
+      5. If it failed, print a descriptive error message to the standard error stream.
+      6. Exit with a failure code.
+      7. Close the file handle.
+
+    The C code is more robust and portable. It has a Plan B (~arc4random_buf~), which adds an entire branch of logic (=if (!f) { ... }=) that the assembly version lacks.
+
+3.  *Error Handling*
+
+    There's a significant difference in the philosophy of error handling.
+
+    - *Assembly:* The error handling is minimal. It checks if the number of bytes returned (=rax=) matches the number requested (=rsi=). If not, it puts =1= in =edi= and calls the ~exit~ syscall. This is efficient but provides no context to a human as to /why/ it failed. A script could check the exit code, but a user running it from the command line would just see the program terminate.
+      #+begin_src asm
+       cmp rax, rsi
+       jne .Lerror
+
+       .Lerror:
+       mov edi, 1
+       mov eax, 60
+       syscall
+      #+end_src
+    - *C Code:* The error handling is more user-friendly. It uses ~fprintf~ to print a formatted string to ~stderr~ (the standard error stream), telling the user what happened.
+      #+begin_src c
+       fprintf(stderr, "fread() failed: %zu\n", ret);
+       exit(EXIT_FAILURE);
+      #+end_src
+      This is much more helpful for debugging. =EXIT_FAILURE= is also a portable macro, whereas the hardcoded =1= in the assembly is just a convention.
+
+**** Summary Table
+| Feature           | Assembly Version                             | C Version                                                       |
+|-------------------+----------------------------------------------+-----------------------------------------------------------------|
+| *Core Method*     | Direct ~getrandom~ syscall                   | File I/O on ~/dev/urandom~ via ~libc~                           |
+| *Abstraction*     | *None.* Directly interfaces with the kernel. | *High.* Uses ~libc~, which abstracts syscalls, file handles, and I/O buffering. |
+| *Fallback Logic*  | *None.* Fails if ~getrandom~ is unsuccessful.  | *Yes.* Falls back to ~arc4random_buf~ if ~/dev/urandom~ cannot be opened.       |
+| *Error Reporting* | Exits with a status code (=1=). Silent.      | Prints a descriptive message to ~stderr~. User-friendly.        |
+| *Portability*     | *Linux-specific.* Relies on Linux syscall numbers. | *More portable.* Uses standard library functions and has a BSD-style fallback.  |
+| *Dependencies*    | The Linux kernel ABI.                        | ~libc~ (the C Standard Library).                                |
+
+**** Conclusion
+The assembly code is "simpler" because it's a minimal, hyper-specific implementation for a single task on a single operating system. It sacrifices portability, user-friendly error handling, and robustness for directness and minimalism. The C code is more complex because it's written to be a better software component: it operates at a more convenient level of abstraction, it's more robust because of its fallback logic, and it behaves more predictably in a wider range of environments. This added complexity is the price of abstraction and robustness.
