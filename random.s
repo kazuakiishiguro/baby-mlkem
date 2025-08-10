@@ -1,20 +1,23 @@
+.section .note.GNU-stack,"",@progbits
+
 .intel_syntax noprefix
+
+.equ SYS_getrandom, 318
+
 .section .text
 .global randombytes
 
 randombytes:
-	# rdi: buffer pointer
-	# rsi: buffer length
-	mov eax, 318		# syscall number for getrandom
-	xor edx, edx		# flags = 0
+	mov eax, SYS_getrandom
+	xor edx, edx
 	syscall
 
-	# exit(1) if getrandom did not fill the entire buffer
 	cmp rax, rsi
-	jne .Lerror
+	jne .Lfailure
+
+	xor rax, rax
 	ret
 
-.Lerror:
-	mov edi, 1 		# exit status
-	mov eax, 60 		# syscall number for exit
-	syscall
+.Lfailure:
+	mov rax, -1
+	ret
