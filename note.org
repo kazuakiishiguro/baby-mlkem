@@ -138,4 +138,72 @@ The assembly code appears so much simpler than the C code because it is performi
 | *Dependencies*    | The Linux kernel ABI.                        | ~libc~ (the C Standard Library).                                |
 
 **** Conclusion
-The assembly code is "simpler" because it's a minimal, hyper-specific implementation for a single task on a single operating system. It sacrifices portability, user-friendly error handling, and robustness for directness and minimalism. The C code is more complex because it's written to be a better software component: it operates at a more convenient level of abstraction, it's more robust because of its fallback logic, and it behaves more predictably in a wider range of environments. This added complexity is the price of abstraction and robustness.
+The assembly code is "simpler" because it's a minimal, hyper-specific
+implementation for a single task on a single operating system. It
+sacrifices portability, user-friendly error handling, and robustness
+for directness and minimalism. The C code is more complex because it's
+written to be a better software component: it operates at a more
+convenient level of abstraction, it's more robust because of its
+fallback logic, and it behaves more predictably in a wider range of
+environments. This added complexity is the price of abstraction and
+robustness.
+**** Another portability issue
+A common warning, `... implies executable stack`, appears when linking C code with handwritten assembly. This indicates a security risk where the program's stack is made executable.
+
+*****   **The Root Cause: Missing `.note.GNU-stack` Section**
+    This warning is caused by the assembly object file lacking a special section that informs the linker about the desired stack executability policy.
+
+    **Why it happens**
+    -   *C Compiler (GCC)* automatically adds a `.note.GNU-stack` section to its object files, marking the stack as **non-executable**.
+    -   *Assembler (as)* is literal and only includes what is explicitly in the source code. If the `.note.GNU-stack` directive is missing, the resulting object file lacks this crucial marker.
+    -   *Linker (ld)* faces a conflict when combining an object file with the marker (`test.o`) and one without (`random.o`).
+
+    ***Linker's Dilemma (Legacy Behavior)***
+    Historically, if any object file was missing the marker, the linker would:
+    1.  Default to making the entire program's stack **executable** for backward compatibility.
+    2.  Issue a warning to inform the user of this insecure default.
+
+    **Security Implications**
+    -   **Non-Executable Stack (Secure):** A fundamental security feature on modern systems (NX Bit / DEP). It prevents attackers from executing malicious code injected onto the stack, mitigating "stack-based buffer overflow" exploits.
+    -   **Executable Stack (Insecure):** Disables this critical security protection for your program.
+
+*****   **The Solution: Explicitly Declare the Stack Policy**
+    To fix the issue and ensure a secure executable, add a directive to your assembly file to explicitly mark the stack as non-executable.
+
+    **Add the Directive**
+    Place the following line in your `.s` file, typically at the beginning or end.
+
+    #+begin_src asm
+    .section .note.GNU-stack,"",@progbits
+    #+end_src
+
+    **Explanation of the Directive**
+    -   `.section .note.GNU-stack`: Declares the special marker section.
+    -   `""`: Denotes no special flags.
+    -   `@progbits`: Specifies that the section contains data. The key is the *absence* of the executable flag (`x`), which signals to the linker that the stack should be non-executable.
+
+*****   **Important Update: Modern Toolchain Behavior**
+    Newer versions of the GNU toolchain (specifically the `ld` linker) have changed their default behavior for improved security.
+
+    **Behavior Comparison**
+    | Feature                | Old Linker (`ld`)                               | New Linker (`ld`)                                 |
+    |------------------------+-------------------------------------------------+---------------------------------------------------|
+    | **Missing Directive**  | Defaults to *Executable Stack* + *Issues Warning* | Defaults to *Non-Executable Stack* + *No Warning* |
+    | **Explicit Directive** | Non-Executable Stack, No Warning.               | Non-Executable Stack, No Warning.                 |
+
+    **Verification**
+    You can verify the stack's permissions in the final executable using `readelf`.
+    #+begin_src bash
+    # Look for the GNU_STACK entry in the program headers
+    readelf -l ./your_executable
+    #+end_src
+    -   A secure, non-executable stack will have `RW` (Read, Write) flags.
+    -   An insecure, executable stack will have `RWE` (Read, Write, Execute) flags.
+
+*****   **Best Practice: Always Add the Directive**
+Even though newer toolchains may not issue a warning, it remains a critical best practice to add the `.section .note.GNU-stack` directive.
+
+**Reasons**
+    1.  **Portability & Consistency:** Your code will build securely on *all* systems, regardless of the toolchain version. An older system would otherwise produce an insecure executable.
+    2.  **Clarity & Intent:** Explicitly stating your intent makes the code self-documenting and shows that security was considered.
+    3.  **Future-Proofing:** Avoids reliance on toolchain-specific defaults, which could change. It makes your code more robust and predictable.
