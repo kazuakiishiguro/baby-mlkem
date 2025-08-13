@@ -5,8 +5,10 @@ ASFLAGS = -masm=intel
 TARGET = testc
 SOURCES = test.c random.s
 OBJECTS = test.o random.o
+BENCH_OBJECT = bench-random.c random.o
+BENCH = bench
 
-.PHONY: all test clean
+.PHONY: all test bench clean
 
 all: $(TARGET)
 
@@ -25,5 +27,9 @@ $(TARGET): $(OBJECTS)
 test: $(TARGET)
 	./$(TARGET)
 
+bench: $(TARGET)
+	$(CC) $(CFLAGS) $(BENCH_OBJECT) -o $@
+	./$(BENCH)
+
 clean:
-	rm -f $(TARGET) $(OBJECTS)
+	rm -f $(TARGET) $(OBJECTS) $(BENCH)
