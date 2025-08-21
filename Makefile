@@ -1,35 +1,38 @@
+BLAKE3_DIR = include/blake3
+BLAKE3_SRCS = \
+	$(BLAKE3_DIR)/blake3.c \
+	$(BLAKE3_DIR)/blake3_portable.c \
+	$(BLAKE3_DIR)/blake3_dispatch.c \
+	$(BLAKE3_DIR)/blake3_sse2.c \
+	$(BLAKE3_DIR)/blake3_sse41.c \
+	$(BLAKE3_DIR)/blake3_avx2.c \
+	$(BLAKE3_DIR)/blake3_avx512.c
+
 CC = gcc
-CFLAGS = -O3
+CFLAGS = -O3 -Wall -Wextra -std=c99 -I$(BLAKE3_DIR)
 ASFLAGS = -masm=intel
+ARCH_CFLAGS = -march=native
+TARGET = blake3_test
+SRCS = test.c $(BLAKE3_SRCS)
+ASSRC = random.s
+OBJS := $(SRCS:.c=.o)
 
-TARGET = testc
-SOURCES = test.c random.s
-OBJECTS = test.o random.o
-BENCH_OBJECT = bench-random.c random.o
-BENCH = bench
-
-.PHONY: all test bench clean
+.PHONY: all clean test
 
 all: $(TARGET)
 
-# Link the final executable
-$(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^
 
-# Compile .c files
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) $(ASSRC) -o $(TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
 
-# Assemble .s files using Intel syntax
 %.o: %.s
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+clean:
+	rm -f $(OBJS) $(TARGET)
+
 test: $(TARGET)
 	./$(TARGET)
-
-bench: $(TARGET)
-	$(CC) $(CFLAGS) $(BENCH_OBJECT) -o $@
-	./$(BENCH)
-
-clean:
-	rm -f $(TARGET) $(OBJECTS) $(BENCH)

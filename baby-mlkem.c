@@ -15,6 +15,7 @@
  *   - Incomplete side-channel protections, no constant-time, etc.
  *****************************************************************************/
 #include <assert.h>
+#include "include/blake3/blake3.h"
 #if defined(__linux__)
 #include <linux/random.h>
 #endif
@@ -30,7 +31,7 @@
 
 /**
  * =============================================================================
- * 2) Minimal Keccak-based SHA3 and Shake
+ * 2-1) Minimal Keccak-based SHA3 and Shake
  *    - Adapted from public domain code or the Keccak reference code
  *    - Provides: sha3_256(), sha3_512(), shake128(), shake256()
  *    - Reference:  https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
@@ -194,6 +195,22 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
   keccak_absorb(&ctx, in, inlen);
   keccak_finalize(&ctx, 0x1F);
   keccak_squeeze(&ctx, out, outlen);
+}
+
+/**
+ * =============================================================================
+ * 2-2) BLAKE3 hash api
+ *    - Adapted from public domain implementaion
+ *    - Provides: blake3()
+ *    - Reference:  https://github.com/BLAKE3-team/BLAKE3
+ * =============================================================================
+ */
+
+static void blake3(const char *in, size_t inlen, uint8_t *out) {
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  blake3_hasher_update(&hasher, in, inlen);
+  blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
 }
 
 /**

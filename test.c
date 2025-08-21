@@ -537,7 +537,23 @@ void test_mlkem() {
   assert(memcmp(k1,k2,32)==0);
 }
 
+void test_blake3() {
+  const char* in = "";
+  size_t inlen = strlen(in);
+  uint8_t out[BLAKE3_OUT_LEN];
+  
+  blake3(in, inlen, out);
+                                                                   
+  printf("Input: \"\"\n");
+  printf("Hash : ");
+  for (size_t i = 0; i < BLAKE3_OUT_LEN; ++i) {
+    printf("%02x", out[i]);
+  }
+  printf("\n");
+}
+
 int main(int argc, char *argv[]) {
+  test_blake3();
   test_randombytes();
   test_sha3_256();
   test_sha3_512();
