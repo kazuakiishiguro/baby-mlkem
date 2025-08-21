@@ -353,3 +353,65 @@ static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
     out[idx1] = (int16_t)c1;
   }
 }
+
+/**
+ * =============================================================================
+ * 4) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
+ * =============================================================================
+ */
+static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b, uint8_t *out) {
+  /* hash = shake256( data||b ) => 64*eta */
+  uint8_t inbuf[256];
+  /* dlen <= 32 typically, but let's be safe. */
+  if (dlen > 255) dlen = 255;
+  memcpy(inbuf, data, dlen);
+  inbuf[dlen] = b;
+  shake256(inbuf, dlen+1, out, 64*eta);
+}
+
+/* sample_poly_cbd */
+static void sample_poly_cbd(int eta, const uint8_t *data, poly256 out){
+  /* data len=64*eta => 512*eta bits => 2*N*eta => exactly enough bits. */
+  for (int i = 0; i<N; i++) {
+    int x = 0, y = 0;
+    for (int j = 0; j < eta; j++) {
+      int bit_idx_x = (2 * i * eta) + j;
+      int byte_x = (bit_idx_x >> 3);
+      int off_x = (bit_idx_x & 7);
+      int bit_x = (data[byte_x] >> off_x) & 1;
+      x += bit_x;
+
+      int bit_idx_y = (2 * i * eta + eta) + j;
+      int byte_y = (bit_idx_y >> 3);
+      int off_y = (bit_idx_y & 7);
+      int bit_y = (data[byte_y] >> off_y) & 1;
+      y += bit_y;
+    }
+    int val =x - y;
+    val %= Q; if (val < 0) val += Q;
+    out[i] = (int16_t)val;
+  }
+}
+
+/* sample_ntt => big chunk from shake128 => parse 3 bytes at a time. */
+static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
+  uint8_t inbuf[34];
+  memcpy(inbuf, seed, 32);
+  inbuf[32] = (uint8_t)i;
+  inbuf[33] = (uint8_t)j;
+
+  uint8_t stream[3 * 4096];
+  shake128(inbuf, 34, stream, sizeof(stream));
+
+  int count = 0, idx = 0;
+  while (count < N && idx + 2 < (int)sizeof(stream)) {
+    uint8_t a = stream[idx + 0];
+    uint8_t b = stream[idx + 1];
+    uint8_t c = stream[idx + 2];
+    idx += 3;
+    int d1 = ((b & 0xF) << 8) | a;
+    int d2 = (c << 4) | (b >> 4);
+    if (d1 < Q) out[count++] = (int16_t)d1;
+    if (d2 < Q && count < N) out[count++] = (int16_t)d2;
+  }
+}

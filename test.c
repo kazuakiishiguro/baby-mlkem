@@ -416,6 +416,24 @@ void test_ntts() {
   }
 }
 
+static void test_sample_ntt() {
+  for (int idx = 0; idx < 5; idx++) {
+    uint8_t seed[35];
+    randombytes(seed, 32);
+
+    int i = rand() % 256;
+    int j = rand() % 256;
+
+    int16_t out[256];
+    sample_ntt(seed, i, j, out);
+
+    for (int k = 0; k < 256; k++) {
+      assert(out[k] >= 0);
+      assert(out[k] < Q);
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   test_randombytes();
   test_sha3_256();
@@ -427,4 +445,6 @@ int main(int argc, char *argv[]) {
   test_init_ntt_roots();
   test_poly256_add();
   test_ntts();
+  test_sample_ntt();
+  printf("OK\n");
 }
