@@ -20,6 +20,180 @@
 #include <time.h>
 #include <assert.h>
 
+#include "random.h"
+
+/**
+ * =============================================================================
+ * 1) Minimal randombytes() fallback from /dev/urandom
+ * =============================================================================
+ */
+
+/**
+ * =============================================================================
+ * 2) Minimal Keccak-based SHA3 and Shake
+ *    - Adapted from public domain code or the Keccak reference code
+ *    - Provides: sha3_256(), sha3_512(), shake128(), shake256()
+ *    - Reference:  https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
+ * =============================================================================
+ */
+#define DELIM         0x06
+
+static const uint64_t rc[24] = {
+  0x0000000000000001ULL, 0x0000000000008082ULL,
+  0x800000000000808aULL, 0x8000000080008000ULL,
+  0x000000000000808bULL, 0x0000000080000001ULL,
+  0x8000000080008081ULL, 0x8000000000008009ULL,
+  0x000000000000008aULL, 0x0000000000000088ULL,
+  0x0000000080008009ULL, 0x000000008000000aULL,
+  0x000000008000808bULL, 0x800000000000008bULL,
+  0x8000000000008089ULL, 0x8000000000008003ULL,
+  0x8000000000008002ULL, 0x8000000000000080ULL,
+  0x000000000000800aULL, 0x800000008000000aULL,
+  0x8000000080008081ULL, 0x8000000000008080ULL,
+  0x0000000080000001ULL, 0x8000000080008008ULL
+};
+
+static const uint8_t rho[24] = {
+  1,  3,   6, 10, 15, 21,
+  28, 36, 45, 55,  2, 14,
+  27, 41, 56,  8, 25, 43,
+  62, 18, 39, 61, 20, 44
+};
+
+static const uint8_t pi[24] = {
+  10,  7, 11, 17, 18, 3,
+   5, 16,  8, 21, 24, 4,
+  15, 23, 19, 13, 12, 2,
+  20, 14, 22,  9, 6,  1
+};
+
+static inline uint64_t ROTL64(uint64_t x, int s) {
+  return ( (x << s) | (x >> (64 - s)) );
+}
+
+/* The Keccak-f[1600] permutation on the state. */
+static void keccakf(uint64_t st[25]) {
+  for (int round = 0; round < 24; round++) {
+    // Theta
+    uint64_t bc[5];
+    for (int i = 0; i < 5; i++) {
+      bc[i] = st[i] ^ st[i+5] ^ st[i+10] ^ st[i+15] ^ st[i+20];
+    }
+    for (int i = 0; i < 5; i++) {
+      uint64_t t = bc[(i+4) % 5] ^ ROTL64(bc[(i+1) % 5], 1);
+      for (int j = 0; j < 25; j += 5) {
+        st[j + i] ^= t;
+      }
+    }
+    // Rho and pi
+    uint64_t t = st[1];
+    for (int i = 0; i < 24; i++) {
+      int j = pi[i];
+      bc[0] = st[j];
+      st[j] = ROTL64(t, rho[i]);
+      t = bc[0];
+    }
+    // Chi
+    for (int j = 0; j < 25; j += 5) {
+      uint64_t tmp[5];
+      for (int i = 0; i < 5; i++) {
+        tmp[i] = st[j + i];
+      }
+      for (int i = 0; i < 5; i++) {
+        st[j + i] = tmp[i] ^ ((~tmp[(i + 1) % 5]) & tmp[(i + 2) % 5]);
+      }
+    }
+    // Iota
+    st[0] ^= rc[round];
+  }
+}
+
+/* The "absorb" + "squeeze" style code. We'll define a small struct to hold the state. */
+typedef struct {
+  uint64_t state[25];
+  size_t   rate_bytes;   /* e.g. 136 for SHA3-256, 168 for Shake128, etc. */
+  size_t   absorb_pos;   /* how many bytes in the current block are absorbed */
+  int      finalized;    /* whether we called domain padding/final absorbing */
+} keccak_ctx;
+
+/* Initialize the context with a given rate (in bytes). */
+static void keccak_init(keccak_ctx *ctx, size_t rate_bytes) {
+  memset(ctx, 0, sizeof(*ctx));
+  ctx->rate_bytes = rate_bytes;
+  ctx->absorb_pos = 0;
+  ctx->finalized = 0;
+}
+
+/* Absorb arbitrary data. */
+static void keccak_absorb(keccak_ctx *ctx, const uint8_t *in, size_t inlen) {
+  size_t idx = 0;
+  while (idx < inlen) {
+    // If the current block is full, permute.
+    if (ctx->absorb_pos == ctx->rate_bytes) {
+      keccakf(ctx->state);
+      ctx->absorb_pos = 0;
+    }
+    size_t can_take = ctx->rate_bytes - ctx->absorb_pos;
+    size_t will_copy = (inlen - idx < can_take) ? (inlen - idx) : can_take;
+    // XOR the input into the state (in 8-bit lumps)
+    for (size_t i = 0; i < will_copy; i++) {
+      ((uint8_t*)ctx->state)[ctx->absorb_pos + i] ^= in[idx + i];
+    }
+    ctx->absorb_pos += will_copy;
+    idx += will_copy;
+  }
+}
+
+/* Finalize: domain separation and pad. */
+static void keccak_finalize(keccak_ctx *ctx, uint8_t domain) {
+  // Domain byte: XOR into the next unoccupied byte.
+  ((uint8_t*)ctx->state)[ctx->absorb_pos] ^= domain;
+  // XOR the last bit of the rate block with 0x80 => means we do the usual keccak pad10 * 1.
+  ((uint8_t*)ctx->state)[ctx->rate_bytes - 1] ^= 0x80;
+  keccakf(ctx->state);
+  ctx->absorb_pos = 0;
+  ctx->finalized = 1;
+}
+
+/* Squeese out data after finalize. */
+static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
+  size_t idx = 0;
+  while (idx < outlen) {
+    if (ctx->absorb_pos == ctx->rate_bytes) {
+      keccakf(ctx->state);
+      ctx->absorb_pos = 0;
+    }
+    size_t can_take = ctx->rate_bytes - ctx->absorb_pos;
+    size_t will_copy = (outlen - idx < can_take) ? (outlen - idx) : can_take;
+    memcpy(out + idx, ((uint8_t*)ctx->state) + ctx->absorb_pos, will_copy);
+    ctx->absorb_pos += will_copy;
+    idx += will_copy;
+  }
+}
+
+static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
+  // SHA3-256 => rate=1088 bits => 136 bytes, domain=0x06
+  keccak_ctx ctx;
+  keccak_init(&ctx, 136);
+  keccak_absorb(&ctx, in, inlen);
+  keccak_finalize(&ctx, DELIM);
+  keccak_squeeze(&ctx, out32, 32);
+}
+
+static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
+  // SHA3-512 => rate=576 bits => 72 bytes, domain=0x06
+  keccak_ctx ctx;
+  keccak_init(&ctx, 72);
+  keccak_absorb(&ctx, in, inlen);
+  keccak_finalize(&ctx, DELIM);
+  keccak_squeeze(&ctx, out64, 64);
+}
+
+/**
+ * =============================================================================
+ * 3) ML-KEM parameters, NTT polynomials, etc.
+ * =============================================================================
+ */
 #define N 256
 #define Q 3329
 
