@@ -327,7 +327,22 @@ void test_shake256() {
     0xaa, 0x22, 0xae, 0xb8, 0x85, 0x7f, 0x96, 0x1c,
     0x4c, 0xd8, 0xe0, 0x6f, 0x0a, 0xe6, 0x61, 0x0b,
   };
-  run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);  
+  run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);
+}
+
+void test_blake3() {
+  const char* in = "";
+  size_t inlen = strlen(in);
+  static const uint8_t empty_hash[32] = {
+    0xaf, 0x13, 0x49, 0xb9, 0xf5, 0xf9, 0xa1, 0xa6,
+    0xa0, 0x40, 0x4d, 0xea, 0x36, 0xdc, 0xc9, 0x49,
+    0x9b, 0xcb, 0x25, 0xc9, 0xad, 0xc1, 0x12, 0xb7,
+    0xcc, 0x9a, 0x93, 0xca, 0xe4, 0x1f, 0x32, 0x62
+  };
+  uint8_t out[BLAKE3_OUT_LEN];
+
+  blake3(in, inlen, out);
+  assert(memcmp(empty_hash, out, BLAKE3_OUT_LEN) == 0);
 }
 
 void test_bitrev7() {
@@ -357,13 +372,13 @@ void test_poly256_add() {
   poly256 b = {0};
   poly256 expected = {0};
   poly256 out;
-  
+
   // with zero arrays
   poly256_add(a, b, out);
   for (int i = 0; i < N; i++) {
     assert(out[i] == expected[i]);
   }
-  
+
   // with simple addition/modulo operation
   for (int i = 0; i < N; i++) {
     a[i] = i;
@@ -443,10 +458,10 @@ static void test_byte_encode() {
     }
     uint8_t out[32];
     memset(out, 0, sizeof(out));
-    
+
     byte_encode(1, f, out);
     byte_decode(1, out, f_decoded);
-    
+
     for(int i=0; i<N; i++){
       /* Because d=1, we only care about (f[i] & 1). But let's assume f[i] was 0 or 1 anyway. */
       assert(f_decoded[i] == (f[i] & 1));
@@ -460,14 +475,14 @@ static void test_byte_encode() {
     for(int i=0; i<N; i++){
       f[i] = rand() & 0xFFF;  /* 12 bits of randomness */
     }
-    
+
     /* output array has 256 * 12 bits => 3072 bits => 384 bytes */
     uint8_t out[384];
     memset(out, 0, sizeof(out));
-    
+
     byte_encode(12, f, out);
     byte_decode(12, out, f_decoded);
-    
+
     for(int i=0; i<N; i++){
       /* Because d=12, we only care about the lower 12 bits.
          But we stored that in f[i] anyway, so just compare directly. */
@@ -525,7 +540,7 @@ void test_mlkem() {
        printf("%02x", k1[i]);
   }
   printf("\n");
-  
+
   uint8_t k2[32];
   mlkem_decaps(c, clen, dk, k2);
   printf("Decapsulated k2: ");
@@ -533,32 +548,17 @@ void test_mlkem() {
        printf("%02x", k2[i]);
   }
   printf("\n");
-  
+
   assert(memcmp(k1,k2,32)==0);
 }
 
-void test_blake3() {
-  const char* in = "";
-  size_t inlen = strlen(in);
-  uint8_t out[BLAKE3_OUT_LEN];
-  
-  blake3(in, inlen, out);
-                                                                   
-  printf("Input: \"\"\n");
-  printf("Hash : ");
-  for (size_t i = 0; i < BLAKE3_OUT_LEN; ++i) {
-    printf("%02x", out[i]);
-  }
-  printf("\n");
-}
-
 int main(int argc, char *argv[]) {
-  test_blake3();
   test_randombytes();
   test_sha3_256();
   test_sha3_512();
   test_shake128();
   test_shake256();
+  test_blake3();
   test_bitrev7();
   test_modexp();
   test_poly256_add();
