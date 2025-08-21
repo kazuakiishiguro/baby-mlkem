@@ -14,19 +14,18 @@
  *   - Incomplete side-channel protections, no constant-time, etc.
  *****************************************************************************/
 #include <assert.h>
+#if defined(__linux__)
+#include <linux/random.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "random.h"
-
-/**
- * =============================================================================
- * 1) Minimal randombytes() fallback from /dev/urandom
- * =============================================================================
- */
 
 /**
  * =============================================================================
