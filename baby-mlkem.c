@@ -15,10 +15,6 @@
  *   - Incomplete side-channel protections, no constant-time, etc.
  *****************************************************************************/
 #include <assert.h>
-#include "include/blake3/blake3.h"
-#if defined(__linux__)
-#include <linux/random.h>
-#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +23,20 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "include/blake3/blake3.h"
 #include "random.h"
+
+#define N 256
+#define Q 3329
+#define K 3
+#define ETA1 2
+#define ETA2 2
+#define DU 10
+#define DV 4
 
 /**
  * =============================================================================
- * 2-1) Minimal Keccak-based SHA3 and Shake
+ * 1-1) Minimal Keccak-based SHA3 and Shake
  *    - Adapted from public domain code or the Keccak reference code
  *    - Provides: sha3_256(), sha3_512(), shake128(), shake256()
  *    - Reference:  https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
@@ -199,7 +204,7 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
 
 /**
  * =============================================================================
- * 2-2) BLAKE3 hash api
+ * 1-2) BLAKE3 hash api
  *    - Adapted from public domain implementaion
  *    - Provides: blake3()
  *    - Reference:  https://github.com/BLAKE3-team/BLAKE3
@@ -215,16 +220,10 @@ static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen
 
 /**
  * =============================================================================
- * 3) ML-KEM parameters, NTT polynomials, etc.
+ * 2) ML-KEM parameters, NTT polynomials, etc.
  * =============================================================================
  */
-#define N 256
-#define Q 3329
-#define K 3
-#define ETA1 2
-#define ETA2 2
-#define DU 10
-#define DV 4
+
 
 /* ZETA, GAMMA arrays: We'll compute them at init. */
 static uint16_t ZETA[128];
@@ -390,7 +389,7 @@ static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
 
 /**
  * =============================================================================
- * 4) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
+ * 3) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
  * =============================================================================
  */
 static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
@@ -454,7 +453,7 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 
 /**
  * =============================================================================
- * 5) Byte/Bit encode/decode, compress, etc.
+ * 4) Byte/Bit encode/decode, compress, etc.
  * =============================================================================
  */
 static void byte_encode(int d, const poly256 f, uint8_t *out) {
@@ -520,7 +519,7 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
 
 /**
  * =============================================================================
- * 6) K-PKE (Keygen, Encrypt, Decrypt)
+ * 5) K-PKE (Keygen, Encrypt, Decrypt)
  * =============================================================================
  */
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
@@ -753,7 +752,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
 /**
  * =============================================================================
- * 7) ML-KEM top-level
+ * 6) ML-KEM top-level
  * =============================================================================
  */
 static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
