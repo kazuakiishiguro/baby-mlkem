@@ -37,7 +37,7 @@ else
     $(info Compiling without AVX512 support)
 endif
 
-SRCS = test.c $(BLAKE3_SRCS)
+SRCS = test.c $(BLAKE3_SRCS) poly.c
 ASSRC = random.s
 OBJS := $(SRCS:.c=.o)
 

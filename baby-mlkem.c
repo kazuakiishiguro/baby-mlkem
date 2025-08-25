@@ -24,10 +24,9 @@
 #include <unistd.h>
 
 #include "include/blake3/blake3.h"
+#include "poly.h"
 #include "random.h"
 
-#define N 256
-#define Q 3329
 #define K 3
 #define ETA1 2
 #define ETA2 2
@@ -229,8 +228,6 @@ static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen
 static uint16_t ZETA[128];
 static uint16_t GAMMA[128];
 
-typedef int16_t poly256[N];
-
 /**
  * bitrev7 helper
  * This function performs a bit reversal operation
@@ -273,32 +270,6 @@ static void init_ntt_roots(void) {
     ZETA[i] = modexp(17, e1);
     uint16_t e2 = (uint16_t)(2 * e1 + 1);
     GAMMA[i] = modexp(17, e2);
-  }
-}
-
-/**
- * Adds two polynomials of type poly256 and
- * stores the result in a output polynomial.
- */
-static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
-  for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] + (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
-  }
-}
-
-/**
- * Substract two polynomials of type poly256 and
- * stores the result in a output polynomial.
- */
-static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
-  for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] - (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
   }
 }
 

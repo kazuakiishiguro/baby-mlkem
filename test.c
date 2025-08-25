@@ -1,4 +1,5 @@
 #include "baby-mlkem.c"
+#include "poly.h"
 #include "random.h"
 
 void test_randombytes() {
