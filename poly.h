@@ -2,7 +2,7 @@
 #define POLY_H
 
 #include <stdint.h>
-#include "const.h"
+#include "params.h"
 
 typedef int16_t poly256[N];
 
