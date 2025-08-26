@@ -137,8 +137,10 @@ void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
   }
 }
 
+#ifdef TEST
 void test_init_ntt_roots() {
   init_ntt_roots();
   assert(ZETA[0] == modexp(17, bitrev7(0)));
   assert(GAMMA[0] == modexp(17, 2 * bitrev7(0) + 1));
 }
+#endif

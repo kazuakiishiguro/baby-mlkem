@@ -10,6 +10,9 @@ void ntt(const poly256 f_in, poly256 f_out);
 void ntt_inv(const poly256 f_in, poly256 f_out);
 void ntt_add(const poly256 a, const poly256 b, poly256 out);
 void ntt_mul(const poly256 a, const poly256 b, poly256 out);
+
+#ifdef TEST
 void test_init_ntt_roots();
+#endif
 
 #endif /* NTT_H */

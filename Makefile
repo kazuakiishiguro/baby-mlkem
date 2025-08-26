@@ -69,5 +69,6 @@ $(TARGET): $(OBJS)
 clean:
 	rm -f $(OBJS) $(TARGET)
 
+test: CFLAGS += -DTEST
 test: $(TARGET)
 	./$(TARGET)
