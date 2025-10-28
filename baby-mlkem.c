@@ -24,6 +24,8 @@
 #include <unistd.h>
 
 #include "include/blake3/blake3.h"
+#include "ntt.h"
+#include "poly.h"
 #include "random.h"
 
 #define N 256
@@ -220,176 +222,7 @@ static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen
 
 /**
  * =============================================================================
- * 2) ML-KEM parameters, NTT polynomials, etc.
- * =============================================================================
- */
-
-
-/* ZETA, GAMMA arrays: We'll compute them at init. */
-static uint16_t ZETA[128];
-static uint16_t GAMMA[128];
-
-typedef int16_t poly256[N];
-
-/**
- * bitrev7 helper
- * This function performs a bit reversal operation
- * on the lowest 7 bits of the intput n.
- */
-static inline uint16_t bitrev7(uint16_t n) {
-  uint16_t r = 0;
-  for (int i = 0; i < 7; i++) {
-    r <<= 1;
-    r |= (n >> i) & 1;
-  }
-  return r;
-}
-
-/**
- * This modexp function uses exponentiation by squarting
- * algorithm for \(O\log \text{exp}\)
- */
-static inline uint16_t modexp(uint16_t base, uint16_t exp) {
-  uint32_t result = 1;
-  uint32_t cur = base;
-  while (exp > 0) {
-    if (exp % 2 == 1) {
-      result = (result * cur) % Q;
-    }
-    cur = (cur * cur) % Q;
-    exp /= 2;
-  }
-  return (uint16_t)result;
-}
-
-/**
- * ntt_roots initialization computes:
- * ZETA[k] = 17^(bitrev7(k)) mod Q,
- ** GAMMA[k] = 17^(2*bitrev7(k)+1) mod Q.
- */
-static void init_ntt_roots(void) {
-  for (int i = 0; i < 128; i++) {
-    uint16_t e1 = bitrev7((uint16_t)i);
-    ZETA[i] = modexp(17, e1);
-    uint16_t e2 = (uint16_t)(2 * e1 + 1);
-    GAMMA[i] = modexp(17, e2);
-  }
-}
-
-/**
- * Adds two polynomials of type poly256 and
- * stores the result in a output polynomial.
- */
-static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
-  for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] + (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
-  }
-}
-
-/**
- * Substract two polynomials of type poly256 and
- * stores the result in a output polynomial.
- */
-static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
-  for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] - (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
-  }
-}
-
-/**
- * Performs a Number Theoretic Transform (NTT)
- */
-static void ntt(const poly256 f_in, poly256 f_out) {
-  memcpy(f_out, f_in, sizeof(poly256));
-  int k = 1;
-  for (int log2len = 7; log2len > 0; log2len--) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k++];
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = (int16_t)(((int32_t)zeta * f_out[idx + length]) % Q);
-        int16_t a = f_out[idx];
-        int32_t tmp1 = ((int32_t)a - t);
-        tmp1 %= Q;
-        if (tmp1 < 0) tmp1 += Q;
-        f_out[idx + length] = (int16_t)tmp1;
-        int32_t tmp2 = ((int32_t)a + t);
-        tmp2 %= Q;
-        if (tmp2 < 0) tmp2 += Q;
-        f_out[idx] = (int16_t)tmp2;
-      }
-    }
-  }
-}
-
-/* NTT^-1 */
-static void ntt_inv(const poly256 f_in, poly256 f_out) {
-  memcpy(f_out, f_in, sizeof(poly256));
-  int k = 127;
-  for (int log2len = 1; log2len <= 7; log2len++) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k--];
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = f_out[idx];
-        int16_t u = f_out[idx + length];
-        int32_t tmp1 = (int32_t)t + (int32_t)u;
-        tmp1 %= Q;
-        if (tmp1 < 0) tmp1 += Q;
-        f_out[idx] = (int16_t)tmp1;
-        int32_t tmp2 = ((int32_t)u - t);
-        tmp2 %= Q;
-        if (tmp2 < 0) tmp2 += Q;
-        int32_t tmp3 = (tmp2 * zeta) % Q;
-        if (tmp3 < 0) tmp3 += Q;
-        f_out[idx + length] = (int16_t)tmp3;
-      }
-    }
-  }
-
-  // multiply by 3303 (128^1 mod Q)
-  for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)f_out[i] * 3303;
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    f_out[i] = (int16_t)tmp;
-  }
-}
-
-/* ntt_add function is just poly256_add in NTT domain.*/
-static void ntt_add(const poly256 a, const poly256 b, poly256 out) {
-  poly256_add(a, b, out);
-}
-
-/* ntt_mul function is pairwise approach with gamma */
-static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
-  for (int i = 0; i < 128; i++) {
-    int idx0 = 2 * i, idx1 = 2 * i + 1;
-    int16_t a0 = a[idx0], a1 = a[idx1];
-    int16_t b0 = b[idx0], b1 = b[idx1];
-    uint16_t g = GAMMA[i];
-    int32_t c0 = (int32_t)a0 * b0 + (int32_t)a1 * b1 * g;
-    c0 %= Q;
-    if (c0 < 0) c0 += Q;
-    out[idx0] = (int16_t)c0;
-    int32_t c1 = (int32_t)a0 * b1 + (int32_t)a1 * b0;
-    c1 %= Q;
-    if (c1 < 0) c1 += Q;
-    out[idx1] = (int16_t)c1;
-  }
-}
-
-/**
- * =============================================================================
- * 3) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
+ * 2) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
  * =============================================================================
  */
 static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
@@ -453,7 +286,7 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 
 /**
  * =============================================================================
- * 4) Byte/Bit encode/decode, compress, etc.
+ * 3) Byte/Bit encode/decode, compress, etc.
  * =============================================================================
  */
 static void byte_encode(int d, const poly256 f, uint8_t *out) {
@@ -519,7 +352,7 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
 
 /**
  * =============================================================================
- * 5) K-PKE (Keygen, Encrypt, Decrypt)
+ * 4) K-PKE (Keygen, Encrypt, Decrypt)
  * =============================================================================
  */
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
@@ -752,7 +585,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
 /**
  * =============================================================================
- * 6) ML-KEM top-level
+ * 5) ML-KEM top-level
  * =============================================================================
  */
 static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,

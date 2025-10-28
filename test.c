@@ -1,4 +1,6 @@
 #include "baby-mlkem.c"
+#include "ntt.h"
+#include "poly.h"
 #include "random.h"
 
 void test_randombytes() {
@@ -359,12 +361,6 @@ void test_modexp() {
   assert(modexp(17, 2) == (17 * 17) % Q);
   assert(modexp(17, 3) == ((17 * 17) % Q * 17) % Q);
   assert(modexp(2, 4) == 16 % Q);
-}
-
-void test_init_ntt_roots() {
-  init_ntt_roots();
-  assert(ZETA[0] == modexp(17, bitrev7(0)));
-  assert(GAMMA[0] == modexp(17, 2 * bitrev7(0) + 1));
 }
 
 void test_poly256_add() {
