@@ -28,6 +28,8 @@
 #include "poly.h"
 #include "random.h"
 
+#define N 256
+#define Q 3329
 #define K 3
 #define ETA1 2
 #define ETA2 2
@@ -220,13 +222,7 @@ static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen
 
 /**
  * =============================================================================
- * 2) ML-KEM parameters, NTT polynomials, etc.
- * =============================================================================
- */
-
-/**
- * =============================================================================
- * 3) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
+ * 2) Helpers for sampling polynomials (sample_poly_cbd, sample_ntt, etc.)
  * =============================================================================
  */
 static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
@@ -290,7 +286,7 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 
 /**
  * =============================================================================
- * 4) Byte/Bit encode/decode, compress, etc.
+ * 3) Byte/Bit encode/decode, compress, etc.
  * =============================================================================
  */
 static void byte_encode(int d, const poly256 f, uint8_t *out) {
@@ -356,7 +352,7 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
 
 /**
  * =============================================================================
- * 5) K-PKE (Keygen, Encrypt, Decrypt)
+ * 4) K-PKE (Keygen, Encrypt, Decrypt)
  * =============================================================================
  */
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
@@ -589,7 +585,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
 /**
  * =============================================================================
- * 6) ML-KEM top-level
+ * 5) ML-KEM top-level
  * =============================================================================
  */
 static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
