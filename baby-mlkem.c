@@ -508,6 +508,46 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   *out_clen = (size_t)(p - out_c);
 }
 
+/**
+ * ML-KEM bit recovery
+ * @param w_i: Decoded coefficient (0 <= w_i < Q)
+ * @return: Recovered bit (0 or 1)
+ */
+int decode_bit_generalized(int16_t w_i) {
+
+    // 1. Define the ideal value for "1"
+    const int32_t ideal_one = (Q + 1) / 2;
+
+    // 2. Define the threshhold
+    const int32_t threshold = (Q + 1) / 4;
+
+    // 3. Calculate the "signed shortest distance" between w_i and ideal_one
+    int32_t diff = w_i - ideal_one; // e.g., (w_i - 1665)
+
+    // 4. Normalize the difference to the range [-(Q-1)/2, (Q-1)/2]
+    // Examples:
+    //   3000 - 1665 = 1335 (within range)
+    //   10 - 1665 = -1655 (within range)
+    //   3300 - 1665 = 1635 (within range)
+    //   100 - 1665 = -1565 (within range)
+    // Modulo operation (mod Q)
+    diff = (diff % Q + Q) % Q; // First, bring to [0, Q-1] range
+    if (diff > (Q - 1) / 2) {
+        diff -= Q; // Then, bring to [-(Q-1)/2, (Q-1)/2] range (e.g., 3328 -> -1)
+    }
+
+    // 5. Calculate the shortest distance (absolute value)
+    int32_t abs_diff = (diff < 0) ? -diff : diff;
+
+    // 6. Threshold check
+    if (abs_diff < threshold) { // Distance is closer than threshold (e.g., 832)
+        return 1; // Closer to bit 1
+    } else { // Distance is greater than or equal to threshold
+        return 0; // Closer to bit 0
+    }
+}
+
+
 static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
                          uint8_t *out_m, size_t *out_mlen) {
   /* parse c => c1 => K polynomials, c2 => 1 polynomial */
@@ -554,33 +594,17 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   ntt_inv(accum, accum_inv);
   poly256_sub(v, accum_inv, w);
 
-  /* --- MODIFIED SECTION START --- */
   /* Instead of directly compressing to 1 bit, we check
      if each w[i] is closer to (Q+1)/2 or 0 */
   memset(out_m, 0, 32);
   for (int i = 0; i < N; i++) {
-    // Calculate the difference between w[i] and (Q+1)/2
-    int32_t diff = (int32_t)w[i] - (Q + 1) / 2;
-
-    // Take the absolute value of the difference, handling potential underflow
-    if (diff < 0) {
-      diff = -diff;
-      if (diff < 0)
-        diff = Q - (-diff % Q);  // diff can't be negative anymore
-      else
-        diff = diff % Q;
-    } else {
-      diff = diff % Q;
-    }
-
     // If the difference is small, the original bit was 1. Otherwise, it was 0.
-    int bit = (diff < (Q + 1) / 4) ? 1 : 0;  //  (Q+1)/4 is effectively Q/2
+    int bit = decode_bit_generalized(w[i]);
 
     // Set the corresponding bit in the output byte array
     out_m[i >> 3] |= (bit << (i & 7));
   }
   *out_mlen = 32;
-  /* --- MODIFIED SECTION END --- */
 }
 
 /**
