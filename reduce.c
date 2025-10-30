@@ -1,15 +1,19 @@
 #include "reduce.h"
 #include "params.h"
 
-static const int16_t q_inv = -3327; // Q^(-1) mod 2^16
+// The integer part of (1 << 26) / 3329 ≈ 20158.85...
+static const int32_t BARRETT_Q_INV = 20158;
 
-int16_t montgomery_reduce(int16_t a) {
+int16_t barret_reduce(int32_t a) {
   int32_t t;
-  int16_t u;
 
-  u = (int16_t)(a * q_inv);
-  t = (int32_t)u * Q;
-  t = a - t;
-  t >>= 16;
-  return (int16_t)t;
+  // Assume a is lower than (2Q-1)
+  t = (a * BARRETT_Q_INV) >> 26;
+  t = t * Q;
+  a = a - t;
+  if (a > Q) {
+    a -= Q;
+  }
+
+  return (uint16_t)a;
 }
