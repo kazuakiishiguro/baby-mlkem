@@ -23,7 +23,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "include/blake3/blake3.h"
 #include "ntt.h"
 #include "poly.h"
 #include "random.h"
@@ -202,22 +201,6 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
   keccak_absorb(&ctx, in, inlen);
   keccak_finalize(&ctx, 0x1F);
   keccak_squeeze(&ctx, out, outlen);
-}
-
-/**
- * =============================================================================
- * 1-2) BLAKE3 hash api
- *    - Adapted from public domain implementaion
- *    - Provides: blake3()
- *    - Reference:  https://github.com/BLAKE3-team/BLAKE3
- * =============================================================================
- */
-
-static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen) {
-  blake3_hasher hasher;
-  blake3_hasher_init(&hasher);
-  blake3_hasher_update(&hasher, in, inlen);
-  blake3_hasher_finalize(&hasher, out, outlen);
 }
 
 /**

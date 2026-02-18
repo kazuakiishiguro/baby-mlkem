@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "ntt.h"
+#include "reduce.h"
 
 /* ZETA, GAMMA arrays: We'll compute them at init. */
 static uint16_t ZETA[128];
@@ -64,16 +65,15 @@ void ntt(const poly256 f_in, poly256 f_out) {
       uint16_t zeta = ZETA[k++];
       for (int j = 0; j < length; j++) {
         int idx = start + j;
-        int16_t t = (int16_t)(((int32_t)zeta * f_out[idx + length]) % Q);
+        int32_t t_tmp = (int32_t)zeta * f_out[idx + length];
+        int16_t t = barret_reduce(t_tmp);
         int16_t a = f_out[idx];
-        int32_t tmp1 = ((int32_t)a - t);
-        tmp1 %= Q;
-        if (tmp1 < 0) tmp1 += Q;
-        f_out[idx + length] = (int16_t)tmp1;
-        int32_t tmp2 = ((int32_t)a + t);
-        tmp2 %= Q;
-        if (tmp2 < 0) tmp2 += Q;
-        f_out[idx] = (int16_t)tmp2;
+
+        int32_t tmp1 = (int32_t)a - t + Q;
+        f_out[idx + length] = barret_reduce(tmp1);
+
+        int32_t tmp2 = (int32_t)a + t;
+        f_out[idx] = barret_reduce(tmp2);
       }
     }
   }
