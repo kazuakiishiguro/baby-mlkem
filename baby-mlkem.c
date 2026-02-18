@@ -27,8 +27,6 @@
 #include "poly.h"
 #include "random.h"
 
-#define N 256
-#define Q 3329
 #define K 3
 #define ETA1 2
 #define ETA2 2
