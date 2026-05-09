@@ -443,6 +443,27 @@ Arguments are `[iterations] [runs]`.
 The output includes `vs_boringssl`, `vs_libcrux`, `vs_libjade`, `vs_botan`,
 and `vs_openssl` in addition to existing competitor columns.
 
+### Latest Comparison Table (2026-05-09)
+
+Snapshot command:
+
+```bash
+PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh 500 1
+```
+
+Roundtrip comparison snapshot (`x` means local is faster):
+
+| Compiler | Local mean ns/op | vs kyber default | vs kyber fair | vs mlkem-native | vs PQClean AVX2 | vs liboqs | vs BoringSSL | vs libcrux | vs Libjade | vs Botan | vs OpenSSL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| gcc | 17890.38 | 1.070x | 1.048x | 1.551x | 1.172x | 1.204x | 3.302x | 1.284x | 1.148x | 7.383x | 3.028x |
+| clang | 16029.25 | 1.002x | 1.004x | 1.631x | 1.251x | 1.332x | 3.345x | 1.338x | 1.318x | 8.391x | 3.014x |
+
+For lower-noise comparisons, prefer larger runs such as:
+
+```bash
+PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh 2000 3
+```
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all
