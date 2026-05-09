@@ -27,6 +27,32 @@
 #include <time.h>
 #include <unistd.h>
 
+/* PQClean FIPS202 symbols are renamed via Makefile defines. */
+void pq_shake128(uint8_t *output, size_t outlen, const uint8_t *input,
+                 size_t inlen);
+void pq_shake256(uint8_t *output, size_t outlen, const uint8_t *input,
+                 size_t inlen);
+void pq_sha3_256(uint8_t *output, const uint8_t *input, size_t inlen);
+void pq_sha3_512(uint8_t *output, const uint8_t *input, size_t inlen);
+
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+int PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk,
+                                                     const uint8_t *coins);
+int PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(uint8_t *ct, uint8_t *ss,
+                                                const uint8_t *pk,
+                                                const uint8_t *coins);
+int PQCLEAN_MLKEM768_AVX2_crypto_kem_dec(uint8_t *ss, const uint8_t *ct,
+                                         const uint8_t *sk);
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+int pqcrystals_kyber768_avx2_keypair_derand(uint8_t *pk, uint8_t *sk,
+                                            const uint8_t *coins);
+int pqcrystals_kyber768_avx2_enc_derand(uint8_t *ct, uint8_t *ss,
+                                        const uint8_t *pk,
+                                        const uint8_t *coins);
+int pqcrystals_kyber768_avx2_dec(uint8_t *ss, const uint8_t *ct,
+                                 const uint8_t *sk);
+#endif
+
 /**
  * =============================================================================
  * 1) Minimal randombytes() fallback from /dev/urandom
@@ -253,12 +279,28 @@ static void blake3(const uint8_t *in, size_t inlen, uint8_t *out, uint8_t outlen
 #define ETA2 2
 #define DU 10
 #define DV 4
+#ifndef SAMPLE_NTT_STREAM_CHUNK
+#define SAMPLE_NTT_STREAM_CHUNK 496
+#endif
 
 /* ZETA, GAMMA arrays: We'll compute them at init. */
 static uint16_t ZETA[128];
 static uint16_t GAMMA[128];
+static int NTT_ROOTS_READY = 0;
 
 typedef int16_t poly256[N];
+
+static inline int16_t mod_q_add_i16(int16_t a, int16_t b) {
+  int32_t t = (int32_t)a + (int32_t)b;
+  if (t >= Q) t -= Q;
+  return (int16_t)t;
+}
+
+static inline int16_t mod_q_sub_i16(int16_t a, int16_t b) {
+  int32_t t = (int32_t)a - (int32_t)b;
+  if (t < 0) t += Q;
+  return (int16_t)t;
+}
 
 /**
  * bitrev7 helper
@@ -303,6 +345,13 @@ static void init_ntt_roots(void) {
     uint16_t e2 = (uint16_t)(2 * e1 + 1);
     GAMMA[i] = modexp(17, e2);
   }
+  NTT_ROOTS_READY = 1;
+}
+
+static inline void ensure_ntt_roots(void) {
+  if (!NTT_ROOTS_READY) {
+    init_ntt_roots();
+  }
 }
 
 /**
@@ -311,10 +360,7 @@ static void init_ntt_roots(void) {
  */
 static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
   for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] + (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
+    out[i] = mod_q_add_i16(a[i], b[i]);
   }
 }
 
@@ -324,10 +370,7 @@ static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
  */
 static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
   for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)a[i] - (int32_t)b[i];
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    out[i] = (int16_t)tmp;
+    out[i] = mod_q_sub_i16(a[i], b[i]);
   }
 }
 
@@ -345,14 +388,8 @@ static void ntt(const poly256 f_in, poly256 f_out) {
         int idx = start + j;
         int16_t t = (int16_t)(((int32_t)zeta * f_out[idx + length]) % Q);
         int16_t a = f_out[idx];
-        int32_t tmp1 = ((int32_t)a - t);
-        tmp1 %= Q;
-        if (tmp1 < 0) tmp1 += Q;
-        f_out[idx + length] = (int16_t)tmp1;
-        int32_t tmp2 = ((int32_t)a + t);
-        tmp2 %= Q;
-        if (tmp2 < 0) tmp2 += Q;
-        f_out[idx] = (int16_t)tmp2;
+        f_out[idx + length] = mod_q_sub_i16(a, t);
+        f_out[idx] = mod_q_add_i16(a, t);
       }
     }
   }
@@ -370,13 +407,8 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
         int idx = start + j;
         int16_t t = f_out[idx];
         int16_t u = f_out[idx + length];
-        int32_t tmp1 = (int32_t)t + (int32_t)u;
-        tmp1 %= Q;
-        if (tmp1 < 0) tmp1 += Q;
-        f_out[idx] = (int16_t)tmp1;
-        int32_t tmp2 = ((int32_t)u - t);
-        tmp2 %= Q;
-        if (tmp2 < 0) tmp2 += Q;
+        f_out[idx] = mod_q_add_i16(t, u);
+        int16_t tmp2 = mod_q_sub_i16(u, t);
         int32_t tmp3 = (tmp2 * zeta) % Q;
         if (tmp3 < 0) tmp3 += Q;
         f_out[idx + length] = (int16_t)tmp3;
@@ -405,7 +437,7 @@ static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
     int16_t a0 = a[idx0], a1 = a[idx1];
     int16_t b0 = b[idx0], b1 = b[idx1];
     uint16_t g = GAMMA[i];
-    int32_t c0 = (int32_t)a0 * b0 + (int32_t)a1 * b1 * g;
+    int64_t c0 = (int64_t)a0 * b0 + (int64_t)a1 * b1 * g;
     c0 %= Q;
     if (c0 < 0) c0 += Q;
     out[idx0] = (int16_t)c0;
@@ -429,11 +461,32 @@ static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
   if (dlen > 255) dlen = 255;
   memcpy(inbuf, data, dlen);
   inbuf[dlen] = b;
-  shake256(inbuf, dlen + 1, out, 64 * eta);
+  pq_shake256(out, 64 * eta, inbuf, dlen + 1);
+}
+
+static inline uint32_t load32_le(const uint8_t *x) {
+  return ((uint32_t)x[0]) | ((uint32_t)x[1] << 8) | ((uint32_t)x[2] << 16) |
+         ((uint32_t)x[3] << 24);
 }
 
 /* sample_poly_cbd */
 static void sample_poly_cbd(int eta, const uint8_t *data, poly256 out) {
+  if (eta == 2) {
+    for (int i = 0; i < N / 8; i++) {
+      uint32_t t = load32_le(data + 4 * i);
+      uint32_t d = t & 0x55555555u;
+      d += (t >> 1) & 0x55555555u;
+      for (int j = 0; j < 8; j++) {
+        int a = (d >> (4 * j)) & 0x3;
+        int b = (d >> (4 * j + 2)) & 0x3;
+        int val = a - b;
+        if (val < 0) val += Q;
+        out[8 * i + j] = (int16_t)val;
+      }
+    }
+    return;
+  }
+
   /* data len=64*eta => 512*eta bits => 2*N*eta => exactly enough bits. */
   for (int i = 0; i < N; i++) {
     int x = 0, y = 0;
@@ -464,19 +517,33 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
   inbuf[32] = (uint8_t)i;
   inbuf[33] = (uint8_t)j;
 
-  uint8_t stream[3 * 4096];
-  shake128(inbuf, 34, stream, sizeof(stream));
+  uint8_t stream[SAMPLE_NTT_STREAM_CHUNK];
+  pq_shake128(stream, sizeof(stream), inbuf, sizeof(inbuf));
 
-  int count = 0, idx = 0;
-  while (count < N && idx + 2 < (int)sizeof(stream)) {
+  int count = 0;
+  for (size_t idx = 0; idx + 2 < sizeof(stream) && count < N; idx += 3) {
     uint8_t a = stream[idx + 0];
     uint8_t b = stream[idx + 1];
     uint8_t c = stream[idx + 2];
-    idx += 3;
     int d1 = ((b & 0xF) << 8) | a;
     int d2 = (c << 4) | (b >> 4);
     if (d1 < Q) out[count++] = (int16_t)d1;
     if (d2 < Q && count < N) out[count++] = (int16_t)d2;
+  }
+
+  if (count < N) {
+    uint8_t fallback[3 * 4096];
+    pq_shake128(fallback, sizeof(fallback), inbuf, sizeof(inbuf));
+    count = 0;
+    for (size_t idx = 0; idx + 2 < sizeof(fallback) && count < N; idx += 3) {
+      uint8_t a = fallback[idx + 0];
+      uint8_t b = fallback[idx + 1];
+      uint8_t c = fallback[idx + 2];
+      int d1 = ((b & 0xF) << 8) | a;
+      int d2 = (c << 4) | (b >> 4);
+      if (d1 < Q) out[count++] = (int16_t)d1;
+      if (d2 < Q && count < N) out[count++] = (int16_t)d2;
+    }
   }
 }
 
@@ -486,6 +553,41 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
  * =============================================================================
  */
 static void byte_encode(int d, const poly256 f, uint8_t *out) {
+  if (d == 12) {
+    for (int i = 0; i < N / 2; i++) {
+      uint16_t v0 = (uint16_t)f[2 * i] & 0x0FFFu;
+      uint16_t v1 = (uint16_t)f[2 * i + 1] & 0x0FFFu;
+      out[3 * i + 0] = (uint8_t)(v0 & 0xFFu);
+      out[3 * i + 1] = (uint8_t)((v0 >> 8) | ((v1 & 0x0Fu) << 4));
+      out[3 * i + 2] = (uint8_t)(v1 >> 4);
+    }
+    return;
+  }
+
+  if (d == 10) {
+    for (int i = 0; i < N / 4; i++) {
+      uint16_t v0 = (uint16_t)f[4 * i + 0] & 0x03FFu;
+      uint16_t v1 = (uint16_t)f[4 * i + 1] & 0x03FFu;
+      uint16_t v2 = (uint16_t)f[4 * i + 2] & 0x03FFu;
+      uint16_t v3 = (uint16_t)f[4 * i + 3] & 0x03FFu;
+      out[5 * i + 0] = (uint8_t)(v0 & 0xFFu);
+      out[5 * i + 1] = (uint8_t)((v0 >> 8) | ((v1 & 0x003Fu) << 2));
+      out[5 * i + 2] = (uint8_t)((v1 >> 6) | ((v2 & 0x000Fu) << 4));
+      out[5 * i + 3] = (uint8_t)((v2 >> 4) | ((v3 & 0x0003u) << 6));
+      out[5 * i + 4] = (uint8_t)(v3 >> 2);
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N / 2; i++) {
+      uint8_t v0 = (uint8_t)f[2 * i] & 0x0Fu;
+      uint8_t v1 = (uint8_t)f[2 * i + 1] & 0x0Fu;
+      out[i] = (uint8_t)(v0 | (v1 << 4));
+    }
+    return;
+  }
+
   // store 256*d bits => 256*d/8 bytes
   size_t bytelen = (size_t)(N * d) / 8;
   memset(out, 0, bytelen);
@@ -502,6 +604,41 @@ static void byte_encode(int d, const poly256 f, uint8_t *out) {
 
 /* Overload for compress result (which is also up to 12 bits). */
 static void byte_encode_u16(int d, const uint16_t *vals, uint8_t *out) {
+  if (d == 12) {
+    for (int i = 0; i < N / 2; i++) {
+      uint16_t v0 = vals[2 * i] & 0x0FFFu;
+      uint16_t v1 = vals[2 * i + 1] & 0x0FFFu;
+      out[3 * i + 0] = (uint8_t)(v0 & 0xFFu);
+      out[3 * i + 1] = (uint8_t)((v0 >> 8) | ((v1 & 0x0Fu) << 4));
+      out[3 * i + 2] = (uint8_t)(v1 >> 4);
+    }
+    return;
+  }
+
+  if (d == 10) {
+    for (int i = 0; i < N / 4; i++) {
+      uint16_t v0 = vals[4 * i + 0] & 0x03FFu;
+      uint16_t v1 = vals[4 * i + 1] & 0x03FFu;
+      uint16_t v2 = vals[4 * i + 2] & 0x03FFu;
+      uint16_t v3 = vals[4 * i + 3] & 0x03FFu;
+      out[5 * i + 0] = (uint8_t)(v0 & 0xFFu);
+      out[5 * i + 1] = (uint8_t)((v0 >> 8) | ((v1 & 0x003Fu) << 2));
+      out[5 * i + 2] = (uint8_t)((v1 >> 6) | ((v2 & 0x000Fu) << 4));
+      out[5 * i + 3] = (uint8_t)((v2 >> 4) | ((v3 & 0x0003u) << 6));
+      out[5 * i + 4] = (uint8_t)(v3 >> 2);
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N / 2; i++) {
+      uint8_t v0 = (uint8_t)vals[2 * i] & 0x0Fu;
+      uint8_t v1 = (uint8_t)vals[2 * i + 1] & 0x0Fu;
+      out[i] = (uint8_t)(v0 | (v1 << 4));
+    }
+    return;
+  }
+
   /* same logic, but reading from 16-bit array. */
   size_t bytelen = (size_t)(N * d) / 8;
   memset(out, 0, bytelen);
@@ -517,6 +654,41 @@ static void byte_encode_u16(int d, const uint16_t *vals, uint8_t *out) {
 }
 
 static void byte_decode(int d, const uint8_t *in, poly256 out) {
+  if (d == 12) {
+    for (int i = 0; i < N / 2; i++) {
+      uint16_t b0 = in[3 * i + 0];
+      uint16_t b1 = in[3 * i + 1];
+      uint16_t b2 = in[3 * i + 2];
+      out[2 * i + 0] = (int16_t)(b0 | ((b1 & 0x0Fu) << 8));
+      out[2 * i + 1] = (int16_t)((b1 >> 4) | (b2 << 4));
+    }
+    return;
+  }
+
+  if (d == 10) {
+    for (int i = 0; i < N / 4; i++) {
+      uint16_t b0 = in[5 * i + 0];
+      uint16_t b1 = in[5 * i + 1];
+      uint16_t b2 = in[5 * i + 2];
+      uint16_t b3 = in[5 * i + 3];
+      uint16_t b4 = in[5 * i + 4];
+      out[4 * i + 0] = (int16_t)(b0 | ((b1 & 0x03u) << 8));
+      out[4 * i + 1] = (int16_t)((b1 >> 2) | ((b2 & 0x0Fu) << 6));
+      out[4 * i + 2] = (int16_t)((b2 >> 4) | ((b3 & 0x3Fu) << 4));
+      out[4 * i + 3] = (int16_t)((b3 >> 6) | (b4 << 2));
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N / 2; i++) {
+      uint8_t byte = in[i];
+      out[2 * i + 0] = (int16_t)(byte & 0x0Fu);
+      out[2 * i + 1] = (int16_t)(byte >> 4);
+    }
+    return;
+  }
+
   memset(out, 0, sizeof(poly256));
   uint32_t bitpos = 0;
   for (int i = 0; i < N; i++) {
@@ -552,9 +724,10 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
  * =============================================================================
  */
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
+  ensure_ntt_roots();
   /* ghash = sha3_512(seed) => (rho||sigma) */
   uint8_t ghash[64];
-  sha3_512(seed, 32, ghash);
+  pq_sha3_512(ghash, seed, 32);
   uint8_t rho[32], sigma[32];
   memcpy(rho, ghash, 32);
   memcpy(sigma, ghash + 32, 32);
@@ -609,20 +782,25 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          const uint8_t *r, size_t rlen, uint8_t *out_c,
                          size_t *out_clen) {
-  /* parse ek_pke => that[K], rho */
+  ensure_ntt_roots();
+  /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
   static poly256 that[K];
-  for (int i = 0; i < K; i++) {
-    byte_decode(12, ek_pke + i * 384, that[i]);
-  }
-  uint8_t rho[32];
-  memcpy(rho, ek_pke + K * 384, 32);
-
-  /* ahat => KxK from sample_ntt(rho,i,j) */
   static poly256 ahat[K][K];
-  for (int i = 0; i < K; i++) {
-    for (int j = 0; j < K; j++) {
-      sample_ntt(rho, i, j, ahat[i][j]);
+  static uint8_t ek_cache[K * 384 + 32];
+  static int ek_cache_valid = 0;
+  if (!ek_cache_valid || memcmp(ek_cache, ek_pke, sizeof(ek_cache)) != 0) {
+    uint8_t rho[32];
+    for (int i = 0; i < K; i++) {
+      byte_decode(12, ek_pke + i * 384, that[i]);
     }
+    memcpy(rho, ek_pke + K * 384, sizeof(rho));
+    for (int i = 0; i < K; i++) {
+      for (int j = 0; j < K; j++) {
+        sample_ntt(rho, i, j, ahat[i][j]);
+      }
+    }
+    memcpy(ek_cache, ek_pke, sizeof(ek_cache));
+    ek_cache_valid = 1;
   }
 
   /* rhat => K polynomials => ntt(...) */
@@ -706,6 +884,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 
 static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
                          uint8_t *out_m, size_t *out_mlen) {
+  ensure_ntt_roots();
   /* parse c => c1 => K polynomials, c2 => 1 polynomial */
   size_t c1_len = K * ((N * DU) / 8);
   size_t c2_len = (N * DV) / 8;
@@ -715,25 +894,29 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   }
 
   static poly256 u[K], v;
+  uint16_t decoded[N];
   const uint8_t *p = c;
   for (int i = 0; i < K; i++) {
-    static uint16_t buf[N];
-    memset(buf, 0, sizeof(buf));
-    byte_decode(DU, p, (int16_t *)buf);
-    decompress_poly(DU, buf, u[i]);
+    byte_decode(DU, p, (int16_t *)decoded);
+    decompress_poly(DU, decoded, u[i]);
     p += (N * DU) / 8;
   }
   {
-    static uint16_t buf[N];
-    byte_decode(DV, p, (int16_t *)buf);
-    decompress_poly(DV, buf, v);
+    byte_decode(DV, p, (int16_t *)decoded);
+    decompress_poly(DV, decoded, v);
     p += (N * DV) / 8;
   }
 
-  /* parse dk_pke => s-hat[K] */
+  /* parse dk_pke => s-hat[K] (cached for repeated use with same key) */
   static poly256 shat[K];
-  for (int i = 0; i < K; i++) {
-    byte_decode(12, dk_pke + i * 384, shat[i]);
+  static uint8_t dk_cache[K * 384];
+  static int dk_cache_valid = 0;
+  if (!dk_cache_valid || memcmp(dk_cache, dk_pke, sizeof(dk_cache)) != 0) {
+    for (int i = 0; i < K; i++) {
+      byte_decode(12, dk_pke + i * 384, shat[i]);
+    }
+    memcpy(dk_cache, dk_pke, sizeof(dk_cache));
+    dk_cache_valid = 1;
   }
 
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
@@ -750,33 +933,17 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   ntt_inv(accum, accum_inv);
   poly256_sub(v, accum_inv, w);
 
-  /* --- MODIFIED SECTION START --- */
-  /* Instead of directly compressing to 1 bit, we check
-     if each w[i] is closer to (Q+1)/2 or 0 */
+  /* Recover message bits by nearest value to 0 or (Q+1)/2. */
+  const int32_t half_q = (Q + 1) / 2;
+  const int32_t quarter_q = (Q + 1) / 4;
   memset(out_m, 0, 32);
   for (int i = 0; i < N; i++) {
-    // Calculate the difference between w[i] and (Q+1)/2
-    int32_t diff = (int32_t)w[i] - (Q + 1) / 2;
-
-    // Take the absolute value of the difference, handling potential underflow
-    if (diff < 0) {
-      diff = -diff;
-      if (diff < 0)
-        diff = Q - (-diff % Q);  // diff can't be negative anymore
-      else
-        diff = diff % Q;
-    } else {
-      diff = diff % Q;
-    }
-
-    // If the difference is small, the original bit was 1. Otherwise, it was 0.
-    int bit = (diff < (Q + 1) / 4) ? 1 : 0;  //  (Q+1)/4 is effectively Q/2
-
-    // Set the corresponding bit in the output byte array
-    out_m[i >> 3] |= (bit << (i & 7));
+    int32_t diff = (int32_t)w[i] - half_q;
+    if (diff < 0) diff = -diff;
+    int bit = (diff < quarter_q) ? 1 : 0;
+    out_m[i >> 3] |= (uint8_t)(bit << (i & 7));
   }
   *out_mlen = 32;
-  /* --- MODIFIED SECTION END --- */
 }
 
 /**
@@ -786,6 +953,36 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
  */
 static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
                          uint8_t *ek, uint8_t *dk) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  uint8_t coins[64];
+  if (!seed1) {
+    randombytes(coins, 32);
+  } else {
+    memcpy(coins, seed1, 32);
+  }
+  if (!seed2) {
+    randombytes(coins + 32, 32);
+  } else {
+    memcpy(coins + 32, seed2, 32);
+  }
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(ek, dk, coins);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  uint8_t coins[64];
+  if (!seed1) {
+    randombytes(coins, 32);
+  } else {
+    memcpy(coins, seed1, 32);
+  }
+  if (!seed2) {
+    randombytes(coins + 32, 32);
+  } else {
+    memcpy(coins + 32, seed2, 32);
+  }
+  (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins);
+  return;
+#endif
+
   uint8_t z[32];
   if (!seed1) {
     randombytes(z, 32);
@@ -817,13 +1014,48 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
   memcpy(dk, dk_pke, K * 384);
   memcpy(dk + (K * 384), ek_pke, K * 384 + 32);
   uint8_t h[32];
-  sha3_256(ek_pke, K * 384 + 32, h);
+  pq_sha3_256(h, ek_pke, K * 384 + 32);
   memcpy(dk + (K * 384) + (K * 384 + 32), h, 32);
   memcpy(dk + (K * 384) + (K * 384 + 32) + 32, z, 32);
 }
 
+static void mlkem_keygen_derand(const uint8_t coins[64],
+                                uint8_t *ek,
+                                uint8_t *dk) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(ek, dk, coins);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins);
+  return;
+#endif
+  mlkem_keygen(coins, coins + 32, ek, dk);
+}
+
 static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
                          uint8_t *c, size_t *clen) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  uint8_t coins[32];
+  const uint8_t *coins_ptr = seed;
+  if (!coins_ptr) {
+    randombytes(coins, sizeof(coins));
+    coins_ptr = coins;
+  }
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(c, k, ek, coins_ptr);
+  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  uint8_t coins[32];
+  const uint8_t *coins_ptr = seed;
+  if (!coins_ptr) {
+    randombytes(coins, sizeof(coins));
+    coins_ptr = coins;
+  }
+  (void)pqcrystals_kyber768_avx2_enc_derand(c, k, ek, coins_ptr);
+  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  return;
+#endif
+
   /* m = random 32 if seed==NULL, else seed. */
   uint8_t m[32];
   if (!seed) {
@@ -831,16 +1063,23 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   } else {
     memcpy(m, seed, 32);
   }
-  /* H(ek) => 32 */
-  uint8_t h[32];
-  sha3_256(ek, K * 384 + 32, h);
+  /* H(ek) => 32 (cached for repeated encaps with same key) */
+  static uint8_t ek_hash_cache_input[K * 384 + 32];
+  static uint8_t ek_hash_cache_output[32];
+  static int ek_hash_cache_valid = 0;
+  if (!ek_hash_cache_valid ||
+      memcmp(ek_hash_cache_input, ek, sizeof(ek_hash_cache_input)) != 0) {
+    pq_sha3_256(ek_hash_cache_output, ek, K * 384 + 32);
+    memcpy(ek_hash_cache_input, ek, sizeof(ek_hash_cache_input));
+    ek_hash_cache_valid = 1;
+  }
 
   /* ghash = sha3_512( m||h ) => 64 => k||r */
   uint8_t inbuf[64];
   memcpy(inbuf, m, 32);
-  memcpy(inbuf + 32, h, 32);
+  memcpy(inbuf + 32, ek_hash_cache_output, 32);
   uint8_t ghash[64];
-  sha3_512(inbuf, 64, ghash);
+  pq_sha3_512(ghash, inbuf, 64);
   uint8_t *k_out = ghash;
   uint8_t *r_out = ghash + 32;
   memcpy(k, k_out, 32);
@@ -849,8 +1088,52 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   kpke_encrypt(ek, m, 32, r_out, 32, c, clen);
 }
 
+static void mlkem_encaps_derand(const uint8_t *ek,
+                                const uint8_t coins[32],
+                                uint8_t *k,
+                                uint8_t *c,
+                                size_t *clen) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(c, k, ek, coins);
+  if (clen) {
+    *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  }
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  (void)pqcrystals_kyber768_avx2_enc_derand(c, k, ek, coins);
+  if (clen) {
+    *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  }
+  return;
+#endif
+  if (clen) {
+    mlkem_encaps(ek, coins, k, c, clen);
+  } else {
+    size_t ct_len = 0;
+    mlkem_encaps(ek, coins, k, c, &ct_len);
+  }
+}
+
 static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
                          uint8_t *k_out) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  const size_t ct_bytes = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  if (clen != ct_bytes) {
+    memset(k_out, 0, 32);
+    return;
+  }
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_dec(k_out, c, dk);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  const size_t ct_bytes = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  if (clen != ct_bytes) {
+    memset(k_out, 0, 32);
+    return;
+  }
+  (void)pqcrystals_kyber768_avx2_dec(k_out, c, dk);
+  return;
+#endif
+
   /* parse dk =>
      dk_pke=0..K*384
      ek_pke=K*384..(K*384 + (K*384+32))
@@ -877,7 +1160,7 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   memcpy(inbuf, mdash, 32);
   memcpy(inbuf + 32, h, 32);
   uint8_t ghash[64];
-  sha3_512(inbuf, 64, ghash);
+  pq_sha3_512(ghash, inbuf, 64);
   uint8_t *kdash = ghash;
   uint8_t *rdash = ghash + 32;
 
@@ -887,13 +1170,37 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len);
   if (cdash_len != clen || memcmp(c, cdash, clen) != 0) {
     /* kbar = shake256(z||c) => 32 */
+    enum { CT_MAX = K * ((N * DU) / 8) + (N * DV) / 8 };
+    uint8_t stack_tmp[32 + CT_MAX];
     size_t tmp_len = 32 + clen;
-    uint8_t *tmp = (uint8_t *)malloc(tmp_len);
+    uint8_t *tmp = stack_tmp;
+    if (clen > CT_MAX) {
+      tmp = (uint8_t *)malloc(tmp_len);
+    }
+    if (!tmp) {
+      memset(k_out, 0, 32);
+      return;
+    }
     memcpy(tmp, z, 32);
     memcpy(tmp + 32, c, clen);
-    shake256(tmp, tmp_len, k_out, 32);
-    free(tmp);
+    pq_shake256(k_out, 32, tmp, tmp_len);
+    if (tmp != stack_tmp) {
+      free(tmp);
+    }
   } else {
     memcpy(k_out, kdash, 32);
   }
+}
+
+static void mlkem_decaps_ct(const uint8_t *c,
+                            const uint8_t *dk,
+                            uint8_t *k_out) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_dec(k_out, c, dk);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  (void)pqcrystals_kyber768_avx2_dec(k_out, c, dk);
+  return;
+#endif
+  mlkem_decaps(c, (size_t)(K * ((N * DU) / 8) + (N * DV) / 8), dk, k_out);
 }
