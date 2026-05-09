@@ -1,4 +1,3 @@
-BLAKE3_DIR = include/blake3
 PQ_FIPS_DIR = include/pqclean
 PQ_AVX2_ROOT = include/pqclean_avx2
 PQ_AVX2_DIR = $(PQ_AVX2_ROOT)/ml-kem-768-avx2
@@ -6,12 +5,6 @@ PQ_AVX2_KECCAK_DIR = $(PQ_AVX2_ROOT)/keccak4x
 KY_UP_ROOT = include/kyber_upstream
 KY_UP_AVX2_DIR = $(KY_UP_ROOT)/avx2
 KY_UP_AVX2_KECCAK_DIR = $(KY_UP_AVX2_DIR)/keccak4x
-BLAKE3_BASE_SRCS = \
-	$(BLAKE3_DIR)/blake3.c \
-	$(BLAKE3_DIR)/blake3_portable.c \
-	$(BLAKE3_DIR)/blake3_dispatch.c \
-	$(BLAKE3_DIR)/blake3_sse2.c \
-	$(BLAKE3_DIR)/blake3_sse41.c
 PQ_FIPS_SRCS = $(PQ_FIPS_DIR)/fips202.c
 PQ_AVX2_SRCS = \
 	$(PQ_AVX2_DIR)/cbd.c \
@@ -69,22 +62,12 @@ EXTRA_CFLAGS := -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-
 endif
 endif
 ASFLAGS ?= -Wa,--noexecstack
-CFLAGS = -D_GNU_SOURCE $(OPT_CFLAGS) -Wall -Wextra -std=c99 -I$(BLAKE3_DIR) $(EXTRA_CFLAGS)
+CFLAGS = -D_GNU_SOURCE $(OPT_CFLAGS) -Wall -Wextra -std=c99 $(EXTRA_CFLAGS)
 ARCH_CFLAGS = -march=native
 TARGET = testc
 BENCH_TARGET = benchc
 BENCH_ITERS ?= 200
 BENCH_CT_STRIDE ?= 1088
-
-# Check for AVX2 support
-AVX2_TEST_CMD = echo '\#include <immintrin.h>\nint main() { __m256i x = _mm256_setzero_si256(); x = _mm256_add_epi32(x, x); return 0; }' | \
-	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -mavx2 -Werror -fsyntax-only -xc -o /dev/null - 2>/dev/null && echo YES
-HAS_AVX2 := $(shell $(AVX2_TEST_CMD))
-
-# Check for AVX512 support (using AVX512F as a baseline)
-AVX512_TEST_CMD = echo '\#include <immintrin.h>\nint main() { __m512i y = _mm512_setzero_si512(); y = _mm512_add_epi32(y, y); return 0; }' | \
-	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -mavx512f -Werror -fsyntax-only -xc -o /dev/null - 2>/dev/null && echo YES
-HAS_AVX512 := $(shell $(AVX512_TEST_CMD))
 
 AVX2_BACKEND ?= upstream
 
@@ -98,22 +81,7 @@ else
 $(error Unsupported AVX2_BACKEND='$(AVX2_BACKEND)' (expected 'pqclean' or 'upstream'))
 endif
 
-BLAKE3_SRCS = $(BLAKE3_BASE_SRCS)
-ifeq ($(HAS_AVX2), YES)
-    $(info Compiling with AVX2 support)
-	BLAKE3_SRCS += $(BLAKE3_DIR)/blake3_avx2.c
-else
-    $(info Compiling without AVX2 support)
-endif
-
-ifeq ($(HAS_AVX512), YES)
-    $(info Compiling with AVX512 support)
-	BLAKE3_SRCS += $(BLAKE3_DIR)/blake3_avx512.c
-else
-    $(info Compiling without AVX512 support)
-endif
-
-TEST_SRCS = test.c $(BLAKE3_SRCS) $(PQ_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
+TEST_SRCS = test.c $(PQ_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
 ifeq ($(AVX2_BACKEND),pqclean)
 BENCH_FIPS_SRCS = $(PQ_FIPS_SRCS)
 else
@@ -130,18 +98,6 @@ TARGETS := $(TARGET) $(BENCH_TARGET)
 .PHONY: all clean test bench bench-run
 
 all: $(TARGET)
-
-# --- Conditionally add BLAKE3_NO flags for the dispatcher ---
-DISPATCH_CFLAGS =
-ifneq ($(HAS_AVX2), YES)
-	DISPATCH_CFLAGS += -DBLAKE3_NO_AVX2
-endif
-ifneq ($(HAS_AVX512), YES)
-	DISPATCH_CFLAGS += -DBLAKE3_NO_AVX512
-endif
-
-# Append specific flags only when compiling blake3_dispatch.c
-$(BLAKE3_DIR)/blake3_dispatch.o: CFLAGS += $(DISPATCH_CFLAGS)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
 	-I$(PQ_FIPS_DIR) \
 	-Dshake128=pq_shake128 \

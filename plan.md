@@ -27,7 +27,7 @@ curl -s 'https://api.github.com/search/repositories?q=ml-kem+in:name&sort=stars&
    - deterministic speed command (`make bench-run BENCH_ITERS=<N>`)
    - size command (`size testc benchc`, `wc -c baby-mlkem.c`)
 2. Cryptographic primitive correctness:
-   - SHA3/Shake vectors and BLAKE3 integration
+   - SHA3/Shake vectors and FIPS202 integration
 3. Arithmetic core:
    - modular arithmetic, NTT roots, forward/inverse NTT, polynomial ops
 4. Serialization and sampling:

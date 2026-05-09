@@ -328,21 +328,6 @@ void test_shake256() {
   run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);
 }
 
-void test_blake3() {
-  const char* in = "";
-  size_t inlen = strlen(in);
-  static const uint8_t empty_hash[32] = {
-    0xaf, 0x13, 0x49, 0xb9, 0xf5, 0xf9, 0xa1, 0xa6,
-    0xa0, 0x40, 0x4d, 0xea, 0x36, 0xdc, 0xc9, 0x49,
-    0x9b, 0xcb, 0x25, 0xc9, 0xad, 0xc1, 0x12, 0xb7,
-    0xcc, 0x9a, 0x93, 0xca, 0xe4, 0x1f, 0x32, 0x62
-  };
-  uint8_t out[BLAKE3_OUT_LEN];
-
-  blake3((const uint8_t*)in, inlen, out, BLAKE3_OUT_LEN);
-  assert(memcmp(empty_hash, out, BLAKE3_OUT_LEN) == 0);
-}
-
 void test_bitrev7() {
   assert(bitrev7(0) == 0);
   assert(bitrev7(1) == 64);
@@ -556,7 +541,6 @@ int main(void) {
   test_sha3_512();
   test_shake128();
   test_shake256();
-  test_blake3();
   test_bitrev7();
   test_modexp();
   test_poly256_add();
