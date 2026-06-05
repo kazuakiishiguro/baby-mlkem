@@ -55,3 +55,15 @@
 - Result: `make test` passed, but `./bench 1000` x5 median `keygen_ns_avg=140723`, `encaps_ns_avg=138473`, `decaps_ns_avg=171085`; `bench dec=23985`, `reduce.o dec=259`, `testc dec=45212`.
 - Why it failed or was not accepted: The correction and fallback path increased code size, and the compiler/hardware division cost was not the observed bottleneck in this benchmark shape.
 - Next idea: Improve measurement quality before more micro-optimizations, then inspect generated assembly for actual hot instructions rather than guessing from source.
+
+## 2026-06-05: comparison against `main`
+
+- Branch: `exp/ntt-static-roots`
+- Question: Is the current best implementation faster than `main`, and why?
+- Method: Built a temporary random top-level ML-KEM benchmark for current best and a temporary worktree benchmark for `main`, both with `gcc -D_GNU_SOURCE -O3 -Wall -Wextra -std=c99 -march=native`, 5 runs of `1000` iterations.
+- Current best result: median `keygen_ns_avg=73686`, `encaps_ns_avg=71127`, `decaps_ns_avg=87059`, and all runs reported `match=1`.
+- `main` result: median `keygen_ns_avg=401371`, `encaps_ns_avg=391236`, `decaps_ns_avg=417775`, but all runs reported `match=0`, so `main` is not a valid correctness-equivalent full-ML-KEM comparison target.
+- Main cause of speed difference: `main`'s `sample_ntt` squeezes a fixed `3 * 4096 = 12288` bytes from SHAKE128 for every sampled matrix polynomial, then consumes only enough candidates to fill 256 coefficients. The current implementation streams 3 bytes at a time and stops as soon as 256 accepted coefficients are produced.
+- Approximate cost difference: SHAKE128 rate is 168 bytes. `main` does about `12288 / 168 ~= 73` Keccak permutations per `SampleNTT`; current sampling usually needs about `157` three-byte blocks, roughly `471 / 168 ~= 3` Keccak permutations. K-PKE keygen/encrypt each generate the 3x3 matrix with 9 `SampleNTT` calls, so the wasted SHAKE output dominates the speed gap.
+- Secondary differences: current best also has static const NTT root tables, reducing size and removing root-initialization checks, and decapsulation uses `compress_poly(1)`/`byte_encode_u16(1)` instead of `main`'s per-coefficient generalized bit decoder with `% Q`.
+- Interpretation: The large speedup versus `main` mostly comes from avoiding unnecessary SHAKE128 output in `SampleNTT`; the accepted static-root change is mainly a size win, not the main explanation for the 5x benchmark gap.
