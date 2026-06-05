@@ -67,3 +67,13 @@
 - Approximate cost difference: SHAKE128 rate is 168 bytes. `main` does about `12288 / 168 ~= 73` Keccak permutations per `SampleNTT`; current sampling usually needs about `157` three-byte blocks, roughly `471 / 168 ~= 3` Keccak permutations. K-PKE keygen/encrypt each generate the 3x3 matrix with 9 `SampleNTT` calls, so the wasted SHAKE output dominates the speed gap.
 - Secondary differences: current best also has static const NTT root tables, reducing size and removing root-initialization checks, and decapsulation uses `compress_poly(1)`/`byte_encode_u16(1)` instead of `main`'s per-coefficient generalized bit decoder with `% Q`.
 - Interpretation: The large speedup versus `main` mostly comes from avoiding unnecessary SHAKE128 output in `SampleNTT`; the accepted static-root change is mainly a size win, not the main explanation for the 5x benchmark gap.
+
+## 2026-06-05: inline modular reduction
+
+- Branch: `exp/reduce-inline`
+- Hypothesis: Making `barret_reduce` and `reduce_signed` `static inline` in `reduce.h` would remove function-call overhead from NTT inner loops and let GCC optimize the surrounding arithmetic better.
+- Change: Added inline definitions in `reduce.h` while keeping exported definitions in `reduce.c` via `REDUCE_EXTERNAL`.
+- Baseline: `0eb4fa8`; `make test` passed; `./bench 2000` x5 median `keygen_ns_avg=64557`, `encaps_ns_avg=61974`, `decaps_ns_avg=76263`; `bench dec=23921`, `ntt.o dec=3686`, `testc dec=44956`.
+- Result: `make test` passed. `objdump` showed no `call` instructions in the NTT hot functions after inlining. `./bench 2000` x5 median `keygen_ns_avg=58052`, `encaps_ns_avg=50130`, `decaps_ns_avg=59052`. `make size`: `bench dec=31849`, `ntt.o dec=11612`, `testc dec=51924`.
+- Interpretation: Accepted for speed. The inline change lets GCC aggressively optimize/vectorize NTT code and improves median latency by about 10% for keygen, 19% for encaps, and 23% for decaps. The tradeoff is a large code-size regression, mostly in `ntt.o`.
+- Next idea: Search for a controlled version of this win: keep reduce inlined for hot NTT paths but limit code growth, or add hand-written NTT/Keccak assembly only where it beats the compiler without excessive text growth.
