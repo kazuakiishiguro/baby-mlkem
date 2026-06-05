@@ -77,3 +77,14 @@
 - Result: `make test` passed. `objdump` showed no `call` instructions in the NTT hot functions after inlining. `./bench 2000` x5 median `keygen_ns_avg=58052`, `encaps_ns_avg=50130`, `decaps_ns_avg=59052`. `make size`: `bench dec=31849`, `ntt.o dec=11612`, `testc dec=51924`.
 - Interpretation: Accepted for speed. The inline change lets GCC aggressively optimize/vectorize NTT code and improves median latency by about 10% for keygen, 19% for encaps, and 23% for decaps. The tradeoff is a large code-size regression, mostly in `ntt.o`.
 - Next idea: Search for a controlled version of this win: keep reduce inlined for hot NTT paths but limit code growth, or add hand-written NTT/Keccak assembly only where it beats the compiler without excessive text growth.
+
+## 2026-06-05: inline Barrett only
+
+- Branch: `exp/reduce-inline-barrett-only`
+- Hypothesis: Keeping only `barret_reduce` inline would preserve most forward-NTT speedup while avoiding the large code growth caused by inlining `reduce_signed` into inverse NTT and NTT-domain multiplication.
+- Change: Left `barret_reduce` as `static inline` but restored `reduce_signed` to an external function call.
+- Baseline: `1a3dff6` full inline speed branch; `make test` passed; `./bench 2000` x5 median `keygen_ns_avg=58052`, `encaps_ns_avg=50130`, `decaps_ns_avg=59052`; `bench dec=31849`, `ntt.o dec=11612`, `testc dec=51924`.
+- Comparison to pre-inline baseline: `0eb4fa8` had median `keygen_ns_avg=64557`, `encaps_ns_avg=61974`, `decaps_ns_avg=76263`; `bench dec=23921`, `ntt.o dec=3686`, `testc dec=44956`.
+- Result: `make test` passed. `./bench 2000` x5 median `keygen_ns_avg=59241`, `encaps_ns_avg=57870`, `decaps_ns_avg=69102`; `bench dec=26161`, `ntt.o dec=5958`, `testc dec=46932`.
+- Interpretation: Accepted as a balanced size/speed branch. It is slower than full inline, especially for encaps/decaps, but it cuts `ntt.o` almost in half relative to full inline while still beating the pre-inline baseline on all three operations.
+- Next idea: If pursuing absolute speed, continue from `exp/reduce-inline`; if pursuing compact fast code, continue from `exp/reduce-inline-barrett-only`.
