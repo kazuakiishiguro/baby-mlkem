@@ -35,3 +35,13 @@
 - Result: `make test` passed. `./bench 1000` x3 median `keygen_ns_avg=89670`, `encaps_ns_avg=82836`, `decaps_ns_avg=101584`. `make size`: `bench dec=23921`, `ntt.o dec=3686`, `testc dec=44956`.
 - Interpretation: Accepted for size. It removes 560 bytes of final `.bss` and cuts `ntt.o` by 1353 bytes. Runtime impact is small and noisy; keygen/decaps improved in the same-run comparison while encaps regressed slightly.
 - Next idea: Look for a Keccak or sampling change with clear speed wins, but avoid table-heavy changes unless size is neutral.
+
+## 2026-06-05: SampleNTT rate-buffered squeeze
+
+- Branch: `exp/sample-ntt-buffer`
+- Hypothesis: Squeezing SHAKE128 output in 168-byte rate chunks inside `SampleNTT` would reduce per-candidate function-call overhead versus squeezing 3 bytes at a time.
+- Change: Added a 168-byte local buffer in `sample_ntt_inner` and parsed 3-byte candidate blocks from it.
+- Baseline: `4a86ee6`; `make test` passed; `./bench 1000` x3 median `keygen_ns_avg=89670`, `encaps_ns_avg=82836`, `decaps_ns_avg=101584`; `bench dec=23921`, `sample.o dec=1108`, `testc dec=44956`.
+- Result: `make test` passed, but `./bench 1000` x3 median `keygen_ns_avg=135378`, `encaps_ns_avg=123269`, `decaps_ns_avg=129856`; `bench dec=23993`, `sample.o dec=1180`, `testc dec=45028`.
+- Why it failed or was not accepted: The extra stack buffer and refill branch increased code size and did not improve latency. The expected function-call reduction is apparently not the bottleneck under current compiler/code layout.
+- Next idea: Try a smaller arithmetic change in modular reduction or NTT butterfly code where code size can stay flat.
