@@ -45,3 +45,13 @@
 - Result: `make test` passed, but `./bench 1000` x3 median `keygen_ns_avg=135378`, `encaps_ns_avg=123269`, `decaps_ns_avg=129856`; `bench dec=23993`, `sample.o dec=1180`, `testc dec=45028`.
 - Why it failed or was not accepted: The extra stack buffer and refill branch increased code size and did not improve latency. The expected function-call reduction is apparently not the bottleneck under current compiler/code layout.
 - Next idea: Try a smaller arithmetic change in modular reduction or NTT butterfly code where code size can stay flat.
+
+## 2026-06-05: signed Barrett reduction fast path
+
+- Branch: `exp/reduce-signed-barrett`
+- Hypothesis: Replacing `reduce_signed`'s `% Q` with a Barrett fast path would speed inverse NTT and NTT-domain multiplication by avoiding integer division in hot paths.
+- Change: Added a signed Barrett approximation with two corrections and a `% Q` fallback for out-of-range public API inputs; extended reduction tests across `[-30000000, 30000000]`.
+- Baseline: `639e641` current best; `make test` passed; `./bench 1000` x3 median from accepted static-root experiment `keygen_ns_avg=89670`, `encaps_ns_avg=82836`, `decaps_ns_avg=101584`; `bench dec=23921`, `reduce.o dec=204`, `testc dec=44956`.
+- Result: `make test` passed, but `./bench 1000` x5 median `keygen_ns_avg=140723`, `encaps_ns_avg=138473`, `decaps_ns_avg=171085`; `bench dec=23985`, `reduce.o dec=259`, `testc dec=45212`.
+- Why it failed or was not accepted: The correction and fallback path increased code size, and the compiler/hardware division cost was not the observed bottleneck in this benchmark shape.
+- Next idea: Improve measurement quality before more micro-optimizations, then inspect generated assembly for actual hot instructions rather than guessing from source.
