@@ -104,3 +104,15 @@
 - Tried variants: local signed inverse-NTT plus `ntt_mul` gave better encaps/decaps but grew `ntt.o` to `9351`; inverse-NTT only was slower and larger than the final candidate; disabling vectorization kept size tiny but regressed encaps/decaps; `ntt_mul` only was good, and adding final-scale Barrett improved encaps/decaps for another 256 bytes.
 - Interpretation: Accepted. Versus baseline, median latency improved by about 8% keygen, 9% encaps, and 9% decaps. Size increased by 1257 bytes in `ntt.o`, still far below full inline's `11612` byte `ntt.o`.
 - Next idea: Improve benchmark harness stability, then try a `sample_ntt` direct-squeeze experiment or a smaller hand-written `ntt_mul` that keeps the bounded Barrett win with less text.
+
+## 2026-06-06: benchmark harness median output
+
+- Branch: `exp/bench-harness`
+- Hypothesis: Adding warmup, repeated rounds, and median/min/max output to `bench.c` will make later optimization decisions less sensitive to first-run and scheduler outliers.
+- Baseline: `ab6c126`; `make test` passed. Old harness `./bench 2000` x5 produced median `keygen_ns_avg=65171`, `encaps_ns_avg=62270`, `decaps_ns_avg=72987`, with first-run outliers up to `keygen_ns_avg=90555` and `encaps_ns_avg=87304`. `make size`: `bench dec=27425`, `bench.o dec=1138`.
+- Change: Reworked `bench.c` to run warmup iterations, measure multiple rounds, report median as `*_ns_avg`, and also print `*_ns_avg_min`/`*_ns_avg_max`. Added a post-timing decapsulation shared-key check.
+- Correctness: `make test` passed.
+- Benchmark: `./bench 2000 7` produced median lines `keygen_ns_avg=61539`, `encaps_ns_avg=64237`, `decaps_ns_avg=73180`; a second run produced `keygen_ns_avg=61083`, `encaps_ns_avg=61446`, `decaps_ns_avg=76146`.
+- Size: `make size` produced `bench dec=30338`, `bench.o dec=3765`; library/test sizes were unchanged.
+- Interpretation: Accepted as measurement infrastructure. The benchmark binary is larger, but the ML-KEM implementation objects are unchanged. Future experiment notes should use the new single-command median output instead of manually taking several one-round runs.
+- Next idea: Use this harness for `exp/sample-ntt-direct-squeeze`.
