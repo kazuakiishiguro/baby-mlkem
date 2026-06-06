@@ -129,3 +129,16 @@
 - Assembly check: `objdump -dr sample.o` showed no `keccak_squeeze` relocation in `sample_ntt_inner`; `mlkem_prf` still uses the generic squeeze API.
 - Interpretation: Accepted. This improves keygen/encaps by removing many tiny squeeze calls in matrix sampling. Decaps also improves because decapsulation performs deterministic re-encryption.
 - Next idea: Try specializing CBD sampling for `eta=2`, or reduce KEM stack traffic by avoiding full matrix materialization if size and clarity remain acceptable.
+
+## 2026-06-06: ML-KEM-768 ACVP KAT
+
+- Branch: `exp/kat-mlkem768`
+- Hypothesis: Adding independent NIST ACVP ML-KEM-768 vectors will close the main FIPS 203 compatibility gap left by self-consistency tests.
+- Source: NIST ACVP-Server `ML-KEM-keyGen-FIPS203/internalProjection.json` and `ML-KEM-encapDecap-FIPS203/internalProjection.json`.
+- Source SHA-256: keyGen `d7a62a2c3476957f56dd8d24f9004ea6776ccfe995ffe71a65bb9506dc9c7b1b`; encapDecap `f1e22b7d399dde7bf61b838770c658a380e4b1cfc4bd395dbed9ec6c1d977d9d`.
+- Baseline: `8dc1521`; `make test` passed. `make size`: `testc dec=48196`, `test.o dec=21512`; library and bench objects unchanged from the previous accepted branch.
+- Change: Added `kat_mlkem768.h` with one ML-KEM-768 keyGen vector (`tgId=2`, `tcId=26`) and one encapsulation vector (`tgId=2`, `tcId=26`). Added `test_mlkem768_kat` to compare deterministic keygen `ek/dk`, deterministic encaps `K/c`, and decaps `K` byte-for-byte.
+- Correctness: `make test-kem` passed; `make test` passed.
+- Size: `make size` produced `testc dec=57588`, `test.o dec=30834`; `bench dec=30338`, `kem.o dec=4485`, `sample.o dec=1108`, and other implementation object sizes unchanged.
+- Interpretation: Accepted as compatibility evidence. This does not optimize runtime, but it validates the current implementation against independent FIPS203 ACVP vectors and reduces the risk that round-trip tests were masking a spec deviation.
+- Next idea: Add a small `kat` test group or expand KAT coverage to a few more ACVP cases only if needed; otherwise resume optimization from this FIPS-validated branch.

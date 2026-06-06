@@ -7,6 +7,7 @@
 #include "encode.h"
 #include "keccak.h"
 #include "kem.h"
+#include "kat_mlkem768.h"
 #include "ntt.h"
 #include "random.h"
 #include "reduce.h"
@@ -28,6 +29,20 @@ static void fill_poly(poly256 p, uint32_t seed) {
         x = x * 1664525u + 1013904223u;
         p[i] = (int16_t)(x % Q);
     }
+}
+
+static void assert_bytes_eq(const char *name, const uint8_t *got,
+                            const uint8_t *want, size_t len) {
+    if (memcmp(got, want, len) == 0) return;
+
+    for (size_t i = 0; i < len; i++) {
+        if (got[i] != want[i]) {
+            fprintf(stderr, "%s mismatch at byte %zu: got %02x want %02x\n",
+                    name, i, got[i], want[i]);
+            break;
+        }
+    }
+    assert(0);
 }
 
 static void schoolbook_mul(const poly256 a, const poly256 b, poly256 out) {
@@ -412,6 +427,37 @@ static void test_sample(void) {
     assert(rejection > 0.12 && rejection < 0.25);
 }
 
+static void test_mlkem768_kat(void) {
+    uint8_t ek[EK_SIZE], dk[DK_SIZE], c[CT_SIZE];
+    uint8_t k[SHARED_KEY_SIZE], k_dec[SHARED_KEY_SIZE];
+
+    assert(KAT_KEYGEN_TGID == 2);
+    assert(KAT_KEYGEN_TCID == 26);
+    assert(KAT_ENCAP_TGID == 2);
+    assert(KAT_ENCAP_TCID == 26);
+    assert(sizeof(KAT_KEYGEN_D) == 32);
+    assert(sizeof(KAT_KEYGEN_Z) == 32);
+    assert(sizeof(KAT_KEYGEN_EK) == EK_SIZE);
+    assert(sizeof(KAT_KEYGEN_DK) == DK_SIZE);
+    assert(sizeof(KAT_ENCAP_EK) == EK_SIZE);
+    assert(sizeof(KAT_ENCAP_DK) == DK_SIZE);
+    assert(sizeof(KAT_ENCAP_M) == 32);
+    assert(sizeof(KAT_ENCAP_C) == CT_SIZE);
+    assert(sizeof(KAT_ENCAP_K) == SHARED_KEY_SIZE);
+
+    mlkem_keygen_deterministic(KAT_KEYGEN_D, KAT_KEYGEN_Z, ek, dk);
+    assert_bytes_eq("ML-KEM-768 keyGen ek", ek, KAT_KEYGEN_EK, EK_SIZE);
+    assert_bytes_eq("ML-KEM-768 keyGen dk", dk, KAT_KEYGEN_DK, DK_SIZE);
+
+    mlkem_encaps_deterministic(KAT_ENCAP_EK, KAT_ENCAP_M, k, c);
+    assert_bytes_eq("ML-KEM-768 encaps K", k, KAT_ENCAP_K, SHARED_KEY_SIZE);
+    assert_bytes_eq("ML-KEM-768 encaps c", c, KAT_ENCAP_C, CT_SIZE);
+
+    mlkem_decaps(KAT_ENCAP_DK, KAT_ENCAP_C, k_dec);
+    assert_bytes_eq("ML-KEM-768 decaps K", k_dec, KAT_ENCAP_K,
+                    SHARED_KEY_SIZE);
+}
+
 static void test_kem_deterministic(void) {
     uint8_t d[32], z[32], r[32], m[32], dec[32];
     uint8_t ek[EK_SIZE], dk[DK_SIZE], dk_pke[DK_PKE_SIZE], c[CT_SIZE];
@@ -507,6 +553,7 @@ static void run_sample_group(void) {
 
 static void run_kem_group(void) {
     test_kem_deterministic();
+    test_mlkem768_kat();
     puts("kem tests passed");
 }
 
