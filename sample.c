@@ -27,6 +27,17 @@ void sample_poly_cbd(int eta, const uint8_t *data, poly256 out) {
     }
 }
 
+static inline uint32_t sample_squeeze24(keccak_ctx *ctx) {
+    if (ctx->pos == 168) {
+        keccakf(ctx->state);
+        ctx->pos = 0;
+    }
+
+    const uint8_t *s = (const uint8_t *)ctx->state + ctx->pos;
+    ctx->pos += 3;
+    return (uint32_t)s[0] | ((uint32_t)s[1] << 8) | ((uint32_t)s[2] << 16);
+}
+
 static size_t sample_ntt_inner(const uint8_t rho[32], uint8_t i, uint8_t j,
                                poly256 out) {
     keccak_ctx ctx;
@@ -40,12 +51,11 @@ static size_t sample_ntt_inner(const uint8_t rho[32], uint8_t i, uint8_t j,
     keccak_finalize(&ctx, 0x1f);
 
     while (count < N) {
-        uint8_t b[3];
-        keccak_squeeze(&ctx, b, sizeof(b));
+        uint32_t b = sample_squeeze24(&ctx);
         blocks++;
 
-        uint16_t d1 = (uint16_t)b[0] | (uint16_t)((b[1] & 0x0f) << 8);
-        uint16_t d2 = (uint16_t)(b[1] >> 4) | (uint16_t)(b[2] << 4);
+        uint16_t d1 = (uint16_t)(b & 0x0fffu);
+        uint16_t d2 = (uint16_t)(b >> 12);
         if (d1 < Q) out[count++] = (int16_t)d1;
         if (d2 < Q && count < N) out[count++] = (int16_t)d2;
     }

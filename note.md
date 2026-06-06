@@ -116,3 +116,16 @@
 - Size: `make size` produced `bench dec=30338`, `bench.o dec=3765`; library/test sizes were unchanged.
 - Interpretation: Accepted as measurement infrastructure. The benchmark binary is larger, but the ML-KEM implementation objects are unchanged. Future experiment notes should use the new single-command median output instead of manually taking several one-round runs.
 - Next idea: Use this harness for `exp/sample-ntt-direct-squeeze`.
+
+## 2026-06-06: SampleNTT direct 3-byte squeeze
+
+- Branch: `exp/sample-ntt-direct-squeeze`
+- Hypothesis: `SampleNTT` can avoid per-candidate `keccak_squeeze(ctx, b, 3)` call overhead by reading 3 bytes directly from the SHAKE128 rate area and only calling `keccakf` at rate boundaries.
+- Baseline: `bade2b7`; `make test` passed. `./bench 2000 7` produced `keygen_ns_avg=60881`, `encaps_ns_avg=61423`, `decaps_ns_avg=73185`. `make size`: `bench dec=30338`, `sample.o dec=1108`, `testc dec=48196`.
+- Change: Added `sample_squeeze24` in `sample.c`, using the public `keccak_ctx` state byte view and `keccakf` when `pos == 168`. Parsed rejection candidates from the returned 24-bit word.
+- Correctness: `make test` passed.
+- Benchmark: `./bench 2000 7` produced `keygen_ns_avg=57492`, `encaps_ns_avg=59016`, `decaps_ns_avg=70494`; a second run produced `keygen_ns_avg=57414`, `encaps_ns_avg=58990`, `decaps_ns_avg=70526`.
+- Size: `make size` produced `bench dec=30338`, `sample.o dec=1108`, `testc dec=48196`; no size change.
+- Assembly check: `objdump -dr sample.o` showed no `keccak_squeeze` relocation in `sample_ntt_inner`; `mlkem_prf` still uses the generic squeeze API.
+- Interpretation: Accepted. This improves keygen/encaps by removing many tiny squeeze calls in matrix sampling. Decaps also improves because decapsulation performs deterministic re-encryption.
+- Next idea: Try specializing CBD sampling for `eta=2`, or reduce KEM stack traffic by avoiding full matrix materialization if size and clarity remain acceptable.
