@@ -66,7 +66,10 @@ static void test_reduce(void) {
     assert(reduce_signed(-Q) == 0);
     assert(reduce_signed(Q) == 0);
 
-    const int32_t vals[] = {0, 1, -1, 3328, 3329, 3330, -3329, 10000, -10000, 11075584};
+    const int32_t vals[] = {
+        0, 1, -1, 3328, 3329, 3330, -3329, 10000, -10000, 11075584,
+        2 * Q * Q - 1, 2 * Q * Q
+    };
     for (size_t i = 0; i < sizeof(vals) / sizeof(vals[0]); i++) {
         int32_t r = vals[i] % Q;
         if (r < 0) r += Q;

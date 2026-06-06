@@ -88,3 +88,19 @@
 - Result: `make test` passed. `./bench 2000` x5 median `keygen_ns_avg=59241`, `encaps_ns_avg=57870`, `decaps_ns_avg=69102`; `bench dec=26161`, `ntt.o dec=5958`, `testc dec=46932`.
 - Interpretation: Accepted as a balanced size/speed branch. It is slower than full inline, especially for encaps/decaps, but it cuts `ntt.o` almost in half relative to full inline while still beating the pre-inline baseline on all three operations.
 - Next idea: If pursuing absolute speed, continue from `exp/reduce-inline`; if pursuing compact fast code, continue from `exp/reduce-inline-barrett-only`.
+
+## 2026-06-06: NTT-local bounded reduction
+
+- Branch: `exp/ntt-local-signed`
+- Hypothesis: Replacing only safe bounded NTT reductions with inline Barrett reduction will recover part of the full-inline speedup without the full `ntt.o` text growth.
+- Conclusion that led here: `exp/reduce-inline` was fastest but grew `ntt.o` from `5958` to `11612` bytes, while `exp/reduce-inline-barrett-only` remained compact but left calls to `reduce_signed` in `ntt_inv` and `ntt_mul`.
+- Baseline: `a2a8cea`; `make test` passed. `./bench 2000` x5 produced median `keygen_ns_avg=76962`, `encaps_ns_avg=67625`, `decaps_ns_avg=80659`. `make size`: `bench dec=26161`, `ntt.o dec=5958`, `testc dec=46932`.
+- Compiler/flags: `gcc (GCC) 16.1.1 20260430`, `-D_GNU_SOURCE -O3 -Wall -Wextra -std=c99 -march=native`.
+- CPU/OS: AMD Ryzen AI 9 HX 370, Arch Linux `7.0.9-arch2-1`, x86_64.
+- Change: Used inline `barret_reduce` for non-negative `ntt_mul` products bounded below `2*Q*Q`, and for the inverse-NTT final scale product bounded below `Q*Q`. Added reduction edge tests for `2*Q*Q - 1` and `2*Q*Q`.
+- Correctness: `make test` passed.
+- Benchmark: Final candidate `./bench 2000` x12 median `keygen_ns_avg=70586`, `encaps_ns_avg=61857`, `decaps_ns_avg=73189`.
+- Size: Final candidate `make size` produced `bench dec=27425`, `ntt.o dec=7215`, `testc dec=48196`.
+- Tried variants: local signed inverse-NTT plus `ntt_mul` gave better encaps/decaps but grew `ntt.o` to `9351`; inverse-NTT only was slower and larger than the final candidate; disabling vectorization kept size tiny but regressed encaps/decaps; `ntt_mul` only was good, and adding final-scale Barrett improved encaps/decaps for another 256 bytes.
+- Interpretation: Accepted. Versus baseline, median latency improved by about 8% keygen, 9% encaps, and 9% decaps. Size increased by 1257 bytes in `ntt.o`, still far below full inline's `11612` byte `ntt.o`.
+- Next idea: Improve benchmark harness stability, then try a `sample_ntt` direct-squeeze experiment or a smaller hand-written `ntt_mul` that keeps the bounded Barrett win with less text.

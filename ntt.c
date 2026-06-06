@@ -108,7 +108,7 @@ void ntt_inv(const poly256 f_in, poly256 f_out) {
     }
 
     for (int i = 0; i < N; i++) {
-        f_out[i] = reduce_signed((int32_t)f_out[i] * NTT_INV_FACTOR);
+        f_out[i] = barret_reduce((int32_t)f_out[i] * NTT_INV_FACTOR);
     }
 }
 
@@ -120,8 +120,8 @@ void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
         int32_t b1 = b[2 * i + 1];
         int32_t g = GAMMA[i];
 
-        int32_t a1b1 = reduce_signed(a1 * b1);
-        out[2 * i] = reduce_signed(a0 * b0 + a1b1 * g);
-        out[2 * i + 1] = reduce_signed(a0 * b1 + a1 * b0);
+        int32_t a1b1 = barret_reduce(a1 * b1);
+        out[2 * i] = barret_reduce(a0 * b0 + a1b1 * g);
+        out[2 * i + 1] = barret_reduce(a0 * b1 + a1 * b0);
     }
 }
