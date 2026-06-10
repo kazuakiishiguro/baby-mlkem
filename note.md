@@ -161,3 +161,15 @@
 - Result: `make test` passed, but `./bench 2000 7` produced `keygen_ns_avg=57735`, `encaps_ns_avg=59264`, `decaps_ns_avg=71229`. `make size`: `bench dec=32162`, `sample.o dec=2932`, `testc dec=59412`.
 - Why it failed or was not accepted: Runtime did not improve clearly and code size regressed sharply. The compiler appears to already optimize the tiny generic eta=2 loop well enough; adding the specialized path increased text substantially for noise-level speed movement.
 - Next idea: Drop this code change and switch strategy to KEM data-flow work, especially reducing matrix materialization or stack traffic.
+
+## 2026-06-10: KEM data-flow streaming
+
+- Branch: `exp/kem-stream-matrix`
+- Hypothesis: Matrix elements and noise polynomials that are generated once and consumed once should be streamed through the KEM computation instead of stored in large temporary arrays. This should reduce stack traffic, code size, and possibly runtime.
+- Baseline: `3226137` code-equivalent to `eb1a0cb`; `make test` passed. Same-link baseline built from `eb1a0cb:kem.c` in `/tmp` passed `/tmp/test-base`. `/tmp/bench-base 5000 9` produced `keygen_ns_avg=58455`, `encaps_ns_avg=59940`, `decaps_ns_avg=71660`; second run `keygen_ns_avg=58371`, `encaps_ns_avg=59993`, `decaps_ns_avg=71799`. Baseline size: `/tmp/bench-base dec=30338`, `/tmp/kem-base.o dec=4485`.
+- Change: Removed full `A_hat[K][K]` materialization in keygen/encrypt and generated each matrix polynomial immediately before its multiply. Converted one-use sampled polynomial arrays (`s`, `e`, `rv`, `e1`, `u`, `that`) to temporary data flow where possible. Replaced the decapsulation `J(z || c)` staging buffer with streaming SHAKE-256 absorb.
+- Correctness: `make test` passed, including ACVP ML-KEM-768 KAT.
+- Benchmark: `./bench 5000 9` produced `keygen_ns_avg=57559`, `encaps_ns_avg=59314`, `decaps_ns_avg=70726`; second run `keygen_ns_avg=57822`, `encaps_ns_avg=59394`, `decaps_ns_avg=71115`.
+- Size: `make size` produced `bench dec=30251`, `kem.o dec=4398`, `testc dec=57501`.
+- Interpretation: Accepted. The speedup is small but repeated under same-link comparison, and the implementation object shrinks by 87 bytes while source-level stack use is reduced by several one-use polynomial arrays and the 1120-byte `J(z || c)` staging buffer.
+- Next idea: Look for a similarly small KEM/encoding data-flow win, or try Keccak absorb/squeeze specialization for fixed small inputs only if it stays FIPS-compatible and measurable.

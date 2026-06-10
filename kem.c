@@ -17,14 +17,6 @@ static void poly_addmul_ntt(poly256 acc, const poly256 a, const poly256 b) {
     poly256_add(acc, t, acc);
 }
 
-static void gen_matrix(const uint8_t rho[32], poly256 a[K][K]) {
-    for (int i = 0; i < K; i++) {
-        for (int j = 0; j < K; j++) {
-            sample_ntt(rho, (uint8_t)i, (uint8_t)j, a[i][j]);
-        }
-    }
-}
-
 static void sample_cbd_from_prf(int eta, const uint8_t seed[32], uint8_t nonce,
                                 poly256 out) {
     uint8_t buf[64 * ETA1];
@@ -45,29 +37,29 @@ void kpke_keygen(const uint8_t d[32], uint8_t ek[EK_SIZE],
     uint8_t g[64];
     const uint8_t *rho = g;
     const uint8_t *sigma = g + 32;
-    poly256 a[K][K], s[K], e[K], shat[K], ehat[K], that[K];
+    poly256 aij, noise, acc, shat[K], ehat[K];
     uint8_t nonce = 0;
 
     memcpy(in, d, 32);
     in[32] = K;
     sha3_512(in, sizeof(in), g);
 
-    gen_matrix(rho, a);
-
-    for (int i = 0; i < K; i++) sample_cbd_from_prf(ETA1, sigma, nonce++, s[i]);
-    for (int i = 0; i < K; i++) sample_cbd_from_prf(ETA1, sigma, nonce++, e[i]);
-
     for (int i = 0; i < K; i++) {
-        ntt(s[i], shat[i]);
-        ntt(e[i], ehat[i]);
+        sample_cbd_from_prf(ETA1, sigma, nonce++, noise);
+        ntt(noise, shat[i]);
+    }
+    for (int i = 0; i < K; i++) {
+        sample_cbd_from_prf(ETA1, sigma, nonce++, noise);
+        ntt(noise, ehat[i]);
     }
 
     for (int i = 0; i < K; i++) {
-        memcpy(that[i], ehat[i], sizeof(poly256));
+        memcpy(acc, ehat[i], sizeof(poly256));
         for (int j = 0; j < K; j++) {
-            poly_addmul_ntt(that[i], a[i][j], shat[j]);
+            sample_ntt(rho, (uint8_t)i, (uint8_t)j, aij);
+            poly_addmul_ntt(acc, aij, shat[j]);
         }
-        byte_encode(12, that[i], ek + (size_t)i * POLY_BYTES);
+        byte_encode(12, acc, ek + (size_t)i * POLY_BYTES);
         byte_encode(12, shat[i], dk_pke + (size_t)i * POLY_BYTES);
     }
     memcpy(ek + K * POLY_BYTES, rho, 32);
@@ -76,28 +68,30 @@ void kpke_keygen(const uint8_t d[32], uint8_t ek[EK_SIZE],
 void kpke_encrypt(const uint8_t ek[EK_SIZE], const uint8_t m[32],
                   const uint8_t r[32], uint8_t c[CT_SIZE]) {
     const uint8_t *rho = ek + K * POLY_BYTES;
-    poly256 a[K][K], t_hat[K], rv[K], e1[K], e2, rhat[K], u[K], v, mu, acc;
+    poly256 aji, t_hat[K], noise, rhat[K], v, mu, acc;
     uint16_t comp[N];
     uint8_t nonce = 0;
 
     for (int i = 0; i < K; i++) {
         byte_decode(12, ek + (size_t)i * POLY_BYTES, t_hat[i]);
     }
-    gen_matrix(rho, a);
 
-    for (int i = 0; i < K; i++) sample_cbd_from_prf(ETA1, r, nonce++, rv[i]);
-    for (int i = 0; i < K; i++) sample_cbd_from_prf(ETA2, r, nonce++, e1[i]);
-    sample_cbd_from_prf(ETA2, r, nonce++, e2);
-
-    for (int i = 0; i < K; i++) ntt(rv[i], rhat[i]);
+    for (int i = 0; i < K; i++) {
+        sample_cbd_from_prf(ETA1, r, nonce++, noise);
+        ntt(noise, rhat[i]);
+    }
 
     for (int i = 0; i < K; i++) {
         poly_zero(acc);
         for (int j = 0; j < K; j++) {
-            poly_addmul_ntt(acc, a[j][i], rhat[j]);
+            sample_ntt(rho, (uint8_t)j, (uint8_t)i, aji);
+            poly_addmul_ntt(acc, aji, rhat[j]);
         }
-        ntt_inv(acc, u[i]);
-        poly256_add(u[i], e1[i], u[i]);
+        ntt_inv(acc, noise);
+        sample_cbd_from_prf(ETA2, r, nonce++, acc);
+        poly256_add(noise, acc, noise);
+        compress_poly(DU, noise, comp);
+        byte_encode_u16(DU, comp, c + (size_t)i * (N * DU / 8));
     }
 
     poly_zero(acc);
@@ -105,14 +99,11 @@ void kpke_encrypt(const uint8_t ek[EK_SIZE], const uint8_t m[32],
         poly_addmul_ntt(acc, t_hat[i], rhat[i]);
     }
     ntt_inv(acc, v);
-    poly256_add(v, e2, v);
+    sample_cbd_from_prf(ETA2, r, nonce++, noise);
+    poly256_add(v, noise, v);
     message_to_poly(m, mu);
     poly256_add(v, mu, v);
 
-    for (int i = 0; i < K; i++) {
-        compress_poly(DU, u[i], comp);
-        byte_encode_u16(DU, comp, c + (size_t)i * (N * DU / 8));
-    }
     compress_poly(DV, v, comp);
     byte_encode_u16(DV, comp, c + CT_U_SIZE);
 }
@@ -191,7 +182,7 @@ void mlkem_decaps(const uint8_t dk[DK_SIZE], const uint8_t c[CT_SIZE],
     const uint8_t *h = dk + DK_PKE_SIZE + EK_SIZE;
     const uint8_t *z = dk + DK_PKE_SIZE + EK_SIZE + 32;
     uint8_t m[32], in[64], g[64], kbar[SHARED_KEY_SIZE], c2[CT_SIZE];
-    uint8_t jbuf[32 + CT_SIZE];
+    keccak_ctx ctx;
     uint8_t diff = 0;
 
     kpke_decrypt(dk_pke, c, m);
@@ -199,9 +190,11 @@ void mlkem_decaps(const uint8_t dk[DK_SIZE], const uint8_t c[CT_SIZE],
     memcpy(in + 32, h, 32);
     sha3_512(in, sizeof(in), g);
 
-    memcpy(jbuf, z, 32);
-    memcpy(jbuf + 32, c, CT_SIZE);
-    shake256(jbuf, sizeof(jbuf), kbar, sizeof(kbar));
+    keccak_init(&ctx, 136);
+    keccak_absorb(&ctx, z, 32);
+    keccak_absorb(&ctx, c, CT_SIZE);
+    keccak_finalize(&ctx, 0x1f);
+    keccak_squeeze(&ctx, kbar, sizeof(kbar));
 
     kpke_encrypt(ek, m, g + 32, c2);
     for (int i = 0; i < CT_SIZE; i++) diff |= (uint8_t)(c[i] ^ c2[i]);
