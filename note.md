@@ -151,3 +151,13 @@
 - Baseline: `exp/kat-mlkem768` at `3fcd17f`.
 - Result: Documentation-only accepted state sync. `make test` passed.
 - Next idea: Resume optimization from the FIPS-validated state, with CBD specialization or KEM stack/matrix materialization as the next candidate experiments.
+
+## 2026-06-10: CBD eta=2 nibble specialization
+
+- Branch: `exp/cbd-eta2`
+- Hypothesis: Since ML-KEM-768 uses `eta1=eta2=2`, a direct one-nibble-to-one-coefficient CBD path would reduce the generic bit-indexing overhead in keygen, encaps, and deterministic re-encryption during decaps.
+- Baseline: `exp/plan-sync-fips-kat` at `eb1a0cb`; `make test` passed. `./bench 2000 7` produced `keygen_ns_avg=57519`, `encaps_ns_avg=59363`, `decaps_ns_avg=70939`. `make size`: `bench dec=30338`, `sample.o dec=1108`, `testc dec=57588`.
+- Change: Added an `eta == 2` fast path in `sample_poly_cbd` that processed two coefficients per byte through a small nibble helper, while keeping the generic path for other eta values.
+- Result: `make test` passed, but `./bench 2000 7` produced `keygen_ns_avg=57735`, `encaps_ns_avg=59264`, `decaps_ns_avg=71229`. `make size`: `bench dec=32162`, `sample.o dec=2932`, `testc dec=59412`.
+- Why it failed or was not accepted: Runtime did not improve clearly and code size regressed sharply. The compiler appears to already optimize the tiny generic eta=2 loop well enough; adding the specialized path increased text substantially for noise-level speed movement.
+- Next idea: Drop this code change and switch strategy to KEM data-flow work, especially reducing matrix materialization or stack traffic.
