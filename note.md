@@ -142,3 +142,12 @@
 - Size: `make size` produced `testc dec=57588`, `test.o dec=30834`; `bench dec=30338`, `kem.o dec=4485`, `sample.o dec=1108`, and other implementation object sizes unchanged.
 - Interpretation: Accepted as compatibility evidence. This does not optimize runtime, but it validates the current implementation against independent FIPS203 ACVP vectors and reduces the risk that round-trip tests were masking a spec deviation.
 - Next idea: Add a small `kat` test group or expand KAT coverage to a few more ACVP cases only if needed; otherwise resume optimization from this FIPS-validated branch.
+
+## 2026-06-10: plan sync after ACVP KAT
+
+- Branch: `exp/plan-sync-fips-kat`
+- Hypothesis: Keeping `plan.md` aligned with the accepted implementation state reduces the risk of repeating stale assumptions during the next optimization loop.
+- Change: Updated `plan.md` for the current static NTT tables, bounded Barrett use in inverse final scaling and `ntt_mul`, SampleNTT direct 3-byte squeeze, current grouped Makefile/test flow, ACVP ML-KEM-768 KAT coverage, and the corrected root-order facts (`17^128 = -1`, `17^256 = 1`).
+- Baseline: `exp/kat-mlkem768` at `3fcd17f`.
+- Result: Documentation-only accepted state sync. `make test` passed.
+- Next idea: Resume optimization from the FIPS-validated state, with CBD specialization or KEM stack/matrix materialization as the next candidate experiments.
