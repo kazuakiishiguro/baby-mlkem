@@ -2790,3 +2790,47 @@
       - encaps: `5473.22` ns/op
       - decaps: `6070.86` ns/op
       - roundtrip: `17318.74` ns/op
+
+### Update: clang-default-fno-strict-aliasing (2026-06-25)
+
+- Change:
+  - Added `-fno-strict-aliasing` to clang default `EXTRA_CFLAGS` in `Makefile`.
+  - Synced `scripts/bench_compare_all_stats.sh` effective clang defaults.
+  - Updated README clang default flag documentation.
+- Why:
+  - Profiling showed Keccak/FIPS202 paths dominate runtime; a small flag sweep
+    found current clang defaults plus `-fno-strict-aliasing` reduced local
+    roundtrip mean and variance on this host.
+- Evidence:
+  - Profile command:
+    - `PIN_CPU=0 C_COMPILER=clang AVX2_BACKEND=upstream KEEP_PROFILE_ARTIFACTS=1 PROFILE_BENCH_ITERS=6000 ./scripts/profile_kyber_gprof.sh 6000`
+  - Profile result excerpt:
+    - `KeccakF1600_StatePermute`: `50.00%` self time
+    - `pqcrystals_kyber_fips202x4_avx2_KeccakP1600times4_PermuteAll_24rounds`: `36.36%` self time
+  - A/B screening (`PIN_CPU=0`, `clang`, `3000x5`):
+    - previous clang default:
+      - local mean: `16143.09` ns/op
+      - local sd: `153.02` ns/op
+      - speedup vs upstream: `1.003x`
+    - with `-fno-strict-aliasing`:
+      - local mean: `15974.19` ns/op
+      - local sd: `49.06` ns/op
+      - speedup vs upstream: `1.012x`
+- Verification after adopting:
+  - Syntax:
+    - Command: `bash -n scripts/bench_compare_all_stats.sh`
+    - Result: `OK`
+  - Correctness:
+    - Command: `make clean && make test`
+    - Result: `OK`
+  - Local benchmark:
+    - Command: `make bench-run BENCH_ITERS=400`
+    - Result:
+      - keygen: `5528.77` ns/op
+      - encaps: `4945.26` ns/op
+      - decaps: `5986.56` ns/op
+      - roundtrip: `15826.46` ns/op
+  - Upstream Kyber comparison after adoption (`PIN_CPU=0`, `clang`, `3000x3`):
+    - local mean: `16029.97` ns/op
+    - upstream mean: `16159.12` ns/op
+    - local speedup: `1.008x`

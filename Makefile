@@ -58,7 +58,7 @@ ifeq ($(origin OPT_CFLAGS), file)
 OPT_CFLAGS := -O3 -fno-semantic-interposition -fvisibility=hidden
 endif
 ifeq ($(origin EXTRA_CFLAGS), file)
-EXTRA_CFLAGS := -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables
+EXTRA_CFLAGS := -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
 endif
 endif
 ASFLAGS ?= -Wa,--noexecstack

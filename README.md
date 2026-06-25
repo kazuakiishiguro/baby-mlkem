@@ -388,7 +388,7 @@ OPT_CFLAGS="-Ofast -flto" EXTRA_CFLAGS="-funroll-loops -fomit-frame-pointer" \
 If `CC` resolves to `clang` and no explicit `OPT_CFLAGS`/`EXTRA_CFLAGS` are
 provided, `Makefile` applies clang-tuned defaults:
 - `OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden`
-- `EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables`
+- `EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing`
 
 If `CC` resolves to `gcc` and no explicit `EXTRA_CFLAGS` is provided, the
 default extra flags are:

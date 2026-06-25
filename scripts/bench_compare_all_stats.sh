@@ -342,7 +342,7 @@ if [ -n "${EXTRA_CFLAGS+x}" ]; then
   EFFECTIVE_LOCAL_EXTRA_CFLAGS="$EXTRA_CFLAGS"
 else
   if [[ "$C_COMPILER" == *clang* ]]; then
-    EFFECTIVE_LOCAL_EXTRA_CFLAGS="-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables"
+    EFFECTIVE_LOCAL_EXTRA_CFLAGS="-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing"
   else
     EFFECTIVE_LOCAL_EXTRA_CFLAGS="-funroll-loops -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -finline-functions"
   fi
