@@ -2764,3 +2764,29 @@
       - `vs_openssl=3.014x`
   - Correctness:
     - `make test`: `OK`
+
+### Update: blake3-dependency-removal-and-readme-table (2026-06-25)
+
+- Change:
+  - Removed the vendored BLAKE3 dependency from `include/blake3/`.
+  - Removed BLAKE3 sources, include paths, dispatcher feature probes, wrapper
+    function, and test vector from the build/test path.
+  - Kept hash/XOF coverage focused on FIPS202 SHA3/SHAKE vectors.
+  - Added a README compiler-matrix comparison table snapshot with the
+    reproducible command.
+- Why:
+  - ML-KEM should stay aligned with FIPS 203/FIPS 202 primitives, and BLAKE3 was
+    no longer used by the KEM path.
+- Verification:
+  - Command: `rg -n "\bblake3\b|BLAKE3|include/blake3" -S --glob '!note.md'`
+  - Result: no matches.
+  - Correctness:
+    - Command: `make test`
+    - Result: `OK`
+  - Local benchmark:
+    - Command: `make bench-run BENCH_ITERS=400`
+    - Result:
+      - keygen: `5592.85` ns/op
+      - encaps: `5473.22` ns/op
+      - decaps: `6070.86` ns/op
+      - roundtrip: `17318.74` ns/op
