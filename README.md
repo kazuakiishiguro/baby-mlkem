@@ -417,16 +417,19 @@ PIN_CPU=0 WARMUP_RUNS=1 SLEEP_BETWEEN_RUNS=0.2 SLEEP_BETWEEN_COMBOS=1 \
   ./scripts/tune_flags_against_kyber.sh 2000 3
 ```
 
-For file-local backend tuning, the Makefile also exposes these optional knobs:
+For file-local backend tuning, the Makefile also exposes these per-file knobs.
+`KYBER_FIPS202_CFLAGS` defaults to `-O2` for the upstream Kyber scalar
+FIPS202 path; the x4 and Keccak4x knobs default to empty. All three can be
+overridden from the command line for A/B experiments:
 
 ```bash
+KYBER_FIPS202_CFLAGS= make bench
 KYBER_FIPS202_CFLAGS="-fno-slp-vectorize" make bench
 KYBER_FIPS202X4_CFLAGS="-Ofast" make bench
 KYBER_KECCAK4X_CFLAGS="-falign-functions=64" make bench
 ```
 
-Use these for A/B experiments only; keep defaults unless repeated comparison
-runs show a stable win.
+Keep non-default overrides only when repeated comparison runs show a stable win.
 
 ## Profiling
 

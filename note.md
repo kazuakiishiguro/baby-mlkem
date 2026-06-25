@@ -2875,3 +2875,50 @@
 - Decision:
   - Keep default backend flags unchanged.
   - Keep the file-local knobs for future focused experiments.
+
+### Update: scalar-fips202-o2-default (2026-06-26)
+
+- Change:
+  - Set the upstream Kyber scalar FIPS202 file-local default to
+    `KYBER_FIPS202_CFLAGS ?= -O2`.
+  - Updated README per-file tuning docs to state that `KYBER_FIPS202_CFLAGS`
+    defaults to `-O2` and can be cleared with `KYBER_FIPS202_CFLAGS=` for A/B
+    checks.
+- Why:
+  - The scalar `KeccakF1600_StatePermute` path remains the largest profiled
+    hotspot, and a file-local `-O2` compile reduced the decapsulation-heavy
+    path without changing global flags.
+- Rejected trials from this pass:
+  - Keccak4x macro modernization mirroring PQClean (`CONST256_64`, `PERM128`,
+    `SHUFFLE64`) compiled and passed tests, but direct A/B was neutral:
+    - base (`5000x10`): mean `15938.66` ns/op, median `15930.49`
+    - candidate (`5000x10`): mean `15938.77` ns/op, median `15948.11`
+  - `KYBER_FIPS202_CFLAGS=-Ofast` was slower in direct A/B:
+    - base (`5000x10`): mean `15989.56` ns/op, median `15987.72`
+    - `-Ofast` (`5000x10`): mean `16105.11` ns/op, median `16111.51`
+  - `KYBER_FIPS202_CFLAGS=-fno-slp-vectorize` was also slower in the
+    three-way screen and was not pursued.
+- Adopted candidate evidence:
+  - Direct order-flipped A/B (`taskset -c 0`, `8000x16`):
+    - base: mean roundtrip `16076.40` ns/op, median `16057.51`, mean decaps
+      `5645.71`
+    - `KYBER_FIPS202_CFLAGS=-O2`: mean roundtrip `16052.36` ns/op, median
+      `16028.12`, mean decaps `5602.68`
+  - Upstream Kyber comparison before adoption (`PIN_CPU=0`, `C_COMPILER=clang`,
+    `2000x3`):
+    - local mean `16022.04` ns/op
+    - upstream mean `16125.35` ns/op
+    - local speedup about `1.006x`
+  - Upstream Kyber comparison after adoption (`PIN_CPU=0`, `C_COMPILER=clang`,
+    `2000x3`):
+    - local mean `15980.66` ns/op
+    - upstream mean `16119.61` ns/op
+    - local speedup about `1.009x`
+- Verification after adopting:
+  - Correctness:
+    - Command: `make clean && make test`
+    - Result: `OK`
+  - Local benchmark smoke:
+    - Command: `make bench-run BENCH_ITERS=400`
+    - Result: completed; short run roundtrip `17690.88` ns/op, not used for
+      adoption due visible short-run noise.
