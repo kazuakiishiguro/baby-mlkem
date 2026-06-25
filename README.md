@@ -417,6 +417,17 @@ PIN_CPU=0 WARMUP_RUNS=1 SLEEP_BETWEEN_RUNS=0.2 SLEEP_BETWEEN_COMBOS=1 \
   ./scripts/tune_flags_against_kyber.sh 2000 3
 ```
 
+For file-local backend tuning, the Makefile also exposes these optional knobs:
+
+```bash
+KYBER_FIPS202_CFLAGS="-fno-slp-vectorize" make bench
+KYBER_FIPS202X4_CFLAGS="-Ofast" make bench
+KYBER_KECCAK4X_CFLAGS="-falign-functions=64" make bench
+```
+
+Use these for A/B experiments only; keep defaults unless repeated comparison
+runs show a stable win.
+
 ## Profiling
 
 When `perf` is unavailable (restricted `perf_event_paranoid`), use the

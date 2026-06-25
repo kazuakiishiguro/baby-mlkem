@@ -2834,3 +2834,44 @@
     - local mean: `16029.97` ns/op
     - upstream mean: `16159.12` ns/op
     - local speedup: `1.008x`
+
+### Update: keccak-fips202-file-local-cflags-knobs (2026-06-25)
+
+- Change:
+  - Added optional Makefile knobs for upstream Kyber backend file-local tuning:
+    - `KYBER_FIPS202_CFLAGS`
+    - `KYBER_FIPS202X4_CFLAGS`
+    - `KYBER_KECCAK4X_CFLAGS`
+  - Documented the knobs in README flag-tuning guidance.
+- Why:
+  - Profiling showed Keccak/FIPS202 dominates local runtime, so future flag
+    experiments should be scoped to those files instead of changing global
+    build flags.
+- Verification:
+  - Correctness:
+    - Command: `make clean && make test`
+    - Result: `OK`
+  - Local benchmark smoke:
+    - Command: `make bench-run BENCH_ITERS=400`
+    - Result: roundtrip `16562.95` ns/op
+- Trial results:
+  - Keccak4x candidates (`KYBER_KECCAK4X_CFLAGS`) did not beat base in
+    `PIN_CPU=0 C_COMPILER=clang ./scripts/bench_compare_kyber_upstream.sh 2000`
+    repeated 3 times:
+    - base local mean: `15952.69` ns/op, speedup `1.010x`
+    - `-Ofast`: local mean `15988.55` ns/op, speedup `1.009x`
+    - `-fno-slp-vectorize`: local mean `16047.19` ns/op, speedup `1.006x`
+  - FIPS202x4 `-Ofast` was not a clear local win:
+    - local mean `15956.77` ns/op, speedup `1.014x`
+  - Scalar FIPS202 candidates showed only small/noisy gains:
+    - base (`2000x3`) local mean `15960.47` ns/op, speedup `1.009x`
+    - `KYBER_FIPS202_CFLAGS=-fno-slp-vectorize`: local mean `15942.32` ns/op, speedup `1.009x`
+    - `KYBER_FIPS202_CFLAGS=-Ofast`: local mean `15926.12` ns/op, speedup `1.011x`
+    - `KYBER_FIPS202_CFLAGS=-O2`: local mean `15962.79` ns/op, speedup `1.014x`
+  - Longer scalar `-Ofast` A/B (`3000x5`) reduced outlier sensitivity but was
+    not strong enough to adopt as a default:
+    - base local mean `16143.24` ns/op (sd `209.83`), speedup `1.002x`
+    - `-Ofast` local mean `16019.97` ns/op (sd `26.64`), speedup `1.008x`
+- Decision:
+  - Keep default backend flags unchanged.
+  - Keep the file-local knobs for future focused experiments.
