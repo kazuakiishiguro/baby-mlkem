@@ -46,6 +46,8 @@ void shake256_squeezeblocks(uint8_t *out, size_t nblocks,  keccak_state *state);
 void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen);
 #define shake256 FIPS202_NAMESPACE(shake256)
 void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen);
+#define shake256_32_1088 FIPS202_NAMESPACE(shake256_32_1088)
+void shake256_32_1088(uint8_t out[32], const uint8_t key[32], const uint8_t in[1088]);
 #define sha3_256 FIPS202_NAMESPACE(sha3_256)
 void sha3_256(uint8_t h[32], const uint8_t *in, size_t inlen);
 #define sha3_512 FIPS202_NAMESPACE(sha3_512)

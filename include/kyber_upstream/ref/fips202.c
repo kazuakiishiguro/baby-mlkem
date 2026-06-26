@@ -734,6 +734,47 @@ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
 }
 
 /*************************************************
+* Name:        shake256_32_1088
+*
+* Description: SHAKE256 specialized for Kyber768 rkprf input.
+*
+* Arguments:   - uint8_t *out: pointer to 32-byte output
+*              - const uint8_t *key: pointer to 32-byte key prefix
+*              - const uint8_t *in: pointer to 1088-byte ciphertext suffix
+**************************************************/
+void shake256_32_1088(uint8_t out[32], const uint8_t key[32], const uint8_t in[1088])
+{
+  unsigned int i, j;
+  uint64_t s[25];
+
+  for(i=0;i<25;i++)
+    s[i] = 0;
+
+  for(i=0;i<4;i++)
+    s[i] ^= load64(key+8*i);
+  for(i=0;i<13;i++)
+    s[i+4] ^= load64(in+8*i);
+  in += 104;
+  KeccakF1600_StatePermute(s);
+
+  for(j=0;j<7;j++) {
+    for(i=0;i<SHAKE256_RATE/8;i++)
+      s[i] ^= load64(in+8*i);
+    in += SHAKE256_RATE;
+    KeccakF1600_StatePermute(s);
+  }
+
+  for(i=0;i<4;i++)
+    s[i] ^= load64(in+8*i);
+  s[4] ^= 0x1F;
+  s[(SHAKE256_RATE-1)/8] ^= 1ULL << 63;
+
+  KeccakF1600_StatePermute(s);
+  for(i=0;i<4;i++)
+    store64(out+8*i,s[i]);
+}
+
+/*************************************************
 * Name:        sha3_256
 *
 * Description: SHA3-256 with non-incremental API

@@ -2922,3 +2922,45 @@
     - Command: `make bench-run BENCH_ITERS=400`
     - Result: completed; short run roundtrip `17690.88` ns/op, not used for
       adoption due visible short-run noise.
+
+### Update: fixed-length-rkprf-shake256 (2026-06-26)
+
+- Change:
+  - Added `shake256_32_1088()` for the Kyber768 decapsulation rejection-key
+    PRF input shape: `key[32] || ciphertext[1088]`.
+  - Routed `kyber_shake256_rkprf()` to the fixed-length path when
+    `KYBER_K == 3`; kept the original incremental SHAKE256 path for other K.
+- Why:
+  - The previous decapsulation path used incremental `shake256_absorb()` for
+    `key || ct`, which absorbs bytes one at a time. The fixed-length path
+    absorbs aligned 64-bit lanes directly and avoids the incremental API
+    overhead while preserving the same 9 Keccak permutations.
+- Rejected trial in this pass:
+  - Added a separate `sha3_256_1184()` for `H(pk)` and routed `hash_h` to it.
+    It was not adopted because the three-way A/B showed the `rkprf`-only
+    variant was faster overall:
+    - baseline (`8000x12`): mean `16018.26` ns/op, median `16027.81`
+    - `rkprf` only (`8000x12`): mean `15625.15` ns/op, median `15632.17`
+    - `rkprf + H(pk)` (`8000x12`): mean `15700.93` ns/op, median `15708.50`
+- Adopted candidate evidence:
+  - Direct A/B (`taskset -c 0`, order-rotated, `8000x12`):
+    - baseline mean decaps `5622.73` ns/op
+    - `rkprf` fixed-length mean decaps `5223.20` ns/op
+    - roundtrip mean improved by about `393.11` ns/op.
+  - Upstream Kyber comparison after adoption (`PIN_CPU=0`, `C_COMPILER=clang`,
+    `2000x3`):
+    - local mean `15560.39` ns/op
+    - upstream mean `16141.96` ns/op
+    - local speedup about `1.037x`
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make clean CC=gcc && make test CC=gcc`
+    - Result: `OK`
+  - Profile after adoption:
+    - Command: `PIN_CPU=0 C_COMPILER=clang AVX2_BACKEND=upstream KEEP_PROFILE_ARTIFACTS=1 PROFILE_BENCH_ITERS=8000 ./scripts/profile_kyber_gprof.sh 8000`
+    - Result: `shake256_32_1088` appears on the scalar Keccak path; remaining
+      top hotspots are scalar `KeccakF1600_StatePermute`, x4 Keccak permutation,
+      and `gen_matrix`.
