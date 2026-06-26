@@ -68,7 +68,13 @@ TARGET = testc
 BENCH_TARGET = benchc
 BENCH_ITERS ?= 200
 BENCH_CT_STRIDE ?= 1088
-KYBER_FIPS202_CFLAGS ?= -O2
+ifeq ($(origin KYBER_FIPS202_CFLAGS), undefined)
+ifneq ($(findstring clang,$(notdir $(CC))),)
+KYBER_FIPS202_CFLAGS := -O3 -fno-vectorize -fno-slp-vectorize
+else
+KYBER_FIPS202_CFLAGS := -O2
+endif
+endif
 KYBER_FIPS202X4_CFLAGS ?=
 KYBER_KECCAK4X_CFLAGS ?=
 

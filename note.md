@@ -3236,3 +3236,62 @@
   - Upstream ref Kyber768:
     - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref test/test_kyber768 CC=clang && include/kyber_upstream/ref/test/test_kyber768`
     - Result: `OK`
+
+
+### Update: clang-scalar-fips202-no-vectorize (2026-06-26)
+
+- Profile context after public-key cache consolidation:
+  - Command: `PIN_CPU=0 C_COMPILER=clang KEEP_PROFILE_ARTIFACTS=1 scripts/profile_kyber_gprof.sh 12000`
+  - Top flat-profile costs:
+    - scalar `KeccakF1600_StatePermute`: `36.67%`
+    - x4 Keccak permutation: `26.67%`
+    - `poly_add`: `6.67%`
+    - `polyvec_compress`: `6.67%`
+    - `ntt_avx`: `6.67%`
+  - Decision: scalar Keccak remained the most useful low-risk target.
+- Rejected candidate: fixed-length `sha3_256_1184()` for public-key `H(pk)`.
+  - Full `hash_h(..., KYBER_PUBLICKEYBYTES)` route A/B (`taskset -c 0`,
+    `clang`, `20000x6`):
+    - keygen speedup `1.004x` mean / `1.006x` median
+    - encaps speedup `0.990x` mean / `0.991x` median
+    - decaps speedup `0.993x` mean / `0.993x` median
+    - roundtrip speedup `1.001x` mean / `1.003x` median
+  - Moving the helper after `sha3_512_64()` did not remove the fixed-key
+    encaps/decaps regression.
+  - Keypair-only routing A/B (`taskset -c 0`, `clang`, `20000x6`):
+    - keygen speedup `0.990x` mean / `1.004x` median
+    - encaps speedup `0.991x` mean / `0.992x` median
+    - decaps speedup `0.994x` mean / `0.994x` median
+    - roundtrip speedup `0.996x` mean / `0.998x` median
+  - Decision: not adopted. The helper is too sensitive to code layout and does
+    not improve the full benchmark reliably on this host/compiler.
+- Adopted candidate: clang-only scalar `fips202.c` flags.
+  - Screen (`taskset -c 0`, `clang`, upstream AVX2 backend, `8000x4`) showed
+    the best candidate as `KYBER_FIPS202_CFLAGS=-O3 -fno-vectorize -fno-slp-vectorize`:
+    - keygen speedup `1.009x`
+    - encaps speedup `1.009x`
+    - decaps speedup `1.004x`
+    - roundtrip speedup `1.008x`
+  - A/B against `-O2` (`taskset -c 0`, `clang`, upstream AVX2 backend,
+    `20000x6`):
+    - keygen: baseline mean `5151.78` ns/op, candidate mean `5108.20` ns/op,
+      speedup `1.008x`
+    - encaps: baseline mean `1264.34` ns/op, candidate mean `1254.86` ns/op,
+      speedup `1.008x`
+    - decaps: baseline mean `3155.95` ns/op, candidate mean `3159.02` ns/op,
+      speedup `0.999x` mean / `1.001x` median
+    - roundtrip: baseline mean `13551.25` ns/op, candidate mean `13452.19`
+      ns/op, speedup `1.007x`
+- Change:
+  - `Makefile` now selects `KYBER_FIPS202_CFLAGS=-O3 -fno-vectorize -fno-slp-vectorize`
+    only when `CC` resolves to clang.
+  - GCC keeps the previous default `KYBER_FIPS202_CFLAGS=-O2` to avoid passing
+    clang-only flags to GCC.
+  - Explicit `KYBER_FIPS202_CFLAGS=...` overrides still work.
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=clang`
+    - Result: `OK`; `fips202.o` compile line included `-O3 -fno-vectorize -fno-slp-vectorize`.
+  - Correctness, gcc:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=gcc`
+    - Result: `OK`; `fips202.o` compile line kept `-O2`.

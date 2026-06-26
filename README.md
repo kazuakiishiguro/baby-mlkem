@@ -532,6 +532,25 @@ This keeps the cached data public-only, but removes the duplicated same-public-k
 lookup in encapsulation by sharing cached `H(pk)`, unpacked `pk`, and generated
 `A^T` from the same cache entry.
 
+
+### Latest Local Optimization A/B (2026-06-26, clang scalar FIPS202 flags)
+
+Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `20000`
+iterations per run, `6` baseline runs followed by `6` candidate runs. Baseline
+uses `KYBER_FIPS202_CFLAGS=-O2`; candidate uses
+`KYBER_FIPS202_CFLAGS=-O3 -fno-vectorize -fno-slp-vectorize` for scalar
+Kyber `fips202.c`.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 5151.78 | 5108.20 | 1.008x |
+| encaps | 1264.34 | 1254.86 | 1.008x |
+| decaps | 3155.95 | 3159.02 | 0.999x |
+| roundtrip | 13551.25 | 13452.19 | 1.007x |
+
+The Makefile applies these flags only for `clang`; GCC keeps the previous
+`KYBER_FIPS202_CFLAGS=-O2` default.
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all
