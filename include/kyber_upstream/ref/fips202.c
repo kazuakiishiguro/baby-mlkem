@@ -584,6 +584,30 @@ void shake128_absorb_once(keccak_state *state, const uint8_t *in, size_t inlen)
 }
 
 /*************************************************
+* Name:        shake128_absorb_34
+*
+* Description: Initialize and absorb SHAKE128 for 32-byte seed plus 2 bytes.
+*
+* Arguments:   - keccak_state *state: pointer to output Keccak state
+*              - const uint8_t *seed: pointer to 32-byte seed
+*              - uint8_t x: first suffix byte
+*              - uint8_t y: second suffix byte
+**************************************************/
+void shake128_absorb_34(keccak_state *state, const uint8_t seed[32], uint8_t x, uint8_t y)
+{
+  unsigned int i;
+
+  for(i=0;i<25;i++)
+    state->s[i] = 0;
+
+  for(i=0;i<4;i++)
+    state->s[i] = load64(seed+8*i);
+  state->s[4] = (uint64_t)x | ((uint64_t)y << 8) | ((uint64_t)0x1F << 16);
+  state->s[(SHAKE128_RATE-1)/8] ^= 1ULL << 63;
+  state->pos = SHAKE128_RATE;
+}
+
+/*************************************************
 * Name:        shake128_squeezeblocks
 *
 * Description: Squeeze step of SHAKE128 XOF. Squeezes full blocks of

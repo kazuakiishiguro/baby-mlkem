@@ -333,11 +333,7 @@ void gen_matrix(polyvec *a, const uint8_t seed[32], int transposed)
   poly_nttunpack(&a[2].vec[0]);
   poly_nttunpack(&a[2].vec[1]);
 
-  f = _mm256_loadu_si256((__m256i *)seed);
-  _mm256_store_si256(buf[0].vec, f);
-  buf[0].coeffs[32] = 2;
-  buf[0].coeffs[33] = 2;
-  shake128_absorb_once(&state1x, buf[0].coeffs, 34);
+  shake128_absorb_34(&state1x, seed, 2, 2);
   shake128_squeezeblocks(buf[0].coeffs, REJ_UNIFORM_AVX_NBLOCKS, &state1x);
   ctr0 = rej_uniform_avx(a[2].vec[2].coeffs, buf[0].coeffs);
   while(ctr0 < KYBER_N) {

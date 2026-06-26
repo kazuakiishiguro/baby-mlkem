@@ -2964,3 +2964,54 @@
     - Result: `shake256_32_1088` appears on the scalar Keccak path; remaining
       top hotspots are scalar `KeccakF1600_StatePermute`, x4 Keccak permutation,
       and `gen_matrix`.
+
+### Update: fixed-length-shake128-absorb34-for-gen-matrix (2026-06-26)
+
+- Change:
+  - Added `shake128_absorb_34()` for the Kyber matrix XOF input shape:
+    `seed[32] || x || y`.
+  - Routed the Kyber768 `gen_matrix()` singleton entry `(2,2)` through the
+    fixed-length absorb helper instead of materializing a 34-byte temporary and
+    calling generic `shake128_absorb_once()`.
+  - Added matching declarations to both AVX2 and ref FIPS202 headers so the
+    symlinked `ref/fips202.c` keeps namespaced helper symbols in both builds.
+- Why:
+  - Profiling after `rkprf` fixed-length SHAKE256 showed `gen_matrix()` and
+    x4/scalar SHAKE128 as the next bottleneck. For Kyber768, eight matrix
+    entries are generated via x4 SHAKE128 but the ninth entry uses scalar
+    SHAKE128 with a fixed 34-byte input. The helper removes temporary setup and
+    byte-by-byte absorb overhead while preserving the same squeeze path and
+    rejection sampling behavior.
+- Rejected trials from this pass:
+  - Enabling the existing BMI2 `rej_uniform_avx` path was slower on this host:
+    - baseline (`8000x16`): mean `15655.00` ns/op, median `15649.51`
+    - BMI2 path (`8000x16`): mean `15994.14` ns/op, median `15998.02`
+  - Generating the ninth matrix entry with x4 dummy lanes was slightly faster
+    by median but noisier and more invasive:
+    - baseline (`8000x12`): mean `15663.67` ns/op, median `15665.91`
+    - scalar `shake128_absorb_34` (`8000x12`): mean `15553.49` ns/op,
+      median `15556.97`
+    - x4 dummy lanes (`8000x12`): mean `15528.12` ns/op, median `15494.04`,
+      sd `97.15`
+  - Decision: adopt the scalar fixed-length helper first because it is simpler
+    and more stable.
+- Adopted candidate evidence:
+  - Direct three-way A/B (`taskset -c 0`, order-rotated, `8000x12`):
+    - baseline mean roundtrip `15663.67` ns/op
+    - `shake128_absorb_34` mean roundtrip `15553.49` ns/op
+    - improvement about `110.18` ns/op.
+  - Upstream Kyber comparison after adoption (`PIN_CPU=0`, `C_COMPILER=clang`,
+    `2000x3`):
+    - local mean `15474.53` ns/op
+    - upstream mean `16107.70` ns/op
+    - local speedup about `1.041x`
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make clean CC=gcc && make test CC=gcc`
+    - Result: `OK`
+  - Ref upstream subdirectory build:
+    - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
+    - Result: `OK`
