@@ -3103,3 +3103,86 @@
   - Ref upstream subdirectory build:
     - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
     - Result: `OK`
+
+### Update: rejected-next-hotspot-trials-after-hash-g (2026-06-26)
+
+- Context:
+  - After `fixed-length-hash-g-sha3-512-64`, profiling still showed scalar
+    Keccak, x4 Keccak/SHAKE, `gen_matrix()`, and NTT/basemul as the main
+    remaining costs.
+  - The following candidates were tested but not adopted because they did not
+    improve the main benchmark without meaningful regressions.
+- Rejected candidate: `sha3_256_1184()` for Kyber768 `H(pk)`.
+  - Correctness/differential check:
+    - Direct `sha3_256_1184()` vs generic `sha3_256(..., 1184)` matched over
+      deterministic test cases.
+    - `make clean && make test CC=clang AVX2_BACKEND=upstream`: `OK`
+    - `make clean CC=gcc && make test CC=gcc AVX2_BACKEND=upstream`: `OK`
+    - `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`: `OK`
+  - Full `hash_h` routing A/B (`taskset -c 0`, `clang`, `20000x16`):
+    - keygen: baseline mean `5125.60` ns/op, candidate mean `5090.13` ns/op,
+      speedup `1.007x`
+    - encaps: baseline mean `1274.05` ns/op, candidate mean `1284.52` ns/op,
+      speedup `0.992x`
+    - decaps: baseline mean `3161.77` ns/op, candidate mean `3165.01` ns/op,
+      speedup `0.999x`
+    - roundtrip: baseline mean `13561.31` ns/op, candidate mean `13493.61`
+      ns/op, speedup `1.005x`
+  - Keypair-only routing A/B (`taskset -c 0`, `clang`, `20000x16`):
+    - keygen speedup `1.008x`, but roundtrip speedup `0.999x`.
+  - Decision:
+    - Not adopted. It improves keygen, but fixed-key encaps/decaps regress or
+      roundtrip is too weak depending on routing.
+- Rejected candidate: fixed-length `shake256x4_absorb_33()` for x4 noise PRF.
+  - Correctness/differential check:
+    - Direct `shake256x4_absorb_33()` vs generic
+      `shake256x4_absorb_once(..., 33)` matched over deterministic test cases.
+    - `make clean && make test CC=clang AVX2_BACKEND=upstream`: `OK`
+    - `make clean CC=gcc && make test CC=gcc AVX2_BACKEND=upstream`: `OK`
+  - Replacing all x4 noise absorbs A/B (`taskset -c 0`, `clang`, `20000x16`):
+    - keygen: baseline mean `5137.59` ns/op, candidate mean `5146.37` ns/op,
+      speedup `0.998x`
+    - encaps: baseline mean `1276.10` ns/op, candidate mean `1256.95` ns/op,
+      speedup `1.015x`
+    - decaps: baseline mean `3161.09` ns/op, candidate mean `3136.04` ns/op,
+      speedup `1.008x`
+    - roundtrip: baseline mean `13562.28` ns/op, candidate mean `13554.47`
+      ns/op, speedup `1.001x`
+  - Encapsulation-only fast function A/B (`taskset -c 0`, `clang`, `20000x16`):
+    - keygen speedup `0.993x`, encaps speedup `1.010x`, decaps speedup
+      `1.003x`, roundtrip speedup `0.999x`.
+  - Decision:
+    - Not adopted. It helps encaps/decaps but either regresses keygen or fails
+      to improve roundtrip enough.
+- Rejected candidate: file-local x4 compile flag sweep.
+  - Screen (`taskset -c 0`, `clang`, `8000x8`), roundtrip mean speedup vs base:
+    - `KYBER_FIPS202X4_CFLAGS=-O2`: `0.997x`
+    - `KYBER_FIPS202X4_CFLAGS=-Ofast`: `0.994x`
+    - `KYBER_KECCAK4X_CFLAGS=-O2`: `1.000x`
+    - both `-O2`: `0.997x`
+  - Decision:
+    - Not adopted. No candidate cleared noise with a useful win.
+- Rejected candidate: `sha3_512_33()` for keypair seed expansion
+  `hash_g(coins || K)`.
+  - Correctness/differential check:
+    - Direct `sha3_512_33()` vs generic `sha3_512(..., 33)` matched with
+      `in == out` aliasing, matching the keypair call shape.
+    - `make clean && make test CC=clang AVX2_BACKEND=upstream`: `OK`
+    - `make clean CC=gcc && make test CC=gcc AVX2_BACKEND=upstream`: `OK`
+    - `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`: `OK`
+  - A/B (`taskset -c 0`, `clang`, `20000x16`):
+    - keygen: baseline mean `5143.41` ns/op, candidate mean `5153.71` ns/op,
+      speedup `0.998x`
+    - encaps: baseline mean `1280.72` ns/op, candidate mean `1282.51` ns/op,
+      speedup `0.999x`
+    - decaps: baseline mean `3164.36` ns/op, candidate mean `3174.25` ns/op,
+      speedup `0.997x`
+    - roundtrip: baseline mean `13580.90` ns/op, candidate mean `13633.21`
+      ns/op, speedup `0.996x`
+  - Decision:
+    - Not adopted. The fixed helper was slower on this compiler/host.
+- Next likely direction:
+  - Avoid more small fixed-length absorb helpers unless a profile shows a large
+    non-permutation overhead. Remaining useful work is more likely in larger
+    structural changes around NTT/basemul/compress paths or in a better Keccak
+    permutation implementation, not another small wrapper.
