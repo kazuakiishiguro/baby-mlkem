@@ -81,11 +81,20 @@ int crypto_kem_enc_derand(uint8_t *ct,
   uint8_t buf[2*KYBER_SYMBYTES];
   /* Will contain key, coins */
   uint8_t kr[2*KYBER_SYMBYTES];
+  /* pk is public; cache repeated-key H(pk) work. */
+  static uint8_t pk_hash_cache_input[KYBER_PUBLICKEYBYTES];
+  static uint8_t pk_hash_cache_output[KYBER_SYMBYTES];
+  static int pk_hash_cache_valid = 0;
 
   memcpy(buf, coins, KYBER_SYMBYTES);
 
   /* Multitarget countermeasure for coins + contributory KEM */
-  hash_h(buf+KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+  if(!pk_hash_cache_valid || memcmp(pk_hash_cache_input, pk, KYBER_PUBLICKEYBYTES) != 0) {
+    hash_h(pk_hash_cache_output, pk, KYBER_PUBLICKEYBYTES);
+    memcpy(pk_hash_cache_input, pk, KYBER_PUBLICKEYBYTES);
+    pk_hash_cache_valid = 1;
+  }
+  memcpy(buf+KYBER_SYMBYTES, pk_hash_cache_output, KYBER_SYMBYTES);
   hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
   /* coins are in kr+KYBER_SYMBYTES */

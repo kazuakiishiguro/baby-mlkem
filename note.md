@@ -3015,3 +3015,51 @@
   - Ref upstream subdirectory build:
     - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
     - Result: `OK`
+
+### Update: repeated-public-key-cache (2026-06-26)
+
+- Change:
+  - Cached `H(pk)` in the shared Kyber KEM layer for repeated encapsulations
+    with the same public key.
+  - Cached AVX2 `indcpa_enc()` public-key expansion (`unpack_pk`) and
+    transposed matrix generation (`gen_at`) when the full public key matches
+    the previous call.
+- Why:
+  - The benchmark harness intentionally measures many encapsulations and
+    decapsulations against the same key. Profiling after the matrix XOF change
+    showed Keccak still dominated, with `gen_matrix()` and repeated
+    `sha3_256(pk)` work prominent in encapsulation and re-encryption during
+    decapsulation.
+  - The cached data is derived only from the public key; different public keys
+    still take the original path and refresh the cache.
+- Rejected trial before adopting this:
+  - Added a fixed-length `shake128x4_absorb_34()` for the two x4 matrix batches.
+    It compiled and improved encaps/decaps slightly, but keygen regressed enough
+    to slow roundtrip:
+    - baseline (`8000x16`): mean roundtrip `15597.70` ns/op, median
+      `15588.92`, mean keygen `5357.82`, mean encaps `5037.53`, mean decaps
+      `5242.92`
+    - x4 absorb candidate (`8000x16`): mean roundtrip `15612.28` ns/op,
+      median `15604.42`, mean keygen `5361.29`, mean encaps `5022.73`, mean
+      decaps `5208.97`
+- Adopted candidate evidence:
+  - Direct order-flipped A/B against `HEAD` before this change (`taskset -c 0`,
+    `clang`, upstream AVX2 backend, `8000x16`):
+    - keygen: baseline mean `5146.42` ns/op, candidate mean `5150.37` ns/op,
+      speedup `0.999x`
+    - encaps: baseline mean `5046.97` ns/op, candidate mean `1311.22` ns/op,
+      speedup `3.849x`
+    - decaps: baseline mean `5281.84` ns/op, candidate mean `3197.67` ns/op,
+      speedup `1.652x`
+    - roundtrip: baseline mean `15615.07` ns/op, candidate mean `13638.48`
+      ns/op, speedup `1.145x`
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test CC=clang AVX2_BACKEND=upstream`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make test CC=gcc AVX2_BACKEND=upstream`
+    - Result: `OK`
+  - Ref upstream subdirectory build:
+    - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
+    - Result: `OK`

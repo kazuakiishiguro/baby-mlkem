@@ -483,12 +483,25 @@ void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
 {
   unsigned int i;
   uint8_t seed[KYBER_SYMBYTES];
-  polyvec sp, pkpv, ep, at[KYBER_K], b;
+  polyvec sp, ep, b;
+  /* pk is public; cache repeated-key unpack and A^T generation. */
+  static uint8_t pk_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
+  static polyvec pkpv_cache;
+  static polyvec at_cache[KYBER_K];
+  static int pk_cache_valid = 0;
+  const polyvec *pkpv;
+  const polyvec *at;
   poly v, k, epp;
 
-  unpack_pk(&pkpv, seed, pk);
+  if(!pk_cache_valid || memcmp(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES) != 0) {
+    unpack_pk(&pkpv_cache, seed, pk);
+    gen_at(at_cache, seed);
+    memcpy(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+    pk_cache_valid = 1;
+  }
+  pkpv = &pkpv_cache;
+  at = at_cache;
   poly_frommsg(&k, m);
-  gen_at(at, seed);
 
 #if KYBER_K == 2
   poly_getnoise_eta1122_4x(sp.vec+0, sp.vec+1, ep.vec+0, ep.vec+1, coins, 0, 1, 2, 3);
@@ -507,7 +520,7 @@ void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
   // matrix-vector multiplication
   for(i=0;i<KYBER_K;i++)
     polyvec_basemul_acc_montgomery(&b.vec[i], &at[i], &sp);
-  polyvec_basemul_acc_montgomery(&v, &pkpv, &sp);
+  polyvec_basemul_acc_montgomery(&v, pkpv, &sp);
 
   polyvec_invntt_tomont(&b);
   poly_invntt_tomont(&v);

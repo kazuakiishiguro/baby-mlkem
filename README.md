@@ -478,6 +478,23 @@ For lower-noise comparisons, prefer larger runs such as:
 PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh 2000 3
 ```
 
+### Latest Local Optimization A/B (2026-06-26)
+
+Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
+iterations per run, `16` order-flipped runs. Baseline is commit `24e00c2`
+(before repeated-public-key cache); candidate is the working tree after the
+cache change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 5146.42 | 5150.37 | 0.999x |
+| encaps | 5046.97 | 1311.22 | 3.849x |
+| decaps | 5281.84 | 3197.67 | 1.652x |
+| roundtrip | 15615.07 | 13638.48 | 1.145x |
+
+This optimization targets repeated use of the same public key by caching only
+public-key-derived data (`H(pk)`, unpacked `pk`, and generated `A^T`).
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all
