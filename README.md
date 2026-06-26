@@ -495,6 +495,24 @@ cache change.
 This optimization targets repeated use of the same public key by caching only
 public-key-derived data (`H(pk)`, unpacked `pk`, and generated `A^T`).
 
+### Latest Local Optimization A/B (2026-06-26, fixed `hash_g`)
+
+Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
+iterations per run, `16` order-flipped runs. Baseline is commit `13c7e19`
+(before fixed-length `hash_g`); candidate is the working tree after the
+`sha3_512_64()` route.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 5149.30 | 5139.78 | 1.002x |
+| encaps | 1299.08 | 1275.29 | 1.019x |
+| decaps | 3169.72 | 3147.78 | 1.007x |
+| roundtrip | 13626.00 | 13573.37 | 1.004x |
+
+The fixed-length path only specializes the 64-byte `hash_g` calls used by
+encapsulation and decapsulation; the 33-byte keypair seed expansion keeps the
+generic SHA3-512 path.
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all

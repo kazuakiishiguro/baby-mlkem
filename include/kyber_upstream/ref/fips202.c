@@ -837,3 +837,27 @@ void sha3_512(uint8_t h[64], const uint8_t *in, size_t inlen)
   for(i=0;i<8;i++)
     store64(h+8*i,s[i]);
 }
+
+/*************************************************
+* Name:        sha3_512_64
+*
+* Description: SHA3-512 specialized for a fixed 64-byte input.
+*
+* Arguments:   - uint8_t *h: pointer to output (64 bytes)
+*              - const uint8_t *in: pointer to 64-byte input
+**************************************************/
+void sha3_512_64(uint8_t h[64], const uint8_t in[64])
+{
+  unsigned int i;
+  uint64_t s[25];
+
+  for(i=0;i<25;i++)
+    s[i] = 0;
+  for(i=0;i<8;i++)
+    s[i] ^= load64(in+8*i);
+  s[8] ^= 0x8000000000000006ULL;
+
+  KeccakF1600_StatePermute(s);
+  for(i=0;i<8;i++)
+    store64(h+8*i,s[i]);
+}

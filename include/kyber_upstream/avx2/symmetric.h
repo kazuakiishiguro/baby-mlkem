@@ -25,7 +25,8 @@ void kyber_shake256_rkprf(uint8_t out[KYBER_SSBYTES], const uint8_t key[KYBER_SY
 #define XOF_BLOCKBYTES SHAKE128_RATE
 
 #define hash_h(OUT, IN, INBYTES) sha3_256(OUT, IN, INBYTES)
-#define hash_g(OUT, IN, INBYTES) sha3_512(OUT, IN, INBYTES)
+#define hash_g(OUT, IN, INBYTES) \
+  ((INBYTES) == 2*KYBER_SYMBYTES ? sha3_512_64(OUT, IN) : sha3_512(OUT, IN, INBYTES))
 #define xof_absorb(STATE, SEED, X, Y) kyber_shake128_absorb(STATE, SEED, X, Y)
 #define xof_squeezeblocks(OUT, OUTBLOCKS, STATE) shake128_squeezeblocks(OUT, OUTBLOCKS, STATE)
 #define prf(OUT, OUTBYTES, KEY, NONCE) kyber_shake256_prf(OUT, OUTBYTES, KEY, NONCE)

@@ -3063,3 +3063,43 @@
   - Ref upstream subdirectory build:
     - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
     - Result: `OK`
+
+### Update: fixed-length-hash-g-sha3-512-64 (2026-06-26)
+
+- Change:
+  - Added `sha3_512_64()` for Kyber `hash_g` calls with a fixed 64-byte input.
+  - Routed `hash_g(out, in, 2*KYBER_SYMBYTES)` through the fixed-length helper;
+    the 33-byte keypair seed-expansion call still uses generic `sha3_512()`.
+- Why:
+  - After repeated-public-key caching, profiling still showed scalar Keccak as
+    the largest remaining cost. Encapsulation and decapsulation both call
+    `hash_g` on `m || H(pk)` / `m' || H(pk)`, which is always exactly 64 bytes.
+  - For SHA3-512, a 64-byte input fits in one 72-byte rate block, so the helper
+    loads eight 64-bit lanes, applies fixed SHA3 padding in lane 8, and runs the
+    same single Keccak permutation as the generic path.
+- Rejected/avoided trial from this pass:
+  - Static caching of the unpacked secret key in `indcpa_dec()` was not adopted:
+    it would retain secret-key-derived material in process-global storage and
+    change concurrency/lifetime behavior. The adopted helper does not retain
+    secret material between calls.
+- Adopted candidate evidence:
+  - Direct order-flipped A/B against `13c7e19` (`taskset -c 0`, `clang`,
+    upstream AVX2 backend, `8000x16`):
+    - keygen: baseline mean `5149.30` ns/op, candidate mean `5139.78` ns/op,
+      speedup `1.002x`
+    - encaps: baseline mean `1299.08` ns/op, candidate mean `1275.29` ns/op,
+      speedup `1.019x`
+    - decaps: baseline mean `3169.72` ns/op, candidate mean `3147.78` ns/op,
+      speedup `1.007x`
+    - roundtrip: baseline mean `13626.00` ns/op, candidate mean `13573.37`
+      ns/op, speedup `1.004x`
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test CC=clang AVX2_BACKEND=upstream`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make clean CC=gcc && make test CC=gcc AVX2_BACKEND=upstream`
+    - Result: `OK`
+  - Ref upstream subdirectory build:
+    - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref`
+    - Result: `OK`
