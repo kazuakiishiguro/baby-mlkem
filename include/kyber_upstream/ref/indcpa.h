@@ -23,6 +23,10 @@ const uint8_t *indcpa_public_key_hash_cache(const uint8_t pk[KYBER_INDCPA_PUBLIC
                                             const polyvec **pkpv,
                                             const polyvec **at);
 
+#define indcpa_public_key_hash_cache_store KYBER_NAMESPACE(indcpa_public_key_hash_cache_store)
+void indcpa_public_key_hash_cache_store(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                                        const uint8_t pk_hash[KYBER_SYMBYTES]);
+
 #define indcpa_enc_precomp KYBER_NAMESPACE(indcpa_enc_precomp)
 void indcpa_enc_precomp(uint8_t c[KYBER_INDCPA_BYTES],
                         const uint8_t m[KYBER_INDCPA_MSGBYTES],

@@ -29,6 +29,7 @@ int crypto_kem_keypair_derand(uint8_t *pk,
   indcpa_keypair_derand(pk, sk, coins);
   memcpy(sk+KYBER_INDCPA_SECRETKEYBYTES, pk, KYBER_PUBLICKEYBYTES);
   hash_h(sk+KYBER_SECRETKEYBYTES-2*KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+  indcpa_public_key_hash_cache_store(pk, sk+KYBER_SECRETKEYBYTES-2*KYBER_SYMBYTES);
   /* Value z for pseudo-random output on reject */
   memcpy(sk+KYBER_SECRETKEYBYTES-KYBER_SYMBYTES, coins+KYBER_SYMBYTES, KYBER_SYMBYTES);
   return 0;

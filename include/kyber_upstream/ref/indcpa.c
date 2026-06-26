@@ -258,11 +258,14 @@ void indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
 *                                      generate all randomness
 **************************************************/
 static uint8_t pk_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
+/* H(pk) can be seeded by keypair before the A^T cache is warmed. */
+static uint8_t pk_hash_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
 static uint8_t pk_hash_cache_output[KYBER_SYMBYTES];
 static polyvec pkpv_cache;
 static polyvec at_cache[KYBER_K];
 static int pk_cache_valid = 0;
 static int pk_hash_cache_valid = 0;
+static int pk_hash_cache_matches_pk_cache = 0;
 
 static void indcpa_public_key_cache_ensure(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES])
 {
@@ -273,7 +276,8 @@ static void indcpa_public_key_cache_ensure(const uint8_t pk[KYBER_INDCPA_PUBLICK
     gen_at(at_cache, seed);
     memcpy(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
     pk_cache_valid = 1;
-    pk_hash_cache_valid = 0;
+    pk_hash_cache_matches_pk_cache = pk_hash_cache_valid
+      && memcmp(pk_hash_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES) == 0;
   }
 }
 
@@ -291,11 +295,22 @@ const uint8_t *indcpa_public_key_hash_cache(const uint8_t pk[KYBER_INDCPA_PUBLIC
                                             const polyvec **at)
 {
   indcpa_public_key_cache(pk, pkpv, at);
-  if(!pk_hash_cache_valid) {
+  if(!pk_hash_cache_matches_pk_cache) {
     hash_h(pk_hash_cache_output, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+    memcpy(pk_hash_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
     pk_hash_cache_valid = 1;
+    pk_hash_cache_matches_pk_cache = 1;
   }
   return pk_hash_cache_output;
+}
+
+void indcpa_public_key_hash_cache_store(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                                        const uint8_t pk_hash[KYBER_SYMBYTES])
+{
+  memcpy(pk_hash_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+  memcpy(pk_hash_cache_output, pk_hash, KYBER_SYMBYTES);
+  pk_hash_cache_valid = 1;
+  pk_hash_cache_matches_pk_cache = 0;
 }
 
 void indcpa_enc_precomp(uint8_t c[KYBER_INDCPA_BYTES],

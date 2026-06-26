@@ -551,6 +551,24 @@ Kyber `fips202.c`.
 The Makefile applies these flags only for `clang`; GCC keeps the previous
 `KYBER_FIPS202_CFLAGS=-O2` default.
 
+
+### Latest Local Optimization A/B (2026-06-26, seed public `H(pk)` cache)
+
+Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `20000`
+iterations per run, `6` baseline runs followed by `6` candidate runs. Baseline
+is commit `9d50768`; candidate seeds the public `H(pk)` cache from the hash
+already computed during keypair generation.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 5150.34 | 5104.86 | 1.009x |
+| encaps | 1251.41 | 1253.79 | 0.998x |
+| decaps | 3144.54 | 3153.46 | 0.997x |
+| roundtrip | 13493.09 | 11735.49 | 1.150x |
+
+This cache entry is public-key-derived only. It removes the duplicate `H(pk)`
+work in keygen-then-encaps roundtrips without storing secret-key material.
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all

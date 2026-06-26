@@ -3295,3 +3295,57 @@
   - Correctness, gcc:
     - Command: `make clean && make test AVX2_BACKEND=upstream CC=gcc`
     - Result: `OK`; `fips202.o` compile line kept `-O2`.
+
+
+### Update: seed-public-hpk-cache-from-keypair (2026-06-26)
+
+- Change:
+  - Added `indcpa_public_key_hash_cache_store()` for public `H(pk)` values.
+  - `crypto_kem_keypair_derand()` now seeds that cache with the `H(pk)` value
+    it already computes for the secret-key trailer.
+  - The public hash cache is tracked independently from the unpacked-`pk`/`A^T`
+    cache, so keypair can seed `H(pk)` without forcing `A^T` generation during
+    keygen.
+- Why:
+  - Roundtrip benchmark flow is `keypair -> encaps -> decaps` with the same new
+    public key on each iteration.
+  - Before this change, keypair computed `H(pk)` for `sk`, then the first
+    encapsulation with that `pk` recomputed `H(pk)` to derive `kr`.
+  - Seeding the public cache removes that duplicate scalar SHA3-256 work while
+    retaining lazy `A^T` generation.
+- Implementation detail:
+  - An early variant made `indcpa_public_key_hash_cache()` compare the cached
+    hash input against `pk` on every encapsulation. It kept the roundtrip win but
+    regressed fixed-key encapsulation.
+  - The final version uses `pk_hash_cache_matches_pk_cache`, so the 1184-byte
+    `memcmp` happens only when the public-key cache changes.
+- A/B for early variant (`taskset -c 0`, `clang`, upstream AVX2 backend,
+  `20000x6`):
+  - keygen speedup `1.000x`
+  - encaps speedup `0.984x`
+  - decaps speedup `0.999x`
+  - roundtrip speedup `1.144x`
+  - Decision: refined to remove per-encapsulation `memcmp`.
+- Adopted candidate evidence:
+  - A/B against `9d50768` (`taskset -c 0`, `clang`, upstream AVX2 backend,
+    `20000x6`):
+    - keygen: baseline mean `5150.34` ns/op, candidate mean `5104.86` ns/op,
+      speedup `1.009x`
+    - encaps: baseline mean `1251.41` ns/op, candidate mean `1253.79` ns/op,
+      speedup `0.998x`
+    - decaps: baseline mean `3144.54` ns/op, candidate mean `3153.46` ns/op,
+      speedup `0.997x`
+    - roundtrip: baseline mean `13493.09` ns/op, candidate mean `11735.49`
+      ns/op, speedup `1.150x`
+  - The fixed-key encaps/decaps changes are small compared with run noise and
+    the targeted keygen-then-encaps roundtrip improvement is large.
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=clang`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=gcc`
+    - Result: `OK`
+  - Upstream ref Kyber768:
+    - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref test/test_kyber768 CC=clang && include/kyber_upstream/ref/test/test_kyber768`
+    - Result: `OK`
