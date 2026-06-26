@@ -81,24 +81,19 @@ int crypto_kem_enc_derand(uint8_t *ct,
   uint8_t buf[2*KYBER_SYMBYTES];
   /* Will contain key, coins */
   uint8_t kr[2*KYBER_SYMBYTES];
-  /* pk is public; cache repeated-key H(pk) work. */
-  static uint8_t pk_hash_cache_input[KYBER_PUBLICKEYBYTES];
-  static uint8_t pk_hash_cache_output[KYBER_SYMBYTES];
-  static int pk_hash_cache_valid = 0;
+  const polyvec *pkpv;
+  const polyvec *at;
+  const uint8_t *pk_hash;
 
   memcpy(buf, coins, KYBER_SYMBYTES);
 
   /* Multitarget countermeasure for coins + contributory KEM */
-  if(!pk_hash_cache_valid || memcmp(pk_hash_cache_input, pk, KYBER_PUBLICKEYBYTES) != 0) {
-    hash_h(pk_hash_cache_output, pk, KYBER_PUBLICKEYBYTES);
-    memcpy(pk_hash_cache_input, pk, KYBER_PUBLICKEYBYTES);
-    pk_hash_cache_valid = 1;
-  }
-  memcpy(buf+KYBER_SYMBYTES, pk_hash_cache_output, KYBER_SYMBYTES);
+  pk_hash = indcpa_public_key_hash_cache(pk, &pkpv, &at);
+  memcpy(buf+KYBER_SYMBYTES, pk_hash, KYBER_SYMBYTES);
   hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
   /* coins are in kr+KYBER_SYMBYTES */
-  indcpa_enc(ct, buf, pk, kr+KYBER_SYMBYTES);
+  indcpa_enc_precomp(ct, buf, kr+KYBER_SYMBYTES, pkpv, at);
 
   memcpy(ss,kr,KYBER_SYMBYTES);
   return 0;
@@ -157,6 +152,8 @@ int crypto_kem_dec(uint8_t *ss,
 //  uint8_t cmp[KYBER_CIPHERTEXTBYTES+KYBER_SYMBYTES];
   uint8_t cmp[KYBER_CIPHERTEXTBYTES];
   const uint8_t *pk = sk+KYBER_INDCPA_SECRETKEYBYTES;
+  const polyvec *pkpv;
+  const polyvec *at;
 
   indcpa_dec(buf, ct, sk);
 
@@ -165,7 +162,8 @@ int crypto_kem_dec(uint8_t *ss,
   hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
   /* coins are in kr+KYBER_SYMBYTES */
-  indcpa_enc(cmp, buf, pk, kr+KYBER_SYMBYTES);
+  indcpa_public_key_cache(pk, &pkpv, &at);
+  indcpa_enc_precomp(cmp, buf, kr+KYBER_SYMBYTES, pkpv, at);
 
   fail = verify(ct, cmp, KYBER_CIPHERTEXTBYTES);
 

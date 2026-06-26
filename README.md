@@ -513,6 +513,25 @@ The fixed-length path only specializes the 64-byte `hash_g` calls used by
 encapsulation and decapsulation; the 33-byte keypair seed expansion keeps the
 generic SHA3-512 path.
 
+
+### Latest Local Optimization A/B (2026-06-26, public-key cache consolidation)
+
+Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `20000`
+iterations per run, `6` baseline runs followed by `6` candidate runs. Baseline
+is commit `edaa300`; candidate is the working tree after consolidating repeated
+public-key cache lookups into the `indcpa` cache.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 5118.64 | 5126.85 | 0.998x |
+| encaps | 1275.87 | 1263.53 | 1.010x |
+| decaps | 3154.48 | 3149.10 | 1.002x |
+| roundtrip | 13577.97 | 13482.23 | 1.007x |
+
+This keeps the cached data public-only, but removes the duplicated same-public-key
+lookup in encapsulation by sharing cached `H(pk)`, unpacked `pk`, and generated
+`A^T` from the same cache entry.
+
 ## Fastest Verification
 
 Run a one-shot pass/fail verifier that checks local speedup against all

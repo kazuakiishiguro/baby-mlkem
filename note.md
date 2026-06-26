@@ -3186,3 +3186,53 @@
     non-permutation overhead. Remaining useful work is more likely in larger
     structural changes around NTT/basemul/compress paths or in a better Keccak
     permutation implementation, not another small wrapper.
+
+
+### Update: public-key-cache-consolidation (2026-06-26)
+
+- Change:
+  - Moved repeated-public-key `H(pk)` storage into the same public-key cache
+    that holds unpacked `pk` and generated `A^T`.
+  - Added an `indcpa_enc_precomp()` path so KEM encapsulation/decapsulation can
+    reuse the cached `pkpv`/`A^T` pointers directly after a single public-key
+    cache lookup.
+  - Added the same cache API to the upstream ref implementation because
+    `ref/kem.c` and `ref/indcpa.h` are shared through the AVX2 symlinks.
+- Why:
+  - Before this change, repeated-key encapsulation checked the same public key
+    twice: once for the KEM `H(pk)` cache and once for the `indcpa_enc()`
+    `unpack_pk + gen_at` cache.
+  - The new structure keeps correctness for changed public-key bytes because it
+    still validates the full public key with `memcmp`; it only removes the
+    duplicated cache lookup and forwards already-cached public data.
+- Rejected candidate from this pass:
+  - Manual `KYBER_K == 3` expansion of the thin AVX2 `polyvec_*` wrapper loops
+    was not adopted.
+  - A/B (`taskset -c 0`, `clang`, `20000x6`):
+    - keygen speedup `0.997x` mean / `0.997x` median
+    - encaps speedup `1.002x` mean / `1.000x` median
+    - decaps speedup `1.002x` mean / `1.000x` median
+    - roundtrip speedup `0.997x` mean / `0.997x` median
+  - Decision: not adopted; the compiler already handles these loops well enough
+    and the explicit form regressed keygen/roundtrip.
+- Adopted candidate evidence:
+  - A/B against `edaa300` (`taskset -c 0`, `clang`, upstream AVX2 backend,
+    `20000x6`):
+    - keygen: baseline mean `5118.64` ns/op, candidate mean `5126.85` ns/op,
+      speedup `0.998x`
+    - encaps: baseline mean `1275.87` ns/op, candidate mean `1263.53` ns/op,
+      speedup `1.010x`
+    - decaps: baseline mean `3154.48` ns/op, candidate mean `3149.10` ns/op,
+      speedup `1.002x`
+    - roundtrip: baseline mean `13577.97` ns/op, candidate mean `13482.23`
+      ns/op, speedup `1.007x`
+- Verification:
+  - Correctness, clang:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=clang`
+    - Result: `OK`
+  - Correctness, gcc:
+    - Command: `make clean && make test AVX2_BACKEND=upstream CC=gcc`
+    - Result: `OK`
+  - Upstream ref Kyber768:
+    - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref test/test_kyber768 CC=clang && include/kyber_upstream/ref/test/test_kyber768`
+    - Result: `OK`

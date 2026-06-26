@@ -257,20 +257,59 @@ void indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
 *                                      (of length KYBER_SYMBYTES) to deterministically
 *                                      generate all randomness
 **************************************************/
-void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
-                const uint8_t m[KYBER_INDCPA_MSGBYTES],
-                const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
-                const uint8_t coins[KYBER_SYMBYTES])
+static uint8_t pk_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
+static uint8_t pk_hash_cache_output[KYBER_SYMBYTES];
+static polyvec pkpv_cache;
+static polyvec at_cache[KYBER_K];
+static int pk_cache_valid = 0;
+static int pk_hash_cache_valid = 0;
+
+static void indcpa_public_key_cache_ensure(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES])
+{
+  uint8_t seed[KYBER_SYMBYTES];
+
+  if(!pk_cache_valid || memcmp(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES) != 0) {
+    unpack_pk(&pkpv_cache, seed, pk);
+    gen_at(at_cache, seed);
+    memcpy(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+    pk_cache_valid = 1;
+    pk_hash_cache_valid = 0;
+  }
+}
+
+void indcpa_public_key_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                             const polyvec **pkpv,
+                             const polyvec **at)
+{
+  indcpa_public_key_cache_ensure(pk);
+  *pkpv = &pkpv_cache;
+  *at = at_cache;
+}
+
+const uint8_t *indcpa_public_key_hash_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                                            const polyvec **pkpv,
+                                            const polyvec **at)
+{
+  indcpa_public_key_cache(pk, pkpv, at);
+  if(!pk_hash_cache_valid) {
+    hash_h(pk_hash_cache_output, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+    pk_hash_cache_valid = 1;
+  }
+  return pk_hash_cache_output;
+}
+
+void indcpa_enc_precomp(uint8_t c[KYBER_INDCPA_BYTES],
+                        const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                        const uint8_t coins[KYBER_SYMBYTES],
+                        const polyvec *pkpv,
+                        const polyvec at[KYBER_K])
 {
   unsigned int i;
-  uint8_t seed[KYBER_SYMBYTES];
   uint8_t nonce = 0;
-  polyvec sp, pkpv, ep, at[KYBER_K], b;
+  polyvec sp, ep, b;
   poly v, k, epp;
 
-  unpack_pk(&pkpv, seed, pk);
   poly_frommsg(&k, m);
-  gen_at(at, seed);
 
   for(i=0;i<KYBER_K;i++)
     poly_getnoise_eta1(sp.vec+i, coins, nonce++);
@@ -284,7 +323,7 @@ void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
   for(i=0;i<KYBER_K;i++)
     polyvec_basemul_acc_montgomery(&b.vec[i], &at[i], &sp);
 
-  polyvec_basemul_acc_montgomery(&v, &pkpv, &sp);
+  polyvec_basemul_acc_montgomery(&v, pkpv, &sp);
 
   polyvec_invntt_tomont(&b);
   poly_invntt_tomont(&v);
@@ -296,6 +335,18 @@ void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
   poly_reduce(&v);
 
   pack_ciphertext(c, &b, &v);
+}
+
+void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                const uint8_t coins[KYBER_SYMBYTES])
+{
+  const polyvec *pkpv;
+  const polyvec *at;
+
+  indcpa_public_key_cache(pk, &pkpv, &at);
+  indcpa_enc_precomp(c, m, coins, pkpv, at);
 }
 
 /*************************************************

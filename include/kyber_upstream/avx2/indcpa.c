@@ -476,31 +476,57 @@ void indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
 *                                      (of length KYBER_SYMBYTES) to deterministically
 *                                      generate all randomness
 **************************************************/
-void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
-                const uint8_t m[KYBER_INDCPA_MSGBYTES],
-                const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
-                const uint8_t coins[KYBER_SYMBYTES])
+static uint8_t pk_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
+static uint8_t pk_hash_cache_output[KYBER_SYMBYTES];
+static polyvec pkpv_cache;
+static polyvec at_cache[KYBER_K];
+static int pk_cache_valid = 0;
+static int pk_hash_cache_valid = 0;
+
+static void indcpa_public_key_cache_ensure(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES])
 {
-  unsigned int i;
   uint8_t seed[KYBER_SYMBYTES];
-  polyvec sp, ep, b;
-  /* pk is public; cache repeated-key unpack and A^T generation. */
-  static uint8_t pk_cache_input[KYBER_INDCPA_PUBLICKEYBYTES];
-  static polyvec pkpv_cache;
-  static polyvec at_cache[KYBER_K];
-  static int pk_cache_valid = 0;
-  const polyvec *pkpv;
-  const polyvec *at;
-  poly v, k, epp;
 
   if(!pk_cache_valid || memcmp(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES) != 0) {
     unpack_pk(&pkpv_cache, seed, pk);
     gen_at(at_cache, seed);
     memcpy(pk_cache_input, pk, KYBER_INDCPA_PUBLICKEYBYTES);
     pk_cache_valid = 1;
+    pk_hash_cache_valid = 0;
   }
-  pkpv = &pkpv_cache;
-  at = at_cache;
+}
+
+void indcpa_public_key_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                             const polyvec **pkpv,
+                             const polyvec **at)
+{
+  indcpa_public_key_cache_ensure(pk);
+  *pkpv = &pkpv_cache;
+  *at = at_cache;
+}
+
+const uint8_t *indcpa_public_key_hash_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                                            const polyvec **pkpv,
+                                            const polyvec **at)
+{
+  indcpa_public_key_cache(pk, pkpv, at);
+  if(!pk_hash_cache_valid) {
+    hash_h(pk_hash_cache_output, pk, KYBER_INDCPA_PUBLICKEYBYTES);
+    pk_hash_cache_valid = 1;
+  }
+  return pk_hash_cache_output;
+}
+
+void indcpa_enc_precomp(uint8_t c[KYBER_INDCPA_BYTES],
+                        const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                        const uint8_t coins[KYBER_SYMBYTES],
+                        const polyvec *pkpv,
+                        const polyvec at[KYBER_K])
+{
+  unsigned int i;
+  polyvec sp, ep, b;
+  poly v, k, epp;
+
   poly_frommsg(&k, m);
 
 #if KYBER_K == 2
@@ -532,6 +558,18 @@ void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
   poly_reduce(&v);
 
   pack_ciphertext(c, &b, &v);
+}
+
+void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
+                const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                const uint8_t coins[KYBER_SYMBYTES])
+{
+  const polyvec *pkpv;
+  const polyvec *at;
+
+  indcpa_public_key_cache(pk, &pkpv, &at);
+  indcpa_enc_precomp(c, m, coins, pkpv, at);
 }
 
 /*************************************************

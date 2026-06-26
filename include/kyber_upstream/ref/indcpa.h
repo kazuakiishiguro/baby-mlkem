@@ -13,6 +13,23 @@ void indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
                            uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES],
                            const uint8_t coins[KYBER_SYMBYTES]);
 
+#define indcpa_public_key_cache KYBER_NAMESPACE(indcpa_public_key_cache)
+void indcpa_public_key_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                             const polyvec **pkpv,
+                             const polyvec **at);
+
+#define indcpa_public_key_hash_cache KYBER_NAMESPACE(indcpa_public_key_hash_cache)
+const uint8_t *indcpa_public_key_hash_cache(const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
+                                            const polyvec **pkpv,
+                                            const polyvec **at);
+
+#define indcpa_enc_precomp KYBER_NAMESPACE(indcpa_enc_precomp)
+void indcpa_enc_precomp(uint8_t c[KYBER_INDCPA_BYTES],
+                        const uint8_t m[KYBER_INDCPA_MSGBYTES],
+                        const uint8_t coins[KYBER_SYMBYTES],
+                        const polyvec *pkpv,
+                        const polyvec at[KYBER_K]);
+
 #define indcpa_enc KYBER_NAMESPACE(indcpa_enc)
 void indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES],
                 const uint8_t m[KYBER_INDCPA_MSGBYTES],
