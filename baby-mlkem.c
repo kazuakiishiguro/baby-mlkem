@@ -837,7 +837,7 @@ static void ntt(const poly256 f_in, poly256 f_out) {
       for (int j = 0; j < length; j++) {
         int idx = start + j;
         uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
-        int16_t t = (int16_t)(prod % Q);
+        int16_t t = mod_q_reduce_ntt_u32(prod);
         int16_t a = f_out[idx];
         f_out[idx + length] = mod_q_sub_i16(a, t);
         f_out[idx] = mod_q_add_i16(a, t);
