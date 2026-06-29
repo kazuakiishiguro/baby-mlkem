@@ -86,11 +86,19 @@ AVX2_BACKEND_DEF = -DUSE_KYBER_UPSTREAM_AVX2_BACKEND
 else ifeq ($(AVX2_BACKEND),pqclean)
 AVX2_BACKEND_SRCS = $(PQ_AVX2_SRCS)
 AVX2_BACKEND_DEF = -DUSE_PQCLEAN_AVX2_BACKEND
+else ifeq ($(AVX2_BACKEND),core)
+AVX2_BACKEND_SRCS =
+AVX2_BACKEND_DEF =
 else
-$(error Unsupported AVX2_BACKEND='$(AVX2_BACKEND)' (expected 'pqclean' or 'upstream'))
+$(error Unsupported AVX2_BACKEND='$(AVX2_BACKEND)' (expected 'core', 'pqclean', or 'upstream'))
 endif
 
-TEST_SRCS = test.c $(PQ_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
+ifeq ($(AVX2_BACKEND),core)
+TEST_FIPS_SRCS =
+else
+TEST_FIPS_SRCS = $(PQ_FIPS_SRCS)
+endif
+TEST_SRCS = test.c $(TEST_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
 ifeq ($(AVX2_BACKEND),pqclean)
 BENCH_FIPS_SRCS = $(PQ_FIPS_SRCS)
 else

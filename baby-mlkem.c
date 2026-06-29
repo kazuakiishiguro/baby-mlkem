@@ -26,6 +26,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(USE_PQCLEAN_AVX2_BACKEND) || defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
 /* PQClean FIPS202 symbols are renamed via Makefile defines. */
 void pq_shake128(uint8_t *output, size_t outlen, const uint8_t *input,
                  size_t inlen);
@@ -33,6 +34,14 @@ void pq_shake256(uint8_t *output, size_t outlen, const uint8_t *input,
                  size_t inlen);
 void pq_sha3_256(uint8_t *output, const uint8_t *input, size_t inlen);
 void pq_sha3_512(uint8_t *output, const uint8_t *input, size_t inlen);
+#else
+#define pq_shake128(output, outlen, input, inlen) \
+  shake128((input), (inlen), (output), (outlen))
+#define pq_shake256(output, outlen, input, inlen) \
+  shake256((input), (inlen), (output), (outlen))
+#define pq_sha3_256(output, input, inlen) sha3_256((input), (inlen), (output))
+#define pq_sha3_512(output, input, inlen) sha3_512((input), (inlen), (output))
+#endif
 
 #if defined(USE_PQCLEAN_AVX2_BACKEND)
 int PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk,
