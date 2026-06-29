@@ -838,6 +838,34 @@ Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
 largest hotspot (`34.78%` self time), followed by `bench_keygen` (`26.09%`),
 `keccakf` (`19.57%`), and `ntt_inv`/`bench_decaps` (`8.70%` each).
 
+### Independent Core Optimization A/B (2026-06-29, fused NTT accumulation)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `9af3c4b` before fusing the fixed K=3 NTT-domain multiply accumulation;
+candidate is the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16693.45 | 16271.72 | 1.026x |
+| encaps | 7585.22 | 6123.82 | 1.239x |
+| decaps | 9685.53 | 8192.53 | 1.182x |
+| roundtrip | 34101.29 | 30704.09 | 1.111x |
+
+The change keeps the core path vendor-free. Core keygen and encryption now use a
+K=3-specific `ntt_mul_acc3()` helper for fixed three-term products, replacing
+three separate `ntt_mul_add()` passes plus an `accum` zero-fill. The helper
+computes the three base multiplications in one loop and writes the accumulated
+polynomial directly. Generic `ntt_mul_add()` remains for non-fused callers.
+
+A longer confirmation run (`20000` iterations, `4` order-flipped pairs) showed
+`1.023x` keygen, `1.250x` encaps, `1.186x` decaps, and `1.113x` roundtrip
+speedups.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `bench_keygen` as the
+largest hotspot (`37.50%` self time), followed by `kpke_encrypt` (`25.00%`),
+`keccakf` (`20.00%`), and `ntt_inv` (`15.00%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
