@@ -476,6 +476,24 @@ PIN_CPU=0 C_COMPILER=clang AVX2_BACKEND=upstream \
 The script prints a flat profile excerpt and call graph excerpt, and writes
 `full_gprof_report=<path>` for deeper inspection.
 
+Current independent-core profile snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, `PROFILE_BENCH_ITERS=8000`, after `d6f357b`:
+
+| Symbol | Flat self time |
+|---|---:|
+| `keccakf4` | 33.33% |
+| `ntt` | 22.22% |
+| `sample_ntt_parse_stream` | 14.81% |
+| `keccakf` | 11.11% |
+| `bench_decaps` | 7.41% |
+| `mlkem_prf_cbd_eta2x4_32` | 3.70% |
+| `kpke_encrypt` | 3.70% |
+
+This profile explains why the next core-only work should be biased toward
+public matrix sampling (`keccakf4` plus `sample_ntt_parse_stream`) and forward
+NTT. Small cache-copy or post-processing changes are now likely to be lost in
+noise unless the target stage metric also improves.
+
 ## Compiler Matrix
 
 Compare performance across multiple compilers with one command:
