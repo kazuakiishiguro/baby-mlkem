@@ -586,6 +586,28 @@ integer division for `d=10` and `d=4` with exact reciprocal multiplication.
 Post-change profiling (`4000` iterations, `-pg`) shows `kpke_encrypt` as the
 largest hotspot (`45.65%` self time), with `keccakf` reduced to `23.91%`.
 
+### Independent Core Optimization A/B (2026-06-29, NTT arithmetic)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `3000`
+iterations. Baseline is commit `b4525ba` before the core NTT/decode changes;
+candidate is the working tree after the change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 23920.30 | 23673.88 | 1.010x |
+| encaps | 11682.40 | 7654.28 | 1.526x |
+| decaps | 15103.63 | 9994.34 | 1.511x |
+| roundtrip | 50568.64 | 41112.24 | 1.230x |
+
+The change keeps the core path vendor-free and relies on canonical coefficient
+ranges (`0..Q-1`) to use unsigned modular arithmetic in `ntt()`, `ntt_inv()`,
+and `ntt_mul()`. It also uses one-pass ciphertext decode/decompress for the
+ML-KEM-768 `d=10` and `d=4` paths.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot again (`38.18%` self time), followed by `kpke_encrypt` (`27.27%`) and
+`bench_keygen` (`23.64%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

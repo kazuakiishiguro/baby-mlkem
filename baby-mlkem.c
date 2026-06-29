@@ -389,7 +389,8 @@ static void ntt(const poly256 f_in, poly256 f_out) {
       uint16_t zeta = ZETA[k++];
       for (int j = 0; j < length; j++) {
         int idx = start + j;
-        int16_t t = (int16_t)(((int32_t)zeta * f_out[idx + length]) % Q);
+        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
+        int16_t t = (int16_t)(prod % Q);
         int16_t a = f_out[idx];
         f_out[idx + length] = mod_q_sub_i16(a, t);
         f_out[idx] = mod_q_add_i16(a, t);
@@ -412,19 +413,16 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
         int16_t u = f_out[idx + length];
         f_out[idx] = mod_q_add_i16(t, u);
         int16_t tmp2 = mod_q_sub_i16(u, t);
-        int32_t tmp3 = (tmp2 * zeta) % Q;
-        if (tmp3 < 0) tmp3 += Q;
-        f_out[idx + length] = (int16_t)tmp3;
+        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
+        f_out[idx + length] = (int16_t)(tmp3 % Q);
       }
     }
   }
 
   // multiply by 3303 (128^1 mod Q)
   for (int i = 0; i < N; i++) {
-    int32_t tmp = (int32_t)f_out[i] * 3303;
-    tmp %= Q;
-    if (tmp < 0) tmp += Q;
-    f_out[i] = (int16_t)tmp;
+    uint32_t tmp = (uint32_t)(uint16_t)f_out[i] * 3303u;
+    f_out[i] = (int16_t)(tmp % Q);
   }
 }
 
@@ -437,17 +435,13 @@ static void ntt_add(const poly256 a, const poly256 b, poly256 out) {
 static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
   for (int i = 0; i < 128; i++) {
     int idx0 = 2 * i, idx1 = 2 * i + 1;
-    int16_t a0 = a[idx0], a1 = a[idx1];
-    int16_t b0 = b[idx0], b1 = b[idx1];
-    uint16_t g = GAMMA[i];
-    int64_t c0 = (int64_t)a0 * b0 + (int64_t)a1 * b1 * g;
-    c0 %= Q;
-    if (c0 < 0) c0 += Q;
-    out[idx0] = (int16_t)c0;
-    int32_t c1 = (int32_t)a0 * b1 + (int32_t)a1 * b0;
-    c1 %= Q;
-    if (c1 < 0) c1 += Q;
-    out[idx1] = (int16_t)c1;
+    uint32_t a0 = (uint16_t)a[idx0], a1 = (uint16_t)a[idx1];
+    uint32_t b0 = (uint16_t)b[idx0], b1 = (uint16_t)b[idx1];
+    uint32_t g = GAMMA[i];
+    uint64_t c0 = (uint64_t)a0 * b0 + (uint64_t)a1 * b1 * g;
+    out[idx0] = (int16_t)(c0 % Q);
+    uint32_t c1 = a0 * b1 + a1 * b0;
+    out[idx1] = (int16_t)(c1 % Q);
   }
 }
 
@@ -738,11 +732,61 @@ static void compress_poly(int d, const poly256 x, uint16_t *out) {
 }
 
 static void decompress_poly(int d, const uint16_t *in, poly256 out) {
+  if (d == 10) {
+    for (int i = 0; i < N; i++) {
+      out[i] = (int16_t)(((uint32_t)in[i] * Q + 512u) >> 10);
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N; i++) {
+      out[i] = (int16_t)(((uint32_t)in[i] * Q + 8u) >> 4);
+    }
+    return;
+  }
+
   for (int i = 0; i < N; i++) {
     int64_t val = in[i];
     int64_t big = (val * Q + (1 << (d - 1))) >> d;
     out[i] = (int16_t)(big % Q);
   }
+}
+
+static void decompress_decode_poly(int d, const uint8_t *in, poly256 out) {
+  if (d == 10) {
+    for (int i = 0; i < N / 4; i++) {
+      uint16_t b0 = in[5 * i + 0];
+      uint16_t b1 = in[5 * i + 1];
+      uint16_t b2 = in[5 * i + 2];
+      uint16_t b3 = in[5 * i + 3];
+      uint16_t b4 = in[5 * i + 4];
+      uint16_t v0 = (uint16_t)(b0 | ((b1 & 0x03u) << 8));
+      uint16_t v1 = (uint16_t)((b1 >> 2) | ((b2 & 0x0Fu) << 6));
+      uint16_t v2 = (uint16_t)((b2 >> 4) | ((b3 & 0x3Fu) << 4));
+      uint16_t v3 = (uint16_t)((b3 >> 6) | (b4 << 2));
+      out[4 * i + 0] = (int16_t)(((uint32_t)v0 * Q + 512u) >> 10);
+      out[4 * i + 1] = (int16_t)(((uint32_t)v1 * Q + 512u) >> 10);
+      out[4 * i + 2] = (int16_t)(((uint32_t)v2 * Q + 512u) >> 10);
+      out[4 * i + 3] = (int16_t)(((uint32_t)v3 * Q + 512u) >> 10);
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N / 2; i++) {
+      uint8_t byte = in[i];
+      uint16_t v0 = (uint16_t)(byte & 0x0Fu);
+      uint16_t v1 = (uint16_t)(byte >> 4);
+      out[2 * i + 0] = (int16_t)(((uint32_t)v0 * Q + 8u) >> 4);
+      out[2 * i + 1] = (int16_t)(((uint32_t)v1 * Q + 8u) >> 4);
+    }
+    return;
+  }
+
+  uint16_t decoded[N];
+  byte_decode(d, in, (int16_t *)decoded);
+  decompress_poly(d, decoded, out);
 }
 
 /**
@@ -945,16 +989,13 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   }
 
   static poly256 u[K], v;
-  uint16_t decoded[N];
   const uint8_t *p = c;
   for (int i = 0; i < K; i++) {
-    byte_decode(DU, p, (int16_t *)decoded);
-    decompress_poly(DU, decoded, u[i]);
+    decompress_decode_poly(DU, p, u[i]);
     p += (N * DU) / 8;
   }
   {
-    byte_decode(DV, p, (int16_t *)decoded);
-    decompress_poly(DV, decoded, v);
+    decompress_decode_poly(DV, p, v);
     p += (N * DV) / 8;
   }
 
