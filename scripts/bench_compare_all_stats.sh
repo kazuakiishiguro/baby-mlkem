@@ -313,7 +313,7 @@ fi
 
 printf "iters=%s runs=%s\n" "$ITERS" "$RUNS"
 printf "warmup_runs=%s\n" "$WARMUP_RUNS"
-printf "local_AVX2_BACKEND=%s\n" "${AVX2_BACKEND:-<Makefile default>}"
+printf "local_AVX2_BACKEND=%s\n" "${AVX2_BACKEND:-core (Makefile default)}"
 printf "PIN_CPU=%s\n" "${PIN_CPU:-<unset>}"
 printf "C_COMPILER=%s\n" "$C_COMPILER"
 printf "UPDATE_REPOS=%s\n" "${UPDATE_REPOS:-0}"

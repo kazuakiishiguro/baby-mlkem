@@ -76,7 +76,7 @@ elif [ "$UPDATE_REPOS" = "1" ]; then
 fi
 
 echo "[1/4] Building local benchmark"
-echo "local_AVX2_BACKEND=${AVX2_BACKEND:-<Makefile default>}"
+echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
 echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"

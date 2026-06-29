@@ -4,24 +4,20 @@ A toy implementation of ML-KEM (formaly knows as kyber), a Module-Lattice-Based 
 
 ## Implementation Status
 
-The repository contains a toy ML-KEM implementation, but the default optimized
-build is not a from-scratch scalar implementation. By default, the benchmark and
-test Makefile use an in-tree copy of upstream Kyber AVX2 sources under
-`include/kyber_upstream/avx2`.
-
-This means current high-performance numbers should be read as measurements of
-the baby-mlkem integration that uses a vendored upstream Kyber AVX2 backend, not
-as evidence that an independent baby-mlkem arithmetic core outperforms upstream
-Kyber AVX2.
+The repository contains a toy ML-KEM implementation. The default benchmark and
+test build now uses the independent baby-mlkem core (`AVX2_BACKEND=core`) rather
+than delegating KEM operations to vendored upstream Kyber or PQClean AVX2 code.
 
 The default build does not link against external crypto libraries such as
-OpenSSL, BoringSSL, or liboqs. It does, however, compile vendored external-origin
-AVX2 sources into the local binary. `AVX2_BACKEND=pqclean` switches the local
-backend to the vendored PQClean AVX2 sources instead.
+OpenSSL, BoringSSL, or liboqs. It also does not compile the vendored Kyber/PQClean
+AVX2 KEM backends or the vendored PQClean FIPS202 object into the local binary.
+This default is the baseline for true core optimization work.
 
-Use `AVX2_BACKEND=core` to build and benchmark the independent baby-mlkem core
-without vendored AVX2 KEM sources and without the vendored PQClean FIPS202
-object. This mode is the baseline for true core optimization work.
+The repository still keeps in-tree comparator backends. Set
+`AVX2_BACKEND=upstream` to use the vendored upstream Kyber AVX2 sources under
+`include/kyber_upstream/avx2`, or `AVX2_BACKEND=pqclean` to use the vendored
+PQClean AVX2 sources. Results from those opt-in backends measure integration with
+external-origin vendored code, not an independent baby-mlkem core.
 
 ## Test
 
@@ -59,37 +55,32 @@ to `gcc`. Override explicitly when needed:
 make bench-run CC=gcc
 ```
 
-The default build enables an in-tree upstream Kyber AVX2 backend for
-ML-KEM-768-compatible KEM operations on supported x86 hosts
-(`-mavx2 -mbmi2 -mpopcnt`).
-
-With the default `AVX2_BACKEND=upstream`, the benchmark harness delegates KEM
-operations to `pqcrystals_kyber768_avx2_*` functions.
-`AVX2_BACKEND=pqclean` delegates to the vendored PQClean AVX2 KEM. Use
-`AVX2_BACKEND=core` when measuring the independent baby-mlkem scalar core.
+The default build uses the independent baby-mlkem core. On x86 hosts with AVX2,
+that core may use self-contained AVX2 intrinsics from `baby-mlkem.c`, but it does
+not delegate KEM operations to the vendored Kyber/PQClean AVX2 backends.
 
 Switch backend explicitly when needed:
 
 ```bash
-make bench AVX2_BACKEND=upstream   # default, vendored upstream Kyber AVX2
+make bench AVX2_BACKEND=core       # default, independent baby-mlkem core
+make bench AVX2_BACKEND=upstream   # vendored upstream Kyber AVX2
 make bench AVX2_BACKEND=pqclean    # vendored PQClean AVX2
-make bench AVX2_BACKEND=core       # independent baby-mlkem core
 ```
 
 ## External Comparison
 
-External comparison results need a narrow interpretation. The local
-`baby-mlkem` binary in these comparisons normally uses the vendored upstream
-Kyber AVX2 backend. Therefore, speedups against an independently checked out
-upstream Kyber AVX2 build are integration/build/harness comparisons, not a claim
-that a separate baby-mlkem core is faster than upstream Kyber AVX2.
-
-For true independent-core comparisons, pass `AVX2_BACKEND=core` to the local
-build, for example:
+External comparison results now default to the independent core local build.
+For example, this compares `AVX2_BACKEND=core` baby-mlkem against a separately
+checked out upstream Kyber AVX2 build:
 
 ```bash
-AVX2_BACKEND=core PIN_CPU=0 ./scripts/bench_compare_kyber_upstream.sh 400
+PIN_CPU=0 ./scripts/bench_compare_kyber_upstream.sh 400
 ```
+
+If you explicitly set `AVX2_BACKEND=upstream` or `AVX2_BACKEND=pqclean`, the
+local binary delegates KEM operations to vendored external-origin AVX2 code.
+Speedups from those opt-in modes are integration/build/harness comparisons, not
+claims that an independent baby-mlkem arithmetic core is faster.
 
 Run a local comparison against PQClean ML-KEM-768 clean/avx2 on the same host:
 
@@ -507,10 +498,11 @@ PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh
 
 Roundtrip comparison snapshot (`x` means local is faster):
 
-The `vs kyber default` and `vs kyber fair` columns compare the local in-tree
-upstream-AVX2-backed build against separately built upstream Kyber AVX2
-checkouts. They should not be interpreted as an independent implementation
-beating upstream Kyber AVX2.
+This is a historical upstream-backed snapshot from before the Makefile default
+was changed to `AVX2_BACKEND=core`. The `vs kyber default` and `vs kyber fair`
+columns compare the local in-tree upstream-AVX2-backed build against separately
+built upstream Kyber AVX2 checkouts. They should not be interpreted as an
+independent implementation beating upstream Kyber AVX2.
 
 | Compiler | Local mean ns/op | vs kyber default | vs kyber fair | vs mlkem-native | vs PQClean AVX2 | vs liboqs | vs BoringSSL | vs libcrux | vs Libjade | vs Botan | vs OpenSSL |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -523,7 +515,11 @@ For lower-noise comparisons, prefer larger runs such as:
 PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh 2000 3
 ```
 
-### Independent Core Baseline (2026-06-29)
+### Historical Independent Core Baseline (2026-06-29)
+
+This snapshot is a historical baseline from before the later core optimization
+series. Use the latest `Independent Core Optimization A/B` sections for current
+core throughput, and use this table only as an early before/after reference.
 
 Snapshot commands:
 
@@ -541,9 +537,10 @@ Local benchmark snapshot, pinned to CPU 0, `clang`, `1000` iterations:
 | `core` | 43795.84 | 14681.88 | 18064.43 | 110320.24 | Independent baby-mlkem scalar core |
 | `upstream` | 5145.68 | 1276.05 | 3052.52 | 11621.58 | Vendored upstream Kyber AVX2 backend |
 
-At this baseline, the independent core roundtrip is about `9.49x` slower than
-local upstream AVX2. Core optimization work should be measured against the
-`AVX2_BACKEND=core` row, not the default upstream-backed row.
+At this historical baseline, the independent core roundtrip was about `9.49x`
+slower than local upstream AVX2. Current core optimization work should still be
+measured against the default `AVX2_BACKEND=core` path, not the opt-in
+upstream-backed path.
 
 ### Independent Core NTT Microbench (2026-06-29)
 
