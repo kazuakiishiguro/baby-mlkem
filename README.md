@@ -832,6 +832,46 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `eb72685` before replacing the x4 sample-matrix state transpose;
+candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+Stage A/B, `50000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2762.73 | 2724.86 | 1.014x | 1.011x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1126.87 | 1113.80 | 1.012x | 1.012x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1171.56 | 1156.53 | 1.013x | 1.013x |
+| `mlkem_core_stage_sample_matrix_tail` | 823.40 | 820.44 | 1.004x | 1.000x |
+| `mlkem_core_stage_kpke_keygen_full` | 4709.70 | 4692.95 | 1.004x | 1.006x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2249.08 | 2238.47 | 1.005x | 1.002x |
+
+KEM A/B, `16000` iterations, twenty-one repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9008.30 | 9018.80 | 0.999x | 1.002x |
+| encaps | 2462.82 | 2466.68 | 0.998x | 0.999x |
+| decaps | 3458.00 | 3452.55 | 1.002x | 0.998x |
+| roundtrip | 15011.10 | 14992.71 | 1.001x | 1.000x |
+
+External comparison smoke gate, `600` iterations and two runs, passed with
+`verify_world_fastest=PASS`; the local implementation remained at least
+`1.098x` faster than the upstream AVX2 label in that short gate.
+
+The change keeps the core path vendor-free. `sample_ntt4_store_rate()` now
+transposes four consecutive Keccak x4 state words with AVX2 unpack/permute
+operations and stores each stream in 32-byte chunks, instead of storing every
+state word to a temporary `uint64_t[4]` and copying four 8-byte lanes with
+`memcpy()`. The candidate deliberately keeps the existing byte-stream parser and
+three-block buffering, because a direct state parser was correct but made
+`sample_matrix` and end-to-end KEM slower in A/B tests.
+
 ### Independent Core Optimization A/B (2026-06-30, PRF/CBD x4 state decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

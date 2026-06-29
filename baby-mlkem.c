@@ -1362,17 +1362,36 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 }
 
 #if defined(__AVX2__)
+static inline void sample_ntt4_store4x4(uint8_t *s0, uint8_t *s1,
+                                         uint8_t *s2, uint8_t *s3,
+                                         __m256i v0, __m256i v1,
+                                         __m256i v2, __m256i v3) {
+  __m256i t0 = _mm256_unpacklo_epi64(v0, v1);
+  __m256i t1 = _mm256_unpackhi_epi64(v0, v1);
+  __m256i t2 = _mm256_unpacklo_epi64(v2, v3);
+  __m256i t3 = _mm256_unpackhi_epi64(v2, v3);
+  _mm256_storeu_si256((__m256i *)s0, _mm256_permute2x128_si256(t0, t2, 0x20));
+  _mm256_storeu_si256((__m256i *)s2, _mm256_permute2x128_si256(t0, t2, 0x31));
+  _mm256_storeu_si256((__m256i *)s1, _mm256_permute2x128_si256(t1, t3, 0x20));
+  _mm256_storeu_si256((__m256i *)s3, _mm256_permute2x128_si256(t1, t3, 0x31));
+}
+
 static void sample_ntt4_store_rate(uint8_t *s0, uint8_t *s1,
                                    uint8_t *s2, uint8_t *s3,
                                    const __m256i st[25]) {
-  uint64_t lanes[4];
-  for (int lane = 0; lane < 21; lane++) {
-    _mm256_storeu_si256((__m256i *)lanes, st[lane]);
-    memcpy(s0 + (size_t)lane * 8, &lanes[0], 8);
-    memcpy(s1 + (size_t)lane * 8, &lanes[1], 8);
-    memcpy(s2 + (size_t)lane * 8, &lanes[2], 8);
-    memcpy(s3 + (size_t)lane * 8, &lanes[3], 8);
+  for (int lane = 0; lane < 20; lane += 4) {
+    size_t off = (size_t)lane * 8;
+    sample_ntt4_store4x4(s0 + off, s1 + off, s2 + off, s3 + off,
+                         st[lane], st[lane + 1], st[lane + 2],
+                         st[lane + 3]);
   }
+
+  uint64_t last[4];
+  _mm256_storeu_si256((__m256i *)last, st[20]);
+  memcpy(s0 + 160, &last[0], 8);
+  memcpy(s1 + 160, &last[1], 8);
+  memcpy(s2 + 160, &last[2], 8);
+  memcpy(s3 + 160, &last[3], 8);
 }
 
 static void sample_ntt4_store_block(uint8_t stream[4][504], size_t off,
