@@ -745,6 +745,29 @@ Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
 largest hotspot (`43.18%` self time), followed by `keccakf` (`25.00%`),
 `bench_keygen` (`13.64%`), and `ntt_inv` (`6.82%`).
 
+### Independent Core Optimization A/B (2026-06-29, decrypt message packing)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `f1a3304` before byte-wise message packing in core decrypt; candidate is
+the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17559.73 | 17471.24 | 1.005x |
+| encaps | 7624.15 | 7614.90 | 1.001x |
+| decaps | 9771.52 | 9663.16 | 1.011x |
+| roundtrip | 34742.23 | 34626.30 | 1.003x |
+
+The change keeps the core path vendor-free. Core decrypt now builds each
+recovered message byte in a local `uint8_t` and stores it once, instead of
+zeroing `out_m` and updating it bit-by-bit with repeated read-modify-write
+operations. The polynomial subtraction path remains unchanged.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
+`kpke_encrypt` tied as the largest hotspots (`36.96%` self time each), followed
+by `bench_keygen` (`19.57%`) and `ntt_inv` (`6.52%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

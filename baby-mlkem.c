@@ -1099,12 +1099,16 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
   const int32_t half_q = (Q + 1) / 2;
   const int32_t quarter_q = (Q + 1) / 4;
-  memset(out_m, 0, 32);
-  for (int i = 0; i < N; i++) {
-    int32_t diff = (int32_t)w[i] - half_q;
-    if (diff < 0) diff = -diff;
-    int bit = (diff < quarter_q) ? 1 : 0;
-    out_m[i >> 3] |= (uint8_t)(bit << (i & 7));
+  for (int byte = 0; byte < 32; byte++) {
+    uint8_t packed = 0;
+    for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
+      int i = 8 * byte + bit_idx;
+      int32_t diff = (int32_t)w[i] - half_q;
+      if (diff < 0) diff = -diff;
+      int bit = (diff < quarter_q) ? 1 : 0;
+      packed |= (uint8_t)(bit << bit_idx);
+    }
+    out_m[byte] = packed;
   }
   *out_mlen = 32;
 }
