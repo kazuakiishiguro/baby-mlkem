@@ -10,6 +10,7 @@ TRIM_COUNT="${TRIM_COUNT:-1}"
 LOCAL_BENCH_REUSE="${LOCAL_BENCH_REUSE:-1}"
 GLOBAL_SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 GLOBAL_LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/benchc}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
 elif command -v clang >/dev/null 2>&1; then
@@ -176,7 +177,7 @@ END {
 
 extract_local_roundtrip() {
   local file="$1"
-  awk -F= '$1 == "mlkem_roundtrip_ns_per_op" {print $2; exit}' "$file"
+  awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}' "$file"
 }
 
 extract_comp_roundtrip() {
@@ -322,6 +323,7 @@ printf "trim_count=%s\n" "$TRIM_COUNT"
 printf "local_bench_reuse=%s\n" "$LOCAL_BENCH_REUSE"
 printf "skip_local_build=%s\n" "$GLOBAL_SKIP_LOCAL_BUILD"
 printf "local_bench_bin=%s\n" "$GLOBAL_LOCAL_BENCH_BIN"
+printf "local_roundtrip_metric=%s\n" "$LOCAL_ROUNDTRIP_METRIC"
 printf "local_OPT_CFLAGS=%s\n" "${OPT_CFLAGS:-<Makefile default>}"
 printf "local_EXTRA_CFLAGS=%s\n" "${EXTRA_CFLAGS:-<Makefile default>}"
 printf "local_ASFLAGS=%s\n" "${ASFLAGS:-<Makefile default>}"

@@ -400,6 +400,21 @@ STATS_MODE=trimmed TRIM_COUNT=1 ./scripts/bench_compare_all_stats.sh 400 5
 
 Supported modes are `mean` (default), `median`, and `trimmed`.
 
+By default, comparator speedups use `mlkem_roundtrip_ns_per_op`, which preserves
+local cross-operation caches inside a fresh roundtrip. For core-only comparison,
+select the cache-free local metric:
+
+```bash
+LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op \
+  STATS_MODE=median PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_compare_all_stats.sh 600 2
+```
+
+`mlkem_roundtrip_core` clears baby-mlkem's public-key, secret-key, and public-key
+hash caches between keygen, encapsulation, and decapsulation. This is the more
+conservative metric for deciding whether the implementation core itself is
+competitive without relying on repeated-key cache effects.
+
 The repeated suite also runs a fair Kyber AVX2 variant where the upstream
 competitor is rebuilt with local-style optimization flags.
 Override those flags if needed:
@@ -831,6 +846,33 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 `NTT_ITERS`, and `KECCAK_ITERS` control the run. Use this local A/B output as
 the first filter before documenting an optimization as an independent-core
 speedup.
+
+### Core-Only No-Cache Comparison Snapshot (2026-06-30)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`,
+`LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op`, `600` iterations and
+two repeated runs, median aggregation. This intentionally disables baby-mlkem's
+cross-operation caches between keygen, encapsulation, and decapsulation, so it
+is a better signal for whether the core implementation itself is competitive.
+
+| Comparator | Local core ns/op | Comparator ns/op | Local speedup |
+|---|---:|---:|---:|
+| upstream Kyber AVX2 | 21790.18 | 16051.60 | 0.737x |
+| upstream Kyber AVX2 fair flags | 21811.80 | 16064.89 | 0.737x |
+| mlkem-native | 21921.44 | 25981.47 | 1.185x |
+| PQClean AVX2 | 23066.81 | 20182.96 | 0.875x |
+| liboqs | 24009.59 | 20633.35 | 0.859x |
+| BoringSSL | 23426.60 | 52819.90 | 2.255x |
+| libcrux Rust | 24126.27 | 21438.25 | 0.889x |
+| libjade Kyber768 AVX2 | 24044.38 | 20959.99 | 0.872x |
+| Botan ML-KEM | 24120.10 | 135345.27 | 5.611x |
+| OpenSSL ML-KEM | 23525.71 | 47624.24 | 2.024x |
+
+The current honest core-only target is therefore upstream Kyber AVX2/PQClean
+AVX2/libjade/libcrux/liboqs, not the cache-assisted `mlkem_roundtrip` result.
+The main gap comes from cold encapsulation/decapsulation needing to regenerate or
+decode public matrix state rather than reusing `kpke_public_cache_*` across
+operations.
 
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 

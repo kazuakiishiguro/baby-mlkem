@@ -115,6 +115,13 @@ static inline void bench_decaps(const uint8_t *ct,
 #endif
 }
 
+static inline void bench_clear_caches(void) {
+#if !defined(USE_PQCLEAN_AVX2_BACKEND) && \
+    !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  mlkem_clear_internal_caches();
+#endif
+}
+
 int main(int argc, char **argv) {
   size_t iters = 200;
   const size_t ct_bytes = (size_t)CT_MAX_BYTES;
@@ -131,6 +138,7 @@ int main(int argc, char **argv) {
   uint8_t *keys = NULL;
   uint64_t t0, t1;
   uint64_t keygen_ns, encaps_ns, decaps_ns, roundtrip_ns;
+  uint64_t roundtrip_core_ns;
 
   if (argc > 2) {
     fprintf(stderr, "usage: %s [iterations]\n", argv[0]);
@@ -216,11 +224,33 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   roundtrip_ns = t1 - t0;
 
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    fill_seed(coins_kp, sizeof(coins_kp), i * 2 + 11001);
+    fill_seed(coins_enc, sizeof(coins_enc), i * 2 + 11002);
+    bench_clear_caches();
+    bench_keygen(coins_kp, ek, dk);
+    bench_clear_caches();
+    bench_encaps(ek, coins_enc, k1, ct);
+    bench_clear_caches();
+    bench_decaps(ct, dk, k2);
+    if (memcmp(k1, k2, 32) != 0) {
+      fprintf(stderr, "core roundtrip mismatch at %zu\n", i);
+      free(cts);
+      free(keys);
+      return EXIT_FAILURE;
+    }
+  }
+  t1 = now_ns();
+  roundtrip_core_ns = t1 - t0;
+  bench_clear_caches();
+
   printf("mlkem_bench_iterations=%zu\n", iters);
   print_metric("mlkem_keygen", keygen_ns, iters);
   print_metric("mlkem_encaps", encaps_ns, iters);
   print_metric("mlkem_decaps", decaps_ns, iters);
   print_metric("mlkem_roundtrip", roundtrip_ns, iters);
+  print_metric("mlkem_roundtrip_core", roundtrip_core_ns, iters);
 
   free(cts);
   free(keys);

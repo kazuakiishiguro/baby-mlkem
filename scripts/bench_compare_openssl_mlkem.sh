@@ -22,6 +22,7 @@ OPENSSL_CONFIG_TARGET="${OPENSSL_CONFIG_TARGET:-linux-x86_64}"
 OPENSSL_CONFIG_OPTS="${OPENSSL_CONFIG_OPTS:-no-shared no-tests}"
 OPENSSL_CFLAGS="${OPENSSL_CFLAGS:--O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt}"
 OPENSSL_BUILD_JOBS="${OPENSSL_BUILD_JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-openssl.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -94,6 +95,7 @@ fi
 
 echo "[1/4] Building local benchmark"
 echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
+echo "local_roundtrip_metric=${LOCAL_ROUNDTRIP_METRIC}"
 echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
@@ -443,7 +445,7 @@ echo "$LOCAL_OUT"
 echo "--- openssl ml-kem-768 ---"
 echo "$OPENSSL_OUT"
 
-local_rt="$(echo "$LOCAL_OUT" | awk -F= '/mlkem_roundtrip_ns_per_op/{print $2}')"
+local_rt="$(echo "$LOCAL_OUT" | awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
 openssl_rt="$(echo "$OPENSSL_OUT" | awk -F= '/openssl_mlkem768_roundtrip_ns_per_op/{print $2}')"
 
 if [ -n "$local_rt" ] && [ -n "$openssl_rt" ]; then

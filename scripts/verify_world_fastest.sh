@@ -13,6 +13,7 @@ C_COMPILER="${C_COMPILER:-}"
 MAX_RETRIES="${MAX_RETRIES:-1}"
 RETRY_LABELS="${RETRY_LABELS:-kyber_upstream_avx2,kyber_upstream_avx2_fair}"
 SHOW_FULL_OUTPUT_ON_FAIL="${SHOW_FULL_OUTPUT_ON_FAIL:-1}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 
 if ! [[ "$ITERS" =~ ^[0-9]+$ ]] || [ "$ITERS" -le 0 ]; then
   echo "invalid iteration count: $ITERS" >&2
@@ -155,6 +156,7 @@ while [ "$attempt" -le "$total_attempts" ]; do
   echo "running verification suite... (attempt $attempt/$total_attempts)"
   echo "  iters=$ITERS runs=$RUNS stats_mode=$STATS_MODE trim_count=$TRIM_COUNT"
   echo "  pin_cpu=${PIN_CPU:-<unset>} warmup_runs=$WARMUP_RUNS"
+  echo "  local_roundtrip_metric=$LOCAL_ROUNDTRIP_METRIC"
   echo "  min_speedup_default=$MIN_SPEEDUP max_retries=$MAX_RETRIES retry_labels=${RETRY_LABELS:-<none>}"
   if [ -n "$C_COMPILER" ]; then
     echo "  c_compiler=$C_COMPILER"

@@ -18,6 +18,7 @@ LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/
 LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
 LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/libjade/crypto_kem/kyber_kyber768_avx2}"
 LIBJADE_HARNESS_CFLAGS="${LIBJADE_HARNESS_CFLAGS:--D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-libjade.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -92,6 +93,7 @@ fi
 
 echo "[1/4] Building local benchmark"
 echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
+echo "local_roundtrip_metric=${LOCAL_ROUNDTRIP_METRIC}"
 echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
@@ -371,7 +373,7 @@ echo "$LOCAL_OUT"
 echo "--- libjade kyber-kyber768 avx2 ---"
 echo "$LIBJADE_OUT"
 
-local_rt="$(echo "$LOCAL_OUT" | awk -F= '/mlkem_roundtrip_ns_per_op/{print $2}')"
+local_rt="$(echo "$LOCAL_OUT" | awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
 libjade_rt="$(echo "$LIBJADE_OUT" | awk -F= '/libjade_kyber768_avx2_roundtrip_ns_per_op/{print $2}')"
 
 if [ -n "$local_rt" ] && [ -n "$libjade_rt" ]; then

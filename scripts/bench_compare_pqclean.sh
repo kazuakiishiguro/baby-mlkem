@@ -17,6 +17,7 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/benchc}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-compare.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -77,6 +78,7 @@ fi
 
 echo "[1/4] Building local benchmark"
 echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
+echo "local_roundtrip_metric=${LOCAL_ROUNDTRIP_METRIC}"
 echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
@@ -135,7 +137,7 @@ echo "$CLEAN_OUT"
 echo "--- pqclean avx2 ---"
 echo "$AVX2_OUT"
 
-local_rt="$(echo "$LOCAL_OUT" | awk -F= '/mlkem_roundtrip_ns_per_op/{print $2}')"
+local_rt="$(echo "$LOCAL_OUT" | awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
 clean_rt="$(echo "$CLEAN_OUT" | awk -F= '/roundtrip_ns_per_op/{print $2}')"
 avx2_rt="$(echo "$AVX2_OUT" | awk -F= '/roundtrip_ns_per_op/{print $2}')"
 

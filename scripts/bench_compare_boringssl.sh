@@ -43,6 +43,7 @@ if [ -n "${BORINGSSL_BUILD_DIR+x}" ]; then
   BORINGSSL_BUILD_DIR_EXPLICIT=1
 fi
 BORINGSSL_BUILD_DIR="${BORINGSSL_BUILD_DIR:-$BORINGSSL_DIR/build-$BUILD_TAG}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-boringssl.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -118,6 +119,7 @@ fi
 
 echo "[1/4] Building local benchmark"
 echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
+echo "local_roundtrip_metric=${LOCAL_ROUNDTRIP_METRIC}"
 echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "cxx_compiler=${CXX_COMPILER}"
@@ -361,7 +363,7 @@ echo "$LOCAL_OUT"
 echo "--- boringssl ml-kem-768 ---"
 echo "$BORINGSSL_OUT"
 
-local_rt="$(echo "$LOCAL_OUT" | awk -F= '/mlkem_roundtrip_ns_per_op/{print $2}')"
+local_rt="$(echo "$LOCAL_OUT" | awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
 boringssl_rt="$(echo "$BORINGSSL_OUT" | awk -F= '/boringssl_mlkem768_roundtrip_ns_per_op/{print $2}')"
 
 if [ -n "$local_rt" ] && [ -n "$boringssl_rt" ]; then

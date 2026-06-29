@@ -8,6 +8,7 @@ PIN_CPU="${PIN_CPU:-0}"
 WARMUP_RUNS="${WARMUP_RUNS:-1}"
 SLEEP_BETWEEN_RUNS="${SLEEP_BETWEEN_RUNS:-0}"
 SLEEP_BETWEEN_COMBOS="${SLEEP_BETWEEN_COMBOS:-0}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
 elif command -v clang >/dev/null 2>&1; then
@@ -111,7 +112,7 @@ run_combo() {
     )"
 
     local l k
-    l="$(echo "$out" | awk -F= '$1 == "mlkem_roundtrip_ns_per_op" {print $2; exit}')"
+    l="$(echo "$out" | awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
     k="$(echo "$out" | awk -F= '$1 == "kyber_avx2_roundtrip_ns_per_op" {print $2; exit}')"
     if [ -z "$l" ] || [ -z "$k" ]; then
       echo "failed to parse comparison output for combo" >&2

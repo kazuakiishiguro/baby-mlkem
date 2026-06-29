@@ -1768,11 +1768,23 @@ static uint8_t kpke_public_cache_ek[K * 384 + 32];
 static int kpke_public_cache_valid = 0;
 static uint64_t kpke_public_cache_generation = 0;
 
+static poly256 kpke_secret_cache_shat[K];
+static uint8_t kpke_secret_cache_dk[K * 384];
+static int kpke_secret_cache_valid = 0;
+
 static uint8_t mlkem_ek_hash_cache_input[K * 384 + 32];
 static uint8_t mlkem_ek_hash_cache_output[32];
 static int mlkem_ek_hash_cache_valid = 0;
 static uint64_t mlkem_ek_hash_cache_generation = 0;
 static uint64_t mlkem_cache_generation_counter = 1;
+
+static void mlkem_clear_internal_caches(void) {
+  kpke_public_cache_valid = 0;
+  kpke_public_cache_generation = 0;
+  kpke_secret_cache_valid = 0;
+  mlkem_ek_hash_cache_valid = 0;
+  mlkem_ek_hash_cache_generation = 0;
+}
 
 static uint64_t mlkem_next_cache_generation(void) {
   uint64_t generation = mlkem_cache_generation_counter++;
@@ -1999,15 +2011,14 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   }
 
   /* parse dk_pke => s-hat[K] (cached for repeated use with same key) */
-  static poly256 shat[K];
-  static uint8_t dk_cache[K * 384];
-  static int dk_cache_valid = 0;
-  if (!dk_cache_valid || memcmp(dk_cache, dk_pke, sizeof(dk_cache)) != 0) {
+  if (!kpke_secret_cache_valid ||
+      memcmp(kpke_secret_cache_dk, dk_pke,
+             sizeof(kpke_secret_cache_dk)) != 0) {
     for (int i = 0; i < K; i++) {
-      byte_decode(12, dk_pke + i * 384, shat[i]);
+      byte_decode(12, dk_pke + i * 384, kpke_secret_cache_shat[i]);
     }
-    memcpy(dk_cache, dk_pke, sizeof(dk_cache));
-    dk_cache_valid = 1;
+    memcpy(kpke_secret_cache_dk, dk_pke, sizeof(kpke_secret_cache_dk));
+    kpke_secret_cache_valid = 1;
   }
 
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
@@ -2016,7 +2027,9 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   for (int i = 0; i < K; i++) {
     ntt(u[i], u[i]);
   }
-  ntt_mul_acc3(shat[0], u[0], shat[1], u[1], shat[2], u[2], accum);
+  ntt_mul_acc3(kpke_secret_cache_shat[0], u[0],
+               kpke_secret_cache_shat[1], u[1],
+               kpke_secret_cache_shat[2], u[2], accum);
   ntt_inv_sub_from(v, accum, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
