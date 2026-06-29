@@ -953,6 +953,35 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot (`55.00%` self time), followed by `kpke_encrypt` and `bench_keygen`
 (`15.00%` each), `ntt_inv` (`10.00%`), and `sample_poly_cbd` (`5.00%`).
 
+### Independent Core Optimization A/B (2026-06-29, fused inverse NTT post-processing)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `25ba3b4` before fusing inverse NTT post-processing; candidate is the
+working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16045.72 | 16065.14 | 0.999x |
+| encaps | 6122.87 | 6042.16 | 1.013x |
+| decaps | 7918.21 | 7878.40 | 1.005x |
+| roundtrip | 30225.15 | 30140.91 | 1.003x |
+
+The change keeps the core path vendor-free. Core encryption and decryption now
+use inverse-NTT variants that fuse the final `3303` scaling pass with the
+immediately following polynomial add/subtract work: `+e1[i]` for `u[i]`,
+`+e2+mu` for `v`, and `v - invntt(...)` in decrypt. This removes separate full
+polynomial scans after inverse NTT without changing the transform itself or
+calling any vendored AVX2 implementation.
+
+A longer confirmation run (`20000` iterations, `4` order-flipped pairs) showed
+`1.003x` keygen, `1.010x` encaps, `1.008x` decaps, and `1.003x` roundtrip
+speedups.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`32.50%` self time), followed by `kpke_encrypt` and `bench_keygen`
+(`25.00%` each), `bench_decaps` (`10.00%`), and `sample_poly_cbd` (`5.00%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

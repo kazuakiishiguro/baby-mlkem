@@ -496,6 +496,84 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
   }
 }
 
+static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  int k = 127;
+  for (int log2len = 1; log2len <= 7; log2len++) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k--];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = out[idx];
+        int16_t u = out[idx + length];
+        out[idx] = mod_q_add_i16(t, u);
+        int16_t tmp2 = mod_q_sub_i16(u, t);
+        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
+        out[idx + length] = (int16_t)(tmp3 % Q);
+      }
+    }
+  }
+
+  for (int i = 0; i < N; i++) {
+    uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
+    out[i] = mod_q_add_i16((int16_t)(tmp % Q), add[i]);
+  }
+}
+
+static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
+                         const poly256 add1, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  int k = 127;
+  for (int log2len = 1; log2len <= 7; log2len++) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k--];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = out[idx];
+        int16_t u = out[idx + length];
+        out[idx] = mod_q_add_i16(t, u);
+        int16_t tmp2 = mod_q_sub_i16(u, t);
+        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
+        out[idx + length] = (int16_t)(tmp3 % Q);
+      }
+    }
+  }
+
+  for (int i = 0; i < N; i++) {
+    uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
+    int16_t sum = mod_q_add_i16((int16_t)(tmp % Q), add0[i]);
+    out[i] = mod_q_add_i16(sum, add1[i]);
+  }
+}
+
+static void ntt_inv_sub_from(const poly256 minuend, const poly256 f_in,
+                             poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  int k = 127;
+  for (int log2len = 1; log2len <= 7; log2len++) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k--];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = out[idx];
+        int16_t u = out[idx + length];
+        out[idx] = mod_q_add_i16(t, u);
+        int16_t tmp2 = mod_q_sub_i16(u, t);
+        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
+        out[idx + length] = (int16_t)(tmp3 % Q);
+      }
+    }
+  }
+
+  for (int i = 0; i < N; i++) {
+    uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
+    out[i] = mod_q_sub_i16(minuend[i], (int16_t)(tmp % Q));
+  }
+}
+
 /* ntt_add function is just poly256_add in NTT domain.*/
 static void ntt_add(const poly256 a, const poly256 b, poly256 out) {
   poly256_add(a, b, out);
@@ -1036,13 +1114,12 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
   static poly256 u[K];
-  static poly256 accum, tmp;
+  static poly256 accum;
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
                  kpke_public_cache_ahat[i][1], rhat[1],
                  kpke_public_cache_ahat[i][2], rhat[2], accum);
-    ntt_inv(accum, tmp);
-    poly256_add(tmp, e1[i], u[i]);
+    ntt_inv_add(accum, e1[i], u[i]);
   }
 
   /* mu => interpret m as 256 bits => each coefficient 0/1 */
@@ -1065,9 +1142,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
     ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
                  kpke_public_cache_that[1], rhat[1],
                  kpke_public_cache_that[2], rhat[2], accum);
-    ntt_inv(accum, tmp);
-    poly256_add(tmp, e2, accum);
-    poly256_add(accum, mu, v);
+    ntt_inv_add2(accum, e2, mu, v);
   }
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
@@ -1129,9 +1204,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
     ntt(u[i], u_ntt[i]);
   }
   ntt_mul_acc3(shat[0], u_ntt[0], shat[1], u_ntt[1], shat[2], u_ntt[2], accum);
-  static poly256 accum_inv;
-  ntt_inv(accum, accum_inv);
-  poly256_sub(v, accum_inv, w);
+  ntt_inv_sub_from(v, accum, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
   const int32_t half_q = (Q + 1) / 2;
