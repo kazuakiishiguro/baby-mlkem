@@ -282,7 +282,11 @@ static void keccakf4(__m256i st[25]) {
     __m256i b23 = rotl64x4(a15, 41);
     __m256i b24 = rotl64x4(a21, 2);
 
+#if defined(__AVX512VL__) && defined(__AVX512F__)
+#define CHIX4(x, y, z) _mm256_ternarylogic_epi64((x), (y), (z), 0xd2)
+#else
 #define CHIX4(x, y, z) _mm256_xor_si256((x), _mm256_andnot_si256((y), (z)))
+#endif
     a0 = CHIX4(b0, b1, b2);
     a1 = CHIX4(b1, b2, b3);
     a2 = CHIX4(b2, b3, b4);
