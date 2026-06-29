@@ -449,7 +449,9 @@ static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
  * Performs a Number Theoretic Transform (NTT)
  */
 static void ntt(const poly256 f_in, poly256 f_out) {
-  memcpy(f_out, f_in, sizeof(poly256));
+  if (f_in != f_out) {
+    memcpy(f_out, f_in, sizeof(poly256));
+  }
   int k = 1;
   for (int log2len = 7; log2len > 0; log2len--) {
     int length = (1 << log2len);

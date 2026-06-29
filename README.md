@@ -925,6 +925,34 @@ hotspot (`38.46%` self time), followed by `bench_keygen` (`28.21%`),
 `kpke_encrypt` (`17.95%`), `ntt_inv` (`7.69%`), and `sample_poly_cbd`
 (`5.13%`).
 
+### Independent Core Optimization A/B (2026-06-29, in-place NTT copy elision)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `bcabe96` before skipping the in-place `ntt()` copy; candidate is the
+working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16045.74 | 16054.53 | 0.999x |
+| encaps | 6109.82 | 6117.85 | 0.999x |
+| decaps | 7935.27 | 7918.81 | 1.002x |
+| roundtrip | 30257.12 | 30210.44 | 1.002x |
+
+The change keeps the core path vendor-free. Core `ntt()` now skips the initial
+`memcpy()` when the input and output polynomial are the same object. This avoids
+redundant 512-byte copies in the in-place keygen/encryption NTT calls while
+leaving out-of-place decrypt NTT calls unchanged.
+
+The standard run was mostly noise-sized, so the change was accepted only after a
+longer confirmation run (`20000` iterations, `4` order-flipped pairs) showed
+`1.007x` keygen, `1.001x` encaps, `1.001x` decaps, and `1.001x` roundtrip
+speedups.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`55.00%` self time), followed by `kpke_encrypt` and `bench_keygen`
+(`15.00%` each), `ntt_inv` (`10.00%`), and `sample_poly_cbd` (`5.00%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
