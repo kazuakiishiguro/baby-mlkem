@@ -577,6 +577,49 @@ For optimization work, compare the same command before and after each small
 NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
 core arithmetic direction-finding, not ML-KEM KEM throughput results.
 
+### Independent Core Keccak/Sampling Microbench (2026-06-29)
+
+Use the Keccak/sampling microbench when changing the vendor-free scalar Keccak,
+CBD, PRF, or SHAKE128 rejection-sampling code. Like the NTT microbench, this
+benchmark includes `baby-mlkem.c` directly and does not link vendored upstream
+Kyber or PQClean AVX2 KEM sources.
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make bench-keccak CC=clang AVX2_BACKEND=core
+taskset -c 0 ./bench_keccakc 200000
+```
+
+The binary validates deterministic helper behavior before timing. Reported
+metrics isolate these helpers:
+
+| Metric | Core helper measured |
+|---|---|
+| `mlkem_keccakf` | one scalar `keccakf()` permutation |
+| `mlkem_sha3_256_32` | `sha3_256()` over a 32-byte input |
+| `mlkem_sha3_512_32` | `sha3_512()` over a 32-byte input |
+| `mlkem_sha3_512_64` | `sha3_512()` over a 64-byte input |
+| `mlkem_prf_eta2` | `mlkem_prf(ETA2, seed[32], nonce)` |
+| `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
+| `mlkem_sample_ntt_parse` | one `sample_ntt_parse_stream()` pass over 504 bytes |
+| `mlkem_sample_ntt_full` | full `sample_ntt()` including SHAKE128 squeezing and parsing |
+
+Current snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `200000`
+iterations:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_keccakf` | 204.58 |
+| `mlkem_sha3_256_32` | 201.26 |
+| `mlkem_sha3_512_32` | 204.50 |
+| `mlkem_sha3_512_64` | 208.44 |
+| `mlkem_prf_eta2` | 200.91 |
+| `mlkem_cbd_eta2` | 21.35 |
+| `mlkem_sample_ntt_parse` | 104.97 |
+| `mlkem_sample_ntt_full` | 708.25 |
+
+These numbers show that further sampling work should target Keccak/SHAKE128 and
+full `sample_ntt()` first; standalone CBD is already much smaller.
+
 ### Independent Core Optimization A/B (2026-06-29, public cache seed)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `1000`

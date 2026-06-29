@@ -67,9 +67,11 @@ ARCH_CFLAGS = -march=native
 TARGET = testc
 BENCH_TARGET = benchc
 BENCH_NTT_TARGET = bench_nttc
+BENCH_KECCAK_TARGET = bench_keccakc
 BENCH_ITERS ?= 200
 BENCH_CT_STRIDE ?= 1088
 BENCH_NTT_ITERS ?= 200000
+BENCH_KECCAK_ITERS ?= 200000
 ifeq ($(origin KYBER_FIPS202_CFLAGS), undefined)
 ifneq ($(findstring clang,$(notdir $(CC))),)
 KYBER_FIPS202_CFLAGS := -O3 -fno-vectorize -fno-slp-vectorize
@@ -108,15 +110,17 @@ BENCH_FIPS_SRCS =
 endif
 BENCH_SRCS = bench.c $(BENCH_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
 BENCH_NTT_SRCS = bench_ntt.c
+BENCH_KECCAK_SRCS = bench_keccak.c
 TEST_OBJS := $(TEST_SRCS:.c=.o)
 TEST_OBJS := $(TEST_OBJS:.S=.o)
 BENCH_OBJS := $(BENCH_SRCS:.c=.o)
 BENCH_OBJS := $(BENCH_OBJS:.S=.o)
 BENCH_NTT_OBJS := $(BENCH_NTT_SRCS:.c=.o)
-OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS))
-TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET)
+BENCH_KECCAK_OBJS := $(BENCH_KECCAK_SRCS:.c=.o)
+OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS))
+TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET)
 
-.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run
+.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run
 
 all: $(TARGET)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
@@ -153,6 +157,7 @@ $(KY_UP_AVX2_DIR)/fips202x4.o: CFLAGS += $(KYBER_FIPS202X4_CFLAGS)
 $(KY_UP_AVX2_KECCAK_DIR)/KeccakP-1600-times4-SIMD256.o: CFLAGS += $(KYBER_KECCAK4X_CFLAGS)
 bench.o: CFLAGS += -Wno-unused-function
 bench_ntt.o: CFLAGS += -Wno-unused-function
+bench_keccak.o: CFLAGS += -Wno-unused-function
 bench.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
 bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += $(AVX2_BACKEND_DEF)
@@ -160,6 +165,7 @@ test.o: CFLAGS += -Wno-unused-function
 test.o: baby-mlkem.c
 bench.o: baby-mlkem.c
 bench_ntt.o: baby-mlkem.c
+bench_keccak.o: baby-mlkem.c
 
 $(TARGET): $(TEST_OBJS)
 	$(CC) $(TEST_OBJS) -o $(TARGET) $(CFLAGS) $(ARCH_CFLAGS)
@@ -169,6 +175,9 @@ $(BENCH_TARGET): $(BENCH_OBJS)
 
 $(BENCH_NTT_TARGET): $(BENCH_NTT_OBJS)
 	$(CC) $(BENCH_NTT_OBJS) -o $(BENCH_NTT_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
+$(BENCH_KECCAK_TARGET): $(BENCH_KECCAK_OBJS)
+	$(CC) $(BENCH_KECCAK_OBJS) -o $(BENCH_KECCAK_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
@@ -191,3 +200,8 @@ bench-ntt: $(BENCH_NTT_TARGET)
 
 bench-ntt-run: $(BENCH_NTT_TARGET)
 	./$(BENCH_NTT_TARGET) $(BENCH_NTT_ITERS)
+
+bench-keccak: $(BENCH_KECCAK_TARGET)
+
+bench-keccak-run: $(BENCH_KECCAK_TARGET)
+	./$(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_ITERS)
