@@ -119,6 +119,13 @@ static inline uint64_t ROTL64(uint64_t x, int s) {
   return ((x << s) | (x >> (64 - s)));
 }
 
+static inline uint64_t load64_le(const uint8_t *x) {
+  return ((uint64_t)x[0]) | ((uint64_t)x[1] << 8) |
+         ((uint64_t)x[2] << 16) | ((uint64_t)x[3] << 24) |
+         ((uint64_t)x[4] << 32) | ((uint64_t)x[5] << 40) |
+         ((uint64_t)x[6] << 48) | ((uint64_t)x[7] << 56);
+}
+
 /* The Keccak-f[1600] permutation on the state. */
 static void keccakf(uint64_t st[25]) {
   for (int round = 0; round < 24; round++) {
@@ -193,14 +200,24 @@ static void keccak_absorb(keccak_ctx *ctx, const uint8_t *in, size_t inlen) {
       keccakf(ctx->state);
       ctx->absorb_pos = 0;
     }
+
     size_t can_take = ctx->rate_bytes - ctx->absorb_pos;
-    size_t will_copy = (inlen - idx < can_take) ? (inlen - idx) : can_take;
-    // XOR the input into the state (in 8-bit lumps)
-    for (size_t i = 0; i < will_copy; i++) {
+    size_t take = (inlen - idx < can_take) ? (inlen - idx) : can_take;
+
+    if ((ctx->absorb_pos & 7u) == 0) {
+      while (take >= 8) {
+        ctx->state[ctx->absorb_pos >> 3] ^= load64_le(in + idx);
+        ctx->absorb_pos += 8;
+        idx += 8;
+        take -= 8;
+      }
+    }
+
+    for (size_t i = 0; i < take; i++) {
       ((uint8_t *)ctx->state)[ctx->absorb_pos + i] ^= in[idx + i];
     }
-    ctx->absorb_pos += will_copy;
-    idx += will_copy;
+    ctx->absorb_pos += take;
+    idx += take;
   }
 }
 

@@ -650,6 +650,30 @@ multiplication and accumulation so the common `ntt_mul()` followed by
 again for accumulation. The expected gain is small because Keccak, keygen
 matrix sampling, and inverse NTT work remain larger costs.
 
+### Independent Core Optimization A/B (2026-06-29, Keccak absorb lanes)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations. Baseline is commit `169c485` before the core Keccak absorb
+change; candidate is the working tree after the change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17571.54 | 17191.94 | 1.022x |
+| encaps | 7624.06 | 7569.86 | 1.007x |
+| decaps | 9779.67 | 9782.07 | 1.000x |
+| roundtrip | 35152.39 | 34728.53 | 1.012x |
+
+The change keeps the core path vendor-free. `keccak_absorb()` now XORs aligned
+input chunks into the Keccak state as explicit little-endian 64-bit lanes,
+falling back to byte-wise absorption only for tail bytes. This reduces absorb
+overhead for SHA3/SHAKE calls used by public-key hashing, PRF output, and
+matrix sampling without changing the permutation count or using an external
+Keccak implementation.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`36.17%` self time), followed by `keccakf` (`27.66%`),
+`bench_keygen` (`17.02%`), and `ntt_inv` (`8.51%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
