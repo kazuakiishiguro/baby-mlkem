@@ -620,6 +620,57 @@ iterations:
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 
+### Independent Core Stage Microbench (2026-06-29)
+
+Use the stage microbench to decide where vendor-free core work should go next.
+This benchmark includes `baby-mlkem.c` directly, validates its derived stage
+state against the real K-PKE keygen/encrypt/decrypt path, and does not link the
+vendored upstream Kyber or PQClean AVX2 KEM sources.
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make bench-stages CC=clang AVX2_BACKEND=core
+taskset -c 0 ./bench_core_stagesc 20000
+```
+
+Reported full K-PKE metrics are useful for context. Reported stage metrics are
+not intended to add up exactly to full K-PKE time because cache state, temporary
+outputs, and validation scope differ; use them to rank optimization targets.
+
+| Metric | Core work measured |
+|---|---|
+| `mlkem_core_stage_kpke_keygen_full` | full `kpke_keygen()` |
+| `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key |
+| `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key |
+| `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
+| `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
+| `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
+| `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
+| `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
+| `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
+
+Current snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
+iterations:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 10068.68 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 3952.57 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1271.47 |
+| `mlkem_core_stage_sample_matrix` | 6480.69 |
+| `mlkem_core_stage_keygen_noise_ntt` | 3252.20 |
+| `mlkem_core_stage_keygen_accum_encode` | 453.74 |
+| `mlkem_core_stage_encrypt_noise` | 2600.22 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1498.40 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 102.05 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 245.30 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1186.64 |
+
+This points the next independent-core optimization work at public matrix
+sampling, PRF/CBD/NTT noise generation, and NTT-domain accumulation/inverse NTT.
+Compression and bit-packing are currently much smaller contributors.
+
 ### Independent Core Optimization A/B (2026-06-29, public cache seed)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `1000`
