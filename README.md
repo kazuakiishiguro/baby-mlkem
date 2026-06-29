@@ -635,6 +635,8 @@ taskset -c 0 ./bench_core_stagesc 20000
 Reported full K-PKE metrics are useful for context. Reported stage metrics are
 not intended to add up exactly to full K-PKE time because cache state, temporary
 outputs, and validation scope differ; use them to rank optimization targets.
+The PRF/CBD and NTT split metrics are isolated direction-finding measurements,
+not additive replacements for the combined noise metrics.
 
 | Metric | Core work measured |
 |---|---|
@@ -643,8 +645,12 @@ outputs, and validation scope differ; use them to rank optimization targets.
 | `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key |
 | `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
 | `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
@@ -655,23 +661,27 @@ iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_keygen_full` | 5734.72 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 3161.94 |
-| `mlkem_core_stage_kpke_decrypt_cached` | 1271.09 |
-| `mlkem_core_stage_sample_matrix` | 3034.99 |
-| `mlkem_core_stage_keygen_noise_ntt` | 2338.22 |
-| `mlkem_core_stage_keygen_accum_encode` | 447.41 |
-| `mlkem_core_stage_encrypt_noise` | 1555.37 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1495.11 |
-| `mlkem_core_stage_ciphertext_compress_encode` | 102.24 |
-| `mlkem_core_stage_ciphertext_decode_decompress` | 245.61 |
-| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1188.88 |
+| `mlkem_core_stage_kpke_keygen_full` | 5670.29 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2870.28 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1279.13 |
+| `mlkem_core_stage_sample_matrix` | 3069.87 |
+| `mlkem_core_stage_keygen_noise_ntt` | 2342.69 |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 898.19 |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1980.42 |
+| `mlkem_core_stage_keygen_accum_encode` | 468.17 |
+| `mlkem_core_stage_encrypt_noise` | 1551.44 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1075.85 |
+| `mlkem_core_stage_encrypt_noise_ntt` | 1016.90 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1510.71 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 102.61 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 246.43 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1220.76 |
 
 After self-contained AVX2 matrix sampling and PRF/CBD batching, public matrix
-generation remains a large keygen component. The next independent-core targets
-are NTT-domain accumulation/inverse NTT and the remaining scalar NTT work inside
-noise generation. Compression and bit-packing are still much smaller
-contributors.
+generation remains a large keygen component. The split noise metrics also show
+that forward NTT/secret-key encode and encryption-side forward NTT remain large
+enough to justify a self-contained core AVX2 NTT/inverse-NTT implementation.
+Compression and bit-packing are still much smaller contributors.
 
 ### Independent Core Optimization A/B (2026-06-29, self AVX2 matrix 3-block squeeze)
 
