@@ -1722,16 +1722,16 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   uint8_t *rdash = ghash + 32;
 
   /* cdash = kpke_encrypt(ek_pke, mdash, rdash) => compare with c */
-  uint8_t cdash[4096];
+  enum { CT_BYTES = K * ((N * DU) / 8) + (N * DV) / 8 };
+  uint8_t cdash[CT_BYTES];
   size_t cdash_len = 0;
   kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len);
   if (cdash_len != clen || memcmp(c, cdash, clen) != 0) {
     /* kbar = shake256(z||c) => 32 */
-    enum { CT_MAX = K * ((N * DU) / 8) + (N * DV) / 8 };
-    uint8_t stack_tmp[32 + CT_MAX];
+    uint8_t stack_tmp[32 + CT_BYTES];
     size_t tmp_len = 32 + clen;
     uint8_t *tmp = stack_tmp;
-    if (clen > CT_MAX) {
+    if (clen > CT_BYTES) {
       tmp = (uint8_t *)malloc(tmp_len);
     }
     if (!tmp) {

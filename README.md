@@ -683,6 +683,30 @@ that forward NTT/secret-key encode and encryption-side forward NTT remain large
 enough to justify a self-contained core AVX2 NTT/inverse-NTT implementation.
 Compression and bit-packing are still much smaller contributors.
 
+### Independent Core Optimization A/B (2026-06-29, decaps scratch sizing)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `4000`
+iterations, three repeated runs. Baseline is commit `41fb7f2` before reducing
+the decapsulation re-encryption scratch buffer; candidate is the working tree
+after the change.
+
+KEM A/B:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 10225.57 | 9837.99 | 1.039x | 1.017x |
+| encaps | 3246.73 | 3113.91 | 1.043x | 1.022x |
+| decaps | 4460.41 | 4433.80 | 1.006x | 1.008x |
+| roundtrip | 17940.94 | 17433.89 | 1.029x | 1.039x |
+
+This change keeps `AVX2_BACKEND=core` independent from vendored Kyber/PQClean
+sources. The direct implementation change is in `mlkem_decaps()`: the
+re-encryption comparison buffer now uses the exact ML-KEM-768 ciphertext size
+instead of a 4096-byte scratch array, and the fallback `z||c` stack buffer
+reuses the same bound. The intended direct effect is on decapsulation stack
+pressure; keygen and encaps shifts are included for whole-binary context and may
+include code-layout noise rather than a semantic fast path.
+
 ### Independent Core Optimization A/B (2026-06-29, self AVX2 matrix 3-block squeeze)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
