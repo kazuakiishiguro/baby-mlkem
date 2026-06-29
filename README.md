@@ -832,6 +832,43 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, PRF/CBD x4 state decode)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `e45c9d8` before decoding the x4 PRF/CBD output directly from the
+Keccak state; candidate is the working tree after the change. This is a
+core-vs-core comparison and does not use the vendored Kyber/PQClean AVX2
+backends for the candidate path.
+
+Stage A/B, `20000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 777.56 | 758.32 | 1.025x | 1.025x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1841.30 | 1818.38 | 1.013x | 1.013x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 969.70 | 943.45 | 1.028x | 1.025x |
+| `mlkem_core_stage_encrypt_noise` | 1213.02 | 1192.29 | 1.017x | 1.019x |
+| `mlkem_core_stage_kpke_keygen_full` | 4755.99 | 4741.59 | 1.003x | 1.003x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2286.67 | 2240.60 | 1.021x | 1.010x |
+
+KEM A/B, `9000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9022.23 | 9012.35 | 1.001x | 1.001x |
+| encaps | 2473.24 | 2467.54 | 1.002x | 1.001x |
+| decaps | 3444.98 | 3439.78 | 1.002x | 1.001x |
+| roundtrip | 15000.58 | 14967.41 | 1.002x | 1.002x |
+
+The change keeps the core path vendor-free. `mlkem_prf_cbd_eta2x4_32()` now
+decodes the four live SHAKE256 streams directly from the `keccakf4()` state in
+16-byte pairs instead of first transposing state words into four temporary
+`stream[4][128]` buffers and then calling the byte-oriented CBD decoder. The
+x2/x3 helpers intentionally keep their previous stream path because applying
+the same direct-state decoder there made end-to-end KEM noisier. The direct
+acceptance signal is the PRF/CBD noise-stage improvement; KEM-level movement is
+small because the x4 helper is only one component of keygen and encaps.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix fallback squeeze)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
