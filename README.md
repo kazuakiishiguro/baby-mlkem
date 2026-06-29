@@ -655,23 +655,56 @@ iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_keygen_full` | 7093.79 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 3925.82 |
-| `mlkem_core_stage_kpke_decrypt_cached` | 1316.62 |
-| `mlkem_core_stage_sample_matrix` | 3655.28 |
-| `mlkem_core_stage_keygen_noise_ntt` | 3267.56 |
-| `mlkem_core_stage_keygen_accum_encode` | 464.10 |
-| `mlkem_core_stage_encrypt_noise` | 2603.36 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1505.13 |
-| `mlkem_core_stage_ciphertext_compress_encode` | 102.16 |
-| `mlkem_core_stage_ciphertext_decode_decompress` | 245.32 |
-| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1217.33 |
+| `mlkem_core_stage_kpke_keygen_full` | 6440.77 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 3108.74 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1305.21 |
+| `mlkem_core_stage_sample_matrix` | 3645.16 |
+| `mlkem_core_stage_keygen_noise_ntt` | 2334.24 |
+| `mlkem_core_stage_keygen_accum_encode` | 461.91 |
+| `mlkem_core_stage_encrypt_noise` | 1556.00 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1490.71 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 102.53 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 248.68 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1213.39 |
 
-After self-contained AVX2 matrix sampling, public matrix generation remains a
-large keygen component but is no longer the only dominant stage. The next
-independent-core targets are PRF/CBD/NTT noise generation and NTT-domain
-accumulation/inverse NTT. Compression and bit-packing are still much smaller
+After self-contained AVX2 matrix sampling and PRF/CBD batching, public matrix
+generation remains a large keygen component. The next independent-core targets
+are NTT-domain accumulation/inverse NTT and the remaining scalar NTT work inside
+noise generation. Compression and bit-packing are still much smaller
 contributors.
+
+### Independent Core Optimization A/B (2026-06-29, self AVX2 PRF/CBD batching)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations. Baseline is commit `d727e29` before the self-contained AVX2
+PRF/CBD batching path; candidate is the working tree after the change.
+
+Stage A/B:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 3332.24 | 2343.49 | 1.422x | 1.407x |
+| `mlkem_core_stage_encrypt_noise` | 2666.39 | 1557.42 | 1.712x | 1.694x |
+| `mlkem_core_stage_kpke_keygen_full` | 6990.11 | 6286.27 | 1.112x | 1.112x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 3934.03 | 2883.88 | 1.364x | 1.364x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1283.36 | 1283.18 | 1.000x | 1.001x |
+
+KEM A/B:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 11509.01 | 10795.24 | 1.066x | 1.067x |
+| encaps | 4181.44 | 3122.91 | 1.339x | 1.335x |
+| decaps | 5511.92 | 4466.50 | 1.234x | 1.234x |
+| roundtrip | 21317.48 | 18452.40 | 1.155x | 1.156x |
+
+This change keeps `AVX2_BACKEND=core` independent from vendored Kyber/PQClean
+sources. It reuses the local Keccak-f[1600]x4 helper for SHAKE256
+`seed||nonce` PRF calls, then feeds each lane through the existing eta2 CBD
+conversion. The stage benchmark validates the x4 PRF/CBD output against the
+existing scalar `mlkem_prf()` + `sample_poly_cbd()` path. Decapsulation also
+improves because ML-KEM decapsulation performs a re-encryption check, so faster
+core `kpke_encrypt()` reduces part of decapsulation time.
 
 ### Independent Core Optimization A/B (2026-06-29, self AVX2 matrix sampling)
 

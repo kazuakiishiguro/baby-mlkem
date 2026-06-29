@@ -42,7 +42,9 @@ static uint8_t stage_tmp_pk[STAGE_BENCH_LANES][STAGE_PK_BYTES];
 static uint8_t stage_tmp_dk[STAGE_BENCH_LANES][STAGE_DK_PKE_BYTES];
 static uint8_t stage_tmp_ct[STAGE_BENCH_LANES][STAGE_CT_BYTES];
 static uint8_t stage_tmp_msg[STAGE_BENCH_LANES][32];
+#if !defined(__AVX2__)
 static uint8_t stage_tmp_prf[STAGE_BENCH_LANES][64 * ETA1];
+#endif
 static uint16_t stage_tmp_cbuf[STAGE_BENCH_LANES][N];
 static poly256 stage_tmp_ahat[STAGE_BENCH_LANES][K][K];
 static poly256 stage_tmp_vec0[STAGE_BENCH_LANES][K];
@@ -130,7 +132,6 @@ static void recover_message(const poly256 w, uint8_t out[32]) {
 
 static void derive_keygen_lane(size_t lane) {
   uint8_t ghash[64];
-  uint8_t prfout[64 * ETA1];
   poly256 accum;
 
   pq_sha3_512(ghash, stage_seed[lane], 32);
@@ -139,7 +140,25 @@ static void derive_keygen_lane(size_t lane) {
 
   sample_matrix(stage_rho[lane], stage_ahat[lane]);
 
+#if defined(__AVX2__)
+  {
+    static poly256 dummy[2];
+    const uint8_t n0[4] = {0, 1, 2, 3};
+    const uint8_t n1[4] = {4, 5, 0, 0};
+    mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n0, stage_shat[lane][0],
+                            stage_shat[lane][1], stage_shat[lane][2],
+                            stage_ehat[lane][0]);
+    mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n1, stage_ehat[lane][1],
+                            stage_ehat[lane][2], dummy[0], dummy[1]);
+  }
   for (int i = 0; i < K; i++) {
+    ntt(stage_shat[lane][i], stage_shat[lane][i]);
+    byte_encode(12, stage_shat[lane][i], stage_dk[lane] + i * 384);
+    ntt(stage_ehat[lane][i], stage_ehat[lane][i]);
+  }
+#else
+  for (int i = 0; i < K; i++) {
+    uint8_t prfout[64 * ETA1];
     mlkem_prf(ETA1, stage_sigma[lane], 32, (uint8_t)i, prfout);
     sample_poly_cbd(ETA1, prfout, stage_shat[lane][i]);
     ntt(stage_shat[lane][i], stage_shat[lane][i]);
@@ -149,6 +168,7 @@ static void derive_keygen_lane(size_t lane) {
     sample_poly_cbd(ETA1, prfout, stage_ehat[lane][i]);
     ntt(stage_ehat[lane][i], stage_ehat[lane][i]);
   }
+#endif
 
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][i], stage_shat[lane][0],
@@ -162,25 +182,41 @@ static void derive_keygen_lane(size_t lane) {
 }
 
 static void derive_encrypt_lane(size_t lane) {
-  uint8_t prfout_eta1[64 * ETA1];
-  uint8_t prfout_eta2[64 * ETA2];
   uint16_t cbuf[N];
   poly256 accum;
   uint8_t *p = stage_ct[lane];
 
+#if defined(__AVX2__)
+  {
+    static poly256 dummy;
+    const uint8_t n0[4] = {0, 1, 2, 3};
+    const uint8_t n1[4] = {4, 5, 6, 0};
+    mlkem_prf_cbd_eta2x4_32(stage_r[lane], n0, stage_rhat[lane][0],
+                            stage_rhat[lane][1], stage_rhat[lane][2],
+                            stage_e1[lane][0]);
+    mlkem_prf_cbd_eta2x4_32(stage_r[lane], n1, stage_e1[lane][1],
+                            stage_e1[lane][2], stage_e2[lane], dummy);
+  }
+#else
   for (int i = 0; i < K; i++) {
+    uint8_t prfout_eta1[64 * ETA1];
     mlkem_prf(ETA1, stage_r[lane], 32, (uint8_t)i, prfout_eta1);
     sample_poly_cbd(ETA1, prfout_eta1, stage_rhat[lane][i]);
-    ntt(stage_rhat[lane][i], stage_rhat[lane][i]);
   }
-
   for (int i = 0; i < K; i++) {
+    uint8_t prfout_eta2[64 * ETA2];
     mlkem_prf(ETA2, stage_r[lane], 32, (uint8_t)(i + K), prfout_eta2);
     sample_poly_cbd(ETA2, prfout_eta2, stage_e1[lane][i]);
   }
-
-  mlkem_prf(ETA2, stage_r[lane], 32, (uint8_t)(2 * K), prfout_eta2);
-  sample_poly_cbd(ETA2, prfout_eta2, stage_e2[lane]);
+  {
+    uint8_t prfout_eta2[64 * ETA2];
+    mlkem_prf(ETA2, stage_r[lane], 32, (uint8_t)(2 * K), prfout_eta2);
+    sample_poly_cbd(ETA2, prfout_eta2, stage_e2[lane]);
+  }
+#endif
+  for (int i = 0; i < K; i++) {
+    ntt(stage_rhat[lane][i], stage_rhat[lane][i]);
+  }
   build_mu(stage_msg[lane], stage_mu[lane]);
 
   for (int i = 0; i < K; i++) {
@@ -220,6 +256,24 @@ static void validate_sample_matrix_matches_scalar(void) {
   }
 }
 
+#if defined(__AVX2__)
+static void validate_prf_cbd_eta2x4_matches_scalar(void) {
+  const uint8_t nonce[4] = {0, 1, 2, 3};
+  poly256 got[4], want;
+  uint8_t prfout[64 * ETA2];
+
+  mlkem_prf_cbd_eta2x4_32(stage_sigma[0], nonce, got[0], got[1], got[2], got[3]);
+  for (int i = 0; i < 4; i++) {
+    mlkem_prf(ETA2, stage_sigma[0], 32, nonce[i], prfout);
+    sample_poly_cbd(ETA2, prfout, want);
+    if (memcmp(got[i], want, sizeof(poly256)) != 0) {
+      fprintf(stderr, "prf_cbd_eta2x4 mismatch at lane %d\n", i);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void prepare_inputs(void) {
   ensure_ntt_roots();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -254,6 +308,9 @@ static void validate_core_stage_helpers(void) {
 
   prepare_inputs();
   validate_sample_matrix_matches_scalar();
+#if defined(__AVX2__)
+  validate_prf_cbd_eta2x4_matches_scalar();
+#endif
 
   kpke_keygen(stage_seed[0], ek, dk);
   if (memcmp(ek, stage_ek[0], sizeof(ek)) != 0 ||
@@ -349,6 +406,24 @@ static uint64_t bench_keygen_noise_ntt(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__)
+    {
+      static poly256 dummy[2];
+      const uint8_t n0[4] = {0, 1, 2, 3};
+      const uint8_t n1[4] = {4, 5, 0, 0};
+      mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n0, stage_tmp_vec0[lane][0],
+                              stage_tmp_vec0[lane][1],
+                              stage_tmp_vec0[lane][2],
+                              stage_tmp_vec1[lane][0]);
+      mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n1, stage_tmp_vec1[lane][1],
+                              stage_tmp_vec1[lane][2], dummy[0], dummy[1]);
+    }
+    for (int j = 0; j < K; j++) {
+      ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
+      byte_encode(12, stage_tmp_vec0[lane][j], stage_tmp_dk[lane] + j * 384);
+      ntt(stage_tmp_vec1[lane][j], stage_tmp_vec1[lane][j]);
+    }
+#else
     for (int j = 0; j < K; j++) {
       mlkem_prf(ETA1, stage_sigma[lane], 32, (uint8_t)j,
                 stage_tmp_prf[lane]);
@@ -361,6 +436,7 @@ static uint64_t bench_keygen_noise_ntt(size_t iters) {
       sample_poly_cbd(ETA1, stage_tmp_prf[lane], stage_tmp_vec1[lane][j]);
       ntt(stage_tmp_vec1[lane][j], stage_tmp_vec1[lane][j]);
     }
+#endif
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
   t1 = now_ns();
@@ -397,6 +473,23 @@ static uint64_t bench_encrypt_noise(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__)
+    {
+      static poly256 dummy;
+      const uint8_t n0[4] = {0, 1, 2, 3};
+      const uint8_t n1[4] = {4, 5, 6, 0};
+      mlkem_prf_cbd_eta2x4_32(stage_r[lane], n0, stage_tmp_vec0[lane][0],
+                              stage_tmp_vec0[lane][1],
+                              stage_tmp_vec0[lane][2],
+                              stage_tmp_vec1[lane][0]);
+      mlkem_prf_cbd_eta2x4_32(stage_r[lane], n1, stage_tmp_vec1[lane][1],
+                              stage_tmp_vec1[lane][2],
+                              stage_tmp_poly[lane], dummy);
+    }
+    for (int j = 0; j < K; j++) {
+      ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
+    }
+#else
     for (int j = 0; j < K; j++) {
       mlkem_prf(ETA1, stage_r[lane], 32, (uint8_t)j, stage_tmp_prf[lane]);
       sample_poly_cbd(ETA1, stage_tmp_prf[lane], stage_tmp_vec0[lane][j]);
@@ -410,6 +503,7 @@ static uint64_t bench_encrypt_noise(size_t iters) {
     mlkem_prf(ETA2, stage_r[lane], 32, (uint8_t)(2 * K),
               stage_tmp_prf[lane]);
     sample_poly_cbd(ETA2, stage_tmp_prf[lane], stage_tmp_poly[lane]);
+#endif
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
   t1 = now_ns();

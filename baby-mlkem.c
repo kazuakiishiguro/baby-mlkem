@@ -797,21 +797,69 @@ static inline uint32_t load32_le(const uint8_t *x) {
          ((uint32_t)x[3] << 24);
 }
 
+static inline void sample_poly_cbd_eta2_bytes(const uint8_t *data,
+                                                poly256 out) {
+  for (int i = 0; i < N / 8; i++) {
+    uint32_t t = load32_le(data + 4 * i);
+    uint32_t d = t & 0x55555555u;
+    d += (t >> 1) & 0x55555555u;
+    for (int j = 0; j < 8; j++) {
+      int a = (d >> (4 * j)) & 0x3;
+      int b = (d >> (4 * j + 2)) & 0x3;
+      int val = a - b;
+      if (val < 0) val += Q;
+      out[8 * i + j] = (int16_t)val;
+    }
+  }
+}
+
+#if defined(__AVX2__)
+static void mlkem_prf_cbd_eta2x4_32(const uint8_t seed[32],
+                                    const uint8_t nonce[4],
+                                    poly256 out0,
+                                    poly256 out1,
+                                    poly256 out2,
+                                    poly256 out3) {
+  __m256i st[25];
+  uint8_t stream[4][128];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[lane]);
+    memcpy(stream[0] + (size_t)lane * 8, &words[0], 8);
+    memcpy(stream[1] + (size_t)lane * 8, &words[1], 8);
+    memcpy(stream[2] + (size_t)lane * 8, &words[2], 8);
+    memcpy(stream[3] + (size_t)lane * 8, &words[3], 8);
+  }
+
+  sample_poly_cbd_eta2_bytes(stream[0], outs[0]);
+  sample_poly_cbd_eta2_bytes(stream[1], outs[1]);
+  sample_poly_cbd_eta2_bytes(stream[2], outs[2]);
+  sample_poly_cbd_eta2_bytes(stream[3], outs[3]);
+}
+#endif
+
 /* sample_poly_cbd */
 static void sample_poly_cbd(int eta, const uint8_t *data, poly256 out) {
   if (eta == 2) {
-    for (int i = 0; i < N / 8; i++) {
-      uint32_t t = load32_le(data + 4 * i);
-      uint32_t d = t & 0x55555555u;
-      d += (t >> 1) & 0x55555555u;
-      for (int j = 0; j < 8; j++) {
-        int a = (d >> (4 * j)) & 0x3;
-        int b = (d >> (4 * j + 2)) & 0x3;
-        int val = a - b;
-        if (val < 0) val += Q;
-        out[8 * i + j] = (int16_t)val;
-      }
-    }
+    sample_poly_cbd_eta2_bytes(data, out);
     return;
   }
 
@@ -1256,6 +1304,20 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 
   /* s-hat, e-hat => each K polynomials => ntt(...) */
   static poly256 shat[K], ehat[K];
+#if defined(__AVX2__)
+  {
+    static poly256 dummy[2];
+    const uint8_t n0[4] = {0, 1, 2, 3};
+    const uint8_t n1[4] = {4, 5, 0, 0};
+    mlkem_prf_cbd_eta2x4_32(sigma, n0, shat[0], shat[1], shat[2], ehat[0]);
+    mlkem_prf_cbd_eta2x4_32(sigma, n1, ehat[1], ehat[2], dummy[0], dummy[1]);
+  }
+  for (int i = 0; i < K; i++) {
+    ntt(shat[i], shat[i]);
+    byte_encode(12, shat[i], dk_pke + i * 384);
+    ntt(ehat[i], ehat[i]);
+  }
+#else
   for (int i = 0; i < K; i++) {
     uint8_t prfout[64 * ETA1];
     mlkem_prf(ETA1, sigma, 32, (uint8_t)i, prfout);
@@ -1267,6 +1329,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     sample_poly_cbd(ETA1, prfout, ehat[i]);
     ntt(ehat[i], ehat[i]);
   }
+#endif
 
   /* that[i] = sum_{j}(ahat[j][i]*shat[j]) + ehat[i], in NTT domain. */
   static poly256 that[K];
@@ -1303,25 +1366,38 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 
   /* rhat => K polynomials => ntt(...) */
   static poly256 rhat[K];
-  for (int i = 0; i < K; i++) {
-    uint8_t prfout[64 * ETA1];
-    mlkem_prf(ETA1, r, rlen, (uint8_t)i, prfout);
-    sample_poly_cbd(ETA1, prfout, rhat[i]);
-    ntt(rhat[i], rhat[i]);
-  }
   /* e1 => K polynomials => sample_poly_cbd(ETA2, prf(r,i+K)) */
   static poly256 e1[K];
-  for (int i = 0; i < K; i++) {
-    uint8_t prfout[64 * ETA2];
-    mlkem_prf(ETA2, r, rlen, (uint8_t)(i + K), prfout);
-    sample_poly_cbd(ETA2, prfout, e1[i]);
-  }
   /* e2 => 1 polynomial => sample_poly_cbd(ETA2, prf(r,2K)) */
   static poly256 e2;
+#if defined(__AVX2__)
+  if (rlen == 32) {
+    static poly256 dummy;
+    const uint8_t n0[4] = {0, 1, 2, 3};
+    const uint8_t n1[4] = {4, 5, 6, 0};
+    mlkem_prf_cbd_eta2x4_32(r, n0, rhat[0], rhat[1], rhat[2], e1[0]);
+    mlkem_prf_cbd_eta2x4_32(r, n1, e1[1], e1[2], e2, dummy);
+  } else
+#endif
   {
-    uint8_t prfout[64 * ETA2];
-    mlkem_prf(ETA2, r, rlen, (uint8_t)(2 * K), prfout);
-    sample_poly_cbd(ETA2, prfout, e2);
+    for (int i = 0; i < K; i++) {
+      uint8_t prfout[64 * ETA1];
+      mlkem_prf(ETA1, r, rlen, (uint8_t)i, prfout);
+      sample_poly_cbd(ETA1, prfout, rhat[i]);
+    }
+    for (int i = 0; i < K; i++) {
+      uint8_t prfout[64 * ETA2];
+      mlkem_prf(ETA2, r, rlen, (uint8_t)(i + K), prfout);
+      sample_poly_cbd(ETA2, prfout, e1[i]);
+    }
+    {
+      uint8_t prfout[64 * ETA2];
+      mlkem_prf(ETA2, r, rlen, (uint8_t)(2 * K), prfout);
+      sample_poly_cbd(ETA2, prfout, e2);
+    }
+  }
+  for (int i = 0; i < K; i++) {
+    ntt(rhat[i], rhat[i]);
   }
 
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
