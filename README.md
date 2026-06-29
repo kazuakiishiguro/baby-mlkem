@@ -566,6 +566,26 @@ avoiding a second SHAKE128 matrix expansion and duplicate `H(pk)` after keygen.
 Post-change profiling (`4000` iterations, `-pg`) still shows `keccakf` as the
 largest core hotspot, followed by `kpke_encrypt` arithmetic/packing work.
 
+### Independent Core Optimization A/B (2026-06-29, Keccak and compression)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `2000`
+iterations. Baseline is commit `e60405f` before the core Keccak/compression
+changes; candidate is the working tree after the change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 45209.09 | 23544.19 | 1.920x |
+| encaps | 14721.15 | 11684.66 | 1.260x |
+| decaps | 18107.28 | 15175.22 | 1.193x |
+| roundtrip | 78151.01 | 50586.39 | 1.545x |
+
+This keeps the implementation vendor-free in `AVX2_BACKEND=core`. The change
+unrolls the scalar Keccak-f theta/chi steps and replaces ML-KEM-768 compression
+integer division for `d=10` and `d=4` with exact reciprocal multiplication.
+
+Post-change profiling (`4000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`45.65%` self time), with `keccakf` reduced to `23.91%`.
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

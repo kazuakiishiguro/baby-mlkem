@@ -123,34 +123,45 @@ static inline uint64_t ROTL64(uint64_t x, int s) {
 static void keccakf(uint64_t st[25]) {
   for (int round = 0; round < 24; round++) {
     // Theta
-    uint64_t bc[5];
-    for (int i = 0; i < 5; i++) {
-      bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
-    }
-    for (int i = 0; i < 5; i++) {
-      uint64_t t = bc[(i + 4) % 5] ^ ROTL64(bc[(i + 1) % 5], 1);
-      for (int j = 0; j < 25; j += 5) {
-        st[j + i] ^= t;
-      }
-    }
+    uint64_t c0 = st[0] ^ st[5] ^ st[10] ^ st[15] ^ st[20];
+    uint64_t c1 = st[1] ^ st[6] ^ st[11] ^ st[16] ^ st[21];
+    uint64_t c2 = st[2] ^ st[7] ^ st[12] ^ st[17] ^ st[22];
+    uint64_t c3 = st[3] ^ st[8] ^ st[13] ^ st[18] ^ st[23];
+    uint64_t c4 = st[4] ^ st[9] ^ st[14] ^ st[19] ^ st[24];
+    uint64_t d0 = c4 ^ ROTL64(c1, 1);
+    uint64_t d1 = c0 ^ ROTL64(c2, 1);
+    uint64_t d2 = c1 ^ ROTL64(c3, 1);
+    uint64_t d3 = c2 ^ ROTL64(c4, 1);
+    uint64_t d4 = c3 ^ ROTL64(c0, 1);
+    st[0] ^= d0;  st[5] ^= d0;  st[10] ^= d0; st[15] ^= d0; st[20] ^= d0;
+    st[1] ^= d1;  st[6] ^= d1;  st[11] ^= d1; st[16] ^= d1; st[21] ^= d1;
+    st[2] ^= d2;  st[7] ^= d2;  st[12] ^= d2; st[17] ^= d2; st[22] ^= d2;
+    st[3] ^= d3;  st[8] ^= d3;  st[13] ^= d3; st[18] ^= d3; st[23] ^= d3;
+    st[4] ^= d4;  st[9] ^= d4;  st[14] ^= d4; st[19] ^= d4; st[24] ^= d4;
+
     // Rho and pi
     uint64_t t = st[1];
     for (int i = 0; i < 24; i++) {
       int j = pi[i];
-      bc[0] = st[j];
+      uint64_t tmp = st[j];
       st[j] = ROTL64(t, rho[i]);
-      t = bc[0];
+      t = tmp;
     }
+
     // Chi
     for (int j = 0; j < 25; j += 5) {
-      uint64_t tmp[5];
-      for (int i = 0; i < 5; i++) {
-        tmp[i] = st[j + i];
-      }
-      for (int i = 0; i < 5; i++) {
-        st[j + i] = tmp[i] ^ ((~tmp[(i + 1) % 5]) & tmp[(i + 2) % 5]);
-      }
+      uint64_t a0 = st[j + 0];
+      uint64_t a1 = st[j + 1];
+      uint64_t a2 = st[j + 2];
+      uint64_t a3 = st[j + 3];
+      uint64_t a4 = st[j + 4];
+      st[j + 0] = a0 ^ ((~a1) & a2);
+      st[j + 1] = a1 ^ ((~a2) & a3);
+      st[j + 2] = a2 ^ ((~a3) & a4);
+      st[j + 3] = a3 ^ ((~a4) & a0);
+      st[j + 4] = a4 ^ ((~a0) & a1);
     }
+
     // Iota
     st[0] ^= rc[round];
   }
@@ -694,7 +705,31 @@ static void byte_decode(int d, const uint8_t *in, poly256 out) {
   }
 }
 
+static inline uint16_t compress_coeff_d10(int16_t x) {
+  uint32_t n = (uint32_t)(uint16_t)x * 1024u + (Q / 2);
+  return (uint16_t)((((uint64_t)n * 161271u) >> 29) & 0x03FFu);
+}
+
+static inline uint16_t compress_coeff_d4(int16_t x) {
+  uint32_t n = (uint32_t)(uint16_t)x * 16u + (Q / 2);
+  return (uint16_t)((((uint32_t)n * 315u) >> 20) & 0x000Fu);
+}
+
 static void compress_poly(int d, const poly256 x, uint16_t *out) {
+  if (d == 10) {
+    for (int i = 0; i < N; i++) {
+      out[i] = compress_coeff_d10(x[i]);
+    }
+    return;
+  }
+
+  if (d == 4) {
+    for (int i = 0; i < N; i++) {
+      out[i] = compress_coeff_d4(x[i]);
+    }
+    return;
+  }
+
   for (int i = 0; i < N; i++) {
     int32_t tmp = x[i];
     int64_t big = ((int64_t)tmp * (1 << d) + Q / 2) / Q;
