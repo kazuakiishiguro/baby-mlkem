@@ -726,16 +726,18 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
                                    size_t stream_len,
                                    poly256 out,
                                    int count) {
-  for (size_t idx = 0; idx + 2 < stream_len && count < N; idx += 3) {
+  int16_t *op = out + count;
+  int16_t *const end = out + N;
+  for (size_t idx = 0; idx + 2 < stream_len && op < end; idx += 3) {
     uint8_t a = stream[idx + 0];
     uint8_t b = stream[idx + 1];
     uint8_t c = stream[idx + 2];
     int d1 = ((b & 0xF) << 8) | a;
     int d2 = (c << 4) | (b >> 4);
-    if (d1 < Q) out[count++] = (int16_t)d1;
-    if (d2 < Q && count < N) out[count++] = (int16_t)d2;
+    if (d1 < Q) *op++ = (int16_t)d1;
+    if (d2 < Q && op < end) *op++ = (int16_t)d2;
   }
-  return count;
+  return (int)(op - out);
 }
 
 /* sample_ntt => SHAKE128 rejection sampling for one A-hat polynomial. */

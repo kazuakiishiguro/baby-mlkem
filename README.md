@@ -1011,6 +1011,34 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
 by `bench_keygen` (`17.95%`), `sample_poly_cbd` (`5.13%`), and `sha3_512` /
 `bench_decaps` (`2.56%` each).
 
+### Independent Core Optimization A/B (2026-06-29, pointer-based matrix parser)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `20000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `cb7b22d` before using a pointer-based `sample_ntt()` parser; candidate
+is the working tree after the parser change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 15887.98 | 15761.82 | 1.008x |
+| encaps | 6030.73 | 6017.40 | 1.002x |
+| decaps | 7846.17 | 7845.09 | 1.000x |
+| roundtrip | 29903.36 | 29774.31 | 1.004x |
+
+The median speedups from the same run were `1.007x` keygen, `1.003x`
+encaps, `1.000x` decaps, and `1.004x` roundtrip.
+
+The change keeps the core path vendor-free. `sample_ntt_parse_stream()` now
+tracks the output polynomial with a moving pointer and end pointer instead of
+recomputing `out[count]` on every accepted rejection-sampling coefficient. This
+targets the SHAKE128 matrix expansion used by core keygen; repeated encaps and
+decaps runs mostly reuse the public-key cache, so the expected direct gain there
+is small.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`35.90%` self time), followed by `keccakf` (`33.33%`),
+`bench_keygen` (`25.64%`), and `bench_decaps` (`5.13%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
