@@ -942,7 +942,7 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 }
 
 #if defined(__AVX2__)
-static void sample_ntt4_store_block(uint8_t stream[4][672], size_t off,
+static void sample_ntt4_store_block(uint8_t stream[4][504], size_t off,
                                     const __m256i st[25]) {
   uint64_t lanes[4];
   for (int lane = 0; lane < 21; lane++) {
@@ -962,7 +962,7 @@ static void sample_ntt4(const uint8_t *seed,
                         poly256 out2,
                         poly256 out3) {
   __m256i st[25];
-  uint8_t stream[4][672];
+  uint8_t stream[4][504];
   int16_t *outs[4] = {out0, out1, out2, out3};
 
   for (int i = 0; i < 25; i++) {
@@ -979,7 +979,7 @@ static void sample_ntt4(const uint8_t *seed,
       (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
   st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
 
-  for (int block = 0; block < 4; block++) {
+  for (int block = 0; block < 3; block++) {
     keccakf4(st);
     sample_ntt4_store_block(stream, (size_t)block * 168, st);
   }

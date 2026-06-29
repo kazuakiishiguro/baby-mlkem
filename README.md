@@ -655,23 +655,54 @@ iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_keygen_full` | 5902.39 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 3011.54 |
-| `mlkem_core_stage_kpke_decrypt_cached` | 1350.05 |
-| `mlkem_core_stage_sample_matrix` | 3162.77 |
-| `mlkem_core_stage_keygen_noise_ntt` | 2325.74 |
-| `mlkem_core_stage_keygen_accum_encode` | 447.08 |
-| `mlkem_core_stage_encrypt_noise` | 1554.65 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1485.23 |
-| `mlkem_core_stage_ciphertext_compress_encode` | 102.02 |
-| `mlkem_core_stage_ciphertext_decode_decompress` | 245.63 |
-| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1186.41 |
+| `mlkem_core_stage_kpke_keygen_full` | 5734.72 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 3161.94 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1271.09 |
+| `mlkem_core_stage_sample_matrix` | 3034.99 |
+| `mlkem_core_stage_keygen_noise_ntt` | 2338.22 |
+| `mlkem_core_stage_keygen_accum_encode` | 447.41 |
+| `mlkem_core_stage_encrypt_noise` | 1555.37 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1495.11 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 102.24 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 245.61 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1188.88 |
 
 After self-contained AVX2 matrix sampling and PRF/CBD batching, public matrix
 generation remains a large keygen component. The next independent-core targets
 are NTT-domain accumulation/inverse NTT and the remaining scalar NTT work inside
 noise generation. Compression and bit-packing are still much smaller
 contributors.
+
+### Independent Core Optimization A/B (2026-06-29, self AVX2 matrix 3-block squeeze)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations. Baseline is commit `cf77e89` before reducing the self-AVX2
+`sample_ntt4()` squeeze depth; candidate is the working tree after the change.
+
+Stage A/B:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 3197.34 | 3085.18 | 1.037x | 1.045x |
+| `mlkem_core_stage_kpke_keygen_full` | 5818.30 | 5756.45 | 1.012x | 1.026x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2883.96 | 2883.71 | 1.000x | 1.001x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1281.15 | 1283.75 | 0.998x | 1.000x |
+
+KEM A/B:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 10278.16 | 9852.42 | 1.043x | 1.044x |
+| encaps | 3136.65 | 3121.44 | 1.005x | 1.007x |
+| decaps | 4451.23 | 4467.32 | 0.997x | 0.994x |
+| roundtrip | 17914.36 | 17496.49 | 1.024x | 1.026x |
+
+This change keeps `AVX2_BACKEND=core` independent from vendored Kyber/PQClean
+sources. The self-AVX2 `sample_ntt4()` path now squeezes three SHAKE128 blocks
+per lane, matching the scalar fast path, and falls back to scalar `sample_ntt()`
+for any lane that does not collect 256 accepted coefficients. The existing
+`bench_core_stages` validation still checks `sample_matrix()` against scalar
+`sample_ntt()` for all 3x3 public-matrix entries.
 
 ### Independent Core Optimization A/B (2026-06-29, self AVX2 matrix scalar tail)
 
