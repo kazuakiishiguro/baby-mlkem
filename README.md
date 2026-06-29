@@ -658,8 +658,9 @@ taskset -c 0 ./bench_core_stagesc 20000
 Reported full K-PKE metrics are useful for context. Reported stage metrics are
 not intended to add up exactly to full K-PKE time because cache state, temporary
 outputs, and validation scope differ; use them to rank optimization targets.
-The PRF/CBD and NTT split metrics are isolated direction-finding measurements,
-not additive replacements for the combined noise metrics.
+The PRF/CBD, NTT, and sample-matrix split metrics are isolated
+direction-finding measurements, not additive replacements for the combined
+stage metrics.
 
 | Metric | Core work measured |
 |---|---|
@@ -667,6 +668,9 @@ not additive replacements for the combined noise metrics.
 | `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key |
 | `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key |
 | `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
+| `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
@@ -688,6 +692,9 @@ iterations:
 | `mlkem_core_stage_kpke_encrypt_cached` | 2870.28 |
 | `mlkem_core_stage_kpke_decrypt_cached` | 1279.13 |
 | `mlkem_core_stage_sample_matrix` | 3069.87 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1122.83 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1353.84 |
+| `mlkem_core_stage_sample_matrix_tail` | 825.86 |
 | `mlkem_core_stage_keygen_noise_ntt` | 2342.69 |
 | `mlkem_core_stage_keygen_noise_prf_cbd` | 898.19 |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | 1980.42 |

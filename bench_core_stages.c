@@ -406,6 +406,88 @@ static uint64_t bench_sample_matrix(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_sample_matrix_x4_batch0(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+#if defined(__AVX2__)
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+#endif
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__)
+    sample_ntt4(stage_rho[lane], r0, c0,
+                stage_tmp_ahat[lane][0][0], stage_tmp_ahat[lane][0][1],
+                stage_tmp_ahat[lane][0][2], stage_tmp_ahat[lane][1][0]);
+#else
+    sample_ntt(stage_rho[lane], 0, 0, stage_tmp_ahat[lane][0][0]);
+    sample_ntt(stage_rho[lane], 0, 1, stage_tmp_ahat[lane][0][1]);
+    sample_ntt(stage_rho[lane], 0, 2, stage_tmp_ahat[lane][0][2]);
+    sample_ntt(stage_rho[lane], 1, 0, stage_tmp_ahat[lane][1][0]);
+#endif
+    switch (i & 3u) {
+      case 0: acc ^= checksum_poly(stage_tmp_ahat[lane][0][0]); break;
+      case 1: acc ^= checksum_poly(stage_tmp_ahat[lane][0][1]); break;
+      case 2: acc ^= checksum_poly(stage_tmp_ahat[lane][0][2]); break;
+      default: acc ^= checksum_poly(stage_tmp_ahat[lane][1][0]); break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_x4_batch1(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+#if defined(__AVX2__)
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+#endif
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__)
+    sample_ntt4(stage_rho[lane], r1, c1,
+                stage_tmp_ahat[lane][1][1], stage_tmp_ahat[lane][1][2],
+                stage_tmp_ahat[lane][2][0], stage_tmp_ahat[lane][2][1]);
+#else
+    sample_ntt(stage_rho[lane], 1, 1, stage_tmp_ahat[lane][1][1]);
+    sample_ntt(stage_rho[lane], 1, 2, stage_tmp_ahat[lane][1][2]);
+    sample_ntt(stage_rho[lane], 2, 0, stage_tmp_ahat[lane][2][0]);
+    sample_ntt(stage_rho[lane], 2, 1, stage_tmp_ahat[lane][2][1]);
+#endif
+    switch (i & 3u) {
+      case 0: acc ^= checksum_poly(stage_tmp_ahat[lane][1][1]); break;
+      case 1: acc ^= checksum_poly(stage_tmp_ahat[lane][1][2]); break;
+      case 2: acc ^= checksum_poly(stage_tmp_ahat[lane][2][0]); break;
+      default: acc ^= checksum_poly(stage_tmp_ahat[lane][2][1]); break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_tail(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__)
+    sample_ntt4_one(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+#else
+    sample_ntt(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+#endif
+    acc ^= checksum_poly(stage_tmp_ahat[lane][2][2]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_keygen_noise_ntt(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -736,6 +818,12 @@ int main(int argc, char **argv) {
                bench_kpke_decrypt_cached(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix", bench_sample_matrix(iters),
                iters);
+  print_metric("mlkem_core_stage_sample_matrix_x4_batch0",
+               bench_sample_matrix_x4_batch0(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_x4_batch1",
+               bench_sample_matrix_x4_batch1(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_tail",
+               bench_sample_matrix_tail(iters), iters);
   print_metric("mlkem_core_stage_keygen_noise_ntt",
                bench_keygen_noise_ntt(iters), iters);
   print_metric("mlkem_core_stage_keygen_noise_prf_cbd",
