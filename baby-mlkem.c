@@ -283,7 +283,7 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
 #define DU 10
 #define DV 4
 #ifndef SAMPLE_NTT_STREAM_CHUNK
-#define SAMPLE_NTT_STREAM_CHUNK 496
+#define SAMPLE_NTT_STREAM_CHUNK 504
 #endif
 
 /* ZETA, GAMMA arrays: We'll compute them at init. */
@@ -507,18 +507,11 @@ static void sample_poly_cbd(int eta, const uint8_t *data, poly256 out) {
   }
 }
 
-/* sample_ntt => big chunk from shake128 => parse 3 bytes at a time. */
-static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
-  uint8_t inbuf[34];
-  memcpy(inbuf, seed, 32);
-  inbuf[32] = (uint8_t)i;
-  inbuf[33] = (uint8_t)j;
-
-  uint8_t stream[SAMPLE_NTT_STREAM_CHUNK];
-  pq_shake128(stream, sizeof(stream), inbuf, sizeof(inbuf));
-
-  int count = 0;
-  for (size_t idx = 0; idx + 2 < sizeof(stream) && count < N; idx += 3) {
+static int sample_ntt_parse_stream(const uint8_t *stream,
+                                   size_t stream_len,
+                                   poly256 out,
+                                   int count) {
+  for (size_t idx = 0; idx + 2 < stream_len && count < N; idx += 3) {
     uint8_t a = stream[idx + 0];
     uint8_t b = stream[idx + 1];
     uint8_t c = stream[idx + 2];
@@ -527,20 +520,30 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
     if (d1 < Q) out[count++] = (int16_t)d1;
     if (d2 < Q && count < N) out[count++] = (int16_t)d2;
   }
+  return count;
+}
 
-  if (count < N) {
-    uint8_t fallback[3 * 4096];
-    pq_shake128(fallback, sizeof(fallback), inbuf, sizeof(inbuf));
-    count = 0;
-    for (size_t idx = 0; idx + 2 < sizeof(fallback) && count < N; idx += 3) {
-      uint8_t a = fallback[idx + 0];
-      uint8_t b = fallback[idx + 1];
-      uint8_t c = fallback[idx + 2];
-      int d1 = ((b & 0xF) << 8) | a;
-      int d2 = (c << 4) | (b >> 4);
-      if (d1 < Q) out[count++] = (int16_t)d1;
-      if (d2 < Q && count < N) out[count++] = (int16_t)d2;
-    }
+/* sample_ntt => SHAKE128 rejection sampling for one A-hat polynomial. */
+static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
+  uint8_t inbuf[34];
+  memcpy(inbuf, seed, 32);
+  inbuf[32] = (uint8_t)i;
+  inbuf[33] = (uint8_t)j;
+
+  keccak_ctx ctx;
+  keccak_init(&ctx, 168);
+  keccak_absorb(&ctx, inbuf, sizeof(inbuf));
+  keccak_finalize(&ctx, 0x1F);
+
+  uint8_t stream[SAMPLE_NTT_STREAM_CHUNK];
+  int count = 0;
+  int first = 1;
+  while (count < N) {
+    size_t chunk = first ? sizeof(stream) : 168;
+    if (chunk > sizeof(stream)) chunk = sizeof(stream);
+    keccak_squeeze(&ctx, stream, chunk);
+    count = sample_ntt_parse_stream(stream, chunk, out, count);
+    first = 0;
   }
 }
 

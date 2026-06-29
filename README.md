@@ -608,6 +608,29 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot again (`38.18%` self time), followed by `kpke_encrypt` (`27.27%`) and
 `bench_keygen` (`23.64%`).
 
+### Independent Core Optimization A/B (2026-06-29, matrix sampling)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations. Baseline is commit `e79ab72` before the core matrix sampling change;
+candidate is the working tree after the change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 22978.35 | 17805.09 | 1.291x |
+| encaps | 7667.25 | 7616.26 | 1.007x |
+| decaps | 10039.63 | 10022.49 | 1.002x |
+| roundtrip | 40805.76 | 35575.62 | 1.147x |
+
+The change keeps the core path vendor-free. `sample_ntt()` now squeezes `504`
+bytes in the first SHAKE128 pass, which is the largest multiple of 3 that still
+fits in three SHAKE128 rate blocks, and continues squeezing from the same XOF
+state if rejection sampling needs more candidates instead of rehashing a large
+fallback buffer.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`35.56%` self time), followed by `bench_keygen` (`24.44%`) and
+`keccakf` (`20.00%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
