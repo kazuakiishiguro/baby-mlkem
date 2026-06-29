@@ -221,6 +221,32 @@ static void keccak_absorb(keccak_ctx *ctx, const uint8_t *in, size_t inlen) {
   }
 }
 
+/* Absorb fixed ML-KEM seeds without stack-copying seed||suffix buffers. */
+static inline void keccak_absorb_32_lanes(keccak_ctx *ctx, const uint8_t *in) {
+  ctx->state[0] ^= load64_le(in + 0);
+  ctx->state[1] ^= load64_le(in + 8);
+  ctx->state[2] ^= load64_le(in + 16);
+  ctx->state[3] ^= load64_le(in + 24);
+}
+
+static inline void keccak_absorb_32_suffix1(keccak_ctx *ctx,
+                                            const uint8_t *in,
+                                            uint8_t suffix) {
+  keccak_absorb_32_lanes(ctx, in);
+  ((uint8_t *)ctx->state)[32] ^= suffix;
+  ctx->absorb_pos = 33;
+}
+
+static inline void keccak_absorb_32_suffix2(keccak_ctx *ctx,
+                                            const uint8_t *in,
+                                            uint8_t suffix0,
+                                            uint8_t suffix1) {
+  keccak_absorb_32_lanes(ctx, in);
+  ((uint8_t *)ctx->state)[32] ^= suffix0;
+  ((uint8_t *)ctx->state)[33] ^= suffix1;
+  ctx->absorb_pos = 34;
+}
+
 /* Finalize: domain separation and pad. */
 static void keccak_finalize(keccak_ctx *ctx, uint8_t domain) {
   // Domain byte: XOR into the next unoccupied byte.
@@ -470,6 +496,15 @@ static void ntt_mul_add(const poly256 a, const poly256 b, poly256 accum) {
 static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
                       uint8_t *out) {
   /* hash = shake256( data||b ) => 64*eta */
+  if (dlen == 32) {
+    keccak_ctx ctx;
+    keccak_init(&ctx, 136);
+    keccak_absorb_32_suffix1(&ctx, data, b);
+    keccak_finalize(&ctx, 0x1F);
+    keccak_squeeze(&ctx, out, 64 * eta);
+    return;
+  }
+
   uint8_t inbuf[256];
   /* dlen <= 32 typically, but let's be safe. */
   if (dlen > 255) dlen = 255;
@@ -542,14 +577,9 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
 
 /* sample_ntt => SHAKE128 rejection sampling for one A-hat polynomial. */
 static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
-  uint8_t inbuf[34];
-  memcpy(inbuf, seed, 32);
-  inbuf[32] = (uint8_t)i;
-  inbuf[33] = (uint8_t)j;
-
   keccak_ctx ctx;
   keccak_init(&ctx, 168);
-  keccak_absorb(&ctx, inbuf, sizeof(inbuf));
+  keccak_absorb_32_suffix2(&ctx, seed, (uint8_t)i, (uint8_t)j);
   keccak_finalize(&ctx, 0x1F);
 
   uint8_t stream[SAMPLE_NTT_STREAM_CHUNK];

@@ -674,6 +674,31 @@ Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
 largest hotspot (`36.17%` self time), followed by `keccakf` (`27.66%`),
 `bench_keygen` (`17.02%`), and `ntt_inv` (`8.51%`).
 
+### Independent Core Optimization A/B (2026-06-29, fixed Keccak seed absorb)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `1dff1c1` before the fixed-size Keccak seed absorb change; candidate is
+the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17631.49 | 17538.97 | 1.005x |
+| encaps | 7636.27 | 7620.70 | 1.002x |
+| decaps | 9840.08 | 9777.58 | 1.006x |
+| roundtrip | 35191.61 | 34759.01 | 1.012x |
+
+The change keeps the core path vendor-free. It adds fixed-size Keccak absorb
+helpers for the ML-KEM `seed[32] || suffix` hot paths: PRF input
+`data[32] || nonce` and matrix sampling input `rho[32] || i || j`. These
+helpers absorb the four 64-bit seed lanes directly and write suffix bytes into
+the state, avoiding temporary stack buffers and generic absorb loops for these
+common cases.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`38.30%` self time), followed by `kpke_encrypt` (`27.66%`),
+`bench_keygen` (`14.89%`), and `ntt_inv` (`6.38%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
