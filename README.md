@@ -699,6 +699,29 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot (`38.30%` self time), followed by `kpke_encrypt` (`27.66%`),
 `bench_keygen` (`14.89%`), and `ntt_inv` (`6.38%`).
 
+### Independent Core Optimization A/B (2026-06-29, Keccak Chi unroll)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `bae2cf6` before the Keccak Chi row unroll; candidate is the working
+tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17517.17 | 17500.41 | 1.001x |
+| encaps | 7590.49 | 7563.94 | 1.004x |
+| decaps | 9773.82 | 9763.25 | 1.001x |
+| roundtrip | 34814.28 | 34692.20 | 1.004x |
+
+The change keeps the core path vendor-free. It unrolls the five Keccak Chi
+rows inside each Keccak-f round, removing the small row loop while keeping the
+Rho/Pi loop unchanged because a prior Rho/Pi unroll trial did not produce a
+stable speedup.
+
+Post-change profiling (`6000` iterations, `-pg`) still shows `keccakf` as the
+largest hotspot (`33.33%` self time), followed by `kpke_encrypt` (`26.67%`),
+`bench_keygen` (`22.22%`), and `ntt_inv` (`6.67%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

@@ -156,18 +156,25 @@ static void keccakf(uint64_t st[25]) {
     }
 
     // Chi
-    for (int j = 0; j < 25; j += 5) {
-      uint64_t a0 = st[j + 0];
-      uint64_t a1 = st[j + 1];
-      uint64_t a2 = st[j + 2];
-      uint64_t a3 = st[j + 3];
-      uint64_t a4 = st[j + 4];
-      st[j + 0] = a0 ^ ((~a1) & a2);
-      st[j + 1] = a1 ^ ((~a2) & a3);
-      st[j + 2] = a2 ^ ((~a3) & a4);
-      st[j + 3] = a3 ^ ((~a4) & a0);
-      st[j + 4] = a4 ^ ((~a0) & a1);
-    }
+#define KECCAK_CHI_ROW(j) \
+  do { \
+    uint64_t a0 = st[(j) + 0]; \
+    uint64_t a1 = st[(j) + 1]; \
+    uint64_t a2 = st[(j) + 2]; \
+    uint64_t a3 = st[(j) + 3]; \
+    uint64_t a4 = st[(j) + 4]; \
+    st[(j) + 0] = a0 ^ ((~a1) & a2); \
+    st[(j) + 1] = a1 ^ ((~a2) & a3); \
+    st[(j) + 2] = a2 ^ ((~a3) & a4); \
+    st[(j) + 3] = a3 ^ ((~a4) & a0); \
+    st[(j) + 4] = a4 ^ ((~a0) & a1); \
+  } while (0)
+    KECCAK_CHI_ROW(0);
+    KECCAK_CHI_ROW(5);
+    KECCAK_CHI_ROW(10);
+    KECCAK_CHI_ROW(15);
+    KECCAK_CHI_ROW(20);
+#undef KECCAK_CHI_ROW
 
     // Iota
     st[0] ^= rc[round];
