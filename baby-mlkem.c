@@ -433,6 +433,25 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
 
 static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
   // SHA3-512 => rate=576 bits => 72 bytes, domain=0x06
+  if (inlen == 32 || inlen == 64) {
+    uint64_t st[25] = {0};
+    st[0] = load64_le(in + 0);
+    st[1] = load64_le(in + 8);
+    st[2] = load64_le(in + 16);
+    st[3] = load64_le(in + 24);
+    if (inlen == 64) {
+      st[4] = load64_le(in + 32);
+      st[5] = load64_le(in + 40);
+      st[6] = load64_le(in + 48);
+      st[7] = load64_le(in + 56);
+    }
+    ((uint8_t *)st)[inlen] ^= 0x06;
+    ((uint8_t *)st)[71] ^= 0x80;
+    keccakf(st);
+    memcpy(out64, st, 64);
+    return;
+  }
+
   keccak_ctx ctx;
   keccak_init(&ctx, 72);
   keccak_absorb(&ctx, in, inlen);

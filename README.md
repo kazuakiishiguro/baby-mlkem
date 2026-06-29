@@ -728,6 +728,35 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, fixed-length SHA3-512)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `202306b` before specializing SHA3-512 fixed input lengths; candidate
+is the working tree after the change. This is a core-vs-core comparison and
+does not use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+Keccak A/B, `200000` iterations, five repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_sha3_512_32` | 205.80 | 200.33 | 1.027x | 1.028x |
+| `mlkem_sha3_512_64` | 206.53 | 199.84 | 1.034x | 1.036x |
+
+KEM A/B, `5000` iterations, seven repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9813.09 | 9815.85 | 1.000x | 1.003x |
+| encaps | 3126.36 | 3116.82 | 1.003x | 1.003x |
+| decaps | 4440.51 | 4433.69 | 1.002x | 1.003x |
+| roundtrip | 17439.53 | 17412.60 | 1.002x | 1.001x |
+
+The change keeps the core path vendor-free. `sha3_512()` now has direct
+fixed-length paths for the ML-KEM `32`-byte keygen seed hash and `64`-byte
+`m || H(pk)` / `m' || H(pk)` hashes. Other input lengths still use the generic
+`keccak_ctx` path. The stage suite was noisier than the direct Keccak and KEM
+measurements, so the KEM rows above are the acceptance signal for this change.
+
 ### Independent Core Optimization A/B (2026-06-30, fixed-input PRF SHAKE256)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
