@@ -431,17 +431,17 @@ static void ntt_add(const poly256 a, const poly256 b, poly256 out) {
   poly256_add(a, b, out);
 }
 
-/* ntt_mul function is pairwise approach with gamma */
-static void ntt_mul(const poly256 a, const poly256 b, poly256 out) {
+/* ntt_mul_add accumulates pairwise base multiplication in the NTT domain. */
+static void ntt_mul_add(const poly256 a, const poly256 b, poly256 accum) {
   for (int i = 0; i < 128; i++) {
     int idx0 = 2 * i, idx1 = 2 * i + 1;
     uint32_t a0 = (uint16_t)a[idx0], a1 = (uint16_t)a[idx1];
     uint32_t b0 = (uint16_t)b[idx0], b1 = (uint16_t)b[idx1];
     uint32_t g = GAMMA[i];
     uint64_t c0 = (uint64_t)a0 * b0 + (uint64_t)a1 * b1 * g;
-    out[idx0] = (int16_t)(c0 % Q);
     uint32_t c1 = a0 * b1 + a1 * b0;
-    out[idx1] = (int16_t)(c1 % Q);
+    accum[idx0] = mod_q_add_i16(accum[idx0], (int16_t)(c0 % Q));
+    accum[idx1] = mod_q_add_i16(accum[idx1], (int16_t)(c1 % Q));
   }
 }
 
@@ -855,11 +855,10 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   /* that[i] = sum_{j}(ahat[j][i]*shat[j]) + ehat[i], in NTT domain. */
   static poly256 that[K];
   for (int i = 0; i < K; i++) {
-    static poly256 accum, tmp;
+    static poly256 accum;
     memset(accum, 0, sizeof(accum));
     for (int j = 0; j < K; j++) {
-      ntt_mul(ahat[j][i], shat[j], tmp);
-      ntt_add(accum, tmp, accum);
+      ntt_mul_add(ahat[j][i], shat[j], accum);
     }
     ntt_add(accum, ehat[i], accum);
     memcpy(that[i], accum, sizeof(accum));
@@ -930,8 +929,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   for (int i = 0; i < K; i++) {
     memset(accum, 0, sizeof(accum));
     for (int j = 0; j < K; j++) {
-      ntt_mul(kpke_public_cache_ahat[i][j], rhat[j], tmp);
-      ntt_add(accum, tmp, accum);
+      ntt_mul_add(kpke_public_cache_ahat[i][j], rhat[j], accum);
     }
     ntt_inv(accum, tmp);
     poly256_add(tmp, e1[i], u[i]);
@@ -955,8 +953,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   {
     memset(accum, 0, sizeof(accum));
     for (int i = 0; i < K; i++) {
-      ntt_mul(kpke_public_cache_that[i], rhat[i], tmp);
-      ntt_add(accum, tmp, accum);
+      ntt_mul_add(kpke_public_cache_that[i], rhat[i], accum);
     }
     ntt_inv(accum, tmp);
     poly256_add(tmp, e2, accum);
@@ -1016,13 +1013,12 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
   static poly256 w;
-  static poly256 accum, tmp;
+  static poly256 accum;
   memset(accum, 0, sizeof(accum));
   for (int i = 0; i < K; i++) {
     static poly256 u_ntt;
     ntt(u[i], u_ntt);
-    ntt_mul(shat[i], u_ntt, tmp);
-    ntt_add(accum, tmp, accum);
+    ntt_mul_add(shat[i], u_ntt, accum);
   }
   static poly256 accum_inv;
   ntt_inv(accum, accum_inv);

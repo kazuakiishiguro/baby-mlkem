@@ -631,6 +631,25 @@ Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
 largest hotspot (`35.56%` self time), followed by `bench_keygen` (`24.44%`) and
 `keccakf` (`20.00%`).
 
+### Independent Core Optimization A/B (2026-06-29, NTT multiply-add)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `5000`
+iterations. Baseline is commit `f593418` before the core NTT multiply-add
+change; candidate is the working tree after the change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17559.83 | 17592.06 | 0.998x |
+| encaps | 7640.86 | 7617.97 | 1.003x |
+| decaps | 9955.60 | 9813.80 | 1.014x |
+| roundtrip | 35314.36 | 35111.03 | 1.006x |
+
+The change keeps the core path vendor-free. It fuses NTT-domain base
+multiplication and accumulation so the common `ntt_mul()` followed by
+`ntt_add()` pattern no longer writes a temporary polynomial and then scans it
+again for accumulation. The expected gain is small because Keccak, keygen
+matrix sampling, and inverse NTT work remain larger costs.
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
