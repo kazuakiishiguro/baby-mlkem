@@ -622,9 +622,9 @@ static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
     uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
     uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
     uint32_t g = GAMMA[i];
-    uint64_t c0 = (uint64_t)x00 * y00 + (uint64_t)x01 * y01 * g +
-                  (uint64_t)x10 * y10 + (uint64_t)x11 * y11 * g +
-                  (uint64_t)x20 * y20 + (uint64_t)x21 * y21 * g;
+    uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+    uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+    uint32_t c0 = c0_lo + (c0_hi % Q) * g;
     uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
                   x20 * y21 + x21 * y20;
     out[idx0] = (int16_t)(c0 % Q);
@@ -645,11 +645,9 @@ static void ntt_mul_acc3_factored_gamma(const poly256 a0, const poly256 b0,
     uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
     uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
     uint32_t g = GAMMA[i];
-    uint64_t c0_lo = (uint64_t)x00 * y00 + (uint64_t)x10 * y10 +
-                     (uint64_t)x20 * y20;
-    uint64_t c0_hi = (uint64_t)x01 * y01 + (uint64_t)x11 * y11 +
-                     (uint64_t)x21 * y21;
-    uint64_t c0 = c0_lo + c0_hi * g;
+    uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+    uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+    uint32_t c0 = c0_lo + (c0_hi % Q) * g;
     uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
                   x20 * y21 + x21 * y20;
     out[idx0] = (int16_t)(c0 % Q);

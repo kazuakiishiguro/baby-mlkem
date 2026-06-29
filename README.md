@@ -1165,6 +1165,44 @@ hotspot (`38.46%` self time), followed by `kpke_encrypt` (`33.33%`),
 `sample_ntt` (`10.26%`), `bench_keygen` (`7.69%`), and `sample_poly_cbd` /
 `bench_decaps` (`5.13%` each).
 
+### Independent Core Optimization A/B (2026-06-29, 32-bit NTT accumulation)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `379e294` before reducing the core K=3 NTT accumulation range; candidate
+is the working tree after the reduction change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 15501.88 | 14263.57 | 1.087x |
+| encaps | 5886.14 | 4194.76 | 1.403x |
+| decaps | 7649.31 | 5494.93 | 1.392x |
+| roundtrip | 29208.74 | 24081.02 | 1.213x |
+
+The median speedups from the same run were `1.085x` keygen, `1.397x`
+encaps, `1.396x` decaps, and `1.211x` roundtrip.
+
+The change keeps the core path vendor-free. `ntt_mul_acc3()` and
+`ntt_mul_acc3_factored_gamma()` now split the `c0` term into low and high
+coefficient products and reduce `c0_hi` before multiplying by `gamma`:
+`c0 = c0_lo + (c0_hi % Q) * gamma`. This is exact because reducing `c0_hi`
+modulo `Q` before the final modular reduction does not change the result, and
+it keeps the intermediate range in 32-bit arithmetic instead of using a 64-bit
+product plus 64-bit `% Q`.
+
+NTT microbench A/B (`200000` iterations per run, `6` order-flipped pairs)
+showed the direct helper-level effect: `ntt_mul_acc3` improved from `501.72`
+ns/op to `63.79` ns/op (`7.866x`), and `ntt_mul_acc3_factored_gamma` improved
+from `492.55` ns/op to `64.17` ns/op (`7.676x`). Forward NTT copy/in-place
+metrics stayed effectively flat, so the KEM-level speedup comes from the
+three-term NTT-domain multiplication helpers used by keygen, encaps, and
+decaps.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`45.16%` self time), followed by `kpke_encrypt` (`35.48%`),
+`sample_ntt` (`12.90%`), and `sample_poly_cbd` / `bench_keygen` (`3.23%`
+each). `ntt_mul_acc3` no longer appears in the flat-profile top entries.
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
