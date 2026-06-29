@@ -726,16 +726,35 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
                                    size_t stream_len,
                                    poly256 out,
                                    int count) {
+  const uint8_t *ip = stream;
   int16_t *op = out + count;
   int16_t *const end = out + N;
-  for (size_t idx = 0; idx + 2 < stream_len && op < end; idx += 3) {
-    uint8_t a = stream[idx + 0];
-    uint8_t b = stream[idx + 1];
-    uint8_t c = stream[idx + 2];
+  while (stream_len >= 6 && op < end) {
+    uint8_t a0 = ip[0], b0 = ip[1], c0 = ip[2];
+    int d0 = ((b0 & 0xF) << 8) | a0;
+    int d1 = (c0 << 4) | (b0 >> 4);
+    if (d0 < Q) *op++ = (int16_t)d0;
+    if (d1 < Q && op < end) *op++ = (int16_t)d1;
+    if (op >= end) return (int)(op - out);
+
+    uint8_t a1 = ip[3], b1 = ip[4], c1 = ip[5];
+    int d2 = ((b1 & 0xF) << 8) | a1;
+    int d3 = (c1 << 4) | (b1 >> 4);
+    if (d2 < Q) *op++ = (int16_t)d2;
+    if (d3 < Q && op < end) *op++ = (int16_t)d3;
+    ip += 6;
+    stream_len -= 6;
+  }
+  while (stream_len >= 3 && op < end) {
+    uint8_t a = ip[0];
+    uint8_t b = ip[1];
+    uint8_t c = ip[2];
     int d1 = ((b & 0xF) << 8) | a;
     int d2 = (c << 4) | (b >> 4);
     if (d1 < Q) *op++ = (int16_t)d1;
     if (d2 < Q && op < end) *op++ = (int16_t)d2;
+    ip += 3;
+    stream_len -= 3;
   }
   return (int)(op - out);
 }
