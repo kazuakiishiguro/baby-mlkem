@@ -665,6 +665,71 @@ static void ntt_tail_avx2(poly256 f) {
                           ZETA[k], ZETA[k + 1], ZETA[k + 2], ZETA[k + 3]);
   }
 }
+
+static inline void ntt_inv_butterfly8_avx2(int16_t *a_ptr, int16_t *b_ptr,
+                                           __m256i zeta) {
+  __m128i a16 = _mm_loadu_si128((const __m128i *)a_ptr);
+  __m128i b16 = _mm_loadu_si128((const __m128i *)b_ptr);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i diff = mod_q_sub_i32x8(b, a);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta));
+  _mm_storeu_si128((__m128i *)a_ptr, pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b)));
+  _mm_storeu_si128((__m128i *)b_ptr, pack_i32x8_to_i16x8(t));
+}
+
+static inline void ntt_inv_butterfly4x2_avx2(int16_t *a0, int16_t *b0,
+                                             int16_t *a1, int16_t *b1,
+                                             uint16_t zeta0, uint16_t zeta1) {
+  __m128i a16 = load_i16x4_pair(a0, a1);
+  __m128i b16 = load_i16x4_pair(b0, b1);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta0, zeta0,
+                                   zeta1, zeta1, zeta1, zeta1);
+  __m256i diff = mod_q_sub_i32x8(b, a);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta));
+  store_i16x4_pair(a0, a1, pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b)));
+  store_i16x4_pair(b0, b1, pack_i32x8_to_i16x8(t));
+}
+
+static inline void ntt_inv_butterfly2x4_avx2(int16_t *a0, int16_t *b0,
+                                             int16_t *a1, int16_t *b1,
+                                             int16_t *a2, int16_t *b2,
+                                             int16_t *a3, int16_t *b3,
+                                             uint16_t zeta0, uint16_t zeta1,
+                                             uint16_t zeta2, uint16_t zeta3) {
+  __m128i a16 = load_i16x2_quad(a0, a1, a2, a3);
+  __m128i b16 = load_i16x2_quad(b0, b1, b2, b3);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta1, zeta1,
+                                   zeta2, zeta2, zeta3, zeta3);
+  __m256i diff = mod_q_sub_i32x8(b, a);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta));
+  store_i16x2_quad(a0, a1, a2, a3,
+                   pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b)));
+  store_i16x2_quad(b0, b1, b2, b3, pack_i32x8_to_i16x8(t));
+}
+
+static void ntt_inv_head_avx2(poly256 f) {
+  for (int start = 0, k = 127; start < N; start += 16, k -= 4) {
+    ntt_inv_butterfly2x4_avx2(f + start, f + start + 2,
+                              f + start + 4, f + start + 6,
+                              f + start + 8, f + start + 10,
+                              f + start + 12, f + start + 14,
+                              ZETA[k], ZETA[k - 1], ZETA[k - 2], ZETA[k - 3]);
+  }
+  for (int start = 0, k = 63; start < N; start += 16, k -= 2) {
+    ntt_inv_butterfly4x2_avx2(f + start, f + start + 4,
+                              f + start + 8, f + start + 12,
+                              ZETA[k], ZETA[k - 1]);
+  }
+  for (int start = 0, k = 31; start < N; start += 16, k--) {
+    ntt_inv_butterfly8_avx2(f + start, f + start + 8,
+                            _mm256_set1_epi32(ZETA[k]));
+  }
+}
 #endif
 
 /**
@@ -774,7 +839,13 @@ static void ntt(const poly256 f_in, poly256 f_out) {
 static void ntt_inv(const poly256 f_in, poly256 f_out) {
   memcpy(f_out, f_in, sizeof(poly256));
   int k = 127;
+#if defined(__AVX2__)
+  ntt_inv_head_avx2(f_out);
+  k = 15;
+  for (int log2len = 4; log2len <= 7; log2len++) {
+#else
   for (int log2len = 1; log2len <= 7; log2len++) {
+#endif
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k--];
@@ -800,7 +871,13 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
 static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
   memcpy(out, f_in, sizeof(poly256));
   int k = 127;
+#if defined(__AVX2__)
+  ntt_inv_head_avx2(out);
+  k = 15;
+  for (int log2len = 4; log2len <= 7; log2len++) {
+#else
   for (int log2len = 1; log2len <= 7; log2len++) {
+#endif
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k--];
@@ -826,7 +903,13 @@ static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
                          const poly256 add1, poly256 out) {
   memcpy(out, f_in, sizeof(poly256));
   int k = 127;
+#if defined(__AVX2__)
+  ntt_inv_head_avx2(out);
+  k = 15;
+  for (int log2len = 4; log2len <= 7; log2len++) {
+#else
   for (int log2len = 1; log2len <= 7; log2len++) {
+#endif
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k--];
@@ -853,7 +936,13 @@ static void ntt_inv_sub_from(const poly256 minuend, const poly256 f_in,
                              poly256 out) {
   memcpy(out, f_in, sizeof(poly256));
   int k = 127;
+#if defined(__AVX2__)
+  ntt_inv_head_avx2(out);
+  k = 15;
+  for (int log2len = 4; log2len <= 7; log2len++) {
+#else
   for (int log2len = 1; log2len <= 7; log2len++) {
+#endif
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k--];

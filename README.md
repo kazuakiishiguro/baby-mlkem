@@ -732,6 +732,48 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, inverse NTT AVX2 head)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `c9f7051` before adding the self-contained AVX2 head for inverse
+NTT; candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+NTT A/B, `200000` iterations, seven repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv` | 249.66 | 183.85 | 1.358x | 1.358x |
+| `mlkem_ntt_inv_add` | 259.86 | 195.87 | 1.327x | 1.331x |
+| `mlkem_ntt_inv_add2` | 272.79 | 207.73 | 1.313x | 1.314x |
+| `mlkem_ntt_inv_sub_from` | 260.61 | 195.96 | 1.330x | 1.335x |
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv` | 1503.21 | 1244.26 | 1.208x | 1.208x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1003.51 | 925.88 | 1.084x | 1.091x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2652.73 | 2406.77 | 1.102x | 1.102x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1071.45 | 1005.70 | 1.065x | 1.067x |
+
+KEM A/B, `5000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9317.33 | 9312.34 | 1.001x | 1.001x |
+| encaps | 2915.98 | 2633.78 | 1.107x | 1.104x |
+| decaps | 4001.17 | 3653.41 | 1.095x | 1.095x |
+| roundtrip | 16308.55 | 15668.49 | 1.041x | 1.040x |
+
+The change keeps the core path vendor-free. The inverse NTT family now uses a
+local AVX2 helper for the first three short-butterfly stages (`log2len = 1, 2,
+3`) and leaves the remaining stages plus final scaling/add/sub fusion on the
+existing scalar code. This improves `ntt_inv()`, `ntt_inv_add()`,
+`ntt_inv_add2()`, and `ntt_inv_sub_from()` without calling or modifying
+vendored Kyber/PQClean assembly.
+
 ### Independent Core Optimization A/B (2026-06-30, forward NTT AVX2 tail)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
