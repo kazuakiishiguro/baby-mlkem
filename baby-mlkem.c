@@ -996,16 +996,13 @@ static void sample_ntt4(const uint8_t *seed,
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
 #if defined(__AVX2__)
-  static poly256 dummy[3];
   const uint8_t r0[4] = {0, 0, 0, 1};
   const uint8_t c0[4] = {0, 1, 2, 0};
   const uint8_t r1[4] = {1, 1, 2, 2};
   const uint8_t c1[4] = {1, 2, 0, 1};
-  const uint8_t r2[4] = {2, 0, 0, 0};
-  const uint8_t c2[4] = {2, 0, 0, 0};
   sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
   sample_ntt4(seed, r1, c1, out[1][1], out[1][2], out[2][0], out[2][1]);
-  sample_ntt4(seed, r2, c2, out[2][2], dummy[0], dummy[1], dummy[2]);
+  sample_ntt(seed, 2, 2, out[2][2]);
 #else
   for (int i = 0; i < K; i++) {
     for (int j = 0; j < K; j++) {
