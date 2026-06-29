@@ -383,6 +383,12 @@ static inline int16_t mod_q_sub_i16(int16_t a, int16_t b) {
   return (int16_t)t;
 }
 
+static inline int16_t mod_q_reduce_ntt_u32(uint32_t x) {
+  int32_t r = (int32_t)(x - (((x * 315u) >> 20) * Q));
+  if (r < 0) r += Q;
+  return (int16_t)r;
+}
+
 /**
  * bitrev7 helper
  * This function performs a bit reversal operation
@@ -494,7 +500,7 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
         f_out[idx] = mod_q_add_i16(t, u);
         int16_t tmp2 = mod_q_sub_i16(u, t);
         uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        f_out[idx + length] = (int16_t)(tmp3 % Q);
+        f_out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
       }
     }
   }
@@ -502,7 +508,7 @@ static void ntt_inv(const poly256 f_in, poly256 f_out) {
   // multiply by 3303 (128^1 mod Q)
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)f_out[i] * 3303u;
-    f_out[i] = (int16_t)(tmp % Q);
+    f_out[i] = mod_q_reduce_ntt_u32(tmp);
   }
 }
 
@@ -520,14 +526,14 @@ static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
         out[idx] = mod_q_add_i16(t, u);
         int16_t tmp2 = mod_q_sub_i16(u, t);
         uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = (int16_t)(tmp3 % Q);
+        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
       }
     }
   }
 
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
-    out[i] = mod_q_add_i16((int16_t)(tmp % Q), add[i]);
+    out[i] = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add[i]);
   }
 }
 
@@ -546,14 +552,14 @@ static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
         out[idx] = mod_q_add_i16(t, u);
         int16_t tmp2 = mod_q_sub_i16(u, t);
         uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = (int16_t)(tmp3 % Q);
+        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
       }
     }
   }
 
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
-    int16_t sum = mod_q_add_i16((int16_t)(tmp % Q), add0[i]);
+    int16_t sum = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add0[i]);
     out[i] = mod_q_add_i16(sum, add1[i]);
   }
 }
@@ -573,14 +579,14 @@ static void ntt_inv_sub_from(const poly256 minuend, const poly256 f_in,
         out[idx] = mod_q_add_i16(t, u);
         int16_t tmp2 = mod_q_sub_i16(u, t);
         uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = (int16_t)(tmp3 % Q);
+        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
       }
     }
   }
 
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
-    out[i] = mod_q_sub_i16(minuend[i], (int16_t)(tmp % Q));
+    out[i] = mod_q_sub_i16(minuend[i], mod_q_reduce_ntt_u32(tmp));
   }
 }
 

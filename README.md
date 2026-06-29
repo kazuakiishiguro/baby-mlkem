@@ -1100,6 +1100,41 @@ hotspot (`35.90%` self time), followed by `kpke_encrypt` (`23.08%`),
 `sample_ntt` (`15.38%`), `bench_keygen` (`12.82%`), and `sample_poly_cbd` /
 `bench_decaps` (`5.13%` each).
 
+### Independent Core Optimization A/B (2026-06-29, inverse NTT reduction)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `20000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `a58ba15` before replacing inverse-NTT `% Q` reductions; candidate is
+the working tree after the inverse reduction change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 15574.72 | 15546.48 | 1.002x |
+| encaps | 6022.97 | 5839.23 | 1.032x |
+| decaps | 7824.35 | 7667.85 | 1.020x |
+| roundtrip | 29505.66 | 29175.24 | 1.011x |
+
+The median speedups from the same run were `1.002x` keygen, `1.034x`
+encaps, `1.019x` decaps, and `1.012x` roundtrip.
+
+The change keeps the core path vendor-free. It adds a small scalar reduction
+for inverse NTT product ranges: for `0 <= x <= 3328*3328`, `q=(x*315)>>20`
+followed by one negative correction exactly matches `x % 3329`. This replaces
+`% Q` only in `ntt_inv()` and the fused inverse-NTT helpers. The forward
+`ntt()` path remains on the compiler-generated constant modulo because applying
+the same reduction there was slower in microbenchmarks.
+
+NTT microbench A/B (`200000` iterations per run, `6` order-flipped pairs)
+showed the direct helper-level effect: average speedups were `1.147x` for
+`ntt_inv`, `1.148x` for `ntt_inv_add`, `1.138x` for `ntt_inv_add2`, and
+`1.138x` for `ntt_inv_sub_from`; `ntt_copy` and `ntt_inplace` stayed
+effectively flat.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`37.84%` self time), followed by `kpke_encrypt` (`24.32%`),
+`sample_ntt` (`16.22%`), `bench_keygen` (`13.51%`), and `sample_poly_cbd`
+(`5.41%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
