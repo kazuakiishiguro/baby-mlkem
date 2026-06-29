@@ -460,6 +460,30 @@ static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
   keccak_squeeze(&ctx, out, outlen);
 }
 
+static void shake256_32_suffix1(const uint8_t *in, uint8_t suffix,
+                                uint8_t *out, size_t outlen) {
+  uint64_t st[25] = {0};
+  st[0] = load64_le(in + 0);
+  st[1] = load64_le(in + 8);
+  st[2] = load64_le(in + 16);
+  st[3] = load64_le(in + 24);
+  ((uint8_t *)st)[32] ^= suffix;
+  ((uint8_t *)st)[33] ^= 0x1F;
+  ((uint8_t *)st)[135] ^= 0x80;
+
+  keccakf(st);
+  size_t off = 0;
+  while (outlen > 0) {
+    size_t take = outlen < 136 ? outlen : 136;
+    memcpy(out + off, st, take);
+    off += take;
+    outlen -= take;
+    if (outlen > 0) {
+      keccakf(st);
+    }
+  }
+}
+
 /**
  * =============================================================================
  * 3) ML-KEM parameters, NTT polynomials, etc.
@@ -776,11 +800,7 @@ static void mlkem_prf(int eta, const uint8_t *data, size_t dlen, uint8_t b,
                       uint8_t *out) {
   /* hash = shake256( data||b ) => 64*eta */
   if (dlen == 32) {
-    keccak_ctx ctx;
-    keccak_init(&ctx, 136);
-    keccak_absorb_32_suffix1(&ctx, data, b);
-    keccak_finalize(&ctx, 0x1F);
-    keccak_squeeze(&ctx, out, 64 * eta);
+    shake256_32_suffix1(data, b, out, 64 * eta);
     return;
   }
 

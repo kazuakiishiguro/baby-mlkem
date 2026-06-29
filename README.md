@@ -728,6 +728,45 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, fixed-input PRF SHAKE256)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `accbc15` before adding the fixed-input PRF path; candidate is the
+working tree after the change. This is a core-vs-core comparison and does not
+use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+Keccak/sampling A/B, `200000` iterations, five repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_prf_eta2` | 201.20 | 200.78 | 1.002x | 0.998x |
+| `mlkem_sample_ntt_full` | 691.37 | 694.30 | 0.996x | 0.996x |
+
+Stage A/B, `10000` iterations, five repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 900.27 | 899.55 | 1.001x | 1.000x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1061.13 | 1060.04 | 1.001x | 1.001x |
+| `mlkem_core_stage_encrypt_noise` | 1558.31 | 1550.16 | 1.005x | 1.005x |
+| `mlkem_core_stage_kpke_keygen_full` | 5758.38 | 5633.06 | 1.022x | 1.002x |
+
+KEM A/B, `5000` iterations, five repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9832.26 | 9805.85 | 1.003x | 1.004x |
+| encaps | 3163.56 | 3128.98 | 1.011x | 1.020x |
+| decaps | 4444.91 | 4450.60 | 0.999x | 0.998x |
+| roundtrip | 17658.89 | 17447.64 | 1.012x | 1.006x |
+
+The change keeps the core path vendor-free. `mlkem_prf()` now routes the common
+`dlen == 32` case through `shake256_32_suffix1()`, a fixed-input SHAKE256
+one-shot for `seed[32] || nonce`. This avoids the generic `keccak_ctx` absorb
+and squeeze bookkeeping for ML-KEM PRF calls while preserving the existing
+generic path for other input lengths. Decapsulation is included for whole-KEM
+context; this change does not add a decapsulation-specific fast path.
+
 ### Independent Core Optimization A/B (2026-06-30, sample NTT parse unroll)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
