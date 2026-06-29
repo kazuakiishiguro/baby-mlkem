@@ -832,6 +832,41 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, sample-matrix fallback squeeze)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `40bf80d` before continuing x4 sampler fallback squeezes; candidate
+is the working tree after the change. This is a core-vs-core comparison and
+does not use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+Stage A/B, `20000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2973.00 | 2755.70 | 1.079x | 1.071x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1123.55 | 1130.71 | 0.994x | 0.993x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1361.62 | 1170.11 | 1.164x | 1.162x |
+| `mlkem_core_stage_sample_matrix_tail` | 853.55 | 816.41 | 1.046x | 1.018x |
+| `mlkem_core_stage_kpke_keygen_full` | 4912.18 | 4741.26 | 1.036x | 1.041x |
+
+KEM A/B, `9000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9082.72 | 9031.91 | 1.006x | 1.006x |
+| encaps | 2468.03 | 2483.94 | 0.994x | 0.997x |
+| decaps | 3446.39 | 3454.32 | 0.998x | 0.998x |
+| roundtrip | 15087.31 | 15041.65 | 1.003x | 1.004x |
+
+The change keeps the core path vendor-free. `sample_ntt4()` and
+`sample_ntt4_one()` used to fall back to scalar `sample_ntt()` from the
+beginning when the first three SHAKE128 blocks did not produce all 256
+coefficients. They now continue squeezing the existing x4 Keccak state and
+parse only the extra block(s) needed by incomplete lanes. This removes wasted
+Keccak work in the public matrix sampler. The direct acceptance signal is the
+`sample_matrix` / `kpke_keygen_full` improvement; cached encaps/decaps do not
+exercise public matrix generation and remain layout-noise sensitive.
+
 ### Independent Core Optimization A/B (2026-06-30, forward NTT zeta vectors)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

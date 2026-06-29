@@ -1346,16 +1346,23 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
 }
 
 #if defined(__AVX2__)
-static void sample_ntt4_store_block(uint8_t stream[4][504], size_t off,
-                                    const __m256i st[25]) {
+static void sample_ntt4_store_rate(uint8_t *s0, uint8_t *s1,
+                                   uint8_t *s2, uint8_t *s3,
+                                   const __m256i st[25]) {
   uint64_t lanes[4];
   for (int lane = 0; lane < 21; lane++) {
     _mm256_storeu_si256((__m256i *)lanes, st[lane]);
-    memcpy(stream[0] + off + (size_t)lane * 8, &lanes[0], 8);
-    memcpy(stream[1] + off + (size_t)lane * 8, &lanes[1], 8);
-    memcpy(stream[2] + off + (size_t)lane * 8, &lanes[2], 8);
-    memcpy(stream[3] + off + (size_t)lane * 8, &lanes[3], 8);
+    memcpy(s0 + (size_t)lane * 8, &lanes[0], 8);
+    memcpy(s1 + (size_t)lane * 8, &lanes[1], 8);
+    memcpy(s2 + (size_t)lane * 8, &lanes[2], 8);
+    memcpy(s3 + (size_t)lane * 8, &lanes[3], 8);
   }
+}
+
+static void sample_ntt4_store_block(uint8_t stream[4][504], size_t off,
+                                    const __m256i st[25]) {
+  sample_ntt4_store_rate(stream[0] + off, stream[1] + off,
+                         stream[2] + off, stream[3] + off, st);
 }
 
 static void sample_ntt4(const uint8_t *seed,
@@ -1388,11 +1395,25 @@ static void sample_ntt4(const uint8_t *seed,
     sample_ntt4_store_block(stream, (size_t)block * 168, st);
   }
 
+  int count[4];
+  int need_more = 0;
   for (int lane = 0; lane < 4; lane++) {
-    int count = sample_ntt_parse_stream(stream[lane], sizeof(stream[lane]),
-                                        outs[lane], 0);
-    if (count < N) {
-      sample_ntt(seed, row[lane], col[lane], outs[lane]);
+    count[lane] = sample_ntt_parse_stream(stream[lane], sizeof(stream[lane]),
+                                          outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+
+  while (need_more) {
+    uint8_t extra[4][168];
+    keccakf4(st);
+    sample_ntt4_store_rate(extra[0], extra[1], extra[2], extra[3], st);
+    need_more = 0;
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] < N) {
+        count[lane] = sample_ntt_parse_stream(extra[lane], sizeof(extra[lane]),
+                                              outs[lane], count[lane]);
+        need_more |= count[lane] < N;
+      }
     }
   }
 }
@@ -1424,8 +1445,16 @@ static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
 
   int count = sample_ntt_parse_stream((const uint8_t *)stream, sizeof(stream),
                                       out, 0);
-  if (count < N) {
-    sample_ntt(seed, row, col, out);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      uint64_t words[4];
+      _mm256_storeu_si256((__m256i *)words, st[lane]);
+      extra[lane] = words[0];
+    }
+    count = sample_ntt_parse_stream((const uint8_t *)extra, sizeof(extra),
+                                    out, count);
   }
 }
 #endif
