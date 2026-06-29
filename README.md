@@ -768,6 +768,29 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
 `kpke_encrypt` tied as the largest hotspots (`36.96%` self time each), followed
 by `bench_keygen` (`19.57%`) and `ntt_inv` (`6.52%`).
 
+### Independent Core Optimization A/B (2026-06-29, keygen copy reduction)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `2cfe8d3` before reducing copies in core keygen; candidate is the
+working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17465.92 | 17432.68 | 1.002x |
+| encaps | 7607.48 | 7561.26 | 1.006x |
+| decaps | 9674.95 | 9628.41 | 1.005x |
+| roundtrip | 34691.89 | 34505.16 | 1.005x |
+
+The change keeps the core path vendor-free. Core keygen now references the
+`rho` and `sigma` halves directly from the SHA3-512 output, encodes `shat[i]`
+while it is hot after NTT, and writes `sum + ehat[i]` directly to `that[i]`
+instead of updating `accum` and copying a whole polynomial.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`34.69%` self time), followed by `kpke_encrypt` (`32.65%`),
+`bench_keygen` (`18.37%`), and `ntt_inv` (`8.16%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

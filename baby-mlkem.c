@@ -899,9 +899,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   /* ghash = sha3_512(seed) => (rho||sigma) */
   uint8_t ghash[64];
   pq_sha3_512(ghash, seed, 32);
-  uint8_t rho[32], sigma[32];
-  memcpy(rho, ghash, 32);
-  memcpy(sigma, ghash + 32, 32);
+  const uint8_t *rho = ghash;
+  const uint8_t *sigma = ghash + 32;
 
   /* ahat => KxK polynomials */
   static poly256 ahat[K][K];
@@ -918,6 +917,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     mlkem_prf(ETA1, sigma, 32, (uint8_t)i, prfout);
     sample_poly_cbd(ETA1, prfout, shat[i]);
     ntt(shat[i], shat[i]);
+    byte_encode(12, shat[i], dk_pke + i * 384);
 
     mlkem_prf(ETA1, sigma, 32, (uint8_t)(i + K), prfout);
     sample_poly_cbd(ETA1, prfout, ehat[i]);
@@ -932,21 +932,12 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     for (int j = 0; j < K; j++) {
       ntt_mul_add(ahat[j][i], shat[j], accum);
     }
-    ntt_add(accum, ehat[i], accum);
-    memcpy(that[i], accum, sizeof(accum));
-  }
-
-  /* ek_pke = encode(that[0..K-1], 12 bits each) + rho(32 bytes) => K*384 + 32
-   * total */
-  for (int i = 0; i < K; i++) {
+    ntt_add(accum, ehat[i], that[i]);
     byte_encode(12, that[i], ek_pke + i * 384);
   }
-  memcpy(ek_pke + K * 384, rho, 32);
 
-  /* dk_pke = encode(shat[0..K-1], 12 bits each) => K*384 */
-  for (int i = 0; i < K; i++) {
-    byte_encode(12, shat[i], dk_pke + i * 384);
-  }
+  /* ek_pke = encode(that[0..K-1], 12 bits each) + rho(32 bytes). */
+  memcpy(ek_pke + K * 384, rho, 32);
 
   kpke_public_cache_store(ek_pke, that, ahat);
 }
