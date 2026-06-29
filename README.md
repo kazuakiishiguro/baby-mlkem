@@ -732,6 +732,48 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `a11bd74` before adding the self-contained AVX2 decoder for ETA2
+CBD; candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+Keccak/sampling A/B, `200000` iterations, seven repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_cbd_eta2` | 22.53 | 7.63 | 2.954x | 2.953x |
+| `mlkem_prf_eta2` | 200.79 | 199.93 | 1.004x | 1.002x |
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 901.10 | 793.96 | 1.135x | 1.136x |
+| `mlkem_core_stage_keygen_noise_ntt` | 2038.96 | 1924.48 | 1.059x | 1.060x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1079.03 | 973.08 | 1.109x | 1.108x |
+| `mlkem_core_stage_encrypt_noise` | 1365.04 | 1252.30 | 1.090x | 1.090x |
+| `mlkem_core_stage_kpke_keygen_full` | 5117.52 | 5014.01 | 1.021x | 1.021x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2401.46 | 2291.99 | 1.048x | 1.047x |
+
+KEM A/B, `5000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9319.28 | 9281.84 | 1.004x | 1.013x |
+| encaps | 2635.35 | 2540.66 | 1.037x | 1.040x |
+| decaps | 3653.01 | 3545.30 | 1.030x | 1.028x |
+| roundtrip | 15684.14 | 15444.70 | 1.016x | 1.021x |
+
+The change keeps the core path vendor-free. `sample_poly_cbd_eta2_bytes()` now
+uses a local AVX2 nibble lookup for the common ETA2 case, mapping each 4-bit
+CBD group to the signed `{-2..2}` coefficient and adding `Q` only for negative
+lanes to preserve the existing canonical representation. This reduces the
+standalone CBD cost and flows into the PRF/CBD noise stages without calling or
+modifying vendored Kyber/PQClean code.
+
 ### Independent Core Optimization A/B (2026-06-30, inverse NTT AVX2 head)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

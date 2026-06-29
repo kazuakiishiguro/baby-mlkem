@@ -1055,8 +1055,40 @@ static inline uint32_t load32_le(const uint8_t *x) {
          ((uint32_t)x[3] << 24);
 }
 
+#if defined(__AVX2__)
+static inline __m256i cbd_eta2_canonicalize_i8x16(__m128i v8) {
+  __m256i v = _mm256_cvtepi8_epi16(v8);
+  __m256i neg = _mm256_cmpgt_epi16(_mm256_setzero_si256(), v);
+  return _mm256_add_epi16(v, _mm256_and_si256(neg, _mm256_set1_epi16(Q)));
+}
+
+static inline void sample_poly_cbd_eta2_bytes_avx2(const uint8_t *data,
+                                                   poly256 out) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  for (int i = 0; i < N / 32; i++) {
+    __m128i bytes = _mm_loadu_si128((const __m128i *)(data + 16 * i));
+    __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+    __m128i hi8 = _mm_shuffle_epi8(lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+    __m256i lo = cbd_eta2_canonicalize_i8x16(lo8);
+    __m256i hi = cbd_eta2_canonicalize_i8x16(hi8);
+    __m256i a = _mm256_unpacklo_epi16(lo, hi);
+    __m256i b = _mm256_unpackhi_epi16(lo, hi);
+    _mm256_storeu_si256((__m256i *)(out + 32 * i),
+                        _mm256_permute2x128_si256(a, b, 0x20));
+    _mm256_storeu_si256((__m256i *)(out + 32 * i + 16),
+                        _mm256_permute2x128_si256(a, b, 0x31));
+  }
+}
+#endif
+
 static inline void sample_poly_cbd_eta2_bytes(const uint8_t *data,
                                                 poly256 out) {
+#if defined(__AVX2__)
+  sample_poly_cbd_eta2_bytes_avx2(data, out);
+  return;
+#endif
   for (int i = 0; i < N / 8; i++) {
     uint32_t t = load32_le(data + 4 * i);
     uint32_t d = t & 0x55555555u;
