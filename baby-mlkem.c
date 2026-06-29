@@ -1929,11 +1929,10 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
   static poly256 w;
   static poly256 accum;
-  static poly256 u_ntt[K];
   for (int i = 0; i < K; i++) {
-    ntt(u[i], u_ntt[i]);
+    ntt(u[i], u[i]);
   }
-  ntt_mul_acc3(shat[0], u_ntt[0], shat[1], u_ntt[1], shat[2], u_ntt[2], accum);
+  ntt_mul_acc3(shat[0], u[0], shat[1], u[1], shat[2], u[2], accum);
   ntt_inv_sub_from(v, accum, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */

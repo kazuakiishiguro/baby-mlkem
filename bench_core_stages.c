@@ -782,7 +782,8 @@ static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     for (int j = 0; j < K; j++) {
-      ntt(stage_u[lane][j], stage_tmp_vec0[lane][j]);
+      memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
+      ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
     }
     ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
                  stage_shat[lane][1], stage_tmp_vec0[lane][1],

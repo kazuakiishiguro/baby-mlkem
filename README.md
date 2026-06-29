@@ -739,6 +739,37 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, decrypt in-place NTT)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `3f77114` before making decrypt-side `u` transforms in-place;
+candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_decrypt_cached` | 1010.10 | 1000.64 | 1.009x | 1.007x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 924.69 | 926.36 | 0.998x | 0.997x |
+
+KEM A/B, `8000` iterations, thirteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9199.03 | 9198.16 | 1.000x | 0.998x |
+| encaps | 2490.73 | 2494.09 | 0.999x | 0.999x |
+| decaps | 3508.13 | 3493.03 | 1.004x | 1.005x |
+| roundtrip | 15277.98 | 15265.03 | 1.001x | 0.999x |
+
+The change keeps the core path vendor-free. `kpke_decrypt()` now transforms the
+freshly decoded `u` polynomials in-place before the fixed K=3 NTT accumulation,
+removing the separate `u_ntt` scratch copy in the real decrypt path. The stage
+split metric still copies precomputed inputs before the in-place NTT so it can
+preserve reusable benchmark fixtures; the full `kpke_decrypt_cached` and KEM
+`decaps` rows are the direct acceptance signal.
+
 ### Independent Core Optimization A/B (2026-06-30, PRF/CBD dummy-lane skip)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
