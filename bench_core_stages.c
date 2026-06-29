@@ -137,11 +137,7 @@ static void derive_keygen_lane(size_t lane) {
   memcpy(stage_rho[lane], ghash, 32);
   memcpy(stage_sigma[lane], ghash + 32, 32);
 
-  for (int i = 0; i < K; i++) {
-    for (int j = 0; j < K; j++) {
-      sample_ntt(stage_rho[lane], i, j, stage_ahat[lane][i][j]);
-    }
-  }
+  sample_matrix(stage_rho[lane], stage_ahat[lane]);
 
   for (int i = 0; i < K; i++) {
     mlkem_prf(ETA1, stage_sigma[lane], 32, (uint8_t)i, prfout);
@@ -208,6 +204,22 @@ static void derive_encrypt_lane(size_t lane) {
   byte_encode_u16(DV, cbuf, p);
 }
 
+static void validate_sample_matrix_matches_scalar(void) {
+  poly256 matrix[K][K];
+  poly256 want;
+
+  sample_matrix(stage_rho[0], matrix);
+  for (int row = 0; row < K; row++) {
+    for (int col = 0; col < K; col++) {
+      sample_ntt(stage_rho[0], row, col, want);
+      if (memcmp(matrix[row][col], want, sizeof(poly256)) != 0) {
+        fprintf(stderr, "sample_matrix mismatch at %d,%d\n", row, col);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
 static void prepare_inputs(void) {
   ensure_ntt_roots();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -241,6 +253,7 @@ static void validate_core_stage_helpers(void) {
   size_t mlen = 0;
 
   prepare_inputs();
+  validate_sample_matrix_matches_scalar();
 
   kpke_keygen(stage_seed[0], ek, dk);
   if (memcmp(ek, stage_ek[0], sizeof(ek)) != 0 ||
@@ -322,11 +335,7 @@ static uint64_t bench_sample_matrix(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
-    for (int row = 0; row < K; row++) {
-      for (int col = 0; col < K; col++) {
-        sample_ntt(stage_rho[lane], row, col, stage_tmp_ahat[lane][row][col]);
-      }
-    }
+    sample_matrix(stage_rho[lane], stage_tmp_ahat[lane]);
     acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
   }
   t1 = now_ns();

@@ -15,6 +15,9 @@
  *   - Incomplete side-channel protections, no constant-time, etc.
  *****************************************************************************/
 #include <assert.h>
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 #if defined(__linux__)
 #include <linux/random.h>
 #endif
@@ -120,6 +123,13 @@ static inline uint64_t load64_le(const uint8_t *x) {
          ((uint64_t)x[6] << 48) | ((uint64_t)x[7] << 56);
 }
 
+#if defined(__AVX2__)
+static inline __m256i rotl64x4(__m256i x, int s) {
+  return _mm256_or_si256(_mm256_slli_epi64(x, s),
+                         _mm256_srli_epi64(x, 64 - s));
+}
+#endif
+
 /* The Keccak-f[1600] permutation on the state. */
 static void keccakf(uint64_t st[25]) {
   uint64_t a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
@@ -208,6 +218,108 @@ static void keccakf(uint64_t st[25]) {
   st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
   st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
+
+#if defined(__AVX2__)
+static void keccakf4(__m256i st[25]) {
+  __m256i a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
+  __m256i a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
+  __m256i a10 = st[10], a11 = st[11], a12 = st[12], a13 = st[13];
+  __m256i a14 = st[14], a15 = st[15], a16 = st[16], a17 = st[17];
+  __m256i a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
+  __m256i a22 = st[22], a23 = st[23], a24 = st[24];
+
+  for (int round = 0; round < 24; round++) {
+    __m256i c0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a0, a5), _mm256_xor_si256(a10, a15)), a20);
+    __m256i c1 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a1, a6), _mm256_xor_si256(a11, a16)), a21);
+    __m256i c2 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a2, a7), _mm256_xor_si256(a12, a17)), a22);
+    __m256i c3 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a3, a8), _mm256_xor_si256(a13, a18)), a23);
+    __m256i c4 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a4, a9), _mm256_xor_si256(a14, a19)), a24);
+    __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
+    __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
+    __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
+    __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
+    __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+
+    a0 = _mm256_xor_si256(a0, d0);   a5 = _mm256_xor_si256(a5, d0);
+    a10 = _mm256_xor_si256(a10, d0); a15 = _mm256_xor_si256(a15, d0);
+    a20 = _mm256_xor_si256(a20, d0);
+    a1 = _mm256_xor_si256(a1, d1);   a6 = _mm256_xor_si256(a6, d1);
+    a11 = _mm256_xor_si256(a11, d1); a16 = _mm256_xor_si256(a16, d1);
+    a21 = _mm256_xor_si256(a21, d1);
+    a2 = _mm256_xor_si256(a2, d2);   a7 = _mm256_xor_si256(a7, d2);
+    a12 = _mm256_xor_si256(a12, d2); a17 = _mm256_xor_si256(a17, d2);
+    a22 = _mm256_xor_si256(a22, d2);
+    a3 = _mm256_xor_si256(a3, d3);   a8 = _mm256_xor_si256(a8, d3);
+    a13 = _mm256_xor_si256(a13, d3); a18 = _mm256_xor_si256(a18, d3);
+    a23 = _mm256_xor_si256(a23, d3);
+    a4 = _mm256_xor_si256(a4, d4);   a9 = _mm256_xor_si256(a9, d4);
+    a14 = _mm256_xor_si256(a14, d4); a19 = _mm256_xor_si256(a19, d4);
+    a24 = _mm256_xor_si256(a24, d4);
+
+    __m256i b0 = a0;
+    __m256i b1 = rotl64x4(a6, 44);
+    __m256i b2 = rotl64x4(a12, 43);
+    __m256i b3 = rotl64x4(a18, 21);
+    __m256i b4 = rotl64x4(a24, 14);
+    __m256i b5 = rotl64x4(a3, 28);
+    __m256i b6 = rotl64x4(a9, 20);
+    __m256i b7 = rotl64x4(a10, 3);
+    __m256i b8 = rotl64x4(a16, 45);
+    __m256i b9 = rotl64x4(a22, 61);
+    __m256i b10 = rotl64x4(a1, 1);
+    __m256i b11 = rotl64x4(a7, 6);
+    __m256i b12 = rotl64x4(a13, 25);
+    __m256i b13 = rotl64x4(a19, 8);
+    __m256i b14 = rotl64x4(a20, 18);
+    __m256i b15 = rotl64x4(a4, 27);
+    __m256i b16 = rotl64x4(a5, 36);
+    __m256i b17 = rotl64x4(a11, 10);
+    __m256i b18 = rotl64x4(a17, 15);
+    __m256i b19 = rotl64x4(a23, 56);
+    __m256i b20 = rotl64x4(a2, 62);
+    __m256i b21 = rotl64x4(a8, 55);
+    __m256i b22 = rotl64x4(a14, 39);
+    __m256i b23 = rotl64x4(a15, 41);
+    __m256i b24 = rotl64x4(a21, 2);
+
+#define CHIX4(x, y, z) _mm256_xor_si256((x), _mm256_andnot_si256((y), (z)))
+    a0 = CHIX4(b0, b1, b2);
+    a1 = CHIX4(b1, b2, b3);
+    a2 = CHIX4(b2, b3, b4);
+    a3 = CHIX4(b3, b4, b0);
+    a4 = CHIX4(b4, b0, b1);
+    a5 = CHIX4(b5, b6, b7);
+    a6 = CHIX4(b6, b7, b8);
+    a7 = CHIX4(b7, b8, b9);
+    a8 = CHIX4(b8, b9, b5);
+    a9 = CHIX4(b9, b5, b6);
+    a10 = CHIX4(b10, b11, b12);
+    a11 = CHIX4(b11, b12, b13);
+    a12 = CHIX4(b12, b13, b14);
+    a13 = CHIX4(b13, b14, b10);
+    a14 = CHIX4(b14, b10, b11);
+    a15 = CHIX4(b15, b16, b17);
+    a16 = CHIX4(b16, b17, b18);
+    a17 = CHIX4(b17, b18, b19);
+    a18 = CHIX4(b18, b19, b15);
+    a19 = CHIX4(b19, b15, b16);
+    a20 = CHIX4(b20, b21, b22);
+    a21 = CHIX4(b21, b22, b23);
+    a22 = CHIX4(b22, b23, b24);
+    a23 = CHIX4(b23, b24, b20);
+    a24 = CHIX4(b24, b20, b21);
+#undef CHIX4
+
+    a0 = _mm256_xor_si256(a0, _mm256_set1_epi64x((long long)rc[round]));
+  }
+
+  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
+  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
+  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
+  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
+  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
+}
+#endif
 
 /* The "absorb" + "squeeze" style code. We'll define a small struct to hold the
  * state. */
@@ -781,6 +893,80 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
   }
 }
 
+#if defined(__AVX2__)
+static void sample_ntt4_store_block(uint8_t stream[4][672], size_t off,
+                                    const __m256i st[25]) {
+  uint64_t lanes[4];
+  for (int lane = 0; lane < 21; lane++) {
+    _mm256_storeu_si256((__m256i *)lanes, st[lane]);
+    memcpy(stream[0] + off + (size_t)lane * 8, &lanes[0], 8);
+    memcpy(stream[1] + off + (size_t)lane * 8, &lanes[1], 8);
+    memcpy(stream[2] + off + (size_t)lane * 8, &lanes[2], 8);
+    memcpy(stream[3] + off + (size_t)lane * 8, &lanes[3], 8);
+  }
+}
+
+static void sample_ntt4(const uint8_t *seed,
+                        const uint8_t row[4],
+                        const uint8_t col[4],
+                        poly256 out0,
+                        poly256 out1,
+                        poly256 out2,
+                        poly256 out3) {
+  __m256i st[25];
+  uint8_t stream[4][672];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)row[3] | ((uint64_t)col[3] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[2] | ((uint64_t)col[2] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[1] | ((uint64_t)col[1] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
+  st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  for (int block = 0; block < 4; block++) {
+    keccakf4(st);
+    sample_ntt4_store_block(stream, (size_t)block * 168, st);
+  }
+
+  for (int lane = 0; lane < 4; lane++) {
+    int count = sample_ntt_parse_stream(stream[lane], sizeof(stream[lane]),
+                                        outs[lane], 0);
+    if (count < N) {
+      sample_ntt(seed, row[lane], col[lane], outs[lane]);
+    }
+  }
+}
+#endif
+
+static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
+#if defined(__AVX2__)
+  static poly256 dummy[3];
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+  const uint8_t r2[4] = {2, 0, 0, 0};
+  const uint8_t c2[4] = {2, 0, 0, 0};
+  sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
+  sample_ntt4(seed, r1, c1, out[1][1], out[1][2], out[2][0], out[2][1]);
+  sample_ntt4(seed, r2, c2, out[2][2], dummy[0], dummy[1], dummy[2]);
+#else
+  for (int i = 0; i < K; i++) {
+    for (int j = 0; j < K; j++) {
+      sample_ntt(seed, i, j, out[i][j]);
+    }
+  }
+#endif
+}
+
 /**
  * =============================================================================
  * 5) Byte/Bit encode/decode, compress, etc.
@@ -1066,11 +1252,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 
   /* ahat => KxK polynomials */
   static poly256 ahat[K][K];
-  for (int i = 0; i < K; i++) {
-    for (int j = 0; j < K; j++) {
-      sample_ntt(rho, i, j, ahat[i][j]);
-    }
-  }
+  sample_matrix(rho, ahat);
 
   /* s-hat, e-hat => each K polynomials => ntt(...) */
   static poly256 shat[K], ehat[K];
@@ -1114,11 +1296,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
       byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
     }
     memcpy(rho, ek_pke + K * 384, sizeof(rho));
-    for (int i = 0; i < K; i++) {
-      for (int j = 0; j < K; j++) {
-        sample_ntt(rho, i, j, kpke_public_cache_ahat[i][j]);
-      }
-    }
+    sample_matrix(rho, kpke_public_cache_ahat);
     memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
     kpke_public_cache_valid = 1;
   }
