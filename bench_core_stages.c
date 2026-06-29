@@ -733,6 +733,44 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 accum;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2], accum);
+      ntt_inv_add(accum, stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_accum_inv_v(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 accum;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
+                 stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
+                 accum);
+    ntt_inv_add2(accum, stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_ciphertext_compress_encode(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -841,6 +879,10 @@ int main(int argc, char **argv) {
                bench_encrypt_noise_ntt(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum_inv",
                bench_encrypt_accum_inv(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum_inv_u",
+               bench_encrypt_accum_inv_u(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum_inv_v",
+               bench_encrypt_accum_inv_v(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_compress_encode",
                bench_ciphertext_compress_encode(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_decode_decompress",

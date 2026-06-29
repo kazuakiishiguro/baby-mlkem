@@ -724,6 +724,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
+| `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
+| `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
@@ -772,14 +774,19 @@ Current snapshot, pinned to CPU 0, `clang`, default `AVX2_BACKEND=core`,
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | 962.97 |
 | `mlkem_core_stage_encrypt_noise_ntt` | 828.65 |
 | `mlkem_core_stage_encrypt_accum_inv` | 1252.60 |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 970.63 |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 447.06 |
 | `mlkem_core_stage_ciphertext_compress_encode` | 101.90 |
 | `mlkem_core_stage_ciphertext_decode_decompress` | 247.13 |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | 930.13 |
 
 The current remaining hotspots are public matrix generation, keygen
 noise/NTT/encode, encryption noise generation, and encryption accumulation plus
-inverse NTT. Compression, bit-packing, and ciphertext decode/decompress remain
-smaller contributors.
+inverse NTT. Within encryption accumulation, the three `u` paths dominate the
+single `v` path, so the next arithmetic work should prioritize reducing repeated
+`u`-side accumulation/inverse-NTT-add overhead before targeting `v`.
+Compression, bit-packing, and ciphertext decode/decompress remain smaller
+contributors.
 
 ### Independent Core Local A/B Runner
 
