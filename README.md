@@ -515,6 +515,33 @@ For lower-noise comparisons, prefer larger runs such as:
 PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh 2000 3
 ```
 
+### Current Independent Core vs Opt-in Upstream Backend (2026-06-30)
+
+Current `baby-mlkem` defaults to the independent core. The table below compares
+that default core path with the opt-in vendored upstream Kyber AVX2 backend built
+from this same repository. This is a local backend comparison, not a claim that
+the independent core is faster than upstream Kyber AVX2.
+
+Snapshot commands, pinned to CPU 0, `clang`, `5000` iterations:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make bench CC=clang AVX2_BACKEND=core
+taskset -c 0 ./benchc 5000
+make clean CC=clang AVX2_BACKEND=upstream && make bench CC=clang AVX2_BACKEND=upstream
+taskset -c 0 ./benchc 5000
+```
+
+| Backend | keygen ns/op | encaps ns/op | decaps ns/op | roundtrip ns/op | Interpretation |
+|---|---:|---:|---:|---:|---|
+| `core` | 9120.48 | 2480.06 | 3478.97 | 15172.46 | Independent baby-mlkem core, default build |
+| `upstream` | 5123.74 | 1250.48 | 3146.91 | 11821.75 | Opt-in vendored upstream Kyber AVX2 backend |
+
+At this snapshot, the independent core is `1.28x` slower on roundtrip than the
+opt-in vendored upstream Kyber AVX2 backend. Per operation, the core is `1.78x`
+slower for keygen, `1.98x` slower for encaps, and `1.11x` slower for decaps.
+This is the current baseline for judging whether future vendor-free core changes
+are closing the gap.
+
 ### Historical Independent Core Baseline (2026-06-29)
 
 This snapshot is a historical baseline from before the later core optimization
