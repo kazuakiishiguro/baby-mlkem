@@ -1135,6 +1135,36 @@ hotspot (`37.84%` self time), followed by `kpke_encrypt` (`24.32%`),
 `sample_ntt` (`16.22%`), `bench_keygen` (`13.51%`), and `sample_poly_cbd`
 (`5.41%`).
 
+### Independent Core Optimization A/B (2026-06-29, matrix parser fast path)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `20000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `00bcff9` before reducing `sample_ntt()` parser end checks; candidate is
+the working tree after the parser fast path.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 15577.97 | 15472.22 | 1.007x |
+| encaps | 5861.56 | 5819.30 | 1.007x |
+| decaps | 7697.83 | 7694.86 | 1.000x |
+| roundtrip | 29204.80 | 29094.79 | 1.004x |
+
+The median speedups from the same run were `1.008x` keygen, `1.008x`
+encaps, `1.000x` decaps, and `1.003x` roundtrip.
+
+The change keeps the core path vendor-free. `sample_ntt_parse_stream()` now
+uses a fast path while at least four output coefficients remain, so the common
+two-group parser loop no longer checks the output end after each accepted
+coefficient. The existing checked parser tail still handles the final few
+coefficients safely. The direct benefit is expected mostly in keygen and full
+roundtrip workloads because keygen expands the public matrix with SHAKE128
+rejection sampling.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`38.46%` self time), followed by `kpke_encrypt` (`33.33%`),
+`sample_ntt` (`10.26%`), `bench_keygen` (`7.69%`), and `sample_poly_cbd` /
+`bench_decaps` (`5.13%` each).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

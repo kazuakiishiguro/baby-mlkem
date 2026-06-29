@@ -735,19 +735,18 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
   const uint8_t *ip = stream;
   int16_t *op = out + count;
   int16_t *const end = out + N;
-  while (stream_len >= 6 && op < end) {
+  while (stream_len >= 6 && (end - op) >= 4) {
     uint8_t a0 = ip[0], b0 = ip[1], c0 = ip[2];
     int d0 = ((b0 & 0xF) << 8) | a0;
     int d1 = (c0 << 4) | (b0 >> 4);
     if (d0 < Q) *op++ = (int16_t)d0;
-    if (d1 < Q && op < end) *op++ = (int16_t)d1;
-    if (op >= end) return (int)(op - out);
+    if (d1 < Q) *op++ = (int16_t)d1;
 
     uint8_t a1 = ip[3], b1 = ip[4], c1 = ip[5];
     int d2 = ((b1 & 0xF) << 8) | a1;
     int d3 = (c1 << 4) | (b1 >> 4);
     if (d2 < Q) *op++ = (int16_t)d2;
-    if (d3 < Q && op < end) *op++ = (int16_t)d3;
+    if (d3 < Q) *op++ = (int16_t)d3;
     ip += 6;
     stream_len -= 6;
   }
