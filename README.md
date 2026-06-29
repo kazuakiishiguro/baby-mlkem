@@ -2,6 +2,23 @@
 
 A toy implementation of ML-KEM (formaly knows as kyber), a Module-Lattice-Based Key-Encapsulation Mechanism Standard ([FIPS203](https://doi.org/10.6028/NIST.FIPS.203)). This implementation is written in pure C and is inspired by the blog post [Enough Polynomials and Linear Algebra to Implement Kyber](https://words.filippo.io/dispatches/kyber-math/).
 
+## Implementation Status
+
+The repository contains a toy ML-KEM implementation, but the default optimized
+build is not a from-scratch scalar implementation. By default, the benchmark and
+test Makefile use an in-tree copy of upstream Kyber AVX2 sources under
+`include/kyber_upstream/avx2`.
+
+This means current high-performance numbers should be read as measurements of
+the baby-mlkem integration that uses a vendored upstream Kyber AVX2 backend, not
+as evidence that an independent baby-mlkem arithmetic core outperforms upstream
+Kyber AVX2.
+
+The default build does not link against external crypto libraries such as
+OpenSSL, BoringSSL, or liboqs. It does, however, compile vendored external-origin
+AVX2 sources into the local binary. `AVX2_BACKEND=pqclean` switches the local
+backend to the vendored PQClean AVX2 sources instead.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
@@ -42,6 +59,11 @@ The default build enables an in-tree upstream Kyber AVX2 backend for
 ML-KEM-768-compatible KEM operations on supported x86 hosts
 (`-mavx2 -mbmi2 -mpopcnt`).
 
+With the default `AVX2_BACKEND=upstream`, the benchmark harness delegates KEM
+operations to `pqcrystals_kyber768_avx2_*` functions. The current Makefile
+benchmark path always selects either the upstream or PQClean AVX2 backend; it is
+not a pure standalone-scalar baby-mlkem benchmark.
+
 Switch backend explicitly when needed:
 
 ```bash
@@ -50,6 +72,12 @@ make bench AVX2_BACKEND=pqclean
 ```
 
 ## External Comparison
+
+External comparison results need a narrow interpretation. The local
+`baby-mlkem` binary in these comparisons normally uses the vendored upstream
+Kyber AVX2 backend. Therefore, speedups against an independently checked out
+upstream Kyber AVX2 build are integration/build/harness comparisons, not a claim
+that a separate baby-mlkem core is faster than upstream Kyber AVX2.
 
 Run a local comparison against PQClean ML-KEM-768 clean/avx2 on the same host:
 
@@ -466,6 +494,11 @@ PIN_CPU=0 WARMUP_RUNS=1 COMPILERS="gcc clang" ./scripts/bench_compiler_matrix.sh
 ```
 
 Roundtrip comparison snapshot (`x` means local is faster):
+
+The `vs kyber default` and `vs kyber fair` columns compare the local in-tree
+upstream-AVX2-backed build against separately built upstream Kyber AVX2
+checkouts. They should not be interpreted as an independent implementation
+beating upstream Kyber AVX2.
 
 | Compiler | Local mean ns/op | vs kyber default | vs kyber fair | vs mlkem-native | vs PQClean AVX2 | vs liboqs | vs BoringSSL | vs libcrux | vs Libjade | vs Botan | vs OpenSSL |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
