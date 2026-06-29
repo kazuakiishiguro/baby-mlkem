@@ -122,81 +122,91 @@ static inline uint64_t load64_le(const uint8_t *x) {
 
 /* The Keccak-f[1600] permutation on the state. */
 static void keccakf(uint64_t st[25]) {
+  uint64_t a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
+  uint64_t a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
+  uint64_t a10 = st[10], a11 = st[11], a12 = st[12], a13 = st[13];
+  uint64_t a14 = st[14], a15 = st[15], a16 = st[16], a17 = st[17];
+  uint64_t a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
+  uint64_t a22 = st[22], a23 = st[23], a24 = st[24];
+
   for (int round = 0; round < 24; round++) {
-    // Theta
-    uint64_t c0 = st[0] ^ st[5] ^ st[10] ^ st[15] ^ st[20];
-    uint64_t c1 = st[1] ^ st[6] ^ st[11] ^ st[16] ^ st[21];
-    uint64_t c2 = st[2] ^ st[7] ^ st[12] ^ st[17] ^ st[22];
-    uint64_t c3 = st[3] ^ st[8] ^ st[13] ^ st[18] ^ st[23];
-    uint64_t c4 = st[4] ^ st[9] ^ st[14] ^ st[19] ^ st[24];
+    uint64_t c0 = a0 ^ a5 ^ a10 ^ a15 ^ a20;
+    uint64_t c1 = a1 ^ a6 ^ a11 ^ a16 ^ a21;
+    uint64_t c2 = a2 ^ a7 ^ a12 ^ a17 ^ a22;
+    uint64_t c3 = a3 ^ a8 ^ a13 ^ a18 ^ a23;
+    uint64_t c4 = a4 ^ a9 ^ a14 ^ a19 ^ a24;
     uint64_t d0 = c4 ^ ROTL64(c1, 1);
     uint64_t d1 = c0 ^ ROTL64(c2, 1);
     uint64_t d2 = c1 ^ ROTL64(c3, 1);
     uint64_t d3 = c2 ^ ROTL64(c4, 1);
     uint64_t d4 = c3 ^ ROTL64(c0, 1);
-    st[0] ^= d0;  st[5] ^= d0;  st[10] ^= d0; st[15] ^= d0; st[20] ^= d0;
-    st[1] ^= d1;  st[6] ^= d1;  st[11] ^= d1; st[16] ^= d1; st[21] ^= d1;
-    st[2] ^= d2;  st[7] ^= d2;  st[12] ^= d2; st[17] ^= d2; st[22] ^= d2;
-    st[3] ^= d3;  st[8] ^= d3;  st[13] ^= d3; st[18] ^= d3; st[23] ^= d3;
-    st[4] ^= d4;  st[9] ^= d4;  st[14] ^= d4; st[19] ^= d4; st[24] ^= d4;
 
-    // Rho, pi, and Chi. Keep Rho/Pi lanes in temporaries so Chi can consume
-    // them without a full intermediate store/load of the state array.
-    uint64_t b0 = st[0];
-    uint64_t b1 = ROTL64(st[6], 44);
-    uint64_t b2 = ROTL64(st[12], 43);
-    uint64_t b3 = ROTL64(st[18], 21);
-    uint64_t b4 = ROTL64(st[24], 14);
-    uint64_t b5 = ROTL64(st[3], 28);
-    uint64_t b6 = ROTL64(st[9], 20);
-    uint64_t b7 = ROTL64(st[10], 3);
-    uint64_t b8 = ROTL64(st[16], 45);
-    uint64_t b9 = ROTL64(st[22], 61);
-    uint64_t b10 = ROTL64(st[1], 1);
-    uint64_t b11 = ROTL64(st[7], 6);
-    uint64_t b12 = ROTL64(st[13], 25);
-    uint64_t b13 = ROTL64(st[19], 8);
-    uint64_t b14 = ROTL64(st[20], 18);
-    uint64_t b15 = ROTL64(st[4], 27);
-    uint64_t b16 = ROTL64(st[5], 36);
-    uint64_t b17 = ROTL64(st[11], 10);
-    uint64_t b18 = ROTL64(st[17], 15);
-    uint64_t b19 = ROTL64(st[23], 56);
-    uint64_t b20 = ROTL64(st[2], 62);
-    uint64_t b21 = ROTL64(st[8], 55);
-    uint64_t b22 = ROTL64(st[14], 39);
-    uint64_t b23 = ROTL64(st[15], 41);
-    uint64_t b24 = ROTL64(st[21], 2);
+    a0 ^= d0;   a5 ^= d0;   a10 ^= d0;  a15 ^= d0;  a20 ^= d0;
+    a1 ^= d1;   a6 ^= d1;   a11 ^= d1;  a16 ^= d1;  a21 ^= d1;
+    a2 ^= d2;   a7 ^= d2;   a12 ^= d2;  a17 ^= d2;  a22 ^= d2;
+    a3 ^= d3;   a8 ^= d3;   a13 ^= d3;  a18 ^= d3;  a23 ^= d3;
+    a4 ^= d4;   a9 ^= d4;   a14 ^= d4;  a19 ^= d4;  a24 ^= d4;
 
-    st[0] = b0 ^ ((~b1) & b2);
-    st[1] = b1 ^ ((~b2) & b3);
-    st[2] = b2 ^ ((~b3) & b4);
-    st[3] = b3 ^ ((~b4) & b0);
-    st[4] = b4 ^ ((~b0) & b1);
-    st[5] = b5 ^ ((~b6) & b7);
-    st[6] = b6 ^ ((~b7) & b8);
-    st[7] = b7 ^ ((~b8) & b9);
-    st[8] = b8 ^ ((~b9) & b5);
-    st[9] = b9 ^ ((~b5) & b6);
-    st[10] = b10 ^ ((~b11) & b12);
-    st[11] = b11 ^ ((~b12) & b13);
-    st[12] = b12 ^ ((~b13) & b14);
-    st[13] = b13 ^ ((~b14) & b10);
-    st[14] = b14 ^ ((~b10) & b11);
-    st[15] = b15 ^ ((~b16) & b17);
-    st[16] = b16 ^ ((~b17) & b18);
-    st[17] = b17 ^ ((~b18) & b19);
-    st[18] = b18 ^ ((~b19) & b15);
-    st[19] = b19 ^ ((~b15) & b16);
-    st[20] = b20 ^ ((~b21) & b22);
-    st[21] = b21 ^ ((~b22) & b23);
-    st[22] = b22 ^ ((~b23) & b24);
-    st[23] = b23 ^ ((~b24) & b20);
-    st[24] = b24 ^ ((~b20) & b21);
+    uint64_t b0 = a0;
+    uint64_t b1 = ROTL64(a6, 44);
+    uint64_t b2 = ROTL64(a12, 43);
+    uint64_t b3 = ROTL64(a18, 21);
+    uint64_t b4 = ROTL64(a24, 14);
+    uint64_t b5 = ROTL64(a3, 28);
+    uint64_t b6 = ROTL64(a9, 20);
+    uint64_t b7 = ROTL64(a10, 3);
+    uint64_t b8 = ROTL64(a16, 45);
+    uint64_t b9 = ROTL64(a22, 61);
+    uint64_t b10 = ROTL64(a1, 1);
+    uint64_t b11 = ROTL64(a7, 6);
+    uint64_t b12 = ROTL64(a13, 25);
+    uint64_t b13 = ROTL64(a19, 8);
+    uint64_t b14 = ROTL64(a20, 18);
+    uint64_t b15 = ROTL64(a4, 27);
+    uint64_t b16 = ROTL64(a5, 36);
+    uint64_t b17 = ROTL64(a11, 10);
+    uint64_t b18 = ROTL64(a17, 15);
+    uint64_t b19 = ROTL64(a23, 56);
+    uint64_t b20 = ROTL64(a2, 62);
+    uint64_t b21 = ROTL64(a8, 55);
+    uint64_t b22 = ROTL64(a14, 39);
+    uint64_t b23 = ROTL64(a15, 41);
+    uint64_t b24 = ROTL64(a21, 2);
 
-    // Iota
-    st[0] ^= rc[round];
+    a0 = b0 ^ ((~b1) & b2);
+    a1 = b1 ^ ((~b2) & b3);
+    a2 = b2 ^ ((~b3) & b4);
+    a3 = b3 ^ ((~b4) & b0);
+    a4 = b4 ^ ((~b0) & b1);
+    a5 = b5 ^ ((~b6) & b7);
+    a6 = b6 ^ ((~b7) & b8);
+    a7 = b7 ^ ((~b8) & b9);
+    a8 = b8 ^ ((~b9) & b5);
+    a9 = b9 ^ ((~b5) & b6);
+    a10 = b10 ^ ((~b11) & b12);
+    a11 = b11 ^ ((~b12) & b13);
+    a12 = b12 ^ ((~b13) & b14);
+    a13 = b13 ^ ((~b14) & b10);
+    a14 = b14 ^ ((~b10) & b11);
+    a15 = b15 ^ ((~b16) & b17);
+    a16 = b16 ^ ((~b17) & b18);
+    a17 = b17 ^ ((~b18) & b19);
+    a18 = b18 ^ ((~b19) & b15);
+    a19 = b19 ^ ((~b15) & b16);
+    a20 = b20 ^ ((~b21) & b22);
+    a21 = b21 ^ ((~b22) & b23);
+    a22 = b22 ^ ((~b23) & b24);
+    a23 = b23 ^ ((~b24) & b20);
+    a24 = b24 ^ ((~b20) & b21);
+
+    a0 ^= rc[round];
   }
+
+  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
+  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
+  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
+  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
+  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
 
 /* The "absorb" + "squeeze" style code. We'll define a small struct to hold the

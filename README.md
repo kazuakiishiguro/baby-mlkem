@@ -982,6 +982,35 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot (`32.50%` self time), followed by `kpke_encrypt` and `bench_keygen`
 (`25.00%` each), `bench_decaps` (`10.00%`), and `sample_poly_cbd` (`5.00%`).
 
+### Independent Core Optimization A/B (2026-06-29, local-lane Keccak-f)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `b7f3187` before keeping Keccak-f lanes in local variables; candidate is
+the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16182.12 | 15899.05 | 1.018x |
+| encaps | 6053.80 | 6023.31 | 1.005x |
+| decaps | 7867.96 | 7856.80 | 1.001x |
+| roundtrip | 30146.94 | 29949.42 | 1.007x |
+
+The change keeps the core path vendor-free. `keccakf()` now loads the 25 state
+lanes into local variables, runs all 24 rounds on those lanes, and stores them
+back once at the end. The Rho/Pi/Chi mapping is unchanged; the goal is to avoid
+round-by-round traffic through the state array in the independent scalar core.
+
+A longer confirmation run (`20000` iterations, `6` order-flipped pairs) showed
+average speedups of `1.012x` keygen, `1.002x` encaps, `1.004x` decaps, and
+`1.008x` roundtrip. The same run's median speedups were `1.010x` keygen,
+`1.005x` encaps, `1.004x` decaps, and `1.008x` roundtrip.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
+`kpke_encrypt` tied as the largest hotspots (`35.90%` self time each), followed
+by `bench_keygen` (`17.95%`), `sample_poly_cbd` (`5.13%`), and `sha3_512` /
+`bench_decaps` (`2.56%` each).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
