@@ -715,6 +715,31 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
  * 6) K-PKE (Keygen, Encrypt, Decrypt)
  * =============================================================================
  */
+static poly256 kpke_public_cache_that[K];
+static poly256 kpke_public_cache_ahat[K][K];
+static uint8_t kpke_public_cache_ek[K * 384 + 32];
+static int kpke_public_cache_valid = 0;
+
+static uint8_t mlkem_ek_hash_cache_input[K * 384 + 32];
+static uint8_t mlkem_ek_hash_cache_output[32];
+static int mlkem_ek_hash_cache_valid = 0;
+
+static void kpke_public_cache_store(const uint8_t *ek_pke,
+                                    const poly256 that[K],
+                                    const poly256 ahat[K][K]) {
+  memcpy(kpke_public_cache_that, that, sizeof(kpke_public_cache_that));
+  memcpy(kpke_public_cache_ahat, ahat, sizeof(kpke_public_cache_ahat));
+  memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
+  kpke_public_cache_valid = 1;
+}
+
+static void mlkem_ek_hash_cache_store(const uint8_t *ek,
+                                      const uint8_t h[32]) {
+  memcpy(mlkem_ek_hash_cache_input, ek, sizeof(mlkem_ek_hash_cache_input));
+  memcpy(mlkem_ek_hash_cache_output, h, sizeof(mlkem_ek_hash_cache_output));
+  mlkem_ek_hash_cache_valid = 1;
+}
+
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   ensure_ntt_roots();
   /* ghash = sha3_512(seed) => (rho||sigma) */
@@ -769,6 +794,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   for (int i = 0; i < K; i++) {
     byte_encode(12, shat[i], dk_pke + i * 384);
   }
+
+  kpke_public_cache_store(ek_pke, that, ahat);
 }
 
 static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
@@ -776,23 +803,20 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          size_t *out_clen) {
   ensure_ntt_roots();
   /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
-  static poly256 that[K];
-  static poly256 ahat[K][K];
-  static uint8_t ek_cache[K * 384 + 32];
-  static int ek_cache_valid = 0;
-  if (!ek_cache_valid || memcmp(ek_cache, ek_pke, sizeof(ek_cache)) != 0) {
+  if (!kpke_public_cache_valid ||
+      memcmp(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek)) != 0) {
     uint8_t rho[32];
     for (int i = 0; i < K; i++) {
-      byte_decode(12, ek_pke + i * 384, that[i]);
+      byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
     }
     memcpy(rho, ek_pke + K * 384, sizeof(rho));
     for (int i = 0; i < K; i++) {
       for (int j = 0; j < K; j++) {
-        sample_ntt(rho, i, j, ahat[i][j]);
+        sample_ntt(rho, i, j, kpke_public_cache_ahat[i][j]);
       }
     }
-    memcpy(ek_cache, ek_pke, sizeof(ek_cache));
-    ek_cache_valid = 1;
+    memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
+    kpke_public_cache_valid = 1;
   }
 
   /* rhat => K polynomials => ntt(...) */
@@ -824,7 +848,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   for (int i = 0; i < K; i++) {
     memset(accum, 0, sizeof(accum));
     for (int j = 0; j < K; j++) {
-      ntt_mul(ahat[i][j], rhat[j], tmp);
+      ntt_mul(kpke_public_cache_ahat[i][j], rhat[j], tmp);
       ntt_add(accum, tmp, accum);
     }
     ntt_inv(accum, tmp);
@@ -849,7 +873,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   {
     memset(accum, 0, sizeof(accum));
     for (int i = 0; i < K; i++) {
-      ntt_mul(that[i], rhat[i], tmp);
+      ntt_mul(kpke_public_cache_that[i], rhat[i], tmp);
       ntt_add(accum, tmp, accum);
     }
     ntt_inv(accum, tmp);
@@ -1009,6 +1033,7 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
   pq_sha3_256(h, ek_pke, K * 384 + 32);
   memcpy(dk + (K * 384) + (K * 384 + 32), h, 32);
   memcpy(dk + (K * 384) + (K * 384 + 32) + 32, z, 32);
+  mlkem_ek_hash_cache_store(ek, h);
 }
 
 static void mlkem_keygen_derand(const uint8_t coins[64],
@@ -1056,20 +1081,17 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
     memcpy(m, seed, 32);
   }
   /* H(ek) => 32 (cached for repeated encaps with same key) */
-  static uint8_t ek_hash_cache_input[K * 384 + 32];
-  static uint8_t ek_hash_cache_output[32];
-  static int ek_hash_cache_valid = 0;
-  if (!ek_hash_cache_valid ||
-      memcmp(ek_hash_cache_input, ek, sizeof(ek_hash_cache_input)) != 0) {
-    pq_sha3_256(ek_hash_cache_output, ek, K * 384 + 32);
-    memcpy(ek_hash_cache_input, ek, sizeof(ek_hash_cache_input));
-    ek_hash_cache_valid = 1;
+  if (!mlkem_ek_hash_cache_valid ||
+      memcmp(mlkem_ek_hash_cache_input, ek,
+             sizeof(mlkem_ek_hash_cache_input)) != 0) {
+    pq_sha3_256(mlkem_ek_hash_cache_output, ek, K * 384 + 32);
+    mlkem_ek_hash_cache_store(ek, mlkem_ek_hash_cache_output);
   }
 
   /* ghash = sha3_512( m||h ) => 64 => k||r */
   uint8_t inbuf[64];
   memcpy(inbuf, m, 32);
-  memcpy(inbuf + 32, ek_hash_cache_output, 32);
+  memcpy(inbuf + 32, mlkem_ek_hash_cache_output, 32);
   uint8_t ghash[64];
   pq_sha3_512(ghash, inbuf, 64);
   uint8_t *k_out = ghash;

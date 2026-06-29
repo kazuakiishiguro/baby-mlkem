@@ -545,6 +545,27 @@ At this baseline, the independent core roundtrip is about `9.49x` slower than
 local upstream AVX2. Core optimization work should be measured against the
 `AVX2_BACKEND=core` row, not the default upstream-backed row.
 
+### Independent Core Optimization A/B (2026-06-29, public cache seed)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `1000`
+iterations. Baseline is commit `e4a2768` before keygen seeded the core public
+cache; candidate is the working tree after the cache change.
+
+| Metric | Baseline ns/op | Candidate ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 43795.84 | 44668.08 | 0.980x |
+| encaps | 14681.88 | 14697.27 | 0.999x |
+| decaps | 18064.43 | 18031.20 | 1.002x |
+| roundtrip | 110320.24 | 76410.00 | 1.444x |
+
+This optimization stores only public-key-derived data produced during core
+keygen: the expanded public matrix cache, decoded public key vector, and
+`H(pk)`. It mainly improves keygen->encaps->decaps roundtrip workloads by
+avoiding a second SHAKE128 matrix expansion and duplicate `H(pk)` after keygen.
+
+Post-change profiling (`4000` iterations, `-pg`) still shows `keccakf` as the
+largest core hotspot, followed by `kpke_encrypt` arithmetic/packing work.
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
