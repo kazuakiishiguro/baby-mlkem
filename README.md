@@ -732,6 +732,30 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, verified public-cache reuse)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `82f1b71` before reusing the public-key verification already done by
+the `H(ek)` cache; candidate is the working tree after the change. This is a
+core-vs-core comparison and does not use the vendored Kyber/PQClean AVX2
+backends for the candidate path.
+
+KEM A/B, `8000` iterations, thirteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9732.78 | 9720.66 | 1.001x | 1.001x |
+| encaps | 3138.86 | 3114.86 | 1.008x | 1.008x |
+| decaps | 4422.47 | 4439.96 | 0.996x | 0.994x |
+| roundtrip | 17363.69 | 17343.66 | 1.001x | 1.003x |
+
+The change keeps the core path vendor-free. `mlkem_encaps()` already validates
+the public-key bytes while checking or refreshing the `H(ek)` cache. The K-PKE
+public cache now carries a generation number tied to that verified hash-cache
+entry, so `kpke_encrypt()` can skip its second full public-key `memcmp()` only
+when `mlkem_encaps()` passes a verified generation. Direct K-PKE calls and the
+decapsulation re-encryption path still use the existing content comparison.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 tail)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

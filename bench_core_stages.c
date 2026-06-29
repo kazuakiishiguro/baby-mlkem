@@ -298,7 +298,7 @@ static void prepare_inputs(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     size_t clen = 0;
     kpke_encrypt(stage_ek[0], stage_msg[lane], 32, stage_r[lane], 32,
-                 stage_ct_key0[lane], &clen);
+                 stage_ct_key0[lane], &clen, 0);
     if (clen != STAGE_CT_BYTES) {
       fprintf(stderr, "unexpected key0 ciphertext length: %zu\n", clen);
       exit(EXIT_FAILURE);
@@ -327,7 +327,7 @@ static void validate_core_stage_helpers(void) {
     exit(EXIT_FAILURE);
   }
 
-  kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, ct, &clen);
+  kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, ct, &clen, 0);
   if (clen != STAGE_CT_BYTES || memcmp(ct, stage_ct[0], sizeof(ct)) != 0) {
     fprintf(stderr, "derived encrypt stage mismatch\n");
     exit(EXIT_FAILURE);
@@ -363,12 +363,12 @@ static uint64_t bench_kpke_encrypt_cached(size_t iters) {
   uint64_t t0, t1;
   size_t clen = 0;
   kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, stage_tmp_ct[0],
-               &clen);
+               &clen, 0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     kpke_encrypt(stage_ek[0], stage_msg[lane], 32, stage_r[lane], 32,
-                 stage_tmp_ct[lane], &clen);
+                 stage_tmp_ct[lane], &clen, 0);
     acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
   }
   t1 = now_ns();
