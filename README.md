@@ -732,6 +732,40 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, PRF/CBD dummy-lane skip)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `0c32149` before avoiding dummy PRF/CBD output lanes; candidate is
+the working tree after the change. This is a core-vs-core comparison and does
+not use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 793.83 | 779.52 | 1.018x | 1.018x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1923.76 | 1903.70 | 1.010x | 1.010x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 973.12 | 964.55 | 1.009x | 1.008x |
+| `mlkem_core_stage_encrypt_noise` | 1251.48 | 1241.78 | 1.008x | 1.008x |
+| `mlkem_core_stage_kpke_keygen_full` | 5017.53 | 5005.47 | 1.002x | 1.003x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2291.77 | 2289.74 | 1.001x | 1.003x |
+
+KEM A/B, `5000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9232.44 | 9198.62 | 1.004x | 1.004x |
+| encaps | 2516.08 | 2495.17 | 1.008x | 1.004x |
+| decaps | 3539.18 | 3510.14 | 1.008x | 1.007x |
+| roundtrip | 15357.59 | 15272.68 | 1.006x | 1.004x |
+
+The change keeps the core path vendor-free. The existing x4 PRF/CBD helper is
+still used when all four lanes are real. For the second keygen batch only two
+outputs are needed, and for the second encryption batch only three outputs are
+needed. New local x2/x3 helpers keep the same `keccakf4()` permutation but skip
+stream extraction and CBD decode for dummy lanes, avoiding unnecessary work
+without calling or modifying vendored Kyber/PQClean code.
+
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

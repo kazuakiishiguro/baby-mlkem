@@ -145,14 +145,13 @@ static void derive_keygen_lane(size_t lane) {
 
 #if defined(__AVX2__)
   {
-    static poly256 dummy[2];
     const uint8_t n0[4] = {0, 1, 2, 3};
     const uint8_t n1[4] = {4, 5, 0, 0};
     mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n0, stage_s_raw[lane][0],
                             stage_s_raw[lane][1], stage_s_raw[lane][2],
                             stage_e_raw[lane][0]);
-    mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n1, stage_e_raw[lane][1],
-                            stage_e_raw[lane][2], dummy[0], dummy[1]);
+    mlkem_prf_cbd_eta2x2_32(stage_sigma[lane], n1, stage_e_raw[lane][1],
+                            stage_e_raw[lane][2]);
   }
   for (int i = 0; i < K; i++) {
     memcpy(stage_shat[lane][i], stage_s_raw[lane][i], sizeof(poly256));
@@ -195,14 +194,13 @@ static void derive_encrypt_lane(size_t lane) {
 
 #if defined(__AVX2__)
   {
-    static poly256 dummy;
     const uint8_t n0[4] = {0, 1, 2, 3};
     const uint8_t n1[4] = {4, 5, 6, 0};
     mlkem_prf_cbd_eta2x4_32(stage_r[lane], n0, stage_r_raw[lane][0],
                             stage_r_raw[lane][1], stage_r_raw[lane][2],
                             stage_e1[lane][0]);
-    mlkem_prf_cbd_eta2x4_32(stage_r[lane], n1, stage_e1[lane][1],
-                            stage_e1[lane][2], stage_e2[lane], dummy);
+    mlkem_prf_cbd_eta2x3_32(stage_r[lane], n1, stage_e1[lane][1],
+                            stage_e1[lane][2], stage_e2[lane]);
   }
 #else
   for (int i = 0; i < K; i++) {
@@ -416,15 +414,14 @@ static uint64_t bench_keygen_noise_ntt(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
 #if defined(__AVX2__)
     {
-      static poly256 dummy[2];
       const uint8_t n0[4] = {0, 1, 2, 3};
       const uint8_t n1[4] = {4, 5, 0, 0};
       mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n0, stage_tmp_vec0[lane][0],
                               stage_tmp_vec0[lane][1],
                               stage_tmp_vec0[lane][2],
                               stage_tmp_vec1[lane][0]);
-      mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n1, stage_tmp_vec1[lane][1],
-                              stage_tmp_vec1[lane][2], dummy[0], dummy[1]);
+      mlkem_prf_cbd_eta2x2_32(stage_sigma[lane], n1, stage_tmp_vec1[lane][1],
+                              stage_tmp_vec1[lane][2]);
     }
     for (int j = 0; j < K; j++) {
       ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
@@ -460,15 +457,14 @@ static uint64_t bench_keygen_noise_prf_cbd(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
 #if defined(__AVX2__)
     {
-      static poly256 dummy[2];
       const uint8_t n0[4] = {0, 1, 2, 3};
       const uint8_t n1[4] = {4, 5, 0, 0};
       mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n0, stage_tmp_vec0[lane][0],
                               stage_tmp_vec0[lane][1],
                               stage_tmp_vec0[lane][2],
                               stage_tmp_vec1[lane][0]);
-      mlkem_prf_cbd_eta2x4_32(stage_sigma[lane], n1, stage_tmp_vec1[lane][1],
-                              stage_tmp_vec1[lane][2], dummy[0], dummy[1]);
+      mlkem_prf_cbd_eta2x2_32(stage_sigma[lane], n1, stage_tmp_vec1[lane][1],
+                              stage_tmp_vec1[lane][2]);
     }
 #else
     for (int j = 0; j < K; j++) {
@@ -539,16 +535,15 @@ static uint64_t bench_encrypt_noise(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
 #if defined(__AVX2__)
     {
-      static poly256 dummy;
       const uint8_t n0[4] = {0, 1, 2, 3};
       const uint8_t n1[4] = {4, 5, 6, 0};
       mlkem_prf_cbd_eta2x4_32(stage_r[lane], n0, stage_tmp_vec0[lane][0],
                               stage_tmp_vec0[lane][1],
                               stage_tmp_vec0[lane][2],
                               stage_tmp_vec1[lane][0]);
-      mlkem_prf_cbd_eta2x4_32(stage_r[lane], n1, stage_tmp_vec1[lane][1],
+      mlkem_prf_cbd_eta2x3_32(stage_r[lane], n1, stage_tmp_vec1[lane][1],
                               stage_tmp_vec1[lane][2],
-                              stage_tmp_poly[lane], dummy);
+                              stage_tmp_poly[lane]);
     }
     for (int j = 0; j < K; j++) {
       ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
@@ -583,16 +578,15 @@ static uint64_t bench_encrypt_noise_prf_cbd(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
 #if defined(__AVX2__)
     {
-      static poly256 dummy;
       const uint8_t n0[4] = {0, 1, 2, 3};
       const uint8_t n1[4] = {4, 5, 6, 0};
       mlkem_prf_cbd_eta2x4_32(stage_r[lane], n0, stage_tmp_vec0[lane][0],
                               stage_tmp_vec0[lane][1],
                               stage_tmp_vec0[lane][2],
                               stage_tmp_vec1[lane][0]);
-      mlkem_prf_cbd_eta2x4_32(stage_r[lane], n1, stage_tmp_vec1[lane][1],
+      mlkem_prf_cbd_eta2x3_32(stage_r[lane], n1, stage_tmp_vec1[lane][1],
                               stage_tmp_vec1[lane][2],
-                              stage_tmp_poly[lane], dummy);
+                              stage_tmp_poly[lane]);
     }
 #else
     for (int j = 0; j < K; j++) {
