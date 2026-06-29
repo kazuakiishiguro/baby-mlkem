@@ -1000,7 +1000,6 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 
   /* mu => interpret m as 256 bits => each coefficient 0/1 */
   static poly256 mu;
-  memset(mu, 0, sizeof(mu));
   if (mlen == 32) {
     for (int i = 0; i < 256; i++) {
       int bit = (m[i >> 3] >> (i & 7)) & 1;
@@ -1009,6 +1008,8 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
       else
         mu[i] = 0;
     }
+  } else {
+    memset(mu, 0, sizeof(mu));
   }
 
   /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */

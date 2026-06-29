@@ -815,6 +815,29 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
 `kpke_encrypt` tied as the largest hotspots (`30.43%` self time each), followed
 by `bench_keygen` (`21.74%`), `bench_decaps` (`8.70%`), and `ntt_inv` (`6.52%`).
 
+### Independent Core Optimization A/B (2026-06-29, encrypt mu initialization)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `b1b7d8c` before removing redundant core `mu` zeroing; candidate is the
+working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16683.25 | 16652.77 | 1.002x |
+| encaps | 7582.13 | 7565.66 | 1.002x |
+| decaps | 9647.19 | 9640.53 | 1.001x |
+| roundtrip | 34014.27 | 33973.02 | 1.001x |
+
+The change keeps the core path vendor-free. Core `kpke_encrypt()` no longer
+clears the full `mu` polynomial before the standard `mlen == 32` path, because
+that path immediately writes all 256 coefficients from the message bits. The
+zero-fill remains for non-standard message lengths.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`34.78%` self time), followed by `bench_keygen` (`26.09%`),
+`keccakf` (`19.57%`), and `ntt_inv`/`bench_decaps` (`8.70%` each).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
