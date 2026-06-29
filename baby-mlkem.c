@@ -893,6 +893,34 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
   const uint8_t *ip = stream;
   int16_t *op = out + count;
   int16_t *const end = out + N;
+  while (stream_len >= 12 && (end - op) >= 8) {
+    uint8_t a0 = ip[0], b0 = ip[1], c0 = ip[2];
+    int d0 = ((b0 & 0xF) << 8) | a0;
+    int d1 = (c0 << 4) | (b0 >> 4);
+    if (d0 < Q) *op++ = (int16_t)d0;
+    if (d1 < Q) *op++ = (int16_t)d1;
+
+    uint8_t a1 = ip[3], b1 = ip[4], c1 = ip[5];
+    int d2 = ((b1 & 0xF) << 8) | a1;
+    int d3 = (c1 << 4) | (b1 >> 4);
+    if (d2 < Q) *op++ = (int16_t)d2;
+    if (d3 < Q) *op++ = (int16_t)d3;
+
+    uint8_t a2 = ip[6], b2 = ip[7], c2 = ip[8];
+    int d4 = ((b2 & 0xF) << 8) | a2;
+    int d5 = (c2 << 4) | (b2 >> 4);
+    if (d4 < Q) *op++ = (int16_t)d4;
+    if (d5 < Q) *op++ = (int16_t)d5;
+
+    uint8_t a3 = ip[9], b3 = ip[10], c3 = ip[11];
+    int d6 = ((b3 & 0xF) << 8) | a3;
+    int d7 = (c3 << 4) | (b3 >> 4);
+    if (d6 < Q) *op++ = (int16_t)d6;
+    if (d7 < Q) *op++ = (int16_t)d7;
+
+    ip += 12;
+    stream_len -= 12;
+  }
   while (stream_len >= 6 && (end - op) >= 4) {
     uint8_t a0 = ip[0], b0 = ip[1], c0 = ip[2];
     int d0 = ((b0 & 0xF) << 8) | a0;

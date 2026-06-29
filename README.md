@@ -709,6 +709,43 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, sample NTT parse unroll)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `d3fdb3d` before widening the rejection-sampling parser; candidate is
+the working tree after the change.
+
+Keccak/sampling A/B, `200000` iterations, three repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_sample_ntt_parse` | 106.11 | 98.92 | 1.073x | 1.062x |
+| `mlkem_sample_ntt_full` | 696.66 | 691.16 | 1.008x | 1.006x |
+
+Stage A/B, `10000` iterations, three repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 3066.30 | 3000.57 | 1.022x | 1.023x |
+| `mlkem_core_stage_kpke_keygen_full` | 5671.53 | 5608.24 | 1.011x | 1.012x |
+
+KEM A/B, `5000` iterations, five repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9897.53 | 9779.06 | 1.012x | 1.010x |
+| encaps | 3128.94 | 3122.09 | 1.002x | 1.012x |
+| decaps | 4433.31 | 4454.05 | 0.995x | 0.997x |
+| roundtrip | 17519.52 | 17442.13 | 1.004x | 1.003x |
+
+This change keeps `AVX2_BACKEND=core` independent from vendored Kyber/PQClean
+sources. The direct implementation change is in `sample_ntt_parse_stream()`: it
+adds a 12-byte fast path that handles eight 12-bit rejection candidates before
+falling back to the existing 6-byte and 3-byte tails. The intended direct effect
+is faster SHAKE128 rejection parsing, which flows into public matrix generation
+and key generation. The decapsulation row is included for whole-binary context;
+this change does not add a decapsulation-specific fast path.
+
 ### Independent Core Optimization A/B (2026-06-29, decaps scratch sizing)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `4000`
