@@ -732,6 +732,38 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 tail)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `9f8b1bb` before using the one-lane x4 sampler for the final public
+matrix entry; candidate is the working tree after the change. This is a
+core-vs-core comparison and does not use the vendored Kyber/PQClean AVX2
+backends for the candidate path.
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2999.00 | 2935.08 | 1.022x | 1.022x |
+| `mlkem_core_stage_kpke_keygen_full` | 5617.74 | 5532.68 | 1.015x | 1.015x |
+
+KEM A/B, `5000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9815.41 | 9737.01 | 1.008x | 1.005x |
+| encaps | 3118.08 | 3151.27 | 0.990x | 1.008x |
+| decaps | 4460.07 | 4437.65 | 1.005x | 0.992x |
+| roundtrip | 17501.35 | 17384.44 | 1.007x | 1.004x |
+
+The change keeps the core path vendor-free. `sample_matrix()` already used two
+`sample_ntt4()` calls for eight of the nine public matrix polynomials, then fell
+back to scalar `sample_ntt()` for `(2,2)`. The new `sample_ntt4_one()` path uses
+`keccakf4()` with one live lane for that final polynomial and discards the other
+three lanes. That replaces three scalar Keccak permutations in the tail with
+three x4 permutations while preserving the scalar fallback if 504 squeezed bytes
+do not produce enough rejection-sampling coefficients.
+
 ### Independent Core Optimization A/B (2026-06-30, fixed-length SHA3-512)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

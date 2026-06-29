@@ -1059,6 +1059,38 @@ static void sample_ntt4(const uint8_t *seed,
     }
   }
 }
+
+static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
+                            poly256 out) {
+  __m256i st[25];
+  uint64_t stream[63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set1_epi64x(
+      (long long)((uint64_t)row | ((uint64_t)col << 8) | (0x1FULL << 16)));
+  st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  for (int block = 0; block < 3; block++) {
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      uint64_t words[4];
+      _mm256_storeu_si256((__m256i *)words, st[lane]);
+      stream[(size_t)block * 21 + (size_t)lane] = words[0];
+    }
+  }
+
+  int count = sample_ntt_parse_stream((const uint8_t *)stream, sizeof(stream),
+                                      out, 0);
+  if (count < N) {
+    sample_ntt(seed, row, col, out);
+  }
+}
 #endif
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
@@ -1069,7 +1101,7 @@ static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
   const uint8_t c1[4] = {1, 2, 0, 1};
   sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
   sample_ntt4(seed, r1, c1, out[1][1], out[1][2], out[2][0], out[2][1]);
-  sample_ntt(seed, 2, 2, out[2][2]);
+  sample_ntt4_one(seed, 2, 2, out[2][2]);
 #else
   for (int i = 0; i < K; i++) {
     for (int j = 0; j < K; j++) {
