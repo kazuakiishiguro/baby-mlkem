@@ -866,6 +866,32 @@ Post-change profiling (`6000` iterations, `-pg`) shows `bench_keygen` as the
 largest hotspot (`37.50%` self time), followed by `kpke_encrypt` (`25.00%`),
 `keccakf` (`20.00%`), and `ntt_inv` (`15.00%`).
 
+### Independent Core Optimization A/B (2026-06-29, fused decrypt accumulation)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `f07a5af` before applying fused K=3 NTT accumulation to core decrypt;
+candidate is the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16335.04 | 16306.54 | 1.002x |
+| encaps | 6104.78 | 6099.68 | 1.001x |
+| decaps | 8224.53 | 7909.43 | 1.040x |
+| roundtrip | 30788.12 | 30425.87 | 1.012x |
+
+The change keeps the core path vendor-free. Core decrypt now transforms all
+three `u[i]` polynomials to NTT form first, then uses the existing
+`ntt_mul_acc3()` helper to accumulate `s-hat[i] * ntt(u[i])` in one loop instead
+of three separate `ntt_mul_add()` passes plus an `accum` zero-fill.
+
+A longer confirmation run (`20000` iterations, `4` order-flipped pairs) showed
+`1.036x` decaps and `1.009x` roundtrip speedups.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`47.50%` self time), followed by `ntt_inv` (`17.50%`), `bench_keygen`
+(`15.00%`), and `kpke_encrypt` (`10.00%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

@@ -1097,12 +1097,11 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
   static poly256 w;
   static poly256 accum;
-  memset(accum, 0, sizeof(accum));
+  static poly256 u_ntt[K];
   for (int i = 0; i < K; i++) {
-    static poly256 u_ntt;
-    ntt(u[i], u_ntt);
-    ntt_mul_add(shat[i], u_ntt, accum);
+    ntt(u[i], u_ntt[i]);
   }
+  ntt_mul_acc3(shat[0], u_ntt[0], shat[1], u_ntt[1], shat[2], u_ntt[2], accum);
   static poly256 accum_inv;
   ntt_inv(accum, accum_inv);
   poly256_sub(v, accum_inv, w);
