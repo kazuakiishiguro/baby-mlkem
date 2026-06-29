@@ -545,6 +545,38 @@ At this baseline, the independent core roundtrip is about `9.49x` slower than
 local upstream AVX2. Core optimization work should be measured against the
 `AVX2_BACKEND=core` row, not the default upstream-backed row.
 
+### Independent Core NTT Microbench (2026-06-29)
+
+Use the NTT microbench when changing the vendor-free core NTT arithmetic. This
+benchmark includes `baby-mlkem.c` directly and does not link the vendored
+upstream Kyber or PQClean AVX2 KEM sources, so it is intended for true
+independent-core before/after measurements.
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make bench-ntt CC=clang AVX2_BACKEND=core
+taskset -c 0 ./bench_nttc 200000
+```
+
+The binary validates the core helper relationships before timing, including
+`ntt_inv(ntt(x))`, the fused inverse-NTT add/sub helpers, and the fused
+three-term NTT-domain multiplication helpers. Reported metrics isolate these
+helpers:
+
+| Metric | Core helper measured |
+|---|---|
+| `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
+| `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
+| `mlkem_ntt_inv` | `ntt_inv()` |
+| `mlkem_ntt_inv_add` | `ntt_inv_add()` |
+| `mlkem_ntt_inv_add2` | `ntt_inv_add2()` |
+| `mlkem_ntt_inv_sub_from` | `ntt_inv_sub_from()` |
+| `mlkem_ntt_mul_acc3` | `ntt_mul_acc3()` |
+| `mlkem_ntt_mul_acc3_factored` | `ntt_mul_acc3_factored_gamma()` |
+
+For optimization work, compare the same command before and after each small
+NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
+core arithmetic direction-finding, not ML-KEM KEM throughput results.
+
 ### Independent Core Optimization A/B (2026-06-29, public cache seed)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `1000`
