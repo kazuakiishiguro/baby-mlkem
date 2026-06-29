@@ -614,6 +614,7 @@ metrics isolate these helpers:
 | Metric | Core helper measured |
 |---|---|
 | `mlkem_keccakf` | one scalar `keccakf()` permutation |
+| `mlkem_keccakf4` | one AVX2 `keccakf4()` permutation over four parallel states |
 | `mlkem_sha3_256_32` | `sha3_256()` over a 32-byte input |
 | `mlkem_sha3_256_public_key` | `sha3_256()` over a 1184-byte encoded ML-KEM-768 public key |
 | `mlkem_sha3_512_32` | `sha3_512()` over a 32-byte input |
@@ -628,15 +629,16 @@ iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_keccakf` | 192.35 |
-| `mlkem_sha3_256_32` | 204.06 |
-| `mlkem_sha3_256_public_key` | 1792.14 |
-| `mlkem_sha3_512_32` | 199.72 |
-| `mlkem_sha3_512_64` | 199.77 |
-| `mlkem_prf_eta2` | 202.22 |
-| `mlkem_cbd_eta2` | 22.45 |
-| `mlkem_sample_ntt_parse` | 98.67 |
-| `mlkem_sample_ntt_full` | 689.72 |
+| `mlkem_keccakf` | 193.67 |
+| `mlkem_keccakf4` | 172.64 |
+| `mlkem_sha3_256_32` | 205.87 |
+| `mlkem_sha3_256_public_key` | 1796.43 |
+| `mlkem_sha3_512_32` | 200.44 |
+| `mlkem_sha3_512_64` | 198.49 |
+| `mlkem_prf_eta2` | 200.28 |
+| `mlkem_cbd_eta2` | 22.60 |
+| `mlkem_sample_ntt_parse` | 98.88 |
+| `mlkem_sample_ntt_full` | 691.40 |
 
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
