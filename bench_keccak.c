@@ -12,6 +12,7 @@
 static volatile uint64_t bench_keccak_sink;
 static uint8_t bench_seed32[KECCAK_BENCH_LANES][32];
 static uint8_t bench_msg64[KECCAK_BENCH_LANES][64];
+static uint8_t bench_pk[KECCAK_BENCH_LANES][K * 384 + 32];
 static uint8_t bench_prfout[KECCAK_BENCH_LANES][64 * ETA1];
 static uint8_t bench_stream[KECCAK_BENCH_LANES][SAMPLE_NTT_STREAM_CHUNK];
 static uint64_t bench_state[KECCAK_BENCH_LANES][25];
@@ -89,6 +90,8 @@ static void init_inputs(void) {
                0x1000u + (uint64_t)lane);
     fill_bytes(bench_msg64[lane], sizeof(bench_msg64[lane]),
                0x2000u + (uint64_t)lane);
+    fill_bytes(bench_pk[lane], sizeof(bench_pk[lane]),
+               0x2800u + (uint64_t)lane);
     memset(bench_prfout[lane], 0, sizeof(bench_prfout[lane]));
     memset(bench_stream[lane], 0, sizeof(bench_stream[lane]));
     memset(bench_poly[lane], 0, sizeof(poly256));
@@ -165,6 +168,21 @@ static uint64_t bench_sha3_256_32(size_t iters) {
     sha3_256(bench_seed32[lane], sizeof(bench_seed32[lane]),
              bench_prfout[lane]);
     acc ^= bench_prfout[lane][(i * 11u) & 31u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sha3_256_public_key(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sha3_256(bench_pk[lane], sizeof(bench_pk[lane]), bench_prfout[lane]);
+    acc ^= bench_prfout[lane][(i * 37u) & 31u];
   }
   t1 = now_ns();
   bench_keccak_sink ^= acc;
@@ -291,6 +309,8 @@ int main(int argc, char **argv) {
   printf("mlkem_keccak_bench_iterations=%zu\n", iters);
   print_metric("mlkem_keccakf", bench_keccakf_perm(iters), iters);
   print_metric("mlkem_sha3_256_32", bench_sha3_256_32(iters), iters);
+  print_metric("mlkem_sha3_256_public_key",
+               bench_sha3_256_public_key(iters), iters);
   print_metric("mlkem_sha3_512_32", bench_sha3_512_32(iters), iters);
   print_metric("mlkem_sha3_512_64", bench_sha3_512_64(iters), iters);
   print_metric("mlkem_prf_eta2", bench_mlkem_prf_eta2(iters), iters);
