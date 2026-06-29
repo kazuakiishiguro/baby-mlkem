@@ -1715,6 +1715,13 @@ static void kpke_public_cache_store(const uint8_t *ek_pke,
   kpke_public_cache_generation = ek_generation;
 }
 
+static void kpke_public_cache_finish_generated(const uint8_t *ek_pke,
+                                               uint64_t ek_generation) {
+  memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
+  kpke_public_cache_valid = 1;
+  kpke_public_cache_generation = ek_generation;
+}
+
 static void mlkem_ek_hash_cache_store(const uint8_t *ek,
                                       const uint8_t h[32]) {
   memcpy(mlkem_ek_hash_cache_input, ek, sizeof(mlkem_ek_hash_cache_input));
@@ -1732,8 +1739,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   const uint8_t *sigma = ghash + 32;
 
   /* ahat => KxK polynomials */
-  static poly256 ahat[K][K];
-  sample_matrix(rho, ahat);
+  sample_matrix(rho, kpke_public_cache_ahat);
 
   /* s-hat, e-hat => each K polynomials => ntt(...) */
   static poly256 shat[K], ehat[K];
@@ -1763,20 +1769,20 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   }
 #endif
 
-  /* that[i] = sum_{j}(ahat[j][i]*shat[j]) + ehat[i], in NTT domain. */
-  static poly256 that[K];
+  /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
   for (int i = 0; i < K; i++) {
     static poly256 accum;
-    ntt_mul_acc3_factored_gamma(ahat[0][i], shat[0], ahat[1][i], shat[1],
-                                ahat[2][i], shat[2], accum);
-    ntt_add(accum, ehat[i], that[i]);
-    byte_encode(12, that[i], ek_pke + i * 384);
+    ntt_mul_acc3_factored_gamma(kpke_public_cache_ahat[0][i], shat[0],
+                                kpke_public_cache_ahat[1][i], shat[1],
+                                kpke_public_cache_ahat[2][i], shat[2], accum);
+    ntt_add(accum, ehat[i], kpke_public_cache_that[i]);
+    byte_encode(12, kpke_public_cache_that[i], ek_pke + i * 384);
   }
 
   /* ek_pke = encode(that[0..K-1], 12 bits each) + rho(32 bytes). */
   memcpy(ek_pke + K * 384, rho, 32);
 
-  kpke_public_cache_store(ek_pke, that, ahat, 0);
+  kpke_public_cache_finish_generated(ek_pke, 0);
 }
 
 static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,

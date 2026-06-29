@@ -814,6 +814,36 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, keygen cache direct fill)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `a0ceba1` before filling the public-key cache directly during
+`kpke_keygen()`; candidate is the working tree after the change. This is a
+core-vs-core comparison and does not use the vendored Kyber/PQClean AVX2
+backends for the candidate path.
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 5011.67 | 4966.83 | 1.009x | 1.007x |
+
+KEM A/B, `8000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9175.25 | 9173.88 | 1.000x | 1.005x |
+| encaps | 2502.52 | 2498.03 | 1.002x | 0.999x |
+| decaps | 3488.25 | 3494.83 | 0.998x | 0.998x |
+| roundtrip | 15245.14 | 15241.45 | 1.000x | 1.002x |
+
+The direct effect is in K-PKE key generation: `kpke_keygen()` now samples
+`A^T` into the existing public-key cache storage and writes `t-hat` into the
+cached `that` array as it encodes the public key. This removes the follow-up
+copy of the generated matrix and public-key polynomials into the cache. The
+end-to-end KEM result is intentionally documented as near-neutral on averages,
+with the stage keygen row as the primary acceptance signal.
+
 ### Independent Core Optimization A/B (2026-06-30, decrypt in-place NTT)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
