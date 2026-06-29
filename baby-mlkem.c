@@ -1278,10 +1278,146 @@ static void sample_poly_cbd(int eta, const uint8_t *data, poly256 out) {
   }
 }
 
+#if defined(__AVX2__)
+static uint8_t sample_ntt_parse_idx_avx2[256][8];
+static int sample_ntt_parse_idx_ready = 0;
+
+static void sample_ntt_parse_init_avx2(void) {
+  if (sample_ntt_parse_idx_ready) return;
+  for (int mask = 0; mask < 256; mask++) {
+    int pos = 0;
+    for (int lane = 0; lane < 8; lane++) {
+      if ((mask >> lane) & 1) {
+        sample_ntt_parse_idx_avx2[mask][pos++] = (uint8_t)(2 * lane);
+      }
+    }
+    while (pos < 8) {
+      sample_ntt_parse_idx_avx2[mask][pos++] = 0xffu;
+    }
+  }
+  sample_ntt_parse_idx_ready = 1;
+}
+
+static inline uint32_t sample_ntt_cmpmask16_to_8(uint32_t mask16) {
+  uint32_t out = 0;
+  for (int lane = 0; lane < 8; lane++) {
+    out |= ((mask16 >> (2 * lane)) & 1u) << lane;
+  }
+  return out;
+}
+
+static int sample_ntt_parse_stream_avx2(const uint8_t *stream,
+                                        size_t stream_len,
+                                        poly256 out,
+                                        int count) {
+  sample_ntt_parse_init_avx2();
+
+  size_t pos = 0;
+  const __m256i bound = _mm256_set1_epi16(Q);
+  const __m256i ones = _mm256_set1_epi8(1);
+  const __m256i mask = _mm256_set1_epi16(0x0fff);
+  const __m256i idx8 = _mm256_set_epi8(
+      15, 14, 14, 13, 12, 11, 11, 10,
+       9,  8,  8,  7,  6,  5,  5,  4,
+      11, 10, 10,  9,  8,  7,  7,  6,
+       5,  4,  4,  3,  2,  1,  1,  0);
+
+  while (count <= N - 32 && pos + 56 <= stream_len) {
+    __m256i f0 = _mm256_loadu_si256((const __m256i *)(stream + pos));
+    __m256i f1 = _mm256_loadu_si256((const __m256i *)(stream + pos + 24));
+    f0 = _mm256_permute4x64_epi64(f0, 0x94);
+    f1 = _mm256_permute4x64_epi64(f1, 0x94);
+    f0 = _mm256_shuffle_epi8(f0, idx8);
+    f1 = _mm256_shuffle_epi8(f1, idx8);
+    __m256i g0 = _mm256_srli_epi16(f0, 4);
+    __m256i g1 = _mm256_srli_epi16(f1, 4);
+    f0 = _mm256_and_si256(_mm256_blend_epi16(f0, g0, 0xaa), mask);
+    f1 = _mm256_and_si256(_mm256_blend_epi16(f1, g1, 0xaa), mask);
+    pos += 48;
+
+    g0 = _mm256_cmpgt_epi16(bound, f0);
+    g1 = _mm256_cmpgt_epi16(bound, f1);
+    uint32_t good =
+        (uint32_t)_mm256_movemask_epi8(_mm256_packs_epi16(g0, g1));
+
+    g0 = _mm256_castsi128_si256(_mm_loadl_epi64(
+        (const __m128i *)sample_ntt_parse_idx_avx2[(good >> 0) & 0xff]));
+    __m256i g2 = _mm256_castsi128_si256(_mm_loadl_epi64(
+        (const __m128i *)sample_ntt_parse_idx_avx2[(good >> 8) & 0xff]));
+    g0 = _mm256_inserti128_si256(
+        g0, _mm_loadl_epi64((const __m128i *)sample_ntt_parse_idx_avx2
+                                [(good >> 16) & 0xff]),
+        1);
+    g2 = _mm256_inserti128_si256(
+        g2, _mm_loadl_epi64((const __m128i *)sample_ntt_parse_idx_avx2
+                                [(good >> 24) & 0xff]),
+        1);
+
+    __m256i g1idx = _mm256_add_epi8(g0, ones);
+    __m256i g3idx = _mm256_add_epi8(g2, ones);
+    g0 = _mm256_unpacklo_epi8(g0, g1idx);
+    g2 = _mm256_unpacklo_epi8(g2, g3idx);
+
+    f0 = _mm256_shuffle_epi8(f0, g0);
+    f1 = _mm256_shuffle_epi8(f1, g2);
+
+    _mm_storeu_si128((__m128i *)(out + count), _mm256_castsi256_si128(f0));
+    count += __builtin_popcount((good >> 0) & 0xffu);
+    _mm_storeu_si128((__m128i *)(out + count),
+                     _mm256_extracti128_si256(f0, 1));
+    count += __builtin_popcount((good >> 16) & 0xffu);
+    _mm_storeu_si128((__m128i *)(out + count), _mm256_castsi256_si128(f1));
+    count += __builtin_popcount((good >> 8) & 0xffu);
+    _mm_storeu_si128((__m128i *)(out + count),
+                     _mm256_extracti128_si256(f1, 1));
+    count += __builtin_popcount((good >> 24) & 0xffu);
+  }
+
+  while (count <= N - 8 && pos + 16 <= stream_len) {
+    __m128i f = _mm_loadu_si128((const __m128i *)(stream + pos));
+    f = _mm_shuffle_epi8(f, _mm256_castsi256_si128(idx8));
+    __m128i t = _mm_srli_epi16(f, 4);
+    f = _mm_and_si128(_mm_blend_epi16(f, t, 0xaa),
+                      _mm256_castsi256_si128(mask));
+    pos += 12;
+
+    t = _mm_cmpgt_epi16(_mm256_castsi256_si128(bound), f);
+    uint32_t good = sample_ntt_cmpmask16_to_8((uint32_t)_mm_movemask_epi8(t));
+    __m128i pilo = _mm_loadl_epi64(
+        (const __m128i *)sample_ntt_parse_idx_avx2[good]);
+    __m128i pihi = _mm_add_epi8(pilo, _mm256_castsi256_si128(ones));
+    pilo = _mm_unpacklo_epi8(pilo, pihi);
+    f = _mm_shuffle_epi8(f, pilo);
+    _mm_storeu_si128((__m128i *)(out + count), f);
+    count += __builtin_popcount(good);
+  }
+
+  const uint8_t *ip = stream + pos;
+  int16_t *op = out + count;
+  int16_t *const end = out + N;
+  size_t remaining = stream_len - pos;
+  while (remaining >= 3 && op < end) {
+    uint8_t a = ip[0];
+    uint8_t b = ip[1];
+    uint8_t c = ip[2];
+    int d1 = ((b & 0xF) << 8) | a;
+    int d2 = (c << 4) | (b >> 4);
+    if (d1 < Q) *op++ = (int16_t)d1;
+    if (d2 < Q && op < end) *op++ = (int16_t)d2;
+    ip += 3;
+    remaining -= 3;
+  }
+  return (int)(op - out);
+}
+#endif
+
 static int sample_ntt_parse_stream(const uint8_t *stream,
                                    size_t stream_len,
                                    poly256 out,
                                    int count) {
+#if defined(__AVX2__)
+  return sample_ntt_parse_stream_avx2(stream, stream_len, out, count);
+#endif
   const uint8_t *ip = stream;
   int16_t *op = out + count;
   int16_t *const end = out + N;
