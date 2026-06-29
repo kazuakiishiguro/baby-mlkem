@@ -832,6 +832,44 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, forward NTT zeta vectors)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `d6f357b` before precomputing forward-tail AVX2 zeta vectors;
+candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+NTT A/B, `200000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_copy` | 217.48 | 208.15 | 1.045x | 1.046x |
+| `mlkem_ntt_inplace` | 214.49 | 205.11 | 1.046x | 1.046x |
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1683.98 | 1626.19 | 1.035x | 1.035x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 829.46 | 809.06 | 1.025x | 1.036x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 930.72 | 908.34 | 1.025x | 1.033x |
+
+KEM A/B, `8000` iterations, fifteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9161.49 | 9080.96 | 1.009x | 1.007x |
+| encaps | 2501.16 | 2477.27 | 1.010x | 1.012x |
+| decaps | 3498.54 | 3464.05 | 1.010x | 1.013x |
+| roundtrip | 15234.07 | 15084.15 | 1.010x | 1.009x |
+
+The change keeps the core path vendor-free. `init_ntt_roots()` now also builds
+AVX2 zeta vectors for the forward NTT tail levels (`l3`..`l1`), so
+`ntt_tail_avx2()` loads pre-shaped vectors instead of constructing
+`_mm256_set1_epi32()` / `_mm256_setr_epi32()` values on every transform. The
+inverse NTT path is unchanged.
+
 ### Independent Core Optimization A/B (2026-06-30, keygen cache direct fill)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

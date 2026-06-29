@@ -522,6 +522,11 @@ static void shake256_32_suffix1(const uint8_t *in, uint8_t suffix,
 /* ZETA, GAMMA arrays: We'll compute them at init. */
 static uint16_t ZETA[128];
 static uint16_t GAMMA[128];
+#if defined(__AVX2__)
+static __m256i ZETA_NTT_TAIL_L3[16];
+static __m256i ZETA_NTT_TAIL_L2[16];
+static __m256i ZETA_NTT_TAIL_L1[16];
+#endif
 static int NTT_ROOTS_READY = 0;
 
 typedef int16_t poly256[N];
@@ -600,13 +605,11 @@ static inline void store_i16x4_pair(int16_t *a, int16_t *b, __m128i v) {
 
 static inline void ntt_butterfly4x2_avx2(int16_t *a0, int16_t *b0,
                                          int16_t *a1, int16_t *b1,
-                                         uint16_t zeta0, uint16_t zeta1) {
+                                         __m256i zeta) {
   __m128i a16 = load_i16x4_pair(a0, a1);
   __m128i b16 = load_i16x4_pair(b0, b1);
   __m256i a = _mm256_cvtepu16_epi32(a16);
   __m256i b = _mm256_cvtepu16_epi32(b16);
-  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta0, zeta0,
-                                   zeta1, zeta1, zeta1, zeta1);
   __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
   store_i16x4_pair(a0, a1, pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)));
   store_i16x4_pair(b0, b1, pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t)));
@@ -632,14 +635,11 @@ static inline void ntt_butterfly2x4_avx2(int16_t *a0, int16_t *b0,
                                          int16_t *a1, int16_t *b1,
                                          int16_t *a2, int16_t *b2,
                                          int16_t *a3, int16_t *b3,
-                                         uint16_t zeta0, uint16_t zeta1,
-                                         uint16_t zeta2, uint16_t zeta3) {
+                                         __m256i zeta) {
   __m128i a16 = load_i16x2_quad(a0, a1, a2, a3);
   __m128i b16 = load_i16x2_quad(b0, b1, b2, b3);
   __m256i a = _mm256_cvtepu16_epi32(a16);
   __m256i b = _mm256_cvtepu16_epi32(b16);
-  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta1, zeta1,
-                                   zeta2, zeta2, zeta3, zeta3);
   __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
   store_i16x2_quad(a0, a1, a2, a3,
                    pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)));
@@ -648,21 +648,20 @@ static inline void ntt_butterfly2x4_avx2(int16_t *a0, int16_t *b0,
 }
 
 static void ntt_tail_avx2(poly256 f) {
-  for (int start = 0, k = 16; start < N; start += 16, k++) {
-    ntt_butterfly8_avx2(f + start, f + start + 8,
-                        _mm256_set1_epi32(ZETA[k]));
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly8_avx2(f + start, f + start + 8, ZETA_NTT_TAIL_L3[i]);
   }
-  for (int start = 0, k = 32; start < N; start += 16, k += 2) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly4x2_avx2(f + start, f + start + 4,
                           f + start + 8, f + start + 12,
-                          ZETA[k], ZETA[k + 1]);
+                          ZETA_NTT_TAIL_L2[i]);
   }
-  for (int start = 0, k = 64; start < N; start += 16, k += 4) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly2x4_avx2(f + start, f + start + 2,
                           f + start + 4, f + start + 6,
                           f + start + 8, f + start + 10,
                           f + start + 12, f + start + 14,
-                          ZETA[k], ZETA[k + 1], ZETA[k + 2], ZETA[k + 3]);
+                          ZETA_NTT_TAIL_L1[i]);
   }
 }
 
@@ -775,6 +774,21 @@ static void init_ntt_roots(void) {
     uint16_t e2 = (uint16_t)(2 * e1 + 1);
     GAMMA[i] = modexp(17, e2);
   }
+#if defined(__AVX2__)
+  for (int i = 0; i < 16; i++) {
+    ZETA_NTT_TAIL_L3[i] = _mm256_set1_epi32(ZETA[16 + i]);
+    int k2 = 32 + 2 * i;
+    ZETA_NTT_TAIL_L2[i] = _mm256_setr_epi32(ZETA[k2], ZETA[k2],
+                                            ZETA[k2], ZETA[k2],
+                                            ZETA[k2 + 1], ZETA[k2 + 1],
+                                            ZETA[k2 + 1], ZETA[k2 + 1]);
+    int k1 = 64 + 4 * i;
+    ZETA_NTT_TAIL_L1[i] = _mm256_setr_epi32(ZETA[k1], ZETA[k1],
+                                            ZETA[k1 + 1], ZETA[k1 + 1],
+                                            ZETA[k1 + 2], ZETA[k1 + 2],
+                                            ZETA[k1 + 3], ZETA[k1 + 3]);
+  }
+#endif
   NTT_ROOTS_READY = 1;
 }
 
