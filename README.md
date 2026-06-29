@@ -791,6 +791,30 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot (`34.69%` self time), followed by `kpke_encrypt` (`32.65%`),
 `bench_keygen` (`18.37%`), and `ntt_inv` (`8.16%`).
 
+### Independent Core Optimization A/B (2026-06-29, direct keygen output)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `038d095` before writing core keygen output directly into the final
+`ek`/`dk` buffers; candidate is the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17223.21 | 16656.63 | 1.034x |
+| encaps | 7582.34 | 7593.90 | 0.998x |
+| decaps | 9644.59 | 9642.77 | 1.000x |
+| roundtrip | 34569.76 | 34038.84 | 1.016x |
+
+The change keeps the core path vendor-free. Core `mlkem_keygen()` now passes the
+final public-key and secret-key output regions directly to `kpke_keygen()`, and
+uses input seed pointers directly when deterministic seeds are provided. This
+removes the stack-local `ek_pke`/`dk_pke` staging buffers and the duplicate
+copies into `ek` and the first `dk` segment.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` and
+`kpke_encrypt` tied as the largest hotspots (`30.43%` self time each), followed
+by `bench_keygen` (`21.74%`), `bench_decaps` (`8.70%`), and `ntt_inv` (`6.52%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

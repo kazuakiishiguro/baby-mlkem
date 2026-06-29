@@ -1141,21 +1141,21 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
   return;
 #endif
 
-  uint8_t z[32];
-  if (!seed1) {
-    randombytes(z, 32);
-  } else {
-    memcpy(z, seed1, 32);
+  uint8_t z_buf[32];
+  const uint8_t *z = seed1;
+  if (!z) {
+    randombytes(z_buf, 32);
+    z = z_buf;
   }
-  uint8_t seed_for_kpke[32];
-  if (!seed2) {
-    randombytes(seed_for_kpke, 32);
-  } else {
-    memcpy(seed_for_kpke, seed2, 32);
+  uint8_t seed_for_kpke_buf[32];
+  const uint8_t *seed_for_kpke = seed2;
+  if (!seed_for_kpke) {
+    randombytes(seed_for_kpke_buf, 32);
+    seed_for_kpke = seed_for_kpke_buf;
   }
 
-  uint8_t ek_pke[K * 384 + 32];
-  uint8_t dk_pke[K * 384];
+  uint8_t *ek_pke = ek;
+  uint8_t *dk_pke = dk;
   kpke_keygen(seed_for_kpke, ek_pke, dk_pke);
 
   /* ek = ek_pke,
@@ -1167,9 +1167,6 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
        - z => 32
      => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
   */
-  memcpy(ek, ek_pke, K * 384 + 32);
-
-  memcpy(dk, dk_pke, K * 384);
   memcpy(dk + (K * 384), ek_pke, K * 384 + 32);
   uint8_t h[32];
   pq_sha3_256(h, ek_pke, K * 384 + 32);
