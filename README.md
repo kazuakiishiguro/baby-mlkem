@@ -755,30 +755,30 @@ iterations, before the later core AVX2 and cache optimization series:
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | 1220.76 |
 
 Current snapshot, pinned to CPU 0, `clang`, default `AVX2_BACKEND=core`,
-`20000` iterations, after the current optimization series:
+`20000` iterations, after the current optimization series through `e762218`:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_keygen_full` | 4983.07 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2274.53 |
-| `mlkem_core_stage_kpke_decrypt_cached` | 994.13 |
-| `mlkem_core_stage_sample_matrix` | 2940.65 |
-| `mlkem_core_stage_sample_matrix_x4_batch0` | 1118.26 |
-| `mlkem_core_stage_sample_matrix_x4_batch1` | 1359.50 |
-| `mlkem_core_stage_sample_matrix_tail` | 833.37 |
-| `mlkem_core_stage_keygen_noise_ntt` | 1893.05 |
-| `mlkem_core_stage_keygen_noise_prf_cbd` | 771.89 |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1675.66 |
-| `mlkem_core_stage_keygen_accum_encode` | 460.55 |
-| `mlkem_core_stage_encrypt_noise` | 1243.91 |
-| `mlkem_core_stage_encrypt_noise_prf_cbd` | 962.97 |
-| `mlkem_core_stage_encrypt_noise_ntt` | 828.65 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1252.60 |
-| `mlkem_core_stage_encrypt_accum_inv_u` | 970.63 |
-| `mlkem_core_stage_encrypt_accum_inv_v` | 447.06 |
-| `mlkem_core_stage_ciphertext_compress_encode` | 101.90 |
-| `mlkem_core_stage_ciphertext_decode_decompress` | 247.13 |
-| `mlkem_core_stage_decrypt_ntt_accum_recover` | 930.13 |
+| `mlkem_core_stage_kpke_keygen_full` | 4925.44 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2267.21 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1007.14 |
+| `mlkem_core_stage_sample_matrix` | 2945.93 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1126.15 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1358.90 |
+| `mlkem_core_stage_sample_matrix_tail` | 827.42 |
+| `mlkem_core_stage_keygen_noise_ntt` | 1896.56 |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 779.87 |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1676.42 |
+| `mlkem_core_stage_keygen_accum_encode` | 454.63 |
+| `mlkem_core_stage_encrypt_noise` | 1245.92 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 964.22 |
+| `mlkem_core_stage_encrypt_noise_ntt` | 830.96 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1235.86 |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 958.22 |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 448.76 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 101.66 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 246.68 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 920.44 |
 
 The current remaining hotspots are public matrix generation, keygen
 noise/NTT/encode, encryption noise generation, and encryption accumulation plus
