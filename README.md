@@ -566,6 +566,7 @@ helpers:
 |---|---|
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
+| `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared forward-NTT level, from length 128 down to length 2 |
 | `mlkem_ntt_inv` | `ntt_inv()` |
 | `mlkem_ntt_inv_add` | `ntt_inv_add()` |
 | `mlkem_ntt_inv_add2` | `ntt_inv_add2()` |
@@ -575,7 +576,25 @@ helpers:
 
 For optimization work, compare the same command before and after each small
 NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
-core arithmetic direction-finding, not ML-KEM KEM throughput results.
+core arithmetic direction-finding, not ML-KEM KEM throughput results. The
+forward-level metrics mutate a prepared input state for a single level; use them
+to rank implementation targets, not as additive replacements for full `ntt()`.
+
+Current forward-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
+`200000` iterations:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_ntt_level_l7` | 23.99 |
+| `mlkem_ntt_level_l6` | 24.30 |
+| `mlkem_ntt_level_l5` | 24.38 |
+| `mlkem_ntt_level_l4` | 26.03 |
+| `mlkem_ntt_level_l3` | 207.78 |
+| `mlkem_ntt_level_l2` | 212.10 |
+| `mlkem_ntt_level_l1` | 225.38 |
+
+This points the next self-contained AVX2 work at the fine-grained forward NTT
+levels (`l3`..`l1`) before revisiting broad changes to the full scalar loop.
 
 ### Independent Core Keccak/Sampling Microbench (2026-06-29)
 

@@ -19,6 +19,7 @@ static poly256 bench_b2[NTT_BENCH_LANES];
 static poly256 bench_add0[NTT_BENCH_LANES];
 static poly256 bench_add1[NTT_BENCH_LANES];
 static poly256 bench_out[NTT_BENCH_LANES];
+static poly256 bench_ntt_level_work[7][NTT_BENCH_LANES];
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -90,6 +91,37 @@ static void init_inputs(void) {
   }
 }
 
+static void bench_forward_ntt_level(poly256 f, int log2len, int k_start) {
+  int k = k_start;
+  int length = 1 << log2len;
+  for (int start = 0; start < N; start += (2 * length)) {
+    uint16_t zeta = ZETA[k++];
+    for (int j = 0; j < length; j++) {
+      int idx = start + j;
+      uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
+      int16_t t = (int16_t)(prod % Q);
+      int16_t a = f[idx];
+      f[idx + length] = mod_q_sub_i16(a, t);
+      f[idx] = mod_q_add_i16(a, t);
+    }
+  }
+}
+
+static void prepare_ntt_level_inputs(void) {
+  ensure_ntt_roots();
+  init_inputs();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    poly256 cur;
+    memcpy(cur, bench_a0[lane], sizeof(poly256));
+    for (int level = 0; level < 7; level++) {
+      int log2len = 7 - level;
+      int k_start = 1 << level;
+      memcpy(bench_ntt_level_work[level][lane], cur, sizeof(poly256));
+      bench_forward_ntt_level(cur, log2len, k_start);
+    }
+  }
+}
+
 static void validate_ntt_helpers(void) {
   poly256 tmp, got, inv, want, accum;
 
@@ -97,6 +129,12 @@ static void validate_ntt_helpers(void) {
   init_inputs();
 
   ntt(bench_a0[0], tmp);
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  for (int level = 0; level < 7; level++) {
+    bench_forward_ntt_level(got, 7 - level, 1 << level);
+  }
+  check_equal(got, tmp, "forward ntt level sequence");
+
   ntt_inv(tmp, got);
   check_equal(got, bench_a0[0], "ntt_inv(ntt(x))");
 
@@ -153,6 +191,23 @@ static uint64_t bench_ntt_inplace(size_t iters) {
     size_t lane = i & (NTT_BENCH_LANES - 1);
     ntt(bench_a0[lane], bench_a0[lane]);
     acc += (uint16_t)bench_a0[lane][(i * 17u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_level(size_t iters, int level) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  int log2len = 7 - level;
+  int k_start = 1 << level;
+  prepare_ntt_level_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_forward_ntt_level(bench_ntt_level_work[level][lane], log2len, k_start);
+    acc += (uint16_t)bench_ntt_level_work[level][lane][(i * 43u) & (N - 1)];
   }
   t1 = now_ns();
   bench_ntt_sink ^= acc;
@@ -271,6 +326,13 @@ int main(int argc, char **argv) {
   printf("mlkem_ntt_bench_iterations=%zu\n", iters);
   print_metric("mlkem_ntt_copy", bench_ntt_copy(iters), iters);
   print_metric("mlkem_ntt_inplace", bench_ntt_inplace(iters), iters);
+  print_metric("mlkem_ntt_level_l7", bench_ntt_level(iters, 0), iters);
+  print_metric("mlkem_ntt_level_l6", bench_ntt_level(iters, 1), iters);
+  print_metric("mlkem_ntt_level_l5", bench_ntt_level(iters, 2), iters);
+  print_metric("mlkem_ntt_level_l4", bench_ntt_level(iters, 3), iters);
+  print_metric("mlkem_ntt_level_l3", bench_ntt_level(iters, 4), iters);
+  print_metric("mlkem_ntt_level_l2", bench_ntt_level(iters, 5), iters);
+  print_metric("mlkem_ntt_level_l1", bench_ntt_level(iters, 6), iters);
   print_metric("mlkem_ntt_inv", bench_ntt_inv(iters), iters);
   print_metric("mlkem_ntt_inv_add", bench_ntt_inv_add(iters), iters);
   print_metric("mlkem_ntt_inv_add2", bench_ntt_inv_add2(iters), iters);
