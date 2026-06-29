@@ -732,6 +732,51 @@ Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
 the first filter before documenting an optimization as an independent-core
 speedup.
 
+### Independent Core Optimization A/B (2026-06-30, forward NTT AVX2 tail)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
+is commit `f596d47` before adding the self-contained AVX2 tail for forward
+NTT; candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+NTT A/B, `200000` iterations, seven repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_copy` | 282.43 | 218.08 | 1.295x | 1.299x |
+| `mlkem_ntt_inplace` | 281.23 | 214.88 | 1.309x | 1.309x |
+
+Stage A/B, `15000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 2338.51 | 2036.96 | 1.148x | 1.148x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1978.44 | 1685.35 | 1.174x | 1.175x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 1017.34 | 829.42 | 1.227x | 1.226x |
+| `mlkem_core_stage_encrypt_noise` | 1562.90 | 1365.65 | 1.144x | 1.145x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1216.85 | 1001.24 | 1.215x | 1.212x |
+| `mlkem_core_stage_kpke_keygen_full` | 5577.64 | 5114.29 | 1.091x | 1.082x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2878.11 | 2660.15 | 1.082x | 1.080x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1286.62 | 1069.82 | 1.203x | 1.202x |
+
+KEM A/B, `5000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| keygen | 9721.46 | 9297.79 | 1.046x | 1.044x |
+| encaps | 3119.01 | 2907.26 | 1.073x | 1.070x |
+| decaps | 4422.83 | 4012.12 | 1.102x | 1.104x |
+| roundtrip | 17321.16 | 16281.61 | 1.064x | 1.065x |
+
+The change keeps the core path vendor-free. `ntt()` still uses the existing
+scalar code for the first four forward stages, where the compiler already
+handles the long contiguous butterflies well. It then switches to a local AVX2
+tail helper for `log2len = 3, 2, 1`, batching the short butterflies into eight
+32-bit lanes and using the existing NTT modular reduction formula in vector
+form. This targets the previously expensive short-butterfly tail without
+calling or modifying vendored Kyber/PQClean assembly.
+
 ### Independent Core Optimization A/B (2026-06-30, verified public-cache reuse)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

@@ -544,6 +544,129 @@ static inline int16_t mod_q_reduce_ntt_u32(uint32_t x) {
   return (int16_t)r;
 }
 
+
+#if defined(__AVX2__)
+static inline __m256i mod_q_reduce_ntt_u32x8(__m256i x) {
+  const __m256i mul = _mm256_set1_epi32(315);
+  const __m256i q = _mm256_set1_epi32(Q);
+  __m256i quot = _mm256_srli_epi32(_mm256_mullo_epi32(x, mul), 20);
+  __m256i r = _mm256_sub_epi32(x, _mm256_mullo_epi32(quot, q));
+  __m256i neg = _mm256_cmpgt_epi32(_mm256_setzero_si256(), r);
+  return _mm256_add_epi32(r, _mm256_and_si256(neg, q));
+}
+
+static inline __m256i mod_q_add_i32x8(__m256i a, __m256i b) {
+  const __m256i q = _mm256_set1_epi32(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi32(Q - 1);
+  __m256i s = _mm256_add_epi32(a, b);
+  __m256i ge_q = _mm256_cmpgt_epi32(s, q_minus_1);
+  return _mm256_sub_epi32(s, _mm256_and_si256(ge_q, q));
+}
+
+static inline __m256i mod_q_sub_i32x8(__m256i a, __m256i b) {
+  const __m256i q = _mm256_set1_epi32(Q);
+  __m256i d = _mm256_sub_epi32(a, b);
+  __m256i neg = _mm256_cmpgt_epi32(_mm256_setzero_si256(), d);
+  return _mm256_add_epi32(d, _mm256_and_si256(neg, q));
+}
+
+static inline __m128i pack_i32x8_to_i16x8(__m256i v) {
+  __m128i lo = _mm256_castsi256_si128(v);
+  __m128i hi = _mm256_extracti128_si256(v, 1);
+  return _mm_packus_epi32(lo, hi);
+}
+
+static inline void ntt_butterfly8_avx2(int16_t *a_ptr, int16_t *b_ptr,
+                                       __m256i zeta) {
+  __m128i a16 = _mm_loadu_si128((const __m128i *)a_ptr);
+  __m128i b16 = _mm_loadu_si128((const __m128i *)b_ptr);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
+  _mm_storeu_si128((__m128i *)a_ptr, pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)));
+  _mm_storeu_si128((__m128i *)b_ptr, pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t)));
+}
+
+static inline __m128i load_i16x4_pair(const int16_t *a, const int16_t *b) {
+  __m128i lo = _mm_loadl_epi64((const __m128i *)a);
+  __m128i hi = _mm_loadl_epi64((const __m128i *)b);
+  return _mm_unpacklo_epi64(lo, hi);
+}
+
+static inline void store_i16x4_pair(int16_t *a, int16_t *b, __m128i v) {
+  _mm_storel_epi64((__m128i *)a, v);
+  _mm_storel_epi64((__m128i *)b, _mm_srli_si128(v, 8));
+}
+
+static inline void ntt_butterfly4x2_avx2(int16_t *a0, int16_t *b0,
+                                         int16_t *a1, int16_t *b1,
+                                         uint16_t zeta0, uint16_t zeta1) {
+  __m128i a16 = load_i16x4_pair(a0, a1);
+  __m128i b16 = load_i16x4_pair(b0, b1);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta0, zeta0,
+                                   zeta1, zeta1, zeta1, zeta1);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
+  store_i16x4_pair(a0, a1, pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)));
+  store_i16x4_pair(b0, b1, pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t)));
+}
+
+static inline __m128i load_i16x2_quad(const int16_t *a0, const int16_t *a1,
+                                      const int16_t *a2, const int16_t *a3) {
+  return _mm_setr_epi16(a0[0], a0[1], a1[0], a1[1],
+                       a2[0], a2[1], a3[0], a3[1]);
+}
+
+static inline void store_i16x2_quad(int16_t *a0, int16_t *a1, int16_t *a2,
+                                    int16_t *a3, __m128i v) {
+  uint64_t lane01 = (uint64_t)_mm_cvtsi128_si64(v);
+  uint64_t lane23 = (uint64_t)_mm_cvtsi128_si64(_mm_srli_si128(v, 8));
+  memcpy(a0, &lane01, 4);
+  memcpy(a1, ((const uint8_t *)&lane01) + 4, 4);
+  memcpy(a2, &lane23, 4);
+  memcpy(a3, ((const uint8_t *)&lane23) + 4, 4);
+}
+
+static inline void ntt_butterfly2x4_avx2(int16_t *a0, int16_t *b0,
+                                         int16_t *a1, int16_t *b1,
+                                         int16_t *a2, int16_t *b2,
+                                         int16_t *a3, int16_t *b3,
+                                         uint16_t zeta0, uint16_t zeta1,
+                                         uint16_t zeta2, uint16_t zeta3) {
+  __m128i a16 = load_i16x2_quad(a0, a1, a2, a3);
+  __m128i b16 = load_i16x2_quad(b0, b1, b2, b3);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta1, zeta1,
+                                   zeta2, zeta2, zeta3, zeta3);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
+  store_i16x2_quad(a0, a1, a2, a3,
+                   pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)));
+  store_i16x2_quad(b0, b1, b2, b3,
+                   pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t)));
+}
+
+static void ntt_tail_avx2(poly256 f) {
+  for (int start = 0, k = 16; start < N; start += 16, k++) {
+    ntt_butterfly8_avx2(f + start, f + start + 8,
+                        _mm256_set1_epi32(ZETA[k]));
+  }
+  for (int start = 0, k = 32; start < N; start += 16, k += 2) {
+    ntt_butterfly4x2_avx2(f + start, f + start + 4,
+                          f + start + 8, f + start + 12,
+                          ZETA[k], ZETA[k + 1]);
+  }
+  for (int start = 0, k = 64; start < N; start += 16, k += 4) {
+    ntt_butterfly2x4_avx2(f + start, f + start + 2,
+                          f + start + 4, f + start + 6,
+                          f + start + 8, f + start + 10,
+                          f + start + 12, f + start + 14,
+                          ZETA[k], ZETA[k + 1], ZETA[k + 2], ZETA[k + 3]);
+  }
+}
+#endif
+
 /**
  * bitrev7 helper
  * This function performs a bit reversal operation
@@ -624,7 +747,11 @@ static void ntt(const poly256 f_in, poly256 f_out) {
     memcpy(f_out, f_in, sizeof(poly256));
   }
   int k = 1;
+#if defined(__AVX2__)
+  for (int log2len = 7; log2len > 3; log2len--) {
+#else
   for (int log2len = 7; log2len > 0; log2len--) {
+#endif
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k++];
@@ -638,6 +765,9 @@ static void ntt(const poly256 f_in, poly256 f_out) {
       }
     }
   }
+#if defined(__AVX2__)
+  ntt_tail_avx2(f_out);
+#endif
 }
 
 /* NTT^-1 */
