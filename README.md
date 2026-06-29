@@ -722,6 +722,29 @@ Post-change profiling (`6000` iterations, `-pg`) still shows `keccakf` as the
 largest hotspot (`33.33%` self time), followed by `kpke_encrypt` (`26.67%`),
 `bench_keygen` (`22.22%`), and `ntt_inv` (`6.67%`).
 
+### Independent Core Optimization A/B (2026-06-29, Keccak Rho/Pi-Chi fusion)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `7a51a11` before fusing the Keccak Rho/Pi and Chi steps; candidate is
+the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 17521.90 | 17521.01 | 1.000x |
+| encaps | 7592.51 | 7571.39 | 1.003x |
+| decaps | 9771.02 | 9768.95 | 1.000x |
+| roundtrip | 34816.60 | 34700.54 | 1.003x |
+
+The change keeps the core path vendor-free. It removes the Keccak Rho/Pi
+lookup-table loop and computes the Rho/Pi lanes into temporaries that feed Chi
+directly, avoiding a full intermediate store/load of the 25-lane state array.
+The old `rho`/`pi` tables are no longer needed.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `kpke_encrypt` as the
+largest hotspot (`43.18%` self time), followed by `keccakf` (`25.00%`),
+`bench_keygen` (`13.64%`), and `ntt_inv` (`6.82%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`

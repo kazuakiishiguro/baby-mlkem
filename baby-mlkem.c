@@ -109,12 +109,6 @@ static const uint64_t rc[24] = {
     0x000000000000800aULL, 0x800000008000000aULL, 0x8000000080008081ULL,
     0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL};
 
-static const uint8_t rho[24] = {1,  3,  6,  10, 15, 21, 28, 36, 45, 55, 2,  14,
-                                27, 41, 56, 8,  25, 43, 62, 18, 39, 61, 20, 44};
-
-static const uint8_t pi[24] = {10, 7,  11, 17, 18, 3, 5,  16, 8,  21, 24, 4,
-                               15, 23, 19, 13, 12, 2, 20, 14, 22, 9,  6,  1};
-
 static inline uint64_t ROTL64(uint64_t x, int s) {
   return ((x << s) | (x >> (64 - s)));
 }
@@ -146,35 +140,59 @@ static void keccakf(uint64_t st[25]) {
     st[3] ^= d3;  st[8] ^= d3;  st[13] ^= d3; st[18] ^= d3; st[23] ^= d3;
     st[4] ^= d4;  st[9] ^= d4;  st[14] ^= d4; st[19] ^= d4; st[24] ^= d4;
 
-    // Rho and pi
-    uint64_t t = st[1];
-    for (int i = 0; i < 24; i++) {
-      int j = pi[i];
-      uint64_t tmp = st[j];
-      st[j] = ROTL64(t, rho[i]);
-      t = tmp;
-    }
+    // Rho, pi, and Chi. Keep Rho/Pi lanes in temporaries so Chi can consume
+    // them without a full intermediate store/load of the state array.
+    uint64_t b0 = st[0];
+    uint64_t b1 = ROTL64(st[6], 44);
+    uint64_t b2 = ROTL64(st[12], 43);
+    uint64_t b3 = ROTL64(st[18], 21);
+    uint64_t b4 = ROTL64(st[24], 14);
+    uint64_t b5 = ROTL64(st[3], 28);
+    uint64_t b6 = ROTL64(st[9], 20);
+    uint64_t b7 = ROTL64(st[10], 3);
+    uint64_t b8 = ROTL64(st[16], 45);
+    uint64_t b9 = ROTL64(st[22], 61);
+    uint64_t b10 = ROTL64(st[1], 1);
+    uint64_t b11 = ROTL64(st[7], 6);
+    uint64_t b12 = ROTL64(st[13], 25);
+    uint64_t b13 = ROTL64(st[19], 8);
+    uint64_t b14 = ROTL64(st[20], 18);
+    uint64_t b15 = ROTL64(st[4], 27);
+    uint64_t b16 = ROTL64(st[5], 36);
+    uint64_t b17 = ROTL64(st[11], 10);
+    uint64_t b18 = ROTL64(st[17], 15);
+    uint64_t b19 = ROTL64(st[23], 56);
+    uint64_t b20 = ROTL64(st[2], 62);
+    uint64_t b21 = ROTL64(st[8], 55);
+    uint64_t b22 = ROTL64(st[14], 39);
+    uint64_t b23 = ROTL64(st[15], 41);
+    uint64_t b24 = ROTL64(st[21], 2);
 
-    // Chi
-#define KECCAK_CHI_ROW(j) \
-  do { \
-    uint64_t a0 = st[(j) + 0]; \
-    uint64_t a1 = st[(j) + 1]; \
-    uint64_t a2 = st[(j) + 2]; \
-    uint64_t a3 = st[(j) + 3]; \
-    uint64_t a4 = st[(j) + 4]; \
-    st[(j) + 0] = a0 ^ ((~a1) & a2); \
-    st[(j) + 1] = a1 ^ ((~a2) & a3); \
-    st[(j) + 2] = a2 ^ ((~a3) & a4); \
-    st[(j) + 3] = a3 ^ ((~a4) & a0); \
-    st[(j) + 4] = a4 ^ ((~a0) & a1); \
-  } while (0)
-    KECCAK_CHI_ROW(0);
-    KECCAK_CHI_ROW(5);
-    KECCAK_CHI_ROW(10);
-    KECCAK_CHI_ROW(15);
-    KECCAK_CHI_ROW(20);
-#undef KECCAK_CHI_ROW
+    st[0] = b0 ^ ((~b1) & b2);
+    st[1] = b1 ^ ((~b2) & b3);
+    st[2] = b2 ^ ((~b3) & b4);
+    st[3] = b3 ^ ((~b4) & b0);
+    st[4] = b4 ^ ((~b0) & b1);
+    st[5] = b5 ^ ((~b6) & b7);
+    st[6] = b6 ^ ((~b7) & b8);
+    st[7] = b7 ^ ((~b8) & b9);
+    st[8] = b8 ^ ((~b9) & b5);
+    st[9] = b9 ^ ((~b5) & b6);
+    st[10] = b10 ^ ((~b11) & b12);
+    st[11] = b11 ^ ((~b12) & b13);
+    st[12] = b12 ^ ((~b13) & b14);
+    st[13] = b13 ^ ((~b14) & b10);
+    st[14] = b14 ^ ((~b10) & b11);
+    st[15] = b15 ^ ((~b16) & b17);
+    st[16] = b16 ^ ((~b17) & b18);
+    st[17] = b17 ^ ((~b18) & b19);
+    st[18] = b18 ^ ((~b19) & b15);
+    st[19] = b19 ^ ((~b15) & b16);
+    st[20] = b20 ^ ((~b21) & b22);
+    st[21] = b21 ^ ((~b22) & b23);
+    st[22] = b22 ^ ((~b23) & b24);
+    st[23] = b23 ^ ((~b24) & b20);
+    st[24] = b24 ^ ((~b20) & b21);
 
     // Iota
     st[0] ^= rc[round];
