@@ -728,8 +728,8 @@ stage metrics.
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
 
-Current snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
-iterations:
+Historical snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
+iterations, before the later core AVX2 and cache optimization series:
 
 | Metric | ns/op |
 |---|---:|
@@ -752,11 +752,34 @@ iterations:
 | `mlkem_core_stage_ciphertext_decode_decompress` | 246.43 |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | 1220.76 |
 
-After self-contained AVX2 matrix sampling and PRF/CBD batching, public matrix
-generation remains a large keygen component. The split noise metrics also show
-that forward NTT/secret-key encode and encryption-side forward NTT remain large
-enough to justify a self-contained core AVX2 NTT/inverse-NTT implementation.
-Compression and bit-packing are still much smaller contributors.
+Current snapshot, pinned to CPU 0, `clang`, default `AVX2_BACKEND=core`,
+`20000` iterations, after the current optimization series:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4983.07 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2274.53 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 994.13 |
+| `mlkem_core_stage_sample_matrix` | 2940.65 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1118.26 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1359.50 |
+| `mlkem_core_stage_sample_matrix_tail` | 833.37 |
+| `mlkem_core_stage_keygen_noise_ntt` | 1893.05 |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 771.89 |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1675.66 |
+| `mlkem_core_stage_keygen_accum_encode` | 460.55 |
+| `mlkem_core_stage_encrypt_noise` | 1243.91 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 962.97 |
+| `mlkem_core_stage_encrypt_noise_ntt` | 828.65 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1252.60 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 101.90 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 247.13 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 930.13 |
+
+The current remaining hotspots are public matrix generation, keygen
+noise/NTT/encode, encryption noise generation, and encryption accumulation plus
+inverse NTT. Compression, bit-packing, and ciphertext decode/decompress remain
+smaller contributors.
 
 ### Independent Core Local A/B Runner
 
