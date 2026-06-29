@@ -892,6 +892,39 @@ Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
 hotspot (`47.50%` self time), followed by `ntt_inv` (`17.50%`), `bench_keygen`
 (`15.00%`), and `kpke_encrypt` (`10.00%`).
 
+### Independent Core Optimization A/B (2026-06-29, keygen factored NTT accumulation)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `10000`
+iterations per run, `6` order-flipped baseline/candidate pairs. Baseline is
+commit `7a7be87` before factoring the fixed K=3 keygen NTT accumulation;
+candidate is the working tree after the change.
+
+| Metric | Baseline mean ns/op | Candidate mean ns/op | Speedup |
+|---|---:|---:|---:|
+| keygen | 16300.96 | 16057.68 | 1.015x |
+| encaps | 6117.68 | 6099.43 | 1.003x |
+| decaps | 7929.46 | 7984.63 | 0.993x |
+| roundtrip | 30461.96 | 30262.68 | 1.007x |
+
+The change keeps the core path vendor-free. Core keygen now uses
+`ntt_mul_acc3_factored_gamma()` for the fixed K=3 `that[i]` accumulation, so the
+three high-lane products are summed first and multiplied by `GAMMA[i]` once.
+This reduces two `GAMMA` multiplications per base pair in the keygen hot path.
+
+The factored helper is intentionally limited to keygen. Applying the same shape
+globally to encryption/decryption was measured separately and regressed
+roundtrip performance, so those paths continue to use the original
+`ntt_mul_acc3()` helper.
+
+A longer confirmation run (`20000` iterations, `4` order-flipped pairs) showed
+`1.019x` keygen, `1.001x` encaps, `0.999x` decaps, and `1.005x` roundtrip
+speedups.
+
+Post-change profiling (`6000` iterations, `-pg`) shows `keccakf` as the largest
+hotspot (`38.46%` self time), followed by `bench_keygen` (`28.21%`),
+`kpke_encrypt` (`17.95%`), `ntt_inv` (`7.69%`), and `sample_poly_cbd`
+(`5.13%`).
+
 ### Latest Local Optimization A/B (2026-06-26)
 
 Snapshot command shape: pinned CPU, `clang`, upstream AVX2 backend, `8000`
