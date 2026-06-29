@@ -565,6 +565,7 @@ helpers:
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
 | `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared forward-NTT level, from length 128 down to length 2 |
 | `mlkem_ntt_inv` | `ntt_inv()` |
+| `mlkem_ntt_inv_level_l1` .. `mlkem_ntt_inv_level_l7` | one prepared inverse-NTT level, from length 2 up to length 128 |
 | `mlkem_ntt_inv_add` | `ntt_inv_add()` |
 | `mlkem_ntt_inv_add2` | `ntt_inv_add2()` |
 | `mlkem_ntt_inv_sub_from` | `ntt_inv_sub_from()` |
@@ -574,8 +575,11 @@ helpers:
 For optimization work, compare the same command before and after each small
 NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
 core arithmetic direction-finding, not ML-KEM KEM throughput results. The
-forward-level metrics mutate a prepared input state for a single level; use them
-to rank implementation targets, not as additive replacements for full `ntt()`.
+forward- and inverse-level metrics mutate a prepared input state for a single
+level; use them to rank implementation targets, not as additive replacements for
+full `ntt()` or `ntt_inv()`. The inverse-level rows time the scalar level kernel
+for direction finding; the current full inverse NTT already uses a self-contained
+AVX2 head for `l1`..`l3`.
 
 Current forward-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
 `200000` iterations:
@@ -592,6 +596,23 @@ Current forward-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
 
 This points the next self-contained AVX2 work at the fine-grained forward NTT
 levels (`l3`..`l1`) before revisiting broad changes to the full scalar loop.
+
+Current inverse-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
+`200000` iterations:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_ntt_inv_level_l1` | 242.39 |
+| `mlkem_ntt_inv_level_l2` | 237.36 |
+| `mlkem_ntt_inv_level_l3` | 209.23 |
+| `mlkem_ntt_inv_level_l4` | 20.04 |
+| `mlkem_ntt_inv_level_l5` | 19.17 |
+| `mlkem_ntt_inv_level_l6` | 19.61 |
+| `mlkem_ntt_inv_level_l7` | 19.53 |
+
+This explains why broad AVX2 work on the remaining inverse stages (`l4`..`l7`)
+is unlikely to pay off: those scalar stage kernels are already small compared
+with the inverse head and final scale/add/sub fusion work.
 
 ### Independent Core Keccak/Sampling Microbench (2026-06-29)
 
