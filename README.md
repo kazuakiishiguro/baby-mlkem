@@ -683,6 +683,32 @@ that forward NTT/secret-key encode and encryption-side forward NTT remain large
 enough to justify a self-contained core AVX2 NTT/inverse-NTT implementation.
 Compression and bit-packing are still much smaller contributors.
 
+### Independent Core Local A/B Runner
+
+Use the local A/B runner when testing candidate changes to the independent
+`AVX2_BACKEND=core` path. The script builds the baseline ref in a temporary git
+worktree, builds the current working tree as the candidate, pins execution when
+`PIN_CPU` is set, and reports average and median speedups.
+
+```bash
+PIN_CPU=0 RUNS=5 KEM_ITERS=3000 STAGE_ITERS=10000 \
+  ./scripts/bench_core_ab.sh dd30d94
+```
+
+Limit the run to a specific suite when iterating quickly:
+
+```bash
+SUITES=kem RUNS=3 KEM_ITERS=1000 ./scripts/bench_core_ab.sh HEAD
+SUITES=stage RUNS=3 STAGE_ITERS=5000 ./scripts/bench_core_ab.sh HEAD
+SUITES=ntt,keccak RUNS=3 ./scripts/bench_core_ab.sh HEAD
+```
+
+Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
+`C_COMPILER`, `PIN_CPU`, `RUNS`, `WARMUP_RUNS`, `KEM_ITERS`, `STAGE_ITERS`,
+`NTT_ITERS`, and `KECCAK_ITERS` control the run. Use this local A/B output as
+the first filter before documenting an optimization as an independent-core
+speedup.
+
 ### Independent Core Optimization A/B (2026-06-29, decaps scratch sizing)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`, `4000`
