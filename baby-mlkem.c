@@ -1077,18 +1077,20 @@ static inline void ntt_butterfly4x2_avx2(int16_t *a0, int16_t *b0,
 
 static inline __m128i load_i16x2_quad(const int16_t *a0, const int16_t *a1,
                                       const int16_t *a2, const int16_t *a3) {
-  return _mm_setr_epi16(a0[0], a0[1], a1[0], a1[1],
-                       a2[0], a2[1], a3[0], a3[1]);
+  __m128i v0 = _mm_loadu_si32((const void *)a0);
+  __m128i v1 = _mm_loadu_si32((const void *)a1);
+  __m128i v2 = _mm_loadu_si32((const void *)a2);
+  __m128i v3 = _mm_loadu_si32((const void *)a3);
+  return _mm_unpacklo_epi64(_mm_unpacklo_epi32(v0, v1),
+                            _mm_unpacklo_epi32(v2, v3));
 }
 
 static inline void store_i16x2_quad(int16_t *a0, int16_t *a1, int16_t *a2,
                                     int16_t *a3, __m128i v) {
-  uint64_t lane01 = (uint64_t)_mm_cvtsi128_si64(v);
-  uint64_t lane23 = (uint64_t)_mm_cvtsi128_si64(_mm_srli_si128(v, 8));
-  memcpy(a0, &lane01, 4);
-  memcpy(a1, ((const uint8_t *)&lane01) + 4, 4);
-  memcpy(a2, &lane23, 4);
-  memcpy(a3, ((const uint8_t *)&lane23) + 4, 4);
+  _mm_storeu_si32((void *)a0, v);
+  _mm_storeu_si32((void *)a1, _mm_srli_si128(v, 4));
+  _mm_storeu_si32((void *)a2, _mm_srli_si128(v, 8));
+  _mm_storeu_si32((void *)a3, _mm_srli_si128(v, 12));
 }
 
 static inline void ntt_butterfly2x4_avx2(int16_t *a0, int16_t *b0,
