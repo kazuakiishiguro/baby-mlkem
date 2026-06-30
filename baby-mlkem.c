@@ -2688,18 +2688,65 @@ static inline uint16_t compress_coeff_d4(int16_t x) {
   return (uint16_t)((((uint32_t)n * 315u) >> 20) & 0x000Fu);
 }
 
+/* This 16-bit compressor wins on the AVX512-capable native path; AVX2-only
+ * builds keep clang's auto-vectorized scalar code, which benchmarks better. */
+#if defined(__AVX2__) && defined(__AVX512F__)
+static inline void compress_poly_d10_avx2(const poly256 x, uint16_t *out) {
+  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v8 = _mm256_slli_epi16(v, 3);
+  const __m256i off = _mm256_set1_epi16(15);
+  const __m256i shift = _mm256_set1_epi16(1 << 12);
+  const __m256i mask = _mm256_set1_epi16(1023);
+  for (int i = 0; i < N; i += 16) {
+    __m256i f0 = _mm256_loadu_si256((const __m256i *)(x + i));
+    __m256i f1 = _mm256_mullo_epi16(f0, v8);
+    __m256i f2 = _mm256_add_epi16(f0, off);
+    f0 = _mm256_slli_epi16(f0, 3);
+    f0 = _mm256_mulhi_epi16(f0, v);
+    f2 = _mm256_sub_epi16(f1, f2);
+    f1 = _mm256_andnot_si256(f1, f2);
+    f1 = _mm256_srli_epi16(f1, 15);
+    f0 = _mm256_sub_epi16(f0, f1);
+    f0 = _mm256_mulhrs_epi16(f0, shift);
+    f0 = _mm256_and_si256(f0, mask);
+    _mm256_storeu_si256((__m256i *)(out + i), f0);
+  }
+}
+
+static inline void compress_poly_d4_avx2(const poly256 x, uint16_t *out) {
+  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i shift = _mm256_set1_epi16(1 << 9);
+  const __m256i mask = _mm256_set1_epi16(15);
+  for (int i = 0; i < N; i += 16) {
+    __m256i f = _mm256_loadu_si256((const __m256i *)(x + i));
+    f = _mm256_mulhi_epi16(f, v);
+    f = _mm256_mulhrs_epi16(f, shift);
+    f = _mm256_and_si256(f, mask);
+    _mm256_storeu_si256((__m256i *)(out + i), f);
+  }
+}
+#endif
+
 static void compress_poly(int d, const poly256 x, uint16_t *out) {
   if (d == 10) {
+#if defined(__AVX2__) && defined(__AVX512F__)
+    compress_poly_d10_avx2(x, out);
+#else
     for (int i = 0; i < N; i++) {
       out[i] = compress_coeff_d10(x[i]);
     }
+#endif
     return;
   }
 
   if (d == 4) {
+#if defined(__AVX2__) && defined(__AVX512F__)
+    compress_poly_d4_avx2(x, out);
+#else
     for (int i = 0; i < N; i++) {
       out[i] = compress_coeff_d4(x[i]);
     }
+#endif
     return;
   }
 
