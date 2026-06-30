@@ -1316,9 +1316,22 @@ static inline void ensure_ntt_roots(void) {
  * stores the result in a output polynomial.
  */
 static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
+#if defined(__AVX2__)
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  for (int i = 0; i < N; i += 16) {
+    __m256i va = _mm256_loadu_si256((const __m256i *)(a + i));
+    __m256i vb = _mm256_loadu_si256((const __m256i *)(b + i));
+    __m256i sum = _mm256_add_epi16(va, vb);
+    __m256i ge_q = _mm256_cmpgt_epi16(sum, q_minus_1);
+    sum = _mm256_sub_epi16(sum, _mm256_and_si256(ge_q, q));
+    _mm256_storeu_si256((__m256i *)(out + i), sum);
+  }
+#else
   for (int i = 0; i < N; i++) {
     out[i] = mod_q_add_i16(a[i], b[i]);
   }
+#endif
 }
 
 /**
