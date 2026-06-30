@@ -2863,11 +2863,10 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   if (!public_cache_hit) {
     if (!kpke_public_cache_valid ||
         memcmp(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek)) != 0) {
-      uint8_t rho[32];
+      const uint8_t *rho = ek_pke + K * 384;
       for (int i = 0; i < K; i++) {
         byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
       }
-      memcpy(rho, ek_pke + K * 384, sizeof(rho));
       sample_matrix(rho, kpke_public_cache_ahat);
       kpke_public_cache_store(ek_pke, kpke_public_cache_that,
                               kpke_public_cache_ahat,
