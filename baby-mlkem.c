@@ -2505,6 +2505,95 @@ static void sample_ntt8_matrix(const uint8_t *seed,
     }
   }
 }
+
+/* Keygen PRF uses six AVX512 lanes; lane 6 can carry the matrix tail XOF. */
+static inline uint64_t sample_ntt8_lane6_u64(__m512i v) {
+  __m256i hi = sample_ntt8_hi256(v);
+  return (uint64_t)_mm_cvtsi128_si64(_mm256_extracti128_si256(hi, 1));
+}
+
+static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
+    poly256 s0, poly256 s1, poly256 s2,
+    poly256 e0, poly256 e1, poly256 e2) {
+  __m512i st[25];
+  __m256i tail_st[25];
+  uint64_t stream[21];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm512_setzero_si512();
+  }
+  st[0] = _mm512_set_epi64(0, (long long)load64_le(rho + 0),
+                           (long long)load64_le(sigma + 0),
+                           (long long)load64_le(sigma + 0),
+                           (long long)load64_le(sigma + 0),
+                           (long long)load64_le(sigma + 0),
+                           (long long)load64_le(sigma + 0),
+                           (long long)load64_le(sigma + 0));
+  st[1] = _mm512_set_epi64(0, (long long)load64_le(rho + 8),
+                           (long long)load64_le(sigma + 8),
+                           (long long)load64_le(sigma + 8),
+                           (long long)load64_le(sigma + 8),
+                           (long long)load64_le(sigma + 8),
+                           (long long)load64_le(sigma + 8),
+                           (long long)load64_le(sigma + 8));
+  st[2] = _mm512_set_epi64(0, (long long)load64_le(rho + 16),
+                           (long long)load64_le(sigma + 16),
+                           (long long)load64_le(sigma + 16),
+                           (long long)load64_le(sigma + 16),
+                           (long long)load64_le(sigma + 16),
+                           (long long)load64_le(sigma + 16),
+                           (long long)load64_le(sigma + 16));
+  st[3] = _mm512_set_epi64(0, (long long)load64_le(rho + 24),
+                           (long long)load64_le(sigma + 24),
+                           (long long)load64_le(sigma + 24),
+                           (long long)load64_le(sigma + 24),
+                           (long long)load64_le(sigma + 24),
+                           (long long)load64_le(sigma + 24),
+                           (long long)load64_le(sigma + 24));
+  st[4] = _mm512_set_epi64(
+      0, 0x1f0202LL,
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)),
+      (long long)((uint64_t)3 | (0x1FULL << 8)),
+      (long long)((uint64_t)2 | (0x1FULL << 8)),
+      (long long)((uint64_t)1 | (0x1FULL << 8)),
+      (long long)((uint64_t)0 | (0x1FULL << 8)));
+  st[16] = _mm512_set_epi64(0, 0,
+                            (long long)(0x80ULL << 56),
+                            (long long)(0x80ULL << 56),
+                            (long long)(0x80ULL << 56),
+                            (long long)(0x80ULL << 56),
+                            (long long)(0x80ULL << 56),
+                            (long long)(0x80ULL << 56));
+  st[20] = _mm512_set_epi64(0, (long long)(0x80ULL << 56),
+                            0, 0, 0, 0, 0, 0);
+
+  keccakf8(st);
+  sample_poly_cbd_eta2x6_state_avx512(st, s0, s1, s2, e0, e1, e2);
+
+  for (int lane = 0; lane < 25; lane++) {
+    uint64_t w = sample_ntt8_lane6_u64(st[lane]);
+    tail_st[lane] = _mm256_set_epi64x(0, 0, 0, (long long)w);
+    if (lane < 21) {
+      stream[lane] = w;
+    }
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), tail, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(tail_st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = (uint64_t)_mm_cvtsi128_si64(
+          _mm256_castsi256_si128(tail_st[lane]));
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), tail, count);
+  }
+}
 #endif
 
 static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
@@ -3216,12 +3305,28 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   const uint8_t *rho = ghash;
   const uint8_t *sigma = ghash + 32;
 
-  /* ahat => KxK polynomials */
-  sample_matrix(rho, kpke_public_cache_ahat);
-
   /* s-hat, e-hat => each K polynomials => ntt(...) */
   static poly256 shat[K], ehat[K];
-#if defined(__AVX2__)
+
+#if defined(__AVX2__) && defined(__AVX512F__)
+  sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                     kpke_public_cache_ahat[0][1],
+                     kpke_public_cache_ahat[0][2],
+                     kpke_public_cache_ahat[1][0],
+                     kpke_public_cache_ahat[1][1],
+                     kpke_public_cache_ahat[1][2],
+                     kpke_public_cache_ahat[2][0],
+                     kpke_public_cache_ahat[2][1]);
+  mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
+      sigma, rho, kpke_public_cache_ahat[2][2],
+      shat[0], shat[1], shat[2], ehat[0], ehat[1], ehat[2]);
+  for (int i = 0; i < K; i++) {
+    ntt(shat[i], shat[i]);
+    byte_encode(12, shat[i], dk_pke + i * 384);
+    ntt(ehat[i], ehat[i]);
+  }
+#elif defined(__AVX2__)
+  sample_matrix(rho, kpke_public_cache_ahat);
   {
     mlkem_keygen_prf_cbd_eta2_32(sigma, shat[0], shat[1], shat[2],
                                  ehat[0], ehat[1], ehat[2]);
@@ -3232,6 +3337,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     ntt(ehat[i], ehat[i]);
   }
 #else
+  /* ahat => KxK polynomials */
+  sample_matrix(rho, kpke_public_cache_ahat);
   for (int i = 0; i < K; i++) {
     uint8_t prfout[64 * ETA1];
     mlkem_prf(ETA1, sigma, 32, (uint8_t)i, prfout);
