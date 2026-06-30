@@ -1489,11 +1489,10 @@ static void sample_ntt_parse_init_avx2(void) {
 }
 
 static inline uint32_t sample_ntt_cmpmask16_to_8(uint32_t mask16) {
-  uint32_t out = 0;
-  for (int lane = 0; lane < 8; lane++) {
-    out |= ((mask16 >> (2 * lane)) & 1u) << lane;
-  }
-  return out;
+  uint32_t x = mask16 & 0x5555u;
+  x = (x | (x >> 1)) & 0x3333u;
+  x = (x | (x >> 2)) & 0x0f0fu;
+  return (x | (x >> 4)) & 0x00ffu;
 }
 
 static int sample_ntt_parse_stream_avx2(const uint8_t *stream,
