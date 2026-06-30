@@ -130,6 +130,13 @@ static inline __m256i rotl64x4(__m256i x, int s) {
 }
 #endif
 
+#if defined(__AVX512F__)
+static inline __m512i rotl64x8(__m512i x, int s) {
+  return _mm512_or_si512(_mm512_slli_epi64(x, s),
+                         _mm512_srli_epi64(x, 64 - s));
+}
+#endif
+
 /* The Keccak-f[1600] permutation on the state. */
 static void keccakf(uint64_t st[25]) {
   uint64_t a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
@@ -323,6 +330,112 @@ static void keccakf4(__m256i st[25]) {
   st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
   st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
+#if defined(__AVX512F__)
+static void keccakf8(__m512i st[25]) {
+  __m512i a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
+  __m512i a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
+  __m512i a10 = st[10], a11 = st[11], a12 = st[12], a13 = st[13];
+  __m512i a14 = st[14], a15 = st[15], a16 = st[16], a17 = st[17];
+  __m512i a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
+  __m512i a22 = st[22], a23 = st[23], a24 = st[24];
+
+  for (int round = 0; round < 24; round++) {
+    __m512i c0 = _mm512_xor_si512(_mm512_xor_si512(_mm512_xor_si512(a0, a5), _mm512_xor_si512(a10, a15)), a20);
+    __m512i c1 = _mm512_xor_si512(_mm512_xor_si512(_mm512_xor_si512(a1, a6), _mm512_xor_si512(a11, a16)), a21);
+    __m512i c2 = _mm512_xor_si512(_mm512_xor_si512(_mm512_xor_si512(a2, a7), _mm512_xor_si512(a12, a17)), a22);
+    __m512i c3 = _mm512_xor_si512(_mm512_xor_si512(_mm512_xor_si512(a3, a8), _mm512_xor_si512(a13, a18)), a23);
+    __m512i c4 = _mm512_xor_si512(_mm512_xor_si512(_mm512_xor_si512(a4, a9), _mm512_xor_si512(a14, a19)), a24);
+    __m512i d0 = _mm512_xor_si512(c4, rotl64x8(c1, 1));
+    __m512i d1 = _mm512_xor_si512(c0, rotl64x8(c2, 1));
+    __m512i d2 = _mm512_xor_si512(c1, rotl64x8(c3, 1));
+    __m512i d3 = _mm512_xor_si512(c2, rotl64x8(c4, 1));
+    __m512i d4 = _mm512_xor_si512(c3, rotl64x8(c0, 1));
+
+    a0 = _mm512_xor_si512(a0, d0);   a5 = _mm512_xor_si512(a5, d0);
+    a10 = _mm512_xor_si512(a10, d0); a15 = _mm512_xor_si512(a15, d0);
+    a20 = _mm512_xor_si512(a20, d0);
+    a1 = _mm512_xor_si512(a1, d1);   a6 = _mm512_xor_si512(a6, d1);
+    a11 = _mm512_xor_si512(a11, d1); a16 = _mm512_xor_si512(a16, d1);
+    a21 = _mm512_xor_si512(a21, d1);
+    a2 = _mm512_xor_si512(a2, d2);   a7 = _mm512_xor_si512(a7, d2);
+    a12 = _mm512_xor_si512(a12, d2); a17 = _mm512_xor_si512(a17, d2);
+    a22 = _mm512_xor_si512(a22, d2);
+    a3 = _mm512_xor_si512(a3, d3);   a8 = _mm512_xor_si512(a8, d3);
+    a13 = _mm512_xor_si512(a13, d3); a18 = _mm512_xor_si512(a18, d3);
+    a23 = _mm512_xor_si512(a23, d3);
+    a4 = _mm512_xor_si512(a4, d4);   a9 = _mm512_xor_si512(a9, d4);
+    a14 = _mm512_xor_si512(a14, d4); a19 = _mm512_xor_si512(a19, d4);
+    a24 = _mm512_xor_si512(a24, d4);
+
+    __m512i b0 = a0;
+    __m512i b1 = rotl64x8(a6, 44);
+    __m512i b2 = rotl64x8(a12, 43);
+    __m512i b3 = rotl64x8(a18, 21);
+    __m512i b4 = rotl64x8(a24, 14);
+    __m512i b5 = rotl64x8(a3, 28);
+    __m512i b6 = rotl64x8(a9, 20);
+    __m512i b7 = rotl64x8(a10, 3);
+    __m512i b8 = rotl64x8(a16, 45);
+    __m512i b9 = rotl64x8(a22, 61);
+    __m512i b10 = rotl64x8(a1, 1);
+    __m512i b11 = rotl64x8(a7, 6);
+    __m512i b12 = rotl64x8(a13, 25);
+    __m512i b13 = rotl64x8(a19, 8);
+    __m512i b14 = rotl64x8(a20, 18);
+    __m512i b15 = rotl64x8(a4, 27);
+    __m512i b16 = rotl64x8(a5, 36);
+    __m512i b17 = rotl64x8(a11, 10);
+    __m512i b18 = rotl64x8(a17, 15);
+    __m512i b19 = rotl64x8(a23, 56);
+    __m512i b20 = rotl64x8(a2, 62);
+    __m512i b21 = rotl64x8(a8, 55);
+    __m512i b22 = rotl64x8(a14, 39);
+    __m512i b23 = rotl64x8(a15, 41);
+    __m512i b24 = rotl64x8(a21, 2);
+
+#if defined(__AVX512VL__) && defined(__AVX512F__)
+#define CHIX8(x, y, z) _mm512_ternarylogic_epi64((x), (y), (z), 0xd2)
+#else
+#define CHIX8(x, y, z) _mm512_xor_si512((x), _mm512_andnot_si512((y), (z)))
+#endif
+    a0 = CHIX8(b0, b1, b2);
+    a1 = CHIX8(b1, b2, b3);
+    a2 = CHIX8(b2, b3, b4);
+    a3 = CHIX8(b3, b4, b0);
+    a4 = CHIX8(b4, b0, b1);
+    a5 = CHIX8(b5, b6, b7);
+    a6 = CHIX8(b6, b7, b8);
+    a7 = CHIX8(b7, b8, b9);
+    a8 = CHIX8(b8, b9, b5);
+    a9 = CHIX8(b9, b5, b6);
+    a10 = CHIX8(b10, b11, b12);
+    a11 = CHIX8(b11, b12, b13);
+    a12 = CHIX8(b12, b13, b14);
+    a13 = CHIX8(b13, b14, b10);
+    a14 = CHIX8(b14, b10, b11);
+    a15 = CHIX8(b15, b16, b17);
+    a16 = CHIX8(b16, b17, b18);
+    a17 = CHIX8(b17, b18, b19);
+    a18 = CHIX8(b18, b19, b15);
+    a19 = CHIX8(b19, b15, b16);
+    a20 = CHIX8(b20, b21, b22);
+    a21 = CHIX8(b21, b22, b23);
+    a22 = CHIX8(b22, b23, b24);
+    a23 = CHIX8(b23, b24, b20);
+    a24 = CHIX8(b24, b20, b21);
+#undef CHIX8
+
+    a0 = _mm512_xor_si512(a0, _mm512_set1_epi64((long long)rc[round]));
+  }
+
+  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
+  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
+  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
+  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
+  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
+}
+#endif
+
 #endif
 
 /* The "absorb" + "squeeze" style code. We'll define a small struct to hold the
@@ -1593,6 +1706,86 @@ static void sample_ntt4(const uint8_t *seed,
   }
 }
 
+#if defined(__AVX512F__)
+static void sample_ntt8_store_rate(uint8_t stream[8][504], size_t off,
+                                   const __m512i st[25]) {
+  for (int lane = 0; lane < 21; lane++) {
+    uint64_t words[8];
+    _mm512_storeu_si512((__m512i *)words, st[lane]);
+    for (int i = 0; i < 8; i++) {
+      memcpy(stream[i] + off + (size_t)lane * 8, &words[i], 8);
+    }
+  }
+}
+
+static void sample_ntt8(const uint8_t *seed,
+                        const uint8_t row[8],
+                        const uint8_t col[8],
+                        poly256 out0,
+                        poly256 out1,
+                        poly256 out2,
+                        poly256 out3,
+                        poly256 out4,
+                        poly256 out5,
+                        poly256 out6,
+                        poly256 out7) {
+  __m512i st[25];
+  uint8_t stream[8][504];
+  int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm512_setzero_si512();
+  }
+  st[0] = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  st[4] = _mm512_set_epi64(
+      (long long)((uint64_t)row[7] | ((uint64_t)col[7] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[6] | ((uint64_t)col[6] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[5] | ((uint64_t)col[5] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[4] | ((uint64_t)col[4] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[3] | ((uint64_t)col[3] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[2] | ((uint64_t)col[2] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[1] | ((uint64_t)col[1] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
+  st[20] = _mm512_set1_epi64((long long)(0x80ULL << 56));
+
+  for (int block = 0; block < 3; block++) {
+    keccakf8(st);
+    sample_ntt8_store_rate(stream, (size_t)block * 168, st);
+  }
+
+  int count[8];
+  int need_more = 0;
+  for (int lane = 0; lane < 8; lane++) {
+    count[lane] = sample_ntt_parse_stream(stream[lane], sizeof(stream[lane]),
+                                          outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+
+  while (need_more) {
+    uint8_t extra[8][168];
+    keccakf8(st);
+    for (int lane = 0; lane < 21; lane++) {
+      uint64_t words[8];
+      _mm512_storeu_si512((__m512i *)words, st[lane]);
+      for (int i = 0; i < 8; i++) {
+        memcpy(extra[i] + (size_t)lane * 8, &words[i], 8);
+      }
+    }
+    need_more = 0;
+    for (int lane = 0; lane < 8; lane++) {
+      if (count[lane] < N) {
+        count[lane] = sample_ntt_parse_stream(extra[lane], sizeof(extra[lane]),
+                                              outs[lane], count[lane]);
+        need_more |= count[lane] < N;
+      }
+    }
+  }
+}
+#endif
+
 static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
                             poly256 out) {
   __m256i st[25];
@@ -1636,12 +1829,19 @@ static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
 #if defined(__AVX2__)
+#if defined(__AVX512F__)
+  const uint8_t r8[8] = {0, 0, 0, 1, 1, 1, 2, 2};
+  const uint8_t c8[8] = {0, 1, 2, 0, 1, 2, 0, 1};
+  sample_ntt8(seed, r8, c8, out[0][0], out[0][1], out[0][2], out[1][0],
+              out[1][1], out[1][2], out[2][0], out[2][1]);
+#else
   const uint8_t r0[4] = {0, 0, 0, 1};
   const uint8_t c0[4] = {0, 1, 2, 0};
   const uint8_t r1[4] = {1, 1, 2, 2};
   const uint8_t c1[4] = {1, 2, 0, 1};
   sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
   sample_ntt4(seed, r1, c1, out[1][1], out[1][2], out[2][0], out[2][1]);
+#endif
   sample_ntt4_one(seed, 2, 2, out[2][2]);
 #else
   for (int i = 0; i < K; i++) {
