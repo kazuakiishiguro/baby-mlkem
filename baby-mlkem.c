@@ -980,40 +980,7 @@ static void ntt(const poly256 f_in, poly256 f_out) {
 }
 
 /* NTT^-1 */
-static void ntt_inv(const poly256 f_in, poly256 f_out) {
-  memcpy(f_out, f_in, sizeof(poly256));
-  int k = 127;
-#if defined(__AVX2__)
-  ntt_inv_head_avx2(f_out);
-  k = 15;
-  for (int log2len = 4; log2len <= 7; log2len++) {
-#else
-  for (int log2len = 1; log2len <= 7; log2len++) {
-#endif
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k--];
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = f_out[idx];
-        int16_t u = f_out[idx + length];
-        f_out[idx] = mod_q_add_i16(t, u);
-        int16_t tmp2 = mod_q_sub_i16(u, t);
-        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        f_out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
-      }
-    }
-  }
-
-  // multiply by 3303 (128^1 mod Q)
-  for (int i = 0; i < N; i++) {
-    uint32_t tmp = (uint32_t)(uint16_t)f_out[i] * 3303u;
-    f_out[i] = mod_q_reduce_ntt_u32(tmp);
-  }
-}
-
-static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
-  memcpy(out, f_in, sizeof(poly256));
+static inline void ntt_inv_butterflies_inplace(poly256 out) {
   int k = 127;
 #if defined(__AVX2__)
   ntt_inv_head_avx2(out);
@@ -1036,39 +1003,27 @@ static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
       }
     }
   }
+}
 
+static inline void ntt_inv_scale(poly256 out) {
+  for (int i = 0; i < N; i++) {
+    uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
+    out[i] = mod_q_reduce_ntt_u32(tmp);
+  }
+}
+
+static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
+  ntt_inv_butterflies_inplace(out);
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     out[i] = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add[i]);
   }
 }
 
-static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
-                         const poly256 add1, poly256 out) {
-  memcpy(out, f_in, sizeof(poly256));
-  int k = 127;
-#if defined(__AVX2__)
-  ntt_inv_head_avx2(out);
-  k = 15;
-  for (int log2len = 4; log2len <= 7; log2len++) {
-#else
-  for (int log2len = 1; log2len <= 7; log2len++) {
-#endif
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k--];
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = out[idx];
-        int16_t u = out[idx + length];
-        out[idx] = mod_q_add_i16(t, u);
-        int16_t tmp2 = mod_q_sub_i16(u, t);
-        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
-      }
-    }
-  }
-
+static inline void ntt_inv_add2_inplace(const poly256 add0,
+                                        const poly256 add1,
+                                        poly256 out) {
+  ntt_inv_butterflies_inplace(out);
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     int16_t sum = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add0[i]);
@@ -1076,36 +1031,37 @@ static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
   }
 }
 
-static void ntt_inv_sub_from(const poly256 minuend, const poly256 f_in,
-                             poly256 out) {
-  memcpy(out, f_in, sizeof(poly256));
-  int k = 127;
-#if defined(__AVX2__)
-  ntt_inv_head_avx2(out);
-  k = 15;
-  for (int log2len = 4; log2len <= 7; log2len++) {
-#else
-  for (int log2len = 1; log2len <= 7; log2len++) {
-#endif
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k--];
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = out[idx];
-        int16_t u = out[idx + length];
-        out[idx] = mod_q_add_i16(t, u);
-        int16_t tmp2 = mod_q_sub_i16(u, t);
-        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
-      }
-    }
-  }
-
+static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
+                                            poly256 out) {
+  ntt_inv_butterflies_inplace(out);
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     out[i] = mod_q_sub_i16(minuend[i], mod_q_reduce_ntt_u32(tmp));
   }
+}
+
+static void ntt_inv(const poly256 f_in, poly256 f_out) {
+  memcpy(f_out, f_in, sizeof(poly256));
+  ntt_inv_butterflies_inplace(f_out);
+  // multiply by 3303 (128^1 mod Q)
+  ntt_inv_scale(f_out);
+}
+
+static void ntt_inv_add(const poly256 f_in, const poly256 add, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  ntt_inv_add_inplace(add, out);
+}
+
+static void ntt_inv_add2(const poly256 f_in, const poly256 add0,
+                         const poly256 add1, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  ntt_inv_add2_inplace(add0, add1, out);
+}
+
+static void ntt_inv_sub_from(const poly256 minuend, const poly256 f_in,
+                             poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  ntt_inv_sub_from_inplace(minuend, out);
 }
 
 /* ntt_add function is just poly256_add in NTT domain.*/
@@ -2429,12 +2385,11 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
   static poly256 u[K];
-  static poly256 accum;
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
                  kpke_public_cache_ahat[i][1], rhat[1],
-                 kpke_public_cache_ahat[i][2], rhat[2], accum);
-    ntt_inv_add(accum, e1[i], u[i]);
+                 kpke_public_cache_ahat[i][2], rhat[2], u[i]);
+    ntt_inv_add_inplace(e1[i], u[i]);
   }
 
   /* mu => interpret m as 256 bits => each coefficient 0/1 */
@@ -2456,8 +2411,8 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   {
     ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
                  kpke_public_cache_that[1], rhat[1],
-                 kpke_public_cache_that[2], rhat[2], accum);
-    ntt_inv_add2(accum, e2, mu, v);
+                 kpke_public_cache_that[2], rhat[2], v);
+    ntt_inv_add2_inplace(e2, mu, v);
   }
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
@@ -2544,14 +2499,13 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
   static poly256 w;
-  static poly256 accum;
   for (int i = 0; i < K; i++) {
     ntt(u[i], u[i]);
   }
   ntt_mul_acc3(kpke_secret_cache_shat[0], u[0],
                kpke_secret_cache_shat[1], u[1],
-               kpke_secret_cache_shat[2], u[2], accum);
-  ntt_inv_sub_from(v, accum, w);
+               kpke_secret_cache_shat[2], u[2], w);
+  ntt_inv_sub_from_inplace(v, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
   mlkem_recover_message(w, out_m);

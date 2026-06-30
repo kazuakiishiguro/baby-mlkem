@@ -687,20 +687,20 @@ static uint64_t bench_encrypt_noise_ntt(size_t iters) {
 static uint64_t bench_encrypt_accum_inv(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  poly256 accum;
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     for (int row = 0; row < K; row++) {
       ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
                    stage_ahat[lane][row][1], stage_rhat[lane][1],
-                   stage_ahat[lane][row][2], stage_rhat[lane][2], accum);
-      ntt_inv_add(accum, stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+      ntt_inv_add_inplace(stage_e1[lane][row], stage_tmp_vec0[lane][row]);
     }
     ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                  stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
-                 accum);
-    ntt_inv_add2(accum, stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
+                 stage_tmp_poly[lane]);
+    ntt_inv_add2_inplace(stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
     acc ^= checksum_poly(stage_tmp_poly[lane]);
   }
   t1 = now_ns();
@@ -711,15 +711,15 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
 static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  poly256 accum;
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     for (int row = 0; row < K; row++) {
       ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
                    stage_ahat[lane][row][1], stage_rhat[lane][1],
-                   stage_ahat[lane][row][2], stage_rhat[lane][2], accum);
-      ntt_inv_add(accum, stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+      ntt_inv_add_inplace(stage_e1[lane][row], stage_tmp_vec0[lane][row]);
     }
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
@@ -731,14 +731,13 @@ static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
 static uint64_t bench_encrypt_accum_inv_v(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  poly256 accum;
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                  stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
-                 accum);
-    ntt_inv_add2(accum, stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
+                 stage_tmp_poly[lane]);
+    ntt_inv_add2_inplace(stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
     acc ^= checksum_poly(stage_tmp_poly[lane]);
   }
   t1 = now_ns();
@@ -789,7 +788,6 @@ static uint64_t bench_ciphertext_decode_decompress(size_t iters) {
 static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  poly256 accum;
   poly256 w;
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -800,8 +798,8 @@ static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
     }
     ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
                  stage_shat[lane][1], stage_tmp_vec0[lane][1],
-                 stage_shat[lane][2], stage_tmp_vec0[lane][2], accum);
-    ntt_inv_sub_from(stage_v[lane], accum, w);
+                 stage_shat[lane][2], stage_tmp_vec0[lane][2], w);
+    ntt_inv_sub_from_inplace(stage_v[lane], w);
     recover_message(w, stage_tmp_msg[lane]);
     acc ^= stage_tmp_msg[lane][(i * 23u) & 31u];
   }
