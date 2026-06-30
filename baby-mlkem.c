@@ -992,6 +992,9 @@ static inline void ntt_inv_butterflies_inplace(poly256 out) {
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k--];
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
       for (int j = 0; j < length; j++) {
         int idx = start + j;
         int16_t t = out[idx];
