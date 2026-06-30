@@ -961,6 +961,9 @@ static void ntt(const poly256 f_in, poly256 f_out) {
     int length = (1 << log2len);
     for (int start = 0; start < N; start += (2 * length)) {
       uint16_t zeta = ZETA[k++];
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
       for (int j = 0; j < length; j++) {
         int idx = start + j;
         uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
