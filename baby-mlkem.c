@@ -137,93 +137,270 @@ static inline __m512i rotl64x8(__m512i x, int s) {
 }
 #endif
 
-/* The Keccak-f[1600] permutation on the state. */
-static void keccakf(uint64_t st[25]) {
-  uint64_t a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
-  uint64_t a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
-  uint64_t a10 = st[10], a11 = st[11], a12 = st[12], a13 = st[13];
-  uint64_t a14 = st[14], a15 = st[15], a16 = st[16], a17 = st[17];
-  uint64_t a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
-  uint64_t a22 = st[22], a23 = st[23], a24 = st[24];
+/* The Keccak-f[1600] permutation on the state.
+ * Two rounds are scheduled together to reduce scalar permutation overhead. */
+static void keccakf(uint64_t state[25])
+{
+        int round;
 
-  for (int round = 0; round < 24; round++) {
-    uint64_t c0 = a0 ^ a5 ^ a10 ^ a15 ^ a20;
-    uint64_t c1 = a1 ^ a6 ^ a11 ^ a16 ^ a21;
-    uint64_t c2 = a2 ^ a7 ^ a12 ^ a17 ^ a22;
-    uint64_t c3 = a3 ^ a8 ^ a13 ^ a18 ^ a23;
-    uint64_t c4 = a4 ^ a9 ^ a14 ^ a19 ^ a24;
-    uint64_t d0 = c4 ^ ROTL64(c1, 1);
-    uint64_t d1 = c0 ^ ROTL64(c2, 1);
-    uint64_t d2 = c1 ^ ROTL64(c3, 1);
-    uint64_t d3 = c2 ^ ROTL64(c4, 1);
-    uint64_t d4 = c3 ^ ROTL64(c0, 1);
+        uint64_t Aba, Abe, Abi, Abo, Abu;
+        uint64_t Aga, Age, Agi, Ago, Agu;
+        uint64_t Aka, Ake, Aki, Ako, Aku;
+        uint64_t Ama, Ame, Ami, Amo, Amu;
+        uint64_t Asa, Ase, Asi, Aso, Asu;
+        uint64_t BCa, BCe, BCi, BCo, BCu;
+        uint64_t Da, De, Di, Do, Du;
+        uint64_t Eba, Ebe, Ebi, Ebo, Ebu;
+        uint64_t Ega, Ege, Egi, Ego, Egu;
+        uint64_t Eka, Eke, Eki, Eko, Eku;
+        uint64_t Ema, Eme, Emi, Emo, Emu;
+        uint64_t Esa, Ese, Esi, Eso, Esu;
 
-    a0 ^= d0;   a5 ^= d0;   a10 ^= d0;  a15 ^= d0;  a20 ^= d0;
-    a1 ^= d1;   a6 ^= d1;   a11 ^= d1;  a16 ^= d1;  a21 ^= d1;
-    a2 ^= d2;   a7 ^= d2;   a12 ^= d2;  a17 ^= d2;  a22 ^= d2;
-    a3 ^= d3;   a8 ^= d3;   a13 ^= d3;  a18 ^= d3;  a23 ^= d3;
-    a4 ^= d4;   a9 ^= d4;   a14 ^= d4;  a19 ^= d4;  a24 ^= d4;
+        //copyFromState(A, state)
+        Aba = state[ 0];
+        Abe = state[ 1];
+        Abi = state[ 2];
+        Abo = state[ 3];
+        Abu = state[ 4];
+        Aga = state[ 5];
+        Age = state[ 6];
+        Agi = state[ 7];
+        Ago = state[ 8];
+        Agu = state[ 9];
+        Aka = state[10];
+        Ake = state[11];
+        Aki = state[12];
+        Ako = state[13];
+        Aku = state[14];
+        Ama = state[15];
+        Ame = state[16];
+        Ami = state[17];
+        Amo = state[18];
+        Amu = state[19];
+        Asa = state[20];
+        Ase = state[21];
+        Asi = state[22];
+        Aso = state[23];
+        Asu = state[24];
 
-    uint64_t b0 = a0;
-    uint64_t b1 = ROTL64(a6, 44);
-    uint64_t b2 = ROTL64(a12, 43);
-    uint64_t b3 = ROTL64(a18, 21);
-    uint64_t b4 = ROTL64(a24, 14);
-    uint64_t b5 = ROTL64(a3, 28);
-    uint64_t b6 = ROTL64(a9, 20);
-    uint64_t b7 = ROTL64(a10, 3);
-    uint64_t b8 = ROTL64(a16, 45);
-    uint64_t b9 = ROTL64(a22, 61);
-    uint64_t b10 = ROTL64(a1, 1);
-    uint64_t b11 = ROTL64(a7, 6);
-    uint64_t b12 = ROTL64(a13, 25);
-    uint64_t b13 = ROTL64(a19, 8);
-    uint64_t b14 = ROTL64(a20, 18);
-    uint64_t b15 = ROTL64(a4, 27);
-    uint64_t b16 = ROTL64(a5, 36);
-    uint64_t b17 = ROTL64(a11, 10);
-    uint64_t b18 = ROTL64(a17, 15);
-    uint64_t b19 = ROTL64(a23, 56);
-    uint64_t b20 = ROTL64(a2, 62);
-    uint64_t b21 = ROTL64(a8, 55);
-    uint64_t b22 = ROTL64(a14, 39);
-    uint64_t b23 = ROTL64(a15, 41);
-    uint64_t b24 = ROTL64(a21, 2);
+        for(round = 0; round < 24; round += 2) {
+            //    prepareTheta
+            BCa = Aba^Aga^Aka^Ama^Asa;
+            BCe = Abe^Age^Ake^Ame^Ase;
+            BCi = Abi^Agi^Aki^Ami^Asi;
+            BCo = Abo^Ago^Ako^Amo^Aso;
+            BCu = Abu^Agu^Aku^Amu^Asu;
 
-    a0 = b0 ^ ((~b1) & b2);
-    a1 = b1 ^ ((~b2) & b3);
-    a2 = b2 ^ ((~b3) & b4);
-    a3 = b3 ^ ((~b4) & b0);
-    a4 = b4 ^ ((~b0) & b1);
-    a5 = b5 ^ ((~b6) & b7);
-    a6 = b6 ^ ((~b7) & b8);
-    a7 = b7 ^ ((~b8) & b9);
-    a8 = b8 ^ ((~b9) & b5);
-    a9 = b9 ^ ((~b5) & b6);
-    a10 = b10 ^ ((~b11) & b12);
-    a11 = b11 ^ ((~b12) & b13);
-    a12 = b12 ^ ((~b13) & b14);
-    a13 = b13 ^ ((~b14) & b10);
-    a14 = b14 ^ ((~b10) & b11);
-    a15 = b15 ^ ((~b16) & b17);
-    a16 = b16 ^ ((~b17) & b18);
-    a17 = b17 ^ ((~b18) & b19);
-    a18 = b18 ^ ((~b19) & b15);
-    a19 = b19 ^ ((~b15) & b16);
-    a20 = b20 ^ ((~b21) & b22);
-    a21 = b21 ^ ((~b22) & b23);
-    a22 = b22 ^ ((~b23) & b24);
-    a23 = b23 ^ ((~b24) & b20);
-    a24 = b24 ^ ((~b20) & b21);
+            //thetaRhoPiChiIotaPrepareTheta(round, A, E)
+            Da = BCu^ROTL64(BCe, 1);
+            De = BCa^ROTL64(BCi, 1);
+            Di = BCe^ROTL64(BCo, 1);
+            Do = BCi^ROTL64(BCu, 1);
+            Du = BCo^ROTL64(BCa, 1);
 
-    a0 ^= rc[round];
-  }
+            Aba ^= Da;
+            BCa = Aba;
+            Age ^= De;
+            BCe = ROTL64(Age, 44);
+            Aki ^= Di;
+            BCi = ROTL64(Aki, 43);
+            Amo ^= Do;
+            BCo = ROTL64(Amo, 21);
+            Asu ^= Du;
+            BCu = ROTL64(Asu, 14);
+            Eba =   BCa ^((~BCe)&  BCi );
+            Eba ^= (uint64_t)rc[round];
+            Ebe =   BCe ^((~BCi)&  BCo );
+            Ebi =   BCi ^((~BCo)&  BCu );
+            Ebo =   BCo ^((~BCu)&  BCa );
+            Ebu =   BCu ^((~BCa)&  BCe );
 
-  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
-  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
-  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
-  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
-  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
+            Abo ^= Do;
+            BCa = ROTL64(Abo, 28);
+            Agu ^= Du;
+            BCe = ROTL64(Agu, 20);
+            Aka ^= Da;
+            BCi = ROTL64(Aka,  3);
+            Ame ^= De;
+            BCo = ROTL64(Ame, 45);
+            Asi ^= Di;
+            BCu = ROTL64(Asi, 61);
+            Ega =   BCa ^((~BCe)&  BCi );
+            Ege =   BCe ^((~BCi)&  BCo );
+            Egi =   BCi ^((~BCo)&  BCu );
+            Ego =   BCo ^((~BCu)&  BCa );
+            Egu =   BCu ^((~BCa)&  BCe );
+
+            Abe ^= De;
+            BCa = ROTL64(Abe,  1);
+            Agi ^= Di;
+            BCe = ROTL64(Agi,  6);
+            Ako ^= Do;
+            BCi = ROTL64(Ako, 25);
+            Amu ^= Du;
+            BCo = ROTL64(Amu,  8);
+            Asa ^= Da;
+            BCu = ROTL64(Asa, 18);
+            Eka =   BCa ^((~BCe)&  BCi );
+            Eke =   BCe ^((~BCi)&  BCo );
+            Eki =   BCi ^((~BCo)&  BCu );
+            Eko =   BCo ^((~BCu)&  BCa );
+            Eku =   BCu ^((~BCa)&  BCe );
+
+            Abu ^= Du;
+            BCa = ROTL64(Abu, 27);
+            Aga ^= Da;
+            BCe = ROTL64(Aga, 36);
+            Ake ^= De;
+            BCi = ROTL64(Ake, 10);
+            Ami ^= Di;
+            BCo = ROTL64(Ami, 15);
+            Aso ^= Do;
+            BCu = ROTL64(Aso, 56);
+            Ema =   BCa ^((~BCe)&  BCi );
+            Eme =   BCe ^((~BCi)&  BCo );
+            Emi =   BCi ^((~BCo)&  BCu );
+            Emo =   BCo ^((~BCu)&  BCa );
+            Emu =   BCu ^((~BCa)&  BCe );
+
+            Abi ^= Di;
+            BCa = ROTL64(Abi, 62);
+            Ago ^= Do;
+            BCe = ROTL64(Ago, 55);
+            Aku ^= Du;
+            BCi = ROTL64(Aku, 39);
+            Ama ^= Da;
+            BCo = ROTL64(Ama, 41);
+            Ase ^= De;
+            BCu = ROTL64(Ase,  2);
+            Esa =   BCa ^((~BCe)&  BCi );
+            Ese =   BCe ^((~BCi)&  BCo );
+            Esi =   BCi ^((~BCo)&  BCu );
+            Eso =   BCo ^((~BCu)&  BCa );
+            Esu =   BCu ^((~BCa)&  BCe );
+
+            //    prepareTheta
+            BCa = Eba^Ega^Eka^Ema^Esa;
+            BCe = Ebe^Ege^Eke^Eme^Ese;
+            BCi = Ebi^Egi^Eki^Emi^Esi;
+            BCo = Ebo^Ego^Eko^Emo^Eso;
+            BCu = Ebu^Egu^Eku^Emu^Esu;
+
+            //thetaRhoPiChiIotaPrepareTheta(round+1, E, A)
+            Da = BCu^ROTL64(BCe, 1);
+            De = BCa^ROTL64(BCi, 1);
+            Di = BCe^ROTL64(BCo, 1);
+            Do = BCi^ROTL64(BCu, 1);
+            Du = BCo^ROTL64(BCa, 1);
+
+            Eba ^= Da;
+            BCa = Eba;
+            Ege ^= De;
+            BCe = ROTL64(Ege, 44);
+            Eki ^= Di;
+            BCi = ROTL64(Eki, 43);
+            Emo ^= Do;
+            BCo = ROTL64(Emo, 21);
+            Esu ^= Du;
+            BCu = ROTL64(Esu, 14);
+            Aba =   BCa ^((~BCe)&  BCi );
+            Aba ^= (uint64_t)rc[round+1];
+            Abe =   BCe ^((~BCi)&  BCo );
+            Abi =   BCi ^((~BCo)&  BCu );
+            Abo =   BCo ^((~BCu)&  BCa );
+            Abu =   BCu ^((~BCa)&  BCe );
+
+            Ebo ^= Do;
+            BCa = ROTL64(Ebo, 28);
+            Egu ^= Du;
+            BCe = ROTL64(Egu, 20);
+            Eka ^= Da;
+            BCi = ROTL64(Eka, 3);
+            Eme ^= De;
+            BCo = ROTL64(Eme, 45);
+            Esi ^= Di;
+            BCu = ROTL64(Esi, 61);
+            Aga =   BCa ^((~BCe)&  BCi );
+            Age =   BCe ^((~BCi)&  BCo );
+            Agi =   BCi ^((~BCo)&  BCu );
+            Ago =   BCo ^((~BCu)&  BCa );
+            Agu =   BCu ^((~BCa)&  BCe );
+
+            Ebe ^= De;
+            BCa = ROTL64(Ebe, 1);
+            Egi ^= Di;
+            BCe = ROTL64(Egi, 6);
+            Eko ^= Do;
+            BCi = ROTL64(Eko, 25);
+            Emu ^= Du;
+            BCo = ROTL64(Emu, 8);
+            Esa ^= Da;
+            BCu = ROTL64(Esa, 18);
+            Aka =   BCa ^((~BCe)&  BCi );
+            Ake =   BCe ^((~BCi)&  BCo );
+            Aki =   BCi ^((~BCo)&  BCu );
+            Ako =   BCo ^((~BCu)&  BCa );
+            Aku =   BCu ^((~BCa)&  BCe );
+
+            Ebu ^= Du;
+            BCa = ROTL64(Ebu, 27);
+            Ega ^= Da;
+            BCe = ROTL64(Ega, 36);
+            Eke ^= De;
+            BCi = ROTL64(Eke, 10);
+            Emi ^= Di;
+            BCo = ROTL64(Emi, 15);
+            Eso ^= Do;
+            BCu = ROTL64(Eso, 56);
+            Ama =   BCa ^((~BCe)&  BCi );
+            Ame =   BCe ^((~BCi)&  BCo );
+            Ami =   BCi ^((~BCo)&  BCu );
+            Amo =   BCo ^((~BCu)&  BCa );
+            Amu =   BCu ^((~BCa)&  BCe );
+
+            Ebi ^= Di;
+            BCa = ROTL64(Ebi, 62);
+            Ego ^= Do;
+            BCe = ROTL64(Ego, 55);
+            Eku ^= Du;
+            BCi = ROTL64(Eku, 39);
+            Ema ^= Da;
+            BCo = ROTL64(Ema, 41);
+            Ese ^= De;
+            BCu = ROTL64(Ese, 2);
+            Asa =   BCa ^((~BCe)&  BCi );
+            Ase =   BCe ^((~BCi)&  BCo );
+            Asi =   BCi ^((~BCo)&  BCu );
+            Aso =   BCo ^((~BCu)&  BCa );
+            Asu =   BCu ^((~BCa)&  BCe );
+        }
+
+        //copyToState(state, A)
+        state[ 0] = Aba;
+        state[ 1] = Abe;
+        state[ 2] = Abi;
+        state[ 3] = Abo;
+        state[ 4] = Abu;
+        state[ 5] = Aga;
+        state[ 6] = Age;
+        state[ 7] = Agi;
+        state[ 8] = Ago;
+        state[ 9] = Agu;
+        state[10] = Aka;
+        state[11] = Ake;
+        state[12] = Aki;
+        state[13] = Ako;
+        state[14] = Aku;
+        state[15] = Ama;
+        state[16] = Ame;
+        state[17] = Ami;
+        state[18] = Amo;
+        state[19] = Amu;
+        state[20] = Asa;
+        state[21] = Ase;
+        state[22] = Asi;
+        state[23] = Aso;
+        state[24] = Asu;
 }
 
 #if defined(__AVX2__)
