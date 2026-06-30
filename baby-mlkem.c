@@ -2528,8 +2528,42 @@ static void byte_encode_u16(int d, const uint16_t *vals, uint8_t *out) {
   }
 }
 
+#if defined(__AVX2__)
+static void byte_decode_d12_avx2(const uint8_t *in, poly256 out) {
+  const __m256i idx8 = _mm256_set_epi8(
+      15, 14, 14, 13, 12, 11, 11, 10,
+       9,  8,  8,  7,  6,  5,  5,  4,
+      11, 10, 10,  9,  8,  7,  7,  6,
+       5,  4,  4,  3,  2,  1,  1,  0);
+  const __m256i mask = _mm256_set1_epi16(0x0fff);
+
+  for (int block = 0; block < 15; block++) {
+    __m256i f = _mm256_loadu_si256(
+        (const __m256i *)(in + (size_t)block * 24));
+    f = _mm256_permute4x64_epi64(f, 0x94);
+    f = _mm256_shuffle_epi8(f, idx8);
+    __m256i hi = _mm256_srli_epi16(f, 4);
+    f = _mm256_and_si256(_mm256_blend_epi16(f, hi, 0xaa), mask);
+    _mm256_storeu_si256((__m256i *)(out + (size_t)block * 16), f);
+  }
+
+  const uint8_t *tail = in + 360;
+  for (int i = 0; i < 8; i++) {
+    uint16_t b0 = tail[3 * i + 0];
+    uint16_t b1 = tail[3 * i + 1];
+    uint16_t b2 = tail[3 * i + 2];
+    out[240 + 2 * i + 0] = (int16_t)(b0 | ((b1 & 0x0Fu) << 8));
+    out[240 + 2 * i + 1] = (int16_t)((b1 >> 4) | (b2 << 4));
+  }
+}
+#endif
+
 static void byte_decode(int d, const uint8_t *in, poly256 out) {
   if (d == 12) {
+#if defined(__AVX2__)
+    byte_decode_d12_avx2(in, out);
+    return;
+#endif
     for (int i = 0; i < N / 2; i++) {
       uint16_t b0 = in[3 * i + 0];
       uint16_t b1 = in[3 * i + 1];
