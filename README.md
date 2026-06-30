@@ -743,8 +743,10 @@ stage metrics.
 | Metric | Core work measured |
 |---|---|
 | `mlkem_core_stage_kpke_keygen_full` | full `kpke_keygen()` |
-| `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key |
-| `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key |
+| `mlkem_core_stage_kpke_encrypt_uncached` | full `kpke_encrypt()` with internal caches disabled |
+| `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
+| `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key, for repeated-key context only |
+| `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key, for repeated-key context only |
 | `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |

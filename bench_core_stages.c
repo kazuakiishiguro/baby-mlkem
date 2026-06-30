@@ -374,6 +374,46 @@ static uint64_t bench_kpke_decrypt_cached(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_kpke_encrypt_uncached(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  size_t clen = 0;
+
+  mlkem_set_internal_caches_enabled(0);
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    kpke_encrypt(stage_ek[lane], stage_msg[lane], 32, stage_r[lane], 32,
+                 stage_tmp_ct[lane], &clen, 0);
+    acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
+  }
+  t1 = now_ns();
+  mlkem_set_internal_caches_enabled(1);
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_kpke_decrypt_uncached(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  size_t mlen = 0;
+
+  mlkem_set_internal_caches_enabled(0);
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    kpke_decrypt(stage_dk[lane], stage_ct[lane], sizeof(stage_ct[lane]),
+                 stage_tmp_msg[lane], &mlen);
+    acc ^= stage_tmp_msg[lane][(i * 17u) & 31u];
+  }
+  t1 = now_ns();
+  mlkem_set_internal_caches_enabled(1);
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_sample_matrix(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -826,6 +866,10 @@ int main(int argc, char **argv) {
   printf("mlkem_core_stage_bench_iterations=%zu\n", iters);
   print_metric("mlkem_core_stage_kpke_keygen_full",
                bench_kpke_keygen_full(iters), iters);
+  print_metric("mlkem_core_stage_kpke_encrypt_uncached",
+               bench_kpke_encrypt_uncached(iters), iters);
+  print_metric("mlkem_core_stage_kpke_decrypt_uncached",
+               bench_kpke_decrypt_uncached(iters), iters);
   print_metric("mlkem_core_stage_kpke_encrypt_cached",
                bench_kpke_encrypt_cached(iters), iters);
   print_metric("mlkem_core_stage_kpke_decrypt_cached",
