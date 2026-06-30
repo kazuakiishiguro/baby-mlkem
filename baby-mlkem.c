@@ -793,6 +793,73 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
   keccak_squeeze(&ctx, out32, 32);
 }
 
+static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
+                                 uint8_t out32[32]) {
+  uint64_t st[25] = {0};
+  for (int block = 0; block < 8; block++) {
+    const uint8_t *p = src + (size_t)block * 136;
+    uint8_t *q = dst + (size_t)block * 136;
+#if defined(__AVX512F__)
+    __m512i x0 = _mm512_loadu_si512((const void *)(p + 0));
+    __m512i x1 = _mm512_loadu_si512((const void *)(p + 64));
+    __m512i s0 = _mm512_loadu_si512((const void *)(st + 0));
+    __m512i s1 = _mm512_loadu_si512((const void *)(st + 8));
+    _mm512_storeu_si512((void *)(q + 0), x0);
+    _mm512_storeu_si512((void *)(q + 64), x1);
+    _mm512_storeu_si512((void *)(st + 0), _mm512_xor_si512(s0, x0));
+    _mm512_storeu_si512((void *)(st + 8), _mm512_xor_si512(s1, x1));
+#elif defined(__AVX2__)
+    for (int lane = 0; lane < 16; lane += 4) {
+      __m256i x = _mm256_loadu_si256(
+          (const __m256i *)(const void *)(p + 8 * lane));
+      __m256i state = _mm256_loadu_si256((const __m256i *)(st + lane));
+      _mm256_storeu_si256((__m256i *)(void *)(q + 8 * lane), x);
+      _mm256_storeu_si256((__m256i *)(st + lane),
+                          _mm256_xor_si256(state, x));
+    }
+#else
+    for (int lane = 0; lane < 16; lane++) {
+      st[lane] ^= load64_le(p + 8 * lane);
+    }
+    memcpy(q, p, 128);
+#endif
+    memcpy(q + 128, p + 128, 8);
+    st[16] ^= load64_le(p + 128);
+    keccakf(st);
+  }
+
+  const uint8_t *tail = src + 8 * 136;
+  uint8_t *tail_dst = dst + 8 * 136;
+#if defined(__AVX512F__)
+  __m512i x0 = _mm512_loadu_si512((const void *)(tail + 0));
+  __m256i x1 = _mm256_loadu_si256((const __m256i *)(const void *)(tail + 64));
+  __m512i s0 = _mm512_loadu_si512((const void *)(st + 0));
+  __m256i s1 = _mm256_loadu_si256((const __m256i *)(st + 8));
+  _mm512_storeu_si512((void *)(tail_dst + 0), x0);
+  _mm256_storeu_si256((__m256i *)(void *)(tail_dst + 64), x1);
+  _mm512_storeu_si512((void *)(st + 0), _mm512_xor_si512(s0, x0));
+  _mm256_storeu_si256((__m256i *)(st + 8), _mm256_xor_si256(s1, x1));
+#elif defined(__AVX2__)
+  for (int lane = 0; lane < 12; lane += 4) {
+    __m256i x = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(tail + 8 * lane));
+    __m256i state = _mm256_loadu_si256((const __m256i *)(st + lane));
+    _mm256_storeu_si256((__m256i *)(void *)(tail_dst + 8 * lane), x);
+    _mm256_storeu_si256((__m256i *)(st + lane),
+                        _mm256_xor_si256(state, x));
+  }
+#else
+  for (int lane = 0; lane < 12; lane++) {
+    st[lane] ^= load64_le(tail + 8 * lane);
+  }
+  memcpy(tail_dst, tail, 96);
+#endif
+  st[12] ^= 0x06u;
+  st[16] ^= 0x8000000000000000ULL;
+  keccakf(st);
+  memcpy(out32, st, 32);
+}
+
 static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
   // SHA3-512 => rate=576 bits => 72 bytes, domain=0x06
   if (inlen == 32 || inlen == 64) {
@@ -3228,9 +3295,8 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
        - z => 32
      => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
   */
-  memcpy(dk + (K * 384), ek_pke, K * 384 + 32);
   uint8_t h[32];
-  pq_sha3_256(h, ek_pke, K * 384 + 32);
+  sha3_256_copy_1184(dk + (K * 384), ek_pke, h);
   memcpy(dk + (K * 384) + (K * 384 + 32), h, 32);
   memcpy(dk + (K * 384) + (K * 384 + 32) + 32, z, 32);
   if (mlkem_internal_caches_enabled) {
