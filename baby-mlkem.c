@@ -2227,6 +2227,21 @@ static inline void sample_ntt4_store4x4(uint8_t *s0, uint8_t *s1,
   _mm256_storeu_si256((__m256i *)s3, _mm256_permute2x128_si256(t1, t3, 0x31));
 }
 
+static inline void sample_ntt4_store_last(uint8_t *s0, uint8_t *s1,
+                                          uint8_t *s2, uint8_t *s3,
+                                          __m256i v) {
+  __m128i lo = _mm256_castsi256_si128(v);
+  __m128i hi = _mm256_extracti128_si256(v, 1);
+  uint64_t w0 = (uint64_t)_mm_cvtsi128_si64(lo);
+  uint64_t w1 = (uint64_t)_mm_cvtsi128_si64(_mm_srli_si128(lo, 8));
+  uint64_t w2 = (uint64_t)_mm_cvtsi128_si64(hi);
+  uint64_t w3 = (uint64_t)_mm_cvtsi128_si64(_mm_srli_si128(hi, 8));
+  memcpy(s0 + 160, &w0, 8);
+  memcpy(s1 + 160, &w1, 8);
+  memcpy(s2 + 160, &w2, 8);
+  memcpy(s3 + 160, &w3, 8);
+}
+
 static void sample_ntt4_store_rate(uint8_t *s0, uint8_t *s1,
                                    uint8_t *s2, uint8_t *s3,
                                    const __m256i st[25]) {
@@ -2332,16 +2347,9 @@ static void sample_ntt8_store_rate(uint8_t *s0, uint8_t *s1,
                          sample_ntt8_hi256(st[lane + 3]));
   }
 
-  uint64_t last[8];
-  _mm512_storeu_si512((__m512i *)last, st[20]);
-  memcpy(s0 + 160, &last[0], 8);
-  memcpy(s1 + 160, &last[1], 8);
-  memcpy(s2 + 160, &last[2], 8);
-  memcpy(s3 + 160, &last[3], 8);
-  memcpy(s4 + 160, &last[4], 8);
-  memcpy(s5 + 160, &last[5], 8);
-  memcpy(s6 + 160, &last[6], 8);
-  memcpy(s7 + 160, &last[7], 8);
+  sample_ntt4_store_last(s0, s1, s2, s3,
+                         _mm512_castsi512_si256(st[20]));
+  sample_ntt4_store_last(s4, s5, s6, s7, sample_ntt8_hi256(st[20]));
 }
 
 static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
