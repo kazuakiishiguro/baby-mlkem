@@ -2557,6 +2557,93 @@ static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
 #endif
   }
 }
+
+static inline __m256i keccak_xor_lane0_u64(__m256i v, uint64_t x) {
+  return _mm256_xor_si256(v, _mm256_set_epi64x(0, 0, 0, (long long)x));
+}
+
+static inline uint64_t keccak_lane0_u64(__m256i v) {
+  return (uint64_t)_mm_cvtsi128_si64(_mm256_castsi256_si128(v));
+}
+
+static inline uint64_t keccak_lane1_u64(__m256i v) {
+  return (uint64_t)_mm_extract_epi64(_mm256_castsi256_si128(v), 1);
+}
+
+static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
+                                           const uint8_t *rho,
+                                           poly256 out,
+                                           uint8_t h[32]) {
+  __m256i st[25];
+  uint64_t hst[25];
+  uint64_t stream[63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0), 0);
+  st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8), 0);
+  st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16), 0);
+  st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24), 0);
+  st[4] = _mm256_set_epi64x(0, 0, 0x1f0202LL, 0);
+  st[20] = _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56), 0);
+
+  for (int block = 0; block < 3; block++) {
+    const uint8_t *p = pk + (size_t)block * 136;
+    for (int lane = 0; lane < 16; lane++) {
+      st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(p + 8 * lane));
+    }
+    st[16] = keccak_xor_lane0_u64(st[16], load64_le(p + 128));
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      stream[(size_t)block * 21 + (size_t)lane] = keccak_lane1_u64(st[lane]);
+    }
+  }
+
+  for (int lane = 0; lane < 25; lane++) {
+    hst[lane] = keccak_lane0_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), out, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = keccak_lane1_u64(st[lane]);
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), out, count);
+  }
+
+  for (int block = 3; block < 8; block++) {
+    const uint8_t *p = pk + (size_t)block * 136;
+#if defined(__AVX512F__)
+    keccak_xor_lanes16_avx512(hst, p);
+#else
+    keccak_xor_lanes16_avx2(hst, p);
+#endif
+    hst[16] ^= load64_le(p + 128);
+    keccakf(hst);
+  }
+
+  const uint8_t *tail = pk + 8 * 136;
+#if defined(__AVX512F__)
+  keccak_xor_lanes12_avx512(hst, tail);
+#else
+  for (int lane = 0; lane < 12; lane += 4) {
+    __m256i s = _mm256_loadu_si256((const __m256i *)(hst + lane));
+    __m256i x = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(tail + 8 * lane));
+    _mm256_storeu_si256((__m256i *)(hst + lane), _mm256_xor_si256(s, x));
+  }
+#endif
+  hst[12] ^= 0x06u;
+  hst[16] ^= 0x8000000000000000ULL;
+  keccakf(hst);
+  memcpy(h, hst, 32);
+}
 #endif
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
@@ -2989,6 +3076,42 @@ static void mlkem_ek_hash_cache_store(const uint8_t *ek,
   mlkem_ek_hash_cache_generation = mlkem_next_cache_generation();
 }
 
+static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
+                                         uint8_t h[32]) {
+  const uint8_t *rho = ek_pke + K * 384;
+  for (int i = 0; i < K; i++) {
+    byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+  }
+
+#if defined(__AVX2__)
+#if defined(__AVX512F__)
+  sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                     kpke_public_cache_ahat[0][1],
+                     kpke_public_cache_ahat[0][2],
+                     kpke_public_cache_ahat[1][0],
+                     kpke_public_cache_ahat[1][1],
+                     kpke_public_cache_ahat[1][2],
+                     kpke_public_cache_ahat[2][0],
+                     kpke_public_cache_ahat[2][1]);
+#else
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+  sample_ntt4(rho, r0, c0, kpke_public_cache_ahat[0][0],
+              kpke_public_cache_ahat[0][1], kpke_public_cache_ahat[0][2],
+              kpke_public_cache_ahat[1][0]);
+  sample_ntt4(rho, r1, c1, kpke_public_cache_ahat[1][1],
+              kpke_public_cache_ahat[1][2], kpke_public_cache_ahat[2][0],
+              kpke_public_cache_ahat[2][1]);
+#endif
+  sha3_256_sample_ntt_tail_avx2(ek_pke, rho, kpke_public_cache_ahat[2][2], h);
+#else
+  sha3_256(ek_pke, K * 384 + 32, h);
+  sample_matrix(rho, kpke_public_cache_ahat);
+#endif
+}
+
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   ensure_ntt_roots();
   /* ghash = sha3_512(seed) => (rho||sigma) */
@@ -3042,34 +3165,11 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   kpke_public_cache_finish_generated(ek_pke, 0);
 }
 
-static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
-                         const uint8_t *r, size_t rlen, uint8_t *out_c,
-                         size_t *out_clen, int ek_cache_verified) {
+static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
+                                         const uint8_t *r, size_t rlen,
+                                         uint8_t *out_c,
+                                         size_t *out_clen) {
   ensure_ntt_roots();
-  /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
-  int public_cache_hit = mlkem_internal_caches_enabled &&
-                         kpke_public_cache_valid && ek_cache_verified &&
-                         kpke_public_cache_generation != 0 &&
-                         kpke_public_cache_generation ==
-                             mlkem_ek_hash_cache_generation;
-  if (!public_cache_hit) {
-    if (!kpke_public_cache_valid ||
-        memcmp(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek)) != 0) {
-      const uint8_t *rho = ek_pke + K * 384;
-      for (int i = 0; i < K; i++) {
-        byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
-      }
-      sample_matrix(rho, kpke_public_cache_ahat);
-      kpke_public_cache_store(ek_pke, kpke_public_cache_that,
-                              kpke_public_cache_ahat,
-                              ek_cache_verified
-                                  ? mlkem_ek_hash_cache_generation
-                                  : 0);
-    } else if (ek_cache_verified) {
-      kpke_public_cache_generation = mlkem_ek_hash_cache_generation;
-    }
-  }
-
   /* rhat => K polynomials => ntt(...) */
   static poly256 rhat[K];
   /* e1 => K polynomials => sample_poly_cbd(ETA2, prf(r,i+K)) */
@@ -3150,6 +3250,36 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
     p += (N * DV) / 8;
   }
   *out_clen = (size_t)(p - out_c);
+}
+
+static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
+                         const uint8_t *r, size_t rlen, uint8_t *out_c,
+                         size_t *out_clen, int ek_cache_verified) {
+  /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
+  int public_cache_hit = mlkem_internal_caches_enabled &&
+                         kpke_public_cache_valid && ek_cache_verified &&
+                         kpke_public_cache_generation != 0 &&
+                         kpke_public_cache_generation ==
+                             mlkem_ek_hash_cache_generation;
+  if (!public_cache_hit) {
+    if (!kpke_public_cache_valid ||
+        memcmp(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek)) != 0) {
+      const uint8_t *rho = ek_pke + K * 384;
+      for (int i = 0; i < K; i++) {
+        byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+      }
+      sample_matrix(rho, kpke_public_cache_ahat);
+      kpke_public_cache_store(ek_pke, kpke_public_cache_that,
+                              kpke_public_cache_ahat,
+                              ek_cache_verified
+                                  ? mlkem_ek_hash_cache_generation
+                                  : 0);
+    } else if (ek_cache_verified) {
+      kpke_public_cache_generation = mlkem_ek_hash_cache_generation;
+    }
+  }
+
+  kpke_encrypt_prepared_public(m, mlen, r, rlen, out_c, out_clen);
 }
 
 static void mlkem_recover_message(const poly256 w, uint8_t out[32]) {
@@ -3352,9 +3482,11 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   /* H(ek) => 32 (cached for repeated encaps with same key) */
   uint8_t h_local[32];
   const uint8_t *h = mlkem_ek_hash_cache_output;
+  int public_prepared = 0;
   if (!mlkem_internal_caches_enabled) {
-    pq_sha3_256(h_local, ek, K * 384 + 32);
+    kpke_prepare_public_no_cache(ek, h_local);
     h = h_local;
+    public_prepared = 1;
   } else if (!mlkem_ek_hash_cache_valid ||
              memcmp(mlkem_ek_hash_cache_input, ek,
                     sizeof(mlkem_ek_hash_cache_input)) != 0) {
@@ -3373,7 +3505,11 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   memcpy(k, k_out, 32);
 
   /* c = kpke_encrypt(ek, m, r) */
-  kpke_encrypt(ek, m, 32, r_out, 32, c, clen, 1);
+  if (public_prepared) {
+    kpke_encrypt_prepared_public(m, 32, r_out, 32, c, clen);
+  } else {
+    kpke_encrypt(ek, m, 32, r_out, 32, c, clen, 1);
+  }
 }
 
 static void mlkem_encaps_derand(const uint8_t *ek,

@@ -876,6 +876,46 @@ The main gap comes from cold encapsulation/decapsulation needing to regenerate o
 decode public matrix state rather than reusing `kpke_public_cache_*` across
 operations.
 
+### Independent Core Optimization A/B (2026-07-01, no-cache encaps public work co-scheduling)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `3ff66d0` before co-scheduling no-cache encapsulation public-key work;
+candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+Native KEM A/B, `14000` iterations, seventeen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 5333.11 | 5338.78 | 0.999x | 0.998x |
+| `mlkem_encaps_core` | 5437.64 | 4893.75 | 1.111x | 1.111x |
+| `mlkem_decaps_core` | 4616.40 | 4635.70 | 0.996x | 0.998x |
+| `mlkem_roundtrip_core` | 15462.58 | 14935.00 | 1.035x | 1.036x |
+
+AVX2-only KEM A/B, `10000` iterations, thirteen repeated runs, with
+`ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt'`:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 10040.30 | 8993.11 | 1.116x | 1.075x |
+| `mlkem_decaps_core` | 8674.56 | 8651.89 | 1.003x | 1.008x |
+| `mlkem_roundtrip_core` | 28362.29 | 27305.01 | 1.039x | 1.061x |
+
+The change keeps the core path vendor-free and does not add any cross-operation
+cache. When internal caches are disabled, `mlkem_encaps()` now prepares the
+public key once, then calls the K-PKE arithmetic body directly. The final public
+matrix entry `(2,2)` is sampled with `keccakf4()` while lane 0 simultaneously
+runs the first three SHA3-256 public-key-hash permutations for `H(ek)`. The
+remaining public-key hash blocks continue through the scalar SHA3-256 state.
+This removes three scalar Keccak permutations from cold/no-cache encapsulation
+without reusing data across benchmark iterations or across KEM operations.
+
+The stage microbench remained median-flat (`mlkem_core_stage_kpke_encrypt_uncached`
+median speedup `0.999x`, `mlkem_core_stage_sample_matrix` median speedup
+`1.002x`), which is expected: the optimization targets the full KEM no-cache
+encapsulation sequence, not standalone `kpke_encrypt()`.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
