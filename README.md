@@ -876,6 +876,38 @@ The main gap comes from cold encapsulation/decapsulation needing to regenerate o
 decode public matrix state rather than reusing `kpke_public_cache_*` across
 operations.
 
+### Core-Only No-Cache Verification Snapshot (2026-07-01)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`,
+`LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op`, `STATS_MODE=median`,
+`2000` iterations and three repeated runs. This uses the cache-free local
+roundtrip metric, so the local result does not rely on repeated-key or
+cross-operation caches.
+
+```bash
+LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op STATS_MODE=median \
+  WARMUP_RUNS=1 C_COMPILER=clang PIN_CPU=0 \
+  ./scripts/verify_world_fastest.sh 2000 3
+```
+
+| Comparator | Local speedup | Status |
+|---|---:|---|
+| upstream Kyber AVX2 | 1.097x | pass |
+| upstream Kyber AVX2 fair flags | 1.096x | pass |
+| mlkem-native | 1.783x | pass |
+| PQClean AVX2 | 1.390x | pass |
+| liboqs | 1.405x | pass |
+| BoringSSL | 3.576x | pass |
+| libcrux Rust | 1.388x | pass |
+| libjade Kyber768 AVX2 | 1.436x | pass |
+| Botan ML-KEM | 9.145x | pass |
+| OpenSSL ML-KEM | 3.239x | pass |
+
+The verifier reported `verify_world_fastest=PASS`; the local mean for the
+reference upstream Kyber AVX2 comparison was `14689.88` ns/op. This supersedes
+the older 2026-06-30 core-only snapshot above, where the cache-free local path
+was still slower than the strongest AVX2 comparators.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache encaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
