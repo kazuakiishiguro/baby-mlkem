@@ -2307,11 +2307,11 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 
   /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
   for (int i = 0; i < K; i++) {
-    static poly256 accum;
     ntt_mul_acc3_factored_gamma(kpke_public_cache_ahat[0][i], shat[0],
                                 kpke_public_cache_ahat[1][i], shat[1],
-                                kpke_public_cache_ahat[2][i], shat[2], accum);
-    ntt_add(accum, ehat[i], kpke_public_cache_that[i]);
+                                kpke_public_cache_ahat[2][i], shat[2],
+                                kpke_public_cache_that[i]);
+    ntt_add(kpke_public_cache_that[i], ehat[i], kpke_public_cache_that[i]);
     byte_encode(12, kpke_public_cache_that[i], ek_pke + i * 384);
   }
 

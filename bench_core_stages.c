@@ -124,7 +124,6 @@ static void recover_message(const poly256 w, uint8_t out[32]) {
 
 static void derive_keygen_lane(size_t lane) {
   uint8_t ghash[64];
-  poly256 accum;
 
   pq_sha3_512(ghash, stage_seed[lane], 32);
   memcpy(stage_rho[lane], ghash, 32);
@@ -166,8 +165,8 @@ static void derive_keygen_lane(size_t lane) {
     ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][i], stage_shat[lane][0],
                                 stage_ahat[lane][1][i], stage_shat[lane][1],
                                 stage_ahat[lane][2][i], stage_shat[lane][2],
-                                accum);
-    ntt_add(accum, stage_ehat[lane][i], stage_that[lane][i]);
+                                stage_that[lane][i]);
+    ntt_add(stage_that[lane][i], stage_ehat[lane][i], stage_that[lane][i]);
     byte_encode(12, stage_that[lane][i], stage_ek[lane] + i * 384);
   }
   memcpy(stage_ek[lane] + K * 384, stage_rho[lane], 32);
@@ -568,16 +567,19 @@ static uint64_t bench_keygen_noise_ntt_encode(size_t iters) {
 static uint64_t bench_keygen_accum_encode(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  poly256 accum;
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     for (int col = 0; col < K; col++) {
-      ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][col], stage_shat[lane][0],
-                                  stage_ahat[lane][1][col], stage_shat[lane][1],
-                                  stage_ahat[lane][2][col], stage_shat[lane][2],
-                                  accum);
-      ntt_add(accum, stage_ehat[lane][col], stage_tmp_vec0[lane][col]);
+      ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][col],
+                                  stage_shat[lane][0],
+                                  stage_ahat[lane][1][col],
+                                  stage_shat[lane][1],
+                                  stage_ahat[lane][2][col],
+                                  stage_shat[lane][2],
+                                  stage_tmp_vec0[lane][col]);
+      ntt_add(stage_tmp_vec0[lane][col], stage_ehat[lane][col],
+              stage_tmp_vec0[lane][col]);
       byte_encode(12, stage_tmp_vec0[lane][col],
                   stage_tmp_pk[lane] + col * 384);
     }
