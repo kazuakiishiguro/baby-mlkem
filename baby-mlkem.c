@@ -141,6 +141,26 @@ static inline void keccak_xor_lanes16_avx2(uint64_t st[25],
 #endif
 
 #if defined(__AVX512F__)
+static inline void keccak_xor_lanes16_avx512(uint64_t st[25],
+                                             const uint8_t *in) {
+  __m512i s0 = _mm512_loadu_si512((const void *)(st + 0));
+  __m512i s1 = _mm512_loadu_si512((const void *)(st + 8));
+  __m512i x0 = _mm512_loadu_si512((const void *)(in + 0));
+  __m512i x1 = _mm512_loadu_si512((const void *)(in + 64));
+  _mm512_storeu_si512((void *)(st + 0), _mm512_xor_si512(s0, x0));
+  _mm512_storeu_si512((void *)(st + 8), _mm512_xor_si512(s1, x1));
+}
+
+static inline void keccak_xor_lanes12_avx512(uint64_t st[25],
+                                             const uint8_t *in) {
+  __m512i s0 = _mm512_loadu_si512((const void *)(st + 0));
+  __m256i s1 = _mm256_loadu_si256((const __m256i *)(st + 8));
+  __m512i x0 = _mm512_loadu_si512((const void *)(in + 0));
+  __m256i x1 = _mm256_loadu_si256((const __m256i *)(const void *)(in + 64));
+  _mm512_storeu_si512((void *)(st + 0), _mm512_xor_si512(s0, x0));
+  _mm256_storeu_si256((__m256i *)(st + 8), _mm256_xor_si256(s1, x1));
+}
+
 static inline __m512i rotl64x8(__m512i x, int s) {
   return _mm512_or_si512(_mm512_slli_epi64(x, s),
                          _mm512_srli_epi64(x, 64 - s));
@@ -732,7 +752,9 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
     uint64_t st[25] = {0};
     for (int block = 0; block < 8; block++) {
       const uint8_t *p = in + (size_t)block * 136;
-#if defined(__AVX2__)
+#if defined(__AVX512F__)
+      keccak_xor_lanes16_avx512(st, p);
+#elif defined(__AVX2__)
       keccak_xor_lanes16_avx2(st, p);
 #else
       for (int lane = 0; lane < 16; lane++) {
@@ -743,7 +765,9 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
       keccakf(st);
     }
     const uint8_t *tail = in + 8 * 136;
-#if defined(__AVX2__)
+#if defined(__AVX512F__)
+    keccak_xor_lanes12_avx512(st, tail);
+#elif defined(__AVX2__)
     for (int lane = 0; lane < 12; lane += 4) {
       __m256i s = _mm256_loadu_si256((const __m256i *)(st + lane));
       __m256i x = _mm256_loadu_si256(
