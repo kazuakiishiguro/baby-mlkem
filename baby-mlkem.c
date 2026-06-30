@@ -2355,17 +2355,15 @@ static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
                          stream[6] + off, stream[7] + off, st);
 }
 
-static void sample_ntt8(const uint8_t *seed,
-                        const uint8_t row[8],
-                        const uint8_t col[8],
-                        poly256 out0,
-                        poly256 out1,
-                        poly256 out2,
-                        poly256 out3,
-                        poly256 out4,
-                        poly256 out5,
-                        poly256 out6,
-                        poly256 out7) {
+static void sample_ntt8_matrix(const uint8_t *seed,
+                               poly256 out0,
+                               poly256 out1,
+                               poly256 out2,
+                               poly256 out3,
+                               poly256 out4,
+                               poly256 out5,
+                               poly256 out6,
+                               poly256 out7) {
   __m512i st[25];
   uint8_t stream[8][504];
   int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
@@ -2377,15 +2375,10 @@ static void sample_ntt8(const uint8_t *seed,
   st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
   st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
   st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  /* Fixed lanes for A[0][0]..A[2][1], in _mm512_set_epi64 high-to-low order. */
   st[4] = _mm512_set_epi64(
-      (long long)((uint64_t)row[7] | ((uint64_t)col[7] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[6] | ((uint64_t)col[6] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[5] | ((uint64_t)col[5] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[4] | ((uint64_t)col[4] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[3] | ((uint64_t)col[3] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[2] | ((uint64_t)col[2] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[1] | ((uint64_t)col[1] << 8) | (0x1FULL << 16)),
-      (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
+      0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+      0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
   st[20] = _mm512_set1_epi64((long long)(0x80ULL << 56));
 
   for (int block = 0; block < 3; block++) {
@@ -2462,10 +2455,8 @@ static void sample_ntt4_one(const uint8_t *seed, uint8_t row, uint8_t col,
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
 #if defined(__AVX2__)
 #if defined(__AVX512F__)
-  const uint8_t r8[8] = {0, 0, 0, 1, 1, 1, 2, 2};
-  const uint8_t c8[8] = {0, 1, 2, 0, 1, 2, 0, 1};
-  sample_ntt8(seed, r8, c8, out[0][0], out[0][1], out[0][2], out[1][0],
-              out[1][1], out[1][2], out[2][0], out[2][1]);
+  sample_ntt8_matrix(seed, out[0][0], out[0][1], out[0][2], out[1][0],
+                     out[1][1], out[1][2], out[2][0], out[2][1]);
 #else
   const uint8_t r0[4] = {0, 0, 0, 1};
   const uint8_t c0[4] = {0, 1, 2, 0};
