@@ -128,6 +128,16 @@ static inline __m256i rotl64x4(__m256i x, int s) {
   return _mm256_or_si256(_mm256_slli_epi64(x, s),
                          _mm256_srli_epi64(x, 64 - s));
 }
+
+static inline void keccak_xor_lanes16_avx2(uint64_t st[25],
+                                           const uint8_t *in) {
+  for (int lane = 0; lane < 16; lane += 4) {
+    __m256i s = _mm256_loadu_si256((const __m256i *)(st + lane));
+    __m256i x = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(in + 8 * lane));
+    _mm256_storeu_si256((__m256i *)(st + lane), _mm256_xor_si256(s, x));
+  }
+}
 #endif
 
 #if defined(__AVX512F__)
@@ -723,15 +733,29 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
     uint64_t st[25] = {0};
     for (int block = 0; block < 8; block++) {
       const uint8_t *p = in + (size_t)block * 136;
-      for (int lane = 0; lane < 17; lane++) {
+#if defined(__AVX2__)
+      keccak_xor_lanes16_avx2(st, p);
+#else
+      for (int lane = 0; lane < 16; lane++) {
         st[lane] ^= load64_le(p + 8 * lane);
       }
+#endif
+      st[16] ^= load64_le(p + 128);
       keccakf(st);
     }
     const uint8_t *tail = in + 8 * 136;
+#if defined(__AVX2__)
+    for (int lane = 0; lane < 12; lane += 4) {
+      __m256i s = _mm256_loadu_si256((const __m256i *)(st + lane));
+      __m256i x = _mm256_loadu_si256(
+          (const __m256i *)(const void *)(tail + 8 * lane));
+      _mm256_storeu_si256((__m256i *)(st + lane), _mm256_xor_si256(s, x));
+    }
+#else
     for (int lane = 0; lane < 12; lane++) {
       st[lane] ^= load64_le(tail + 8 * lane);
     }
+#endif
     st[12] ^= 0x06u;
     st[16] ^= 0x8000000000000000ULL;
     keccakf(st);
