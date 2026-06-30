@@ -1808,15 +1808,47 @@ static void sample_ntt4(const uint8_t *seed,
 }
 
 #if defined(__AVX512F__)
-static void sample_ntt8_store_rate(uint8_t stream[8][504], size_t off,
+static inline __m256i sample_ntt8_hi256(__m512i x) {
+  return _mm512_castsi512_si256(_mm512_shuffle_i64x2(x, x, 0xee));
+}
+
+static void sample_ntt8_store_rate(uint8_t *s0, uint8_t *s1,
+                                   uint8_t *s2, uint8_t *s3,
+                                   uint8_t *s4, uint8_t *s5,
+                                   uint8_t *s6, uint8_t *s7,
                                    const __m512i st[25]) {
-  for (int lane = 0; lane < 21; lane++) {
-    uint64_t words[8];
-    _mm512_storeu_si512((__m512i *)words, st[lane]);
-    for (int i = 0; i < 8; i++) {
-      memcpy(stream[i] + off + (size_t)lane * 8, &words[i], 8);
-    }
+  for (int lane = 0; lane < 20; lane += 4) {
+    size_t off = (size_t)lane * 8;
+    sample_ntt4_store4x4(s0 + off, s1 + off, s2 + off, s3 + off,
+                         _mm512_castsi512_si256(st[lane]),
+                         _mm512_castsi512_si256(st[lane + 1]),
+                         _mm512_castsi512_si256(st[lane + 2]),
+                         _mm512_castsi512_si256(st[lane + 3]));
+    sample_ntt4_store4x4(s4 + off, s5 + off, s6 + off, s7 + off,
+                         sample_ntt8_hi256(st[lane]),
+                         sample_ntt8_hi256(st[lane + 1]),
+                         sample_ntt8_hi256(st[lane + 2]),
+                         sample_ntt8_hi256(st[lane + 3]));
   }
+
+  uint64_t last[8];
+  _mm512_storeu_si512((__m512i *)last, st[20]);
+  memcpy(s0 + 160, &last[0], 8);
+  memcpy(s1 + 160, &last[1], 8);
+  memcpy(s2 + 160, &last[2], 8);
+  memcpy(s3 + 160, &last[3], 8);
+  memcpy(s4 + 160, &last[4], 8);
+  memcpy(s5 + 160, &last[5], 8);
+  memcpy(s6 + 160, &last[6], 8);
+  memcpy(s7 + 160, &last[7], 8);
+}
+
+static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
+                                    const __m512i st[25]) {
+  sample_ntt8_store_rate(stream[0] + off, stream[1] + off,
+                         stream[2] + off, stream[3] + off,
+                         stream[4] + off, stream[5] + off,
+                         stream[6] + off, stream[7] + off, st);
 }
 
 static void sample_ntt8(const uint8_t *seed,
@@ -1854,7 +1886,7 @@ static void sample_ntt8(const uint8_t *seed,
 
   for (int block = 0; block < 3; block++) {
     keccakf8(st);
-    sample_ntt8_store_rate(stream, (size_t)block * 168, st);
+    sample_ntt8_store_block(stream, (size_t)block * 168, st);
   }
 
   int count[8];
@@ -1868,13 +1900,8 @@ static void sample_ntt8(const uint8_t *seed,
   while (need_more) {
     uint8_t extra[8][168];
     keccakf8(st);
-    for (int lane = 0; lane < 21; lane++) {
-      uint64_t words[8];
-      _mm512_storeu_si512((__m512i *)words, st[lane]);
-      for (int i = 0; i < 8; i++) {
-        memcpy(extra[i] + (size_t)lane * 8, &words[i], 8);
-      }
-    }
+    sample_ntt8_store_rate(extra[0], extra[1], extra[2], extra[3],
+                           extra[4], extra[5], extra[6], extra[7], st);
     need_more = 0;
     for (int lane = 0; lane < 8; lane++) {
       if (count[lane] < N) {
