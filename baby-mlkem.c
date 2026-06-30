@@ -2474,6 +2474,36 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   *out_clen = (size_t)(p - out_c);
 }
 
+static void mlkem_recover_message(const poly256 w, uint8_t out[32]) {
+#if defined(__AVX2__) && defined(__BMI2__)
+  const __m256i half_q = _mm256_set1_epi16((Q + 1) / 2);
+  const __m256i quarter_q = _mm256_set1_epi16((Q + 1) / 4);
+  for (int block = 0; block < 16; block++) {
+    __m256i v = _mm256_loadu_si256((const __m256i *)(w + 16 * block));
+    __m256i diff = _mm256_abs_epi16(_mm256_sub_epi16(v, half_q));
+    __m256i is_one = _mm256_cmpgt_epi16(quarter_q, diff);
+    uint32_t mask = (uint32_t)_mm256_movemask_epi8(is_one);
+    uint32_t bits = _pext_u32(mask, 0x55555555u);
+    out[2 * block + 0] = (uint8_t)bits;
+    out[2 * block + 1] = (uint8_t)(bits >> 8);
+  }
+#else
+  const int32_t half_q = (Q + 1) / 2;
+  const int32_t quarter_q = (Q + 1) / 4;
+  for (int byte = 0; byte < 32; byte++) {
+    uint8_t packed = 0;
+    for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
+      int i = 8 * byte + bit_idx;
+      int32_t diff = (int32_t)w[i] - half_q;
+      if (diff < 0) diff = -diff;
+      int bit = (diff < quarter_q) ? 1 : 0;
+      packed |= (uint8_t)(bit << bit_idx);
+    }
+    out[byte] = packed;
+  }
+#endif
+}
+
 static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
                          uint8_t *out_m, size_t *out_mlen) {
   ensure_ntt_roots();
@@ -2521,19 +2551,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   ntt_inv_sub_from(v, accum, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
-  const int32_t half_q = (Q + 1) / 2;
-  const int32_t quarter_q = (Q + 1) / 4;
-  for (int byte = 0; byte < 32; byte++) {
-    uint8_t packed = 0;
-    for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
-      int i = 8 * byte + bit_idx;
-      int32_t diff = (int32_t)w[i] - half_q;
-      if (diff < 0) diff = -diff;
-      int bit = (diff < quarter_q) ? 1 : 0;
-      packed |= (uint8_t)(bit << bit_idx);
-    }
-    out_m[byte] = packed;
-  }
+  mlkem_recover_message(w, out_m);
   *out_mlen = 32;
 }
 

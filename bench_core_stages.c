@@ -119,18 +119,7 @@ static void build_mu(const uint8_t msg[32], poly256 out) {
 }
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
-  const int32_t half_q = (Q + 1) / 2;
-  const int32_t quarter_q = (Q + 1) / 4;
-  for (int byte = 0; byte < 32; byte++) {
-    uint8_t packed = 0;
-    for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
-      int i = 8 * byte + bit_idx;
-      int32_t diff = (int32_t)w[i] - half_q;
-      if (diff < 0) diff = -diff;
-      packed |= (uint8_t)((diff < quarter_q) << bit_idx);
-    }
-    out[byte] = packed;
-  }
+  mlkem_recover_message(w, out);
 }
 
 static void derive_keygen_lane(size_t lane) {
