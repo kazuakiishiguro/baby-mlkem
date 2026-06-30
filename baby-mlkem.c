@@ -728,7 +728,6 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
 
 static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
   // SHA3-256 => rate=1088 bits => 136 bytes, domain=0x06
-#if defined(__AVX512F__)
   if (inlen == 1184) {  // ML-KEM-768 public key: K*384 + 32.
     uint64_t st[25] = {0};
     for (int block = 0; block < 8; block++) {
@@ -762,7 +761,6 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
     memcpy(out32, st, 32);
     return;
   }
-#endif
 
   keccak_ctx ctx;
   keccak_init(&ctx, 136);
