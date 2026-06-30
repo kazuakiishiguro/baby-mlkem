@@ -1031,6 +1031,43 @@ produce `kdash || rdash`. This removes one scalar Keccak permutation from
 cold/no-cache decapsulation and avoids a second public-key preparation pass
 inside `kpke_encrypt()`.
 
+### Independent Core Optimization A/B (2026-07-01, keygen tail/noise co-scheduling)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `8595479` before keygen tail/noise co-scheduling; candidate is commit
+`581554d`. This is a core-vs-core comparison and does not use the vendored
+Kyber/PQClean AVX2 backends for the candidate path.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=7 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=40000 KEM_ITERS=10000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh 8595479
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 3547.61 | 3387.02 | 1.047x | 1.047x |
+| `mlkem_core_stage_sample_matrix_tail` | 705.59 | 704.51 | 1.002x | 1.000x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 693.33 | 693.40 | 1.000x | 1.000x |
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 5356.58 | 5257.33 | 1.019x | 1.019x |
+| `mlkem_keygen_core` | 5327.58 | 5227.47 | 1.019x | 1.020x |
+| `mlkem_roundtrip_core` | 14779.48 | 14655.82 | 1.008x | 1.008x |
+
+The change keeps the core path vendor-free and does not add any cross-operation
+cache. On AVX512 builds, keygen still samples the first eight public-matrix
+entries with `sample_ntt8_matrix()`, but the final `(2,2)` SHAKE128 matrix tail
+uses lane 6 of the existing six-lane SHAKE256 PRF `keccakf8()` call for the
+first tail block. Remaining tail blocks continue through the local `keccakf4()`
+state. AVX2-only builds keep the previous path.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
