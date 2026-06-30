@@ -916,6 +916,40 @@ median speedup `0.999x`, `mlkem_core_stage_sample_matrix` median speedup
 `1.002x`), which is expected: the optimization targets the full KEM no-cache
 encapsulation sequence, not standalone `kpke_encrypt()`.
 
+### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `053f37d` before co-scheduling no-cache decapsulation re-encryption public
+work; candidate is the working tree after the change. This is a core-vs-core
+comparison and does not use the vendored Kyber/PQClean AVX2 backends for the
+candidate path.
+
+Native KEM A/B, `14000` iterations, seventeen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 4888.77 | 4907.48 | 0.996x | 1.001x |
+| `mlkem_decaps_core` | 4609.12 | 4431.97 | 1.040x | 1.039x |
+| `mlkem_roundtrip_core` | 14950.21 | 14789.43 | 1.011x | 1.012x |
+
+AVX2-only KEM A/B, `14000` iterations, seventeen repeated runs, with
+`ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt'`:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 9070.99 | 8904.15 | 1.019x | 0.998x |
+| `mlkem_decaps_core` | 8924.69 | 8422.83 | 1.060x | 1.027x |
+| `mlkem_roundtrip_core` | 27525.70 | 26590.89 | 1.035x | 1.043x |
+
+The change keeps the core path vendor-free and does not add any cross-operation
+cache. When internal caches are disabled, `mlkem_decaps()` now prepares the
+public key for the re-encryption check before calling the K-PKE arithmetic body.
+The final public matrix entry `(2,2)` is sampled with `keccakf4()` while lane 0
+simultaneously computes the fixed `sha3_512(mdash || h)` permutation used to
+produce `kdash || rdash`. This removes one scalar Keccak permutation from
+cold/no-cache decapsulation and avoids a second public-key preparation pass
+inside `kpke_encrypt()`.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline

@@ -2644,6 +2644,60 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
   keccakf(hst);
   memcpy(h, hst, 32);
 }
+
+static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
+                                          const uint8_t *in1,
+                                          const uint8_t *rho,
+                                          poly256 out,
+                                          uint8_t ghash[64]) {
+  __m256i st[25];
+  uint64_t stream[63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(in0 + 0));
+  st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(in0 + 8));
+  st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(in0 + 16));
+  st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(in0 + 24));
+  st[4] = _mm256_set_epi64x(0, 0, 0x1f0202LL,
+                            (long long)load64_le(in1 + 0));
+  st[5] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 8));
+  st[6] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 16));
+  st[7] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 24));
+  st[8] = _mm256_set_epi64x(0, 0, 0, (long long)0x8000000000000006ULL);
+  st[20] = _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56), 0);
+
+  for (int block = 0; block < 3; block++) {
+    keccakf4(st);
+    if (block == 0) {
+      for (int lane = 0; lane < 8; lane++) {
+        uint64_t word = keccak_lane0_u64(st[lane]);
+        memcpy(ghash + 8 * lane, &word, 8);
+      }
+    }
+    for (int lane = 0; lane < 21; lane++) {
+      stream[(size_t)block * 21 + (size_t)lane] = keccak_lane1_u64(st[lane]);
+    }
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), out, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = keccak_lane1_u64(st[lane]);
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), out, count);
+  }
+}
 #endif
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
@@ -3108,6 +3162,48 @@ static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
   sha3_256_sample_ntt_tail_avx2(ek_pke, rho, kpke_public_cache_ahat[2][2], h);
 #else
   sha3_256(ek_pke, K * 384 + 32, h);
+  sample_matrix(rho, kpke_public_cache_ahat);
+#endif
+}
+
+static void kpke_prepare_public_ghash_no_cache(const uint8_t *ek_pke,
+                                               const uint8_t *in0,
+                                               const uint8_t *in1,
+                                               uint8_t ghash[64]) {
+  const uint8_t *rho = ek_pke + K * 384;
+  for (int i = 0; i < K; i++) {
+    byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+  }
+
+#if defined(__AVX2__)
+#if defined(__AVX512F__)
+  sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                     kpke_public_cache_ahat[0][1],
+                     kpke_public_cache_ahat[0][2],
+                     kpke_public_cache_ahat[1][0],
+                     kpke_public_cache_ahat[1][1],
+                     kpke_public_cache_ahat[1][2],
+                     kpke_public_cache_ahat[2][0],
+                     kpke_public_cache_ahat[2][1]);
+#else
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+  sample_ntt4(rho, r0, c0, kpke_public_cache_ahat[0][0],
+              kpke_public_cache_ahat[0][1], kpke_public_cache_ahat[0][2],
+              kpke_public_cache_ahat[1][0]);
+  sample_ntt4(rho, r1, c1, kpke_public_cache_ahat[1][1],
+              kpke_public_cache_ahat[1][2], kpke_public_cache_ahat[2][0],
+              kpke_public_cache_ahat[2][1]);
+#endif
+  sha3_512_sample_ntt_tail_avx2(in0, in1, rho, kpke_public_cache_ahat[2][2],
+                                ghash);
+#else
+  uint8_t inbuf[64];
+  memcpy(inbuf, in0, 32);
+  memcpy(inbuf + 32, in1, 32);
+  pq_sha3_512(ghash, inbuf, 64);
   sample_matrix(rho, kpke_public_cache_ahat);
 #endif
 }
@@ -3580,11 +3676,17 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   }
 
   /* ghash = sha3_512(mdash||h) => 64 => kdash||rdash */
-  uint8_t inbuf[64];
-  memcpy(inbuf, mdash, 32);
-  memcpy(inbuf + 32, h, 32);
   uint8_t ghash[64];
-  pq_sha3_512(ghash, inbuf, 64);
+  int public_prepared = 0;
+  if (!mlkem_internal_caches_enabled) {
+    kpke_prepare_public_ghash_no_cache(ek_pke, mdash, h, ghash);
+    public_prepared = 1;
+  } else {
+    uint8_t inbuf[64];
+    memcpy(inbuf, mdash, 32);
+    memcpy(inbuf + 32, h, 32);
+    pq_sha3_512(ghash, inbuf, 64);
+  }
   uint8_t *kdash = ghash;
   uint8_t *rdash = ghash + 32;
 
@@ -3592,7 +3694,11 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   enum { CT_BYTES = K * ((N * DU) / 8) + (N * DV) / 8 };
   uint8_t cdash[CT_BYTES];
   size_t cdash_len = 0;
-  kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len, 0);
+  if (public_prepared) {
+    kpke_encrypt_prepared_public(mdash, 32, rdash, 32, cdash, &cdash_len);
+  } else {
+    kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len, 0);
+  }
   if (cdash_len != clen || memcmp(c, cdash, clen) != 0) {
     /* kbar = shake256(z||c) => 32 */
     uint8_t stack_tmp[32 + CT_BYTES];
