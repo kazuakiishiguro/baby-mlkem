@@ -1781,7 +1781,11 @@ static void sample_ntt4(const uint8_t *seed,
 
 #if defined(__AVX512F__)
 static inline __m256i sample_ntt8_hi256(__m512i x) {
+#if defined(__AVX512DQ__)
+  return _mm512_extracti64x4_epi64(x, 1);
+#else
   return _mm512_castsi512_si256(_mm512_shuffle_i64x2(x, x, 0xee));
+#endif
 }
 
 static void sample_ntt8_store_rate(uint8_t *s0, uint8_t *s1,
