@@ -2582,14 +2582,14 @@ static void byte_decode_d12_avx2(const uint8_t *in, poly256 out) {
     _mm256_storeu_si256((__m256i *)(out + (size_t)block * 16), f);
   }
 
-  const uint8_t *tail = in + 360;
-  for (int i = 0; i < 8; i++) {
-    uint16_t b0 = tail[3 * i + 0];
-    uint16_t b1 = tail[3 * i + 1];
-    uint16_t b2 = tail[3 * i + 2];
-    out[240 + 2 * i + 0] = (int16_t)(b0 | ((b1 & 0x0Fu) << 8));
-    out[240 + 2 * i + 1] = (int16_t)((b1 >> 4) | (b2 << 4));
-  }
+  const __m256i tail_mask = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, 0, 0);
+  __m256i f = _mm256_maskload_epi32((const int *)(const void *)(in + 360),
+                                    tail_mask);
+  f = _mm256_permute4x64_epi64(f, 0x94);
+  f = _mm256_shuffle_epi8(f, idx8);
+  __m256i hi = _mm256_srli_epi16(f, 4);
+  f = _mm256_and_si256(_mm256_blend_epi16(f, hi, 0xaa), mask);
+  _mm256_storeu_si256((__m256i *)(out + 240), f);
 }
 #endif
 
