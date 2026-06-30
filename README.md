@@ -908,6 +908,55 @@ reference upstream Kyber AVX2 comparison was `14689.88` ns/op. This supersedes
 the older 2026-06-30 core-only snapshot above, where the cache-free local path
 was still slower than the strongest AVX2 comparators.
 
+### Core-Only No-Cache Strict Verification Snapshot (2026-07-01)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`,
+`LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op`, `STATS_MODE=median`,
+`600` iterations and two repeated runs. The strict script first verifies current
+comparator checkouts with `UPDATE_REPOS=0`, then verifies latest comparator
+updates with `UPDATE_REPOS=1`.
+
+```bash
+LOCAL_ROUNDTRIP_METRIC=mlkem_roundtrip_core_ns_per_op STATS_MODE=median \
+  WARMUP_RUNS=1 C_COMPILER=clang PIN_CPU=0 SHOW_FULL_OUTPUT_ON_FAIL=0 \
+  ./scripts/verify_world_fastest_strict.sh 600 2
+```
+
+Current-checkout stage:
+
+| Comparator | Local speedup | Status |
+|---|---:|---|
+| upstream Kyber AVX2 | 1.094x | pass |
+| upstream Kyber AVX2 fair flags | 1.089x | pass |
+| mlkem-native | 1.688x | pass |
+| PQClean AVX2 | 1.291x | pass |
+| liboqs | 1.337x | pass |
+| BoringSSL | 3.345x | pass |
+| libcrux Rust | 1.427x | pass |
+| libjade Kyber768 AVX2 | 1.440x | pass |
+| Botan ML-KEM | 8.281x | pass |
+| OpenSSL ML-KEM | 3.142x | pass |
+
+Latest-update stage:
+
+| Comparator | Local speedup | Status |
+|---|---:|---|
+| upstream Kyber AVX2 | 1.088x | pass |
+| upstream Kyber AVX2 fair flags | 1.099x | pass |
+| mlkem-native | 1.660x | pass |
+| PQClean AVX2 | 1.345x | pass |
+| liboqs | 1.329x | pass |
+| BoringSSL | 3.469x | pass |
+| libcrux Rust | 1.327x | pass |
+| libjade Kyber768 AVX2 | 1.351x | pass |
+| Botan ML-KEM | 9.123x | pass |
+| OpenSSL ML-KEM | 3.043x | pass |
+
+The strict verifier reported `verify_world_fastest_strict=PASS`. During the
+latest-update stage, several diverged comparator checkouts could not be
+fast-forwarded, so the scripts used fallback fresh clones for those comparators
+before measuring them.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache encaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
