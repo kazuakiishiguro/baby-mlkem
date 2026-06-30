@@ -2600,9 +2600,16 @@ static void byte_decode_d12_avx2(const uint8_t *in, poly256 out) {
     _mm256_storeu_si256((__m256i *)(out + (size_t)block * 16), f);
   }
 
+#if defined(__AVX512F__)
+  __m256i f = _mm256_castsi128_si256(
+      _mm_loadu_si128((const __m128i *)(const void *)(in + 360)));
+  f = _mm256_inserti128_si256(
+      f, _mm_loadl_epi64((const __m128i *)(const void *)(in + 376)), 1);
+#else
   const __m256i tail_mask = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, 0, 0);
   __m256i f = _mm256_maskload_epi32((const int *)(const void *)(in + 360),
                                     tail_mask);
+#endif
   f = _mm256_permute4x64_epi64(f, 0x94);
   f = _mm256_shuffle_epi8(f, idx8);
   __m256i hi = _mm256_srli_epi16(f, 4);
