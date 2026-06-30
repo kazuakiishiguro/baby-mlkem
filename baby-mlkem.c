@@ -1242,6 +1242,27 @@ static void sample_poly_cbd_eta2x4_state_avx2(const __m256i st[25],
     sample_poly_cbd_eta2_store2_avx2(hi, out2 + 16 * i, out3 + 16 * i);
   }
 }
+
+#if defined(__AVX512F__)
+static void sample_poly_cbd_eta2x8_state_avx512(const __m512i st[25],
+                                                poly256 out0, poly256 out1,
+                                                poly256 out2, poly256 out3,
+                                                poly256 out4, poly256 out5,
+                                                poly256 out6, poly256 out7) {
+  for (int i = 0; i < 16; i++) {
+    uint64_t words[8];
+    _mm512_storeu_si512((__m512i *)words, st[i]);
+    sample_poly_cbd_eta2_store2_avx2(_mm_loadu_si128((const __m128i *)&words[0]),
+                                     out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store2_avx2(_mm_loadu_si128((const __m128i *)&words[2]),
+                                     out2 + 16 * i, out3 + 16 * i);
+    sample_poly_cbd_eta2_store2_avx2(_mm_loadu_si128((const __m128i *)&words[4]),
+                                     out4 + 16 * i, out5 + 16 * i);
+    sample_poly_cbd_eta2_store2_avx2(_mm_loadu_si128((const __m128i *)&words[6]),
+                                     out6 + 16 * i, out7 + 16 * i);
+  }
+}
+#endif
 #endif
 
 static inline void sample_poly_cbd_eta2_bytes(const uint8_t *data,
@@ -1265,6 +1286,44 @@ static inline void sample_poly_cbd_eta2_bytes(const uint8_t *data,
 }
 
 #if defined(__AVX2__)
+#if defined(__AVX512F__)
+static void mlkem_prf_cbd_eta2x8_32(const uint8_t seed[32],
+                                    const uint8_t nonce[8],
+                                    poly256 out0,
+                                    poly256 out1,
+                                    poly256 out2,
+                                    poly256 out3,
+                                    poly256 out4,
+                                    poly256 out5,
+                                    poly256 out6,
+                                    poly256 out7) {
+  __m512i st[25];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm512_setzero_si512();
+  }
+  st[0] = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  st[4] = _mm512_set_epi64(
+      (long long)((uint64_t)nonce[7] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[6] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[5] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[4] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm512_set1_epi64((long long)(0x80ULL << 56));
+
+  keccakf8(st);
+
+  sample_poly_cbd_eta2x8_state_avx512(st, out0, out1, out2, out3,
+                                      out4, out5, out6, out7);
+}
+#endif
+
 static void mlkem_prf_cbd_eta2x4_32(const uint8_t seed[32],
                                     const uint8_t nonce[4],
                                     poly256 out0,
@@ -1363,6 +1422,48 @@ static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
   sample_poly_cbd_eta2_bytes(stream[1], out1);
   sample_poly_cbd_eta2_bytes(stream[2], out2);
 }
+
+static void mlkem_keygen_prf_cbd_eta2_32(const uint8_t seed[32],
+                                         poly256 s0,
+                                         poly256 s1,
+                                         poly256 s2,
+                                         poly256 e0,
+                                         poly256 e1,
+                                         poly256 e2) {
+#if defined(__AVX512F__)
+  const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 0, 0};
+  poly256 discard0, discard1;
+  mlkem_prf_cbd_eta2x8_32(seed, nonce, s0, s1, s2, e0, e1, e2,
+                          discard0, discard1);
+#else
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  const uint8_t n1[4] = {4, 5, 0, 0};
+  mlkem_prf_cbd_eta2x4_32(seed, n0, s0, s1, s2, e0);
+  mlkem_prf_cbd_eta2x2_32(seed, n1, e1, e2);
+#endif
+}
+
+static void mlkem_encrypt_prf_cbd_eta2_32(const uint8_t seed[32],
+                                          poly256 r0,
+                                          poly256 r1,
+                                          poly256 r2,
+                                          poly256 e10,
+                                          poly256 e11,
+                                          poly256 e12,
+                                          poly256 e2) {
+#if defined(__AVX512F__)
+  const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+  poly256 discard;
+  mlkem_prf_cbd_eta2x8_32(seed, nonce, r0, r1, r2, e10, e11, e12, e2,
+                          discard);
+#else
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  const uint8_t n1[4] = {4, 5, 6, 0};
+  mlkem_prf_cbd_eta2x4_32(seed, n0, r0, r1, r2, e10);
+  mlkem_prf_cbd_eta2x3_32(seed, n1, e11, e12, e2);
+#endif
+}
+
 #endif
 
 /* sample_poly_cbd */
@@ -2186,10 +2287,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   static poly256 shat[K], ehat[K];
 #if defined(__AVX2__)
   {
-    const uint8_t n0[4] = {0, 1, 2, 3};
-    const uint8_t n1[4] = {4, 5, 0, 0};
-    mlkem_prf_cbd_eta2x4_32(sigma, n0, shat[0], shat[1], shat[2], ehat[0]);
-    mlkem_prf_cbd_eta2x2_32(sigma, n1, ehat[1], ehat[2]);
+    mlkem_keygen_prf_cbd_eta2_32(sigma, shat[0], shat[1], shat[2],
+                                 ehat[0], ehat[1], ehat[2]);
   }
   for (int i = 0; i < K; i++) {
     ntt(shat[i], shat[i]);
@@ -2263,10 +2362,8 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
   static poly256 e2;
 #if defined(__AVX2__)
   if (rlen == 32) {
-    const uint8_t n0[4] = {0, 1, 2, 3};
-    const uint8_t n1[4] = {4, 5, 6, 0};
-    mlkem_prf_cbd_eta2x4_32(r, n0, rhat[0], rhat[1], rhat[2], e1[0]);
-    mlkem_prf_cbd_eta2x3_32(r, n1, e1[1], e1[2], e2);
+    mlkem_encrypt_prf_cbd_eta2_32(r, rhat[0], rhat[1], rhat[2], e1[0],
+                                  e1[1], e1[2], e2);
   } else
 #endif
   {
