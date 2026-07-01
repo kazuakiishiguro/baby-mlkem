@@ -168,6 +168,63 @@ static void sample_poly_cbd_eta2x3_aos4_direct(const uint8_t *data0,
   }
 }
 
+#if defined(__AVX2__)
+static void bench_prf_cbd_eta2x2_direct_32(const uint8_t seed[32],
+                                           const uint8_t nonce[4],
+                                           poly256 out0, poly256 out1) {
+  __m256i st[25];
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4(st);
+
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
+  }
+}
+
+static void bench_prf_cbd_eta2x3_direct_32(const uint8_t seed[32],
+                                           const uint8_t nonce[4],
+                                           poly256 out0, poly256 out1,
+                                           poly256 out2) {
+  __m256i st[25];
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4(st);
+
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store1_avx2(_mm256_extracti128_si256(st[i], 1),
+                                     out2 + 16 * i);
+  }
+}
+#endif
+
 static uint64_t checksum_state(const uint64_t st[25]) {
   uint64_t acc = 0x94D049BB133111EBULL;
   for (int i = 0; i < 25; i++) {
@@ -252,6 +309,32 @@ static void validate_keccakf4_matches_scalar(void) {
 }
 #endif
 
+#if defined(__AVX2__)
+static void validate_prf_cbd_direct_matches_current(void) {
+  const uint8_t nonce2[4] = {4, 5, 0, 0};
+  const uint8_t nonce3[4] = {4, 5, 6, 0};
+  poly256 cur0, cur1, cur2, direct0, direct1, direct2;
+
+  mlkem_prf_cbd_eta2x2_32(bench_seed32[0], nonce2, cur0, cur1);
+  bench_prf_cbd_eta2x2_direct_32(bench_seed32[0], nonce2, direct0, direct1);
+  if (memcmp(cur0, direct0, sizeof(poly256)) != 0 ||
+      memcmp(cur1, direct1, sizeof(poly256)) != 0) {
+    fprintf(stderr, "direct PRF/CBD x2 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+
+  mlkem_prf_cbd_eta2x3_32(bench_seed32[1], nonce3, cur0, cur1, cur2);
+  bench_prf_cbd_eta2x3_direct_32(bench_seed32[1], nonce3, direct0, direct1,
+                                 direct2);
+  if (memcmp(cur0, direct0, sizeof(poly256)) != 0 ||
+      memcmp(cur1, direct1, sizeof(poly256)) != 0 ||
+      memcmp(cur2, direct2, sizeof(poly256)) != 0) {
+    fprintf(stderr, "direct PRF/CBD x3 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+}
+#endif
+
 static void validate_cbd3_aos4_matches_pack(void) {
   uint8_t prf[3][64 * ETA2];
   poly256 p0, p1, p2;
@@ -280,6 +363,7 @@ static void validate_keccak_helpers(void) {
   init_inputs();
 #if defined(__AVX2__)
   validate_keccakf4_matches_scalar();
+  validate_prf_cbd_direct_matches_current();
 #endif
   validate_cbd3_aos4_matches_pack();
   sha3_256(bench_seed32[0], sizeof(bench_seed32[0]), out0);
@@ -432,6 +516,85 @@ static uint64_t bench_mlkem_prf_eta2(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__)
+static uint64_t bench_prf_cbd_eta2x2_current(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 0, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    mlkem_prf_cbd_eta2x2_32(bench_seed32[lane], nonce, bench_poly3[lane][0],
+                            bench_poly3[lane][1]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 23u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 29u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_prf_cbd_eta2x2_direct(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 0, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_prf_cbd_eta2x2_direct_32(bench_seed32[lane], nonce,
+                                   bench_poly3[lane][0],
+                                   bench_poly3[lane][1]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 31u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 37u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_prf_cbd_eta2x3_current(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 6, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    mlkem_prf_cbd_eta2x3_32(bench_seed32[lane], nonce, bench_poly3[lane][0],
+                            bench_poly3[lane][1], bench_poly3[lane][2]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 41u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 43u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][2][(i * 47u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_prf_cbd_eta2x3_direct(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 6, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_prf_cbd_eta2x3_direct_32(bench_seed32[lane], nonce,
+                                   bench_poly3[lane][0],
+                                   bench_poly3[lane][1],
+                                   bench_poly3[lane][2]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 53u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 59u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][2][(i * 61u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_sample_poly_cbd_eta2(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -579,6 +742,16 @@ int main(int argc, char **argv) {
   print_metric("mlkem_sha3_512_32", bench_sha3_512_32(iters), iters);
   print_metric("mlkem_sha3_512_64", bench_sha3_512_64(iters), iters);
   print_metric("mlkem_prf_eta2", bench_mlkem_prf_eta2(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_prf_cbd_eta2x2_current",
+               bench_prf_cbd_eta2x2_current(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x2_direct",
+               bench_prf_cbd_eta2x2_direct(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x3_current",
+               bench_prf_cbd_eta2x3_current(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x3_direct",
+               bench_prf_cbd_eta2x3_direct(iters), iters);
+#endif
   print_metric("mlkem_cbd_eta2", bench_sample_poly_cbd_eta2(iters), iters);
   print_metric("mlkem_cbd_eta2x3", bench_sample_poly_cbd_eta2x3(iters), iters);
   print_metric("mlkem_cbd_eta2x3_pack_aos4",

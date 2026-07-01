@@ -1011,6 +1011,10 @@ metrics isolate these helpers:
 | `mlkem_sha3_512_32` | `sha3_512()` over a 32-byte input |
 | `mlkem_sha3_512_64` | `sha3_512()` over a 64-byte input |
 | `mlkem_prf_eta2` | `mlkem_prf(ETA2, seed[32], nonce)` |
+| `mlkem_prf_cbd_eta2x2_current` | current AVX2 two-output PRF/CBD helper used by the second keygen noise batch |
+| `mlkem_prf_cbd_eta2x2_direct` | bench-only two-output PRF/CBD helper that decodes CBD directly from the Keccak-f4 state |
+| `mlkem_prf_cbd_eta2x3_current` | current AVX2 three-output PRF/CBD helper used by the second encryption noise batch |
+| `mlkem_prf_cbd_eta2x3_direct` | bench-only three-output PRF/CBD helper that decodes CBD directly from the Keccak-f4 state |
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
 | `mlkem_cbd_eta2x3` | three prepared ETA2 CBD decodes, matching one K=3 NTT input vector |
 | `mlkem_cbd_eta2x3_pack_aos4` | three ETA2 CBD decodes followed by pack into the diagnostic K=3 AoS4 layout |
@@ -5377,6 +5381,28 @@ from stack to static storage was rejected. Stage A/B against `2bb59a9` showed
 `keygen_noise_prf_cbd` median speedup `0.9904x` and
 `encrypt_noise_prf_cbd` median speedup `0.9898x`, so the accepted static-scratch
 idea should remain limited to the larger x4 `sample_ntt4()` stream buffer.
+
+A later bench-only direct-state diagnostic tested whether the remaining x2/x3
+helpers should skip the temporary stream arrays entirely and decode CBD directly
+from the `keccakf4()` state. The outputs matched the current helpers, but the
+local timing did not justify a production change. Pinned CPU 0, `clang`,
+`200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Speedup vs current |
+|---|---|---:|---:|
+| native | `mlkem_prf_cbd_eta2x2_current` | 180.74 | 1.000x |
+| native | `mlkem_prf_cbd_eta2x2_direct` | 179.77 | 1.005x |
+| native | `mlkem_prf_cbd_eta2x3_current` | 190.39 | 1.000x |
+| native | `mlkem_prf_cbd_eta2x3_direct` | 191.87 | 0.992x |
+| AVX2-only | `mlkem_prf_cbd_eta2x2_current` | 431.56 | 1.000x |
+| AVX2-only | `mlkem_prf_cbd_eta2x2_direct` | 435.82 | 0.990x |
+| AVX2-only | `mlkem_prf_cbd_eta2x3_current` | 443.16 | 1.000x |
+| AVX2-only | `mlkem_prf_cbd_eta2x3_direct` | 449.66 | 0.986x |
+
+Keep the current x2/x3 stream-based helpers. The direct-state form avoids the
+small stream arrays but introduces a less favorable decode/store schedule; on
+AVX2-only, where these helpers matter, it is slower before reaching stage/KEM
+A/B.
 
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
