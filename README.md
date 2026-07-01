@@ -2983,6 +2983,57 @@ The accepted claim is local and decrypt-focused: the change reliably speeds the
 AVX512 inverse-sub helper and decrypt stage, while full KEM movement is small but
 confirmed no-regression in the longer run.
 
+A second native AVX512 follow-up applies the final-fusion pattern to
+`ntt_inv_add3_inplace()`, the three-polynomial inverse-add helper used for the
+encapsulation `u` vector. The helper now runs the shared inverse head and AVX512
+tail only through `log2len = 6`, then folds the final `log2len = 7` inverse
+butterfly, `3303` inverse scale, and per-polynomial `+ e1[i]` addition into one
+AVX512 pass across all three output polynomials. AVX2-only builds keep the
+existing AVX2 fused helper. This is a core arithmetic/scheduling change, not a
+cache or vendored-backend optimization.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=220000 STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native AVX512 `ntt_inv_add3` final-fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv` | 1131.58 | 1111.25 | 1.0183x | 1.0185x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 892.27 | 870.62 | 1.0249x | 1.0241x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1897.01 | 1884.64 | 1.0066x | 1.0123x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3697.12 | 3627.05 | 1.0193x | 1.0080x |
+
+Native KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2109.08 | 2087.93 | 1.0101x | 1.0103x |
+| `mlkem_encaps_core` | 4917.31 | 4885.40 | 1.0065x | 1.0061x |
+| `mlkem_roundtrip` | 10321.28 | 10270.58 | 1.0049x | 1.0047x |
+| `mlkem_roundtrip_core` | 14685.90 | 14647.94 | 1.0026x | 1.0038x |
+
+The accepted claim is encapsulation-focused: the local `u` inverse-add stage
+improves clearly, and the KEM confirmation keeps encapsulation and roundtrip
+positive.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
