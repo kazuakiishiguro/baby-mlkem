@@ -952,6 +952,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
+| `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
+| `mlkem_core_stage_keygen_public_encode_only` | isolated keygen public-key d12 encode for the already accumulated `that` vector |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
@@ -2648,6 +2650,16 @@ public-key multiply. This was intended to remove the immediate reload by
 AVX2-only `make test`, and `git diff --check`, but the direct NTT+encode row
 regressed clearly. The extra final-stage unpacking, duplicated tail body, and
 code-layout pressure cost more than the eliminated encode reload.
+
+A later diagnostic split added `keygen_accum_add_only` and
+`keygen_public_encode_only` stage metrics for the public-key output side. On one
+pinned CPU 0, `clang`, 20,000-iteration snapshot, native measured
+`keygen_accum_encode` 425.74 ns/op, `keygen_accum_add_only` 402.60 ns/op, and
+`keygen_public_encode_only` 36.19 ns/op. AVX2-only measured 486.32 ns/op, 460.45
+ns/op, and 36.57 ns/op respectively. The split rows have independent sink
+overhead, but the direction is clear: public-key d12 encode is now a small
+component, so future keygen work should target the K=3 accumulation/add
+schedule rather than another d12 encode rewrite.
 
 Native stage A/B command:
 
