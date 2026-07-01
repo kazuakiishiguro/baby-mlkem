@@ -2809,6 +2809,40 @@ Keep the eager `tail_st` construction in the AVX512 keygen co-schedule. The
 rare-case lazy branch does not help the direct keygen rows and is not worth the
 extra control flow.
 
+A narrower AVX512 state-initialization experiment for the same keygen
+PRF/tail co-schedule was also rejected. The candidate replaced the mixed
+`_mm512_set_epi64()` construction for `st[0..3]` with a broadcast of each sigma
+word, a masked lane-6 rho overwrite, and a masked zero of lane 7. It also built
+the padding words with masked moves from a shared broadcast. This made the
+source express the intended lane shape more directly, but it did not produce a
+real speedup; the compiler already handles the repeated `set_epi64()` inputs
+well, and the masked moves add their own uops.
+
+The candidate passed native `make test`, AVX2-only `make test`, and
+`git diff --check`. Stage A/B was enough to reject it, so no KEM confirmation
+was run.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 keygen PRF/tail init highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 697.10 | 697.91 | 0.9988x | 0.9988x |
+| `mlkem_core_stage_kpke_keygen_full` | 3390.75 | 3404.13 | 0.9961x | 0.9987x |
+| `mlkem_core_stage_sample_matrix_tail` | 703.62 | 703.95 | 0.9995x | 1.0018x |
+| `mlkem_core_stage_sample_matrix` | 1892.10 | 1887.99 | 1.0022x | 0.9997x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1419.75 | 1423.65 | 0.9973x | 0.9969x |
+
+Keep the existing explicit `set_epi64()` initialization in
+`mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512()`. It is simpler and measured
+slightly faster in the direct keygen rows.
+
 A later keygen NTT/encode scheduling experiment was rejected. The candidate ran
 all six `shat`/`ehat` forward NTTs first and then encoded the three `shat`
 polynomials into the secret key, instead of keeping the existing
