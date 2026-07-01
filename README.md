@@ -1544,6 +1544,37 @@ scalar-looking 4-byte copy in the d10 compress/encode hot path; the larger KEM
 speedups in the AVX2-only run are too noisy to attribute solely to this change.
 
 
+A narrower d10 compression constant-construction experiment was rejected. The
+candidate changed the AVX2 d10 compression helpers from computing
+`v8 = _mm256_slli_epi16(v, 3)` to loading the equivalent 16-bit constant
+`30200` directly. The arithmetic and bit packing were unchanged; the intent was
+to remove one constant-construction operation from `compress_poly_d10_avx2()`
+and the fused `compress_encode_poly_d10_avx2()` path. Native and AVX2-only
+`make test` passed, but the targeted split metric did not move.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=120000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected d10 `v8` constant highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 57.32 | 57.05 | 1.0046x | 1.0025x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 53.38 | 53.31 | 1.0015x | 1.0000x |
+| `mlkem_core_stage_ciphertext_compress_encode_d4` | 5.08 | 5.07 | 1.0018x | 1.0020x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2798.97 | 2855.51 | 0.9802x | 1.0006x |
+| `mlkem_core_stage_kpke_keygen_full` | 7161.08 | 6989.93 | 1.0245x | 0.9744x |
+
+Keep the existing `v << 3` expression. Clang already treats this constant shape
+well enough, and the new d10 split metric shows no median improvement in the
+actual fused ciphertext encoder. Future d10 compress work needs to change the
+compression or packing schedule itself, not only constant construction.
+
 An AVX512BW d4 ciphertext compress/encode path was rejected. The candidate
 processed 32 coefficients per zmm register, combined adjacent 4-bit compressed
 coefficients with 32-bit shifts, and stored two 16-byte chunks for each 64 input
