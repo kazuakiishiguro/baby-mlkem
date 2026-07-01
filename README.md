@@ -2851,6 +2851,30 @@ lanes to preserve the existing canonical representation. This reduces the
 standalone CBD cost and flows into the PRF/CBD noise stages without calling or
 modifying vendored Kyber/PQClean code.
 
+A later unsigned-lookup variant was rejected. It replaced the signed
+`{-2..2}` nibble LUT plus negative canonicalization with two byte LUTs that
+materialized canonical 16-bit `{0,1,2,Q-2,Q-1}` values directly. This removed
+the compare/add canonicalization but doubled the shuffle lookup work and was
+slower in both the standalone CBD row and the integrated PRF/CBD stages.
+
+Native Keccak/stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=keccak,stage KECCAK_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_cbd_eta2` | 7.34 | 10.44 | 0.703x | 0.701x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 694.88 | 710.69 | 0.978x | 0.977x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 878.37 | 899.45 | 0.977x | 0.977x |
+| `mlkem_core_stage_encrypt_noise` | 1023.29 | 1062.58 | 0.963x | 0.963x |
+
+Keep the signed nibble LUT and canonicalize with AVX2 compare/add.
+
 ### Independent Core Optimization A/B (2026-06-30, inverse NTT AVX2 head)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
