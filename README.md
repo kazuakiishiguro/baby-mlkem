@@ -1277,6 +1277,46 @@ final butterfly plus scale/reduction path first. The isolated add path is still
 visible, but the prior packed 16-bit final-add experiment already showed that
 changing that add form is not robust at KEM level.
 
+An AVX2 final zeta-scale constant experiment was rejected. The candidate changed
+`ntt_inv_before_final_avx2()` to stop returning the final zeta and replaced the
+per-call `mod_q_reduce_ntt_u32(ZETA[1] * 3303)` setup in the AVX2 final fused
+helpers with the fixed value `1652`. It passed native and AVX2-only core
+`make test`, and local NTT rows improved slightly, but KEM confirmation regressed
+the encryption core path enough to reject the change. Keep the computed local
+zeta-scale setup in the production AVX2 final helpers unless a later rewrite
+proves a whole-core win.
+
+AVX2-only NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_add` | 202.67 | 200.31 | 1.0118x | 1.0052x |
+| `mlkem_ntt_inv_add2` | 213.16 | 210.92 | 1.0106x | 1.0053x |
+| `mlkem_ntt_inv_sub_from` | 201.47 | 200.36 | 1.0055x | 1.0050x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | 321.13 | 321.54 | 0.9987x | 0.9997x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 796.06 | 792.99 | 1.0039x | 1.0044x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1038.64 | 1038.51 | 1.0001x | 1.0019x |
+
+AVX2-only KEM confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 8966.14 | 9146.18 | 0.9803x | 0.9720x |
+| `mlkem_roundtrip_core` | 26518.12 | 26586.20 | 0.9974x | 1.0035x |
+| `mlkem_decaps_core` | 8278.30 | 8279.06 | 0.9999x | 0.9876x |
+
 An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
 changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
 16-coefficient blocks, then `l2`, then `l3`) to one block-local pass that ran
