@@ -3346,6 +3346,63 @@ static void compress_poly(int d, const poly256 x, uint16_t *out) {
 }
 
 #if defined(__AVX2__)
+static inline __m128i decompress_d10_vec8_avx2(__m128i v16) {
+  const __m256i q = _mm256_set1_epi32(Q);
+  const __m256i half = _mm256_set1_epi32(512);
+  __m256i v = _mm256_cvtepu16_epi32(v16);
+  v = _mm256_mullo_epi32(v, q);
+  v = _mm256_add_epi32(v, half);
+  v = _mm256_srli_epi32(v, 10);
+  return pack_i32x8_to_i16x8(v);
+}
+
+static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
+  const __m256i shuf = _mm256_setr_epi8(
+      0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9,
+      0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9);
+  const __m256i mask = _mm256_set1_epi16(0x03ff);
+
+  for (int i = 0; i < N - 16; i += 16) {
+    const uint8_t *p = in + (size_t)(i / 4) * 5;
+    __m256i bytes = _mm256_castsi128_si256(
+        _mm_loadu_si128((const __m128i *)(const void *)p));
+    bytes = _mm256_inserti128_si256(
+        bytes, _mm_loadu_si128((const __m128i *)(const void *)(p + 10)), 1);
+
+    __m256i v = _mm256_shuffle_epi8(bytes, shuf);
+    __m256i v2 = _mm256_srli_epi16(v, 2);
+    __m256i v4 = _mm256_srli_epi16(v, 4);
+    __m256i v6 = _mm256_srli_epi16(v, 6);
+    v = _mm256_blend_epi16(v, v2, 0x22);
+    v = _mm256_blend_epi16(v, v4, 0x44);
+    v = _mm256_blend_epi16(v, v6, 0x88);
+    v = _mm256_and_si256(v, mask);
+
+    _mm_storeu_si128((__m128i *)(out + i),
+                     decompress_d10_vec8_avx2(_mm256_castsi256_si128(v)));
+    _mm_storeu_si128((__m128i *)(out + i + 8),
+                     decompress_d10_vec8_avx2(_mm256_extracti128_si256(v, 1)));
+  }
+
+  /* Avoid a 16-byte overread on the final half-block. */
+  for (int i = N - 16; i < N; i += 4) {
+    const uint8_t *p = in + (size_t)(i / 4) * 5;
+    uint16_t b0 = p[0];
+    uint16_t b1 = p[1];
+    uint16_t b2 = p[2];
+    uint16_t b3 = p[3];
+    uint16_t b4 = p[4];
+    uint16_t v0 = (uint16_t)(b0 | ((b1 & 0x03u) << 8));
+    uint16_t v1 = (uint16_t)((b1 >> 2) | ((b2 & 0x0Fu) << 6));
+    uint16_t v2 = (uint16_t)((b2 >> 4) | ((b3 & 0x3Fu) << 4));
+    uint16_t v3 = (uint16_t)((b3 >> 6) | (b4 << 2));
+    out[i + 0] = (int16_t)(((uint32_t)v0 * Q + 512u) >> 10);
+    out[i + 1] = (int16_t)(((uint32_t)v1 * Q + 512u) >> 10);
+    out[i + 2] = (int16_t)(((uint32_t)v2 * Q + 512u) >> 10);
+    out[i + 3] = (int16_t)(((uint32_t)v3 * Q + 512u) >> 10);
+  }
+}
+
 static inline __m256i decompress_d4_vec_avx2(__m256i v) {
   const __m256i q = _mm256_set1_epi16(Q);
   const __m256i half = _mm256_set1_epi16(8);
@@ -3397,6 +3454,9 @@ static void decompress_poly(int d, const uint16_t *in, poly256 out) {
 
 static void decompress_decode_poly(int d, const uint8_t *in, poly256 out) {
   if (d == 10) {
+#if defined(__AVX2__)
+    decompress_decode_poly_d10_avx2(in, out);
+#else
     for (int i = 0; i < N / 4; i++) {
       uint16_t b0 = in[5 * i + 0];
       uint16_t b1 = in[5 * i + 1];
@@ -3412,6 +3472,7 @@ static void decompress_decode_poly(int d, const uint8_t *in, poly256 out) {
       out[4 * i + 2] = (int16_t)(((uint32_t)v2 * Q + 512u) >> 10);
       out[4 * i + 3] = (int16_t)(((uint32_t)v3 * Q + 512u) >> 10);
     }
+#endif
     return;
   }
 

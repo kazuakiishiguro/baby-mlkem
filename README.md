@@ -1321,7 +1321,8 @@ a core implementation change and does not call an external backend.
 The implementation adds `decompress_decode_poly_d4_avx2()`, which unpacks the
 128-byte `DV = 4` ciphertext component as 16 bytes to 32 coefficients per loop
 and applies `((v * Q + 8) >> 4)` with AVX2 16-bit operations. The `DU = 10`
-path and non-AVX2 builds keep the existing scalar code.
+path still kept the existing scalar code at that point; non-AVX2 builds
+keep the scalar code.
 
 AVX2-only stage command:
 
@@ -1351,6 +1352,57 @@ KEM A/B was noisier, as expected for an 8 ns local stage win inside full
 decapsulation. The run showed `mlkem_roundtrip_core` median speedup `1.011x`
 and `mlkem_decaps` median speedup `0.998x`; treat the local
 `ciphertext_decode_decompress` row as the defensible signal for this change.
+
+### Independent Core Optimization A/B (2026-07-01, AVX2 d10 decode/decompress)
+
+Baseline is commit `727824c` after the AVX2 `d = 4` ciphertext
+decode/decompress path; candidate is the working tree after adding the AVX2
+`d = 10` path. This is a core implementation change and does not call an
+external backend.
+
+The implementation adds `decompress_decode_poly_d10_avx2()`. It unpacks the
+320-byte `DU = 10` ciphertext component as two independent 10-byte groups per
+AVX2 register, forms sixteen 10-bit coefficients per loop, and widens to
+32-bit lanes for the exact `((v * Q + 512) >> 10)` decompression. The final
+16 coefficients use the scalar decode shape to avoid an out-of-bounds vector
+load. A temporary checker compared 10,000 random 320-byte inputs against the
+scalar reference and matched exactly.
+
+AVX2-only stage command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=100000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 366.89 | 272.43 | 1.347x | 1.347x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1078.45 | 982.06 | 1.098x | 1.097x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 1093.26 | 994.98 | 1.099x | 1.097x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 4174.98 | 4076.31 | 1.024x | 1.023x |
+| `mlkem_decaps_core` | 8515.75 | 8394.79 | 1.014x | 1.013x |
+| `mlkem_roundtrip_core` | 26923.66 | 26845.55 | 1.003x | 1.015x |
+
+This is a real decrypt-side win because ciphertext decode/decompress is on the
+`kpke_decrypt()` path. Encapsulation rows from the same KEM run moved with
+benchmark noise and are not attributed to this change.
 
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
