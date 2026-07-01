@@ -1317,6 +1317,40 @@ Treat this as a minor accepted cleanup. The reliable claim is removal of a
 scalar-looking 4-byte copy in the d10 compress/encode hot path; the larger KEM
 speedups in the AVX2-only run are too noisy to attribute solely to this change.
 
+
+An AVX512BW d4 ciphertext compress/encode path was rejected. The candidate
+processed 32 coefficients per zmm register, combined adjacent 4-bit compressed
+coefficients with 32-bit shifts, and stored two 16-byte chunks for each 64 input
+coefficients. The idea was to replace the AVX2 pack/madd/permute sequence used
+for the `v` ciphertext component with a direct wide-lane nibble pack.
+
+The candidate passed native `make test` and AVX2-only `make test`; AVX2-only
+kept the existing AVX2 d4 encoder because the new path was guarded by
+`__AVX512F__ && __AVX512BW__`. The native stage result did not justify keeping
+the zmm path: the direct `ciphertext_compress_encode` median was effectively
+flat, the average was slower, and full encrypt stage rows moved slightly
+negative. No KEM A/B was run.
+
+Native stage A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=stage STAGE_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512BW d4 compress/encode highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 53.60 | 53.99 | 0.9927x | 1.0002x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1869.57 | 1876.28 | 0.9964x | 0.9995x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3614.71 | 3628.94 | 0.9961x | 0.9989x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1111.90 | 1113.99 | 0.9981x | 1.0000x |
+
+Keep the AVX2 d4 encoder. The d4 component is too small for the extra AVX512
+width to pay for itself, and the wider path risks front-end/downclock cost
+without reducing the larger K-PKE arithmetic bottleneck.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
