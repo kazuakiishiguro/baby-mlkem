@@ -1351,6 +1351,45 @@ Keep the AVX2 d4 encoder. The d4 component is too small for the extra AVX512
 width to pay for itself, and the wider path risks front-end/downclock cost
 without reducing the larger K-PKE arithmetic bottleneck.
 
+
+A d10 compress/encode pointer-loop cleanup was rejected. The candidate kept the
+accepted explicit 4-byte tail store, but changed `compress_encode_poly_d10_avx2()`
+from recomputing `out + (i / 16) * 20` inside the loop to advancing input and
+output pointers by 16 coefficients and 20 bytes. This is a standard
+address-generation cleanup, but modern clang already strength-reduces the
+original loop well enough.
+
+The candidate passed native `make test`, AVX2-only `make test`, native stage
+A/B, and native KEM A/B. The direct stage row was weakly positive, but full KEM
+core rows moved slightly negative, so the source change was not kept.
+
+Native stage A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=stage STAGE_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected d10 pointer-loop highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 53.63 | 53.64 | 0.9999x | 1.0007x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3637.96 | 3612.51 | 1.0070x | 1.0014x |
+| `mlkem_encaps_core` | 4876.26 | 4902.27 | 0.9947x | 0.9987x |
+| `mlkem_roundtrip_core` | 14608.02 | 14647.33 | 0.9973x | 0.9994x |
+| `mlkem_decaps_core` | 4397.36 | 4407.93 | 0.9976x | 0.9990x |
+
+Keep the existing d10 encode loop after the explicit tail-store cleanup. The
+pointer form is clearer in isolation, but it does not produce a robust KEM win.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
