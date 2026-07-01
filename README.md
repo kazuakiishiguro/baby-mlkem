@@ -964,6 +964,7 @@ stage metrics.
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
+| `mlkem_core_stage_decrypt_ntt_accum_only` | decrypt-side forward NTT for three decoded `u` polynomials plus `ntt_mul_acc3()` secret accumulation |
 | `mlkem_core_stage_decrypt_inv_sub_from` | decrypt-side inverse NTT subtraction only, using a precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_butterflies` | decrypt-side inverse NTT butterflies only, before final scale/subtraction |
 | `mlkem_core_stage_decrypt_inv_head` | AVX2-only decrypt-side inverse NTT head stages `l1`..`l3`, using precomputed NTT-domain accumulation |
@@ -1009,6 +1010,16 @@ stage/KEM A/B showed `decrypt_u_ntt` median speedup `0.991x`,
 speedup `0.947x`. Future forward-NTT work should therefore redesign scheduling
 across multiple stages instead of swapping one scalar/vectorized head level in
 isolation.
+
+A direct boundary metric, `decrypt_ntt_accum_only`, now measures the decrypt-side
+three-`u` forward NTTs plus the following `ntt_mul_acc3()` accumulation without
+the inverse NTT subtraction or message recovery. On one pinned CPU 0, `clang`,
+20,000-iteration snapshot, it measured 747.08 ns/op with the native build and
+859.35 ns/op with the AVX2-only build. These rows should not be reconstructed by
+adding standalone `decrypt_u_ntt` and `decrypt_accum_only` rows, because those
+probes each include independent copy and sink overhead. This metric is the next
+reference point for any attempt to fuse the final forward-NTT schedule with the
+secret accumulation path.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
