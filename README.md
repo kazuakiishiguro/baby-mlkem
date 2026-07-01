@@ -833,6 +833,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_inv_sub_from` | decrypt-side inverse NTT subtraction only, using a precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_butterflies` | decrypt-side inverse NTT butterflies only, before final scale/subtraction |
+| `mlkem_core_stage_decrypt_inv_head` | AVX2-only decrypt-side inverse NTT head stages `l1`..`l3`, using precomputed NTT-domain accumulation |
+| `mlkem_core_stage_decrypt_inv_tail` | AVX2-only decrypt-side inverse NTT tail stages `l4`..`l7`, using precomputed inverse-head output |
 | `mlkem_core_stage_decrypt_inv_scale_sub_from` | decrypt-side final inverse-NTT scale and subtraction only, using precomputed inverse-butterfly output |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
@@ -855,7 +857,12 @@ is more constrained by inverse-NTT subtraction than by the already-fused K=3
 `ntt_mul_acc3()` accumulation. A further pinned AVX2 split measured
 `decrypt_inv_butterflies` at 365.76 ns/op and `decrypt_inv_scale_sub_from` at
 221.04 ns/op, so the next inverse-subtraction target should be the inverse
-butterfly schedule rather than the final scale/sub loop alone.
+butterfly schedule rather than the final scale/sub loop alone. Splitting those
+inverse butterflies again measured `decrypt_inv_head` at 274.08 ns/op and
+`decrypt_inv_tail` at 269.45 ns/op. The head/tail standalone probes have their
+own copy/sink overhead, but the near tie means a single isolated inverse stage
+is unlikely to carry the full win; future work should fuse or reschedule across
+both inverse-head and inverse-tail boundaries.
 
 A narrow experiment replacing only the forward-NTT `log2len = 4` / length-16
 stage with two `ntt_butterfly8_avx2()` calls per block was rejected: AVX2
