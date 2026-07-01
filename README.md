@@ -964,6 +964,9 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
 | `mlkem_core_stage_encrypt_inv_add_u_head_only` | AVX2 builds only: inverse-NTT head stages for the three precomputed `u` accumulations, including scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
@@ -1202,28 +1205,36 @@ exactly match the accepted three-polynomial fused final helper. A `clang`,
 
 | Build | Metric | ns/op |
 |---|---|---:|
-| native | `mlkem_core_stage_encrypt_accum_inv` | 1097.18 |
-| native | `mlkem_core_stage_encrypt_accum_inv_u` | 865.03 |
-| native | `mlkem_core_stage_encrypt_accum_u_only` | 373.02 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_only` | 692.32 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 444.66 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 456.86 |
-| native | `mlkem_core_stage_encrypt_accum_inv_v` | 404.02 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv` | 1347.87 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1023.00 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_u_only` | 437.34 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_only` | 782.81 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 464.64 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 511.47 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_v` | 466.79 |
+| native | `mlkem_core_stage_encrypt_accum_inv` | 1097.78 |
+| native | `mlkem_core_stage_encrypt_accum_inv_u` | 866.18 |
+| native | `mlkem_core_stage_encrypt_accum_u_only` | 373.26 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_only` | 693.48 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 433.08 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 297.68 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 268.93 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 255.84 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 459.85 |
+| native | `mlkem_core_stage_encrypt_accum_inv_v` | 405.13 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv` | 1303.25 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1032.38 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_u_only` | 437.17 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_only` | 781.20 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 462.82 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 310.61 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 279.05 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 263.50 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 510.80 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_v` | 467.07 |
 
 The split points the next encryption-accumulation work at the `u` inverse-add
 side rather than another `ntt_mul_acc3()` rewrite. Prior Karatsuba, reciprocal
 reduction, AVX2 vector-helper, and generic batching attempts already showed that
 the multiplication helper is hard to improve robustly. Within AVX2-only
-inverse-add, the head and tail/final diagnostics are both large; the next useful
-step is a finer inverse-head level split or a final-pass arithmetic rewrite with
-KEM confirmation, not another whole-`ntt_mul_acc3()` experiment.
+inverse-add, the head and tail/final diagnostics are both large. The finer
+head-level rows show l1, l2, and l3 are all material after scratch-copy overhead,
+with no single stage dominating. The next useful implementation work should
+therefore target a structural inverse-head cleanup or the tail/final arithmetic
+pass with KEM confirmation, not another whole-`ntt_mul_acc3()` experiment.
 
 Ciphertext compression/decode split metrics were added later to separate the
 three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
