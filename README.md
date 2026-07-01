@@ -2415,6 +2415,47 @@ first tail block. Remaining tail blocks continue through the local `keccakf4()`
 state. At that point, AVX2-only builds kept the previous path; the later AVX2
 section below adds the analogous x4 keygen-only co-schedule.
 
+A later keygen NTT/encode scheduling experiment was rejected. The candidate ran
+all six `shat`/`ehat` forward NTTs first and then encoded the three `shat`
+polynomials into the secret key, instead of keeping the existing
+`ntt(shat[i]) -> encode(shat[i]) -> ntt(ehat[i])` order. The idea was to group
+like NTT work, but it gave no defensible native full-keygen win and regressed
+the AVX2-only full keygen stage.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1560.48 | 1557.43 | 1.002x | 1.002x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1424.45 | 1423.22 | 1.001x | 1.004x |
+| `mlkem_core_stage_kpke_keygen_full` | 3395.70 | 3400.68 | 0.999x | 1.000x |
+| `mlkem_keygen_core` | 5276.92 | 5265.42 | 1.002x | 1.001x |
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=20000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1604.60 | 1594.09 | 1.007x | 1.006x |
+| `mlkem_core_stage_kpke_keygen_full` | 6553.96 | 7040.20 | 0.931x | 0.916x |
+
+Keep encoding `shat[i]` while it is hot immediately after its NTT. Grouping all
+NTTs first is not robust enough for the full keygen path.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 keygen tail/noise co-scheduling)
 
 Baseline is commit `7049074` before the AVX2 keygen co-schedule; candidate is
