@@ -2173,6 +2173,33 @@ Stage A/B highlights:
 Keep the existing three-block store followed by one 504-byte parse per lane. For
 this parser, larger contiguous chunks beat tighter producer/consumer fusion.
 
+An AVX512VBMI2 parser compaction experiment was also rejected. The candidate
+kept the existing 48-byte decode shape but replaced the AVX2 table-shuffle
+packing of accepted 12-bit values with `_mm512_mask_compressstoreu_epi16()` over
+32 candidate coefficients. This is a common SIMD compaction pattern, but on this
+target the 16-bit compress-store path was much slower than the AVX2 shuffle
+table.
+
+Native stage A/B command:
+
+```bash
+RUNS=5 WARMUP_RUNS=1 SUITES=stage STAGE_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 126.17 | 868.02 | 0.145x | 0.146x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 601.88 | 1335.55 | 0.451x | 0.451x |
+| `mlkem_core_stage_sample_matrix` | 1887.40 | 3543.12 | 0.533x | 0.532x |
+| `mlkem_core_stage_kpke_keygen_full` | 3394.15 | 5014.73 | 0.677x | 0.677x |
+
+Keep the AVX2 table-shuffle parser. For 16-bit rejection compaction,
+`VPCOMPRESSW`/VBMI2 is not a useful replacement here despite reducing code
+complexity.
+
 A narrower AVX512 `sample_ntt8_store_rate()` experiment replacing the two
 `sample_ntt4_store_last()` calls for `st[20]` with one `_mm512_storeu_si512()` to
 `uint64_t last[8]` plus eight 8-byte copies was also rejected. This was the
