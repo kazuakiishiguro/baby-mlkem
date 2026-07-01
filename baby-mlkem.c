@@ -829,8 +829,9 @@ static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
     }
     memcpy(q, p, 128);
 #endif
-    memcpy(q + 128, p + 128, 8);
-    st[16] ^= load64_le(p + 128);
+    uint64_t last = load64_le(p + 128);
+    memcpy(q + 128, &last, sizeof(last));
+    st[16] ^= last;
     keccakf(st);
   }
 

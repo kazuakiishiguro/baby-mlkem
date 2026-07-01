@@ -1390,6 +1390,48 @@ Rejected d10 pointer-loop highlights:
 Keep the existing d10 encode loop after the explicit tail-store cleanup. The
 pointer form is clearer in isolation, but it does not produce a robust KEM win.
 
+
+A narrow keygen public-key hash/copy cleanup was accepted. The change updates
+`sha3_256_copy_1184()`, used by top-level ML-KEM keygen for copying `ek_pke`
+into the secret key while computing `H(ek_pke)`, so each full 136-byte SHA3-256
+rate block loads the final 8-byte lane once and reuses that word for both the
+copy and the Keccak state absorb. This does not reduce the nine SHA3-256
+permutations required for `H(ek_pke)`; it only removes a duplicated tail-lane
+load in the combined copy/hash helper.
+
+The candidate passed native `make test`, AVX2-only `make test`, native KEM A/B,
+and a longer AVX2-only KEM A/B. Treat this as a small keygen-local cleanup, not
+an end-to-end roundtrip breakthrough.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted public-key hash/copy tail-load highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` native | 5311.17 | 5298.16 | 1.0025x | 1.0017x |
+| `mlkem_keygen_core` native | 5273.34 | 5267.67 | 1.0011x | 1.0023x |
+| `mlkem_roundtrip_core` native | 14644.40 | 14672.44 | 0.9981x | 1.0015x |
+| `mlkem_keygen` AVX2-only | 8747.27 | 9060.67 | 0.9654x | 1.0038x |
+| `mlkem_keygen_core` AVX2-only | 8713.19 | 9046.56 | 0.9631x | 1.0004x |
+
+The AVX2-only averages were noisy, including unrelated encaps/decaps movement;
+the acceptance signal is the non-negative keygen median plus the simpler single
+load feeding both the copy and absorb paths.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
