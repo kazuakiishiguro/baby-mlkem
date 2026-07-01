@@ -1310,6 +1310,37 @@ keygen and encaps rows, which do not execute message recovery, moved
 substantially, so the roundtrip rows are not a clean signal for this narrow
 decrypt-tail change.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 message recovery 32-lane pack)
+
+A follow-up AVX2 message recovery experiment packing two 16-coefficient compare
+vectors at once was rejected. The candidate used `_mm256_packs_epi16(m0, m1)`
+to produce a 32-bit movemask for 32 coefficients, then swapped the middle two
+bytes because AVX2 packs operate independently in each 128-bit lane. It passed
+AVX2 `make test`, AVX2 no-BMI2 `make test`, and a temporary 10,000-random-input
+scalar reference checker, but it was slower than the accepted 16-coefficient
+`packs_epi16 + movemask` path.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=100000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_recover_message` | 5.97 | 6.04 | 0.989x | 0.980x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 890.31 | 894.10 | 0.996x | 0.996x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 928.53 | 928.62 | 1.000x | 0.999x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 943.39 | 941.95 | 1.002x | 1.001x |
+
+Keep the accepted 16-coefficient AVX2 message recovery packer. The 32-coefficient
+shape halves the loop count, but the AVX2 lane-local pack ordering forces extra
+byte rearrangement work and loses in the direct recover-message stage.
+
 ### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
