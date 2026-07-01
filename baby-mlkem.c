@@ -3055,6 +3055,81 @@ static inline void compress_poly_d4_avx2(const poly256 x, uint16_t *out) {
     _mm256_storeu_si256((__m256i *)(out + i), f);
   }
 }
+
+static inline __m256i compress_poly_d10_vec_avx2(__m256i f0) {
+  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v8 = _mm256_slli_epi16(v, 3);
+  const __m256i off = _mm256_set1_epi16(15);
+  const __m256i shift = _mm256_set1_epi16(1 << 12);
+  const __m256i mask = _mm256_set1_epi16(1023);
+  __m256i f1 = _mm256_mullo_epi16(f0, v8);
+  __m256i f2 = _mm256_add_epi16(f0, off);
+  f0 = _mm256_slli_epi16(f0, 3);
+  f0 = _mm256_mulhi_epi16(f0, v);
+  f2 = _mm256_sub_epi16(f1, f2);
+  f1 = _mm256_andnot_si256(f1, f2);
+  f1 = _mm256_srli_epi16(f1, 15);
+  f0 = _mm256_sub_epi16(f0, f1);
+  f0 = _mm256_mulhrs_epi16(f0, shift);
+  return _mm256_and_si256(f0, mask);
+}
+
+static inline __m256i compress_poly_d4_vec_avx2(__m256i f) {
+  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i shift = _mm256_set1_epi16(1 << 9);
+  const __m256i mask = _mm256_set1_epi16(15);
+  f = _mm256_mulhi_epi16(f, v);
+  f = _mm256_mulhrs_epi16(f, shift);
+  return _mm256_and_si256(f, mask);
+}
+
+static void compress_encode_poly_d10_avx2(const poly256 x, uint8_t *out) {
+  const __m256i shift2 = _mm256_set1_epi64x(
+      (1024LL << 48) + (1LL << 32) + (1024LL << 16) + 1);
+  const __m256i sllvdidx = _mm256_set1_epi64x(12);
+  const __m256i shufbidx = _mm256_set_epi8(
+       8,  4,  3,  2,  1,  0, -1, -1,
+      -1, -1, -1, -1, 12, 11, 10,  9,
+      -1, -1, -1, -1, -1, -1, 12, 11,
+      10,  9,  8,  4,  3,  2,  1,  0);
+
+  for (int i = 0; i < N; i += 16) {
+    __m256i f = _mm256_loadu_si256((const __m256i *)(x + i));
+    f = compress_poly_d10_vec_avx2(f);
+    f = _mm256_madd_epi16(f, shift2);
+    f = _mm256_sllv_epi32(f, sllvdidx);
+    f = _mm256_srli_epi64(f, 12);
+    f = _mm256_shuffle_epi8(f, shufbidx);
+    __m128i t0 = _mm256_castsi256_si128(f);
+    __m128i t1 = _mm256_extracti128_si256(f, 1);
+    t0 = _mm_blend_epi16(t0, t1, 0xE0);
+    _mm_storeu_si128((__m128i *)(void *)(out + (size_t)(i / 16) * 20), t0);
+    memcpy(out + (size_t)(i / 16) * 20 + 16, &t1, 4);
+  }
+}
+
+static void compress_encode_poly_d4_avx2(const poly256 x, uint8_t *out) {
+  const __m256i shift2 = _mm256_set1_epi16((16 << 8) + 1);
+  const __m256i permdidx = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
+
+  for (int i = 0; i < N; i += 64) {
+    __m256i f0 = compress_poly_d4_vec_avx2(
+        _mm256_loadu_si256((const __m256i *)(x + i + 0)));
+    __m256i f1 = compress_poly_d4_vec_avx2(
+        _mm256_loadu_si256((const __m256i *)(x + i + 16)));
+    __m256i f2 = compress_poly_d4_vec_avx2(
+        _mm256_loadu_si256((const __m256i *)(x + i + 32)));
+    __m256i f3 = compress_poly_d4_vec_avx2(
+        _mm256_loadu_si256((const __m256i *)(x + i + 48)));
+    f0 = _mm256_packus_epi16(f0, f1);
+    f2 = _mm256_packus_epi16(f2, f3);
+    f0 = _mm256_maddubs_epi16(f0, shift2);
+    f2 = _mm256_maddubs_epi16(f2, shift2);
+    f0 = _mm256_packus_epi16(f0, f2);
+    f0 = _mm256_permutevar8x32_epi32(f0, permdidx);
+    _mm256_storeu_si256((__m256i *)(void *)(out + (size_t)(i / 64) * 32), f0);
+  }
+}
 #endif
 
 static void compress_poly(int d, const poly256 x, uint16_t *out) {
@@ -3440,6 +3515,14 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
   uint8_t *p = out_c;
+#if defined(__AVX2__) && defined(__AVX512F__)
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(u[i], p);
+    p += (N * DU) / 8;
+  }
+  compress_encode_poly_d4_avx2(v, p);
+  p += (N * DV) / 8;
+#else
   for (int i = 0; i < K; i++) {
     uint16_t cbuf[N];
     compress_poly(DU, u[i], cbuf);
@@ -3452,6 +3535,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     byte_encode_u16(DV, cbuf, p);
     p += (N * DV) / 8;
   }
+#endif
   *out_clen = (size_t)(p - out_c);
 }
 

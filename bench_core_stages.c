@@ -48,7 +48,9 @@ static uint8_t stage_tmp_msg[STAGE_BENCH_LANES][32];
 #if !defined(__AVX2__)
 static uint8_t stage_tmp_prf[STAGE_BENCH_LANES][64 * ETA1];
 #endif
+#if !(defined(__AVX2__) && defined(__AVX512F__))
 static uint16_t stage_tmp_cbuf[STAGE_BENCH_LANES][N];
+#endif
 static poly256 stage_tmp_ahat[STAGE_BENCH_LANES][K][K];
 static poly256 stage_tmp_vec0[STAGE_BENCH_LANES][K];
 static poly256 stage_tmp_vec1[STAGE_BENCH_LANES][K];
@@ -794,6 +796,13 @@ static uint64_t bench_ciphertext_compress_encode(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     uint8_t *p = stage_tmp_ct[lane];
+#if defined(__AVX2__) && defined(__AVX512F__)
+    for (int j = 0; j < K; j++) {
+      compress_encode_poly_d10_avx2(stage_u[lane][j], p);
+      p += (N * DU) / 8;
+    }
+    compress_encode_poly_d4_avx2(stage_v[lane], p);
+#else
     for (int j = 0; j < K; j++) {
       compress_poly(DU, stage_u[lane][j], stage_tmp_cbuf[lane]);
       byte_encode_u16(DU, stage_tmp_cbuf[lane], p);
@@ -801,6 +810,7 @@ static uint64_t bench_ciphertext_compress_encode(size_t iters) {
     }
     compress_poly(DV, stage_v[lane], stage_tmp_cbuf[lane]);
     byte_encode_u16(DV, stage_tmp_cbuf[lane], p);
+#endif
     acc ^= stage_tmp_ct[lane][(i * 19u) % STAGE_CT_BYTES];
   }
   t1 = now_ns();
