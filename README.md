@@ -1490,6 +1490,15 @@ The useful effect is AVX2-only. The native AVX512-capable KEM path already uses
 the `sample_ntt8_matrix()` path for most matrix generation, so this change is
 expected to be approximately neutral there.
 
+A narrower follow-up that wrapped the ready check with
+`__builtin_expect(sample_ntt_parse_idx_ready, 1)` was rejected. AVX2 stage A/B
+against `704354b` with `RUNS=11`, `STAGE_ITERS=80000`, and
+`ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"` showed `sample_ntt4_parse_504` median
+speedup `1.0027x`, but `sample_ntt4_full_raw` `0.9970x`,
+`sample_matrix_x4_batch0` `0.9994x`, `sample_matrix_x4_batch1` `0.9981x`, and
+`sample_matrix` `0.9971x`. The compiler branch hint is too small and noisy for
+the full sampler path, so keep the plain ready check.
+
 ### Independent Core Optimization A/B (2026-07-01, keygen tail/noise co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
