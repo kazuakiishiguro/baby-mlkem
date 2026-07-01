@@ -688,6 +688,15 @@ rejected after longer KEM confirmation: `mlkem_encaps_core` median speedup
 The result reinforces that the block-load `l1` shape is not currently a safe
 production path even when keygen is excluded.
 
+A separate K=3 batching attempt was also rejected. The candidate kept the normal
+per-polynomial tail, but replaced the three independent encryption/decryption
+forward-NTT calls with `ntt3_inplace()`, advancing the same upper-stage
+`zeta/start` across all three polynomials before moving on. Even with the same
+clang vectorization hint as `ntt()`, pinned stage A/B regressed the target rows:
+`decrypt_u_ntt` median speedup `0.9948x` and `encrypt_noise_ntt` median speedup
+`0.9895x`. Simple loop interleaving therefore is not enough; any future K=3 NTT
+work needs real cross-polynomial vector packing or a different data layout.
+
 Current scalar forward-level snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, `200000` iterations:
 
