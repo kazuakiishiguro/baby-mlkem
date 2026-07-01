@@ -634,7 +634,7 @@ static uint64_t bench_sample_matrix_tail(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__)
     sample_ntt4_one(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
 #else
     sample_ntt(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);

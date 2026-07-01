@@ -1417,6 +1417,25 @@ then extracting only lane 0. The next implementation attempt should route the
 final `(2,2)` sample-matrix entry through scalar `sample_ntt()` for AVX2-only
 builds while preserving the current native/AVX512 path.
 
+That target-specific switch was accepted for AVX2-only builds. The production
+`sample_matrix()` path now keeps `sample_ntt4_one()` when AVX512 is available,
+but uses scalar `sample_ntt()` for the final `(2,2)` entry on AVX2-only builds.
+AVX2-only stage/KEM A/B against commit `310843d`, pinned CPU 0, `clang`,
+`RUNS=9`, `STAGE_ITERS=50000`, `KEM_ITERS=20000` measured:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_tail` | 1555.55 | 883.11 | 1.7614x | 1.6426x |
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | 1371.44 | 916.17 | 1.4969x | 1.3783x |
+| `mlkem_core_stage_sample_matrix` | 4593.97 | 3895.66 | 1.1793x | 1.1537x |
+| `mlkem_core_stage_kpke_keygen_full` | 6775.44 | 6609.77 | 1.0251x | 1.0211x |
+| `mlkem_encaps_core` | 9504.86 | 9106.19 | 1.0438x | 1.0607x |
+| `mlkem_roundtrip_core` | 27022.28 | 26574.09 | 1.0169x | 1.0308x |
+
+The acceptance signal is the public-matrix stage and keygen path. Non-core KEM
+wrapper rows were noisy, but the local target and keygen core movement are large
+enough to keep the AVX2-only scalar tail switch.
+
 A direct follow-up moving the smaller `sample_ntt4_one()` `stream[63]` and refill
 `extra[21]` scratch arrays from the stack to static storage was rejected. Native
 and AVX2-only core `make test` passed, but AVX2-only stage A/B did not show a

@@ -3236,7 +3236,11 @@ static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
   sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
   sample_ntt4(seed, r1, c1, out[1][1], out[1][2], out[2][0], out[2][1]);
 #endif
+#if defined(__AVX512F__)
   sample_ntt4_one(seed, 2, 2, out[2][2]);
+#else
+  sample_ntt(seed, 2, 2, out[2][2]);
+#endif
 #else
   for (int i = 0; i < K; i++) {
     for (int j = 0; j < K; j++) {
