@@ -1289,6 +1289,51 @@ forward NTTs. Another d12 secret-key encode rewrite is unlikely to move keygen;
 future work should target forward-NTT scheduling or reusable NTT-side arithmetic
 instead.
 
+A follow-up AVX2-only ETA2 first-level NTT specialization was rejected. The
+candidate added an `ntt_eta2()` path for CBD-derived polynomials and replaced the
+first forward-NTT `l7` multiply/reduce with constant-time selection over the only
+possible ETA2 canonical inputs `{0, 1, 2, Q-2, Q-1}`. The remaining `l6..l1`
+stages reused the existing forward NTT implementation. Correctness passed
+AVX2-only `make test`, but the source was reverted after KEM confirmation showed
+large whole-program regressions.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1549.29 | 1532.13 | 1.0112x | 1.0168x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1596.76 | 1585.78 | 1.0069x | 1.0178x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 772.97 | 766.48 | 1.0085x | 1.0145x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 8626.56 | 9085.99 | 0.9494x | 0.9033x |
+| `mlkem_encaps_core` | 8445.28 | 9051.66 | 0.9330x | 0.9103x |
+| `mlkem_roundtrip_core` | 25604.21 | 26423.14 | 0.9690x | 0.9809x |
+
+Do not reintroduce this first-level ETA2 selection shape. Although it improves
+isolated NTT stage rows, the extra code shape and instruction mix hurt the
+production KEM binaries too much. Future CBD-derived NTT work needs a broader
+layout/schedule change, not just replacing the first level's modular multiply.
+
 Encryption `u` accumulation split metrics were added later to separate the three
 `ntt_mul_acc3()` accumulations from the following three inverse-NTT-add paths.
 The inverse-add-only row copies precomputed NTT-domain accumulations into scratch
