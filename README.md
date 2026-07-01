@@ -1925,6 +1925,34 @@ Keep the explicit XOR trees in the Keccak Theta step. `vpternlog` remains useful
 for Chi (`x ^ (~y & z)`), where the implementation already uses it when
 available, but replacing parity XORs with ternary logic loses on this target.
 
+An AVX512 rotate-intrinsic follow-up was rejected as neutral. The candidate
+changed `rotl64x4()` and `rotl64x8()` to use `_mm256_rol_epi64()` /
+`_mm512_rol_epi64()` when AVX512 rotate instructions are available, leaving
+AVX2-only builds on the existing shift/or sequence. It passed native and
+AVX2-only `make test`, but direct Keccak A/B did not show a measurable win.
+
+Native Keccak A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak KECCAK_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 rotate-intrinsic A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 163.29 | 163.25 | 1.0002x | 0.9999x |
+| `mlkem_prf_eta2` | 188.97 | 187.83 | 1.0061x | 1.0011x |
+| `mlkem_sha3_256_public_key` | 1667.34 | 1668.21 | 0.9995x | 0.9991x |
+| `mlkem_sha3_256_32` | 193.73 | 193.87 | 0.9993x | 0.9998x |
+| `mlkem_sha3_512_32` | 188.13 | 187.93 | 1.0010x | 1.0005x |
+| `mlkem_sample_ntt_full` | 588.77 | 589.16 | 0.9993x | 1.0001x |
+
+Keep the shift/or rotate helper. Clang appears to already recognize the rotate
+idiom well enough on the native AVX512 target, so making the intrinsic explicit
+adds source complexity without a defensible speedup.
+
 ### Independent Core Optimization A/B (2026-07-01, sample_ntt4_one lane extraction)
 
 A narrow AVX2 `sample_ntt4_one()` experiment replacing the per-state-word
