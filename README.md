@@ -883,6 +883,14 @@ speedup `0.947x`. Future forward-NTT work should therefore redesign scheduling
 across multiple stages instead of swapping one scalar/vectorized head level in
 isolation.
 
+A branchless modular add/sub experiment was rejected. Replacing
+`mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
+correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and
+`NTT_ITERS=300000` regressed `mlkem_ntt_head_l7_l4` median speedup to
+`0.9600x`, `mlkem_ntt_copy` to `0.9743x`, `mlkem_ntt_inplace` to `0.9804x`,
+and `mlkem_ntt_inv` to `0.9871x`. Keep the existing simple conditional form;
+clang's generated code is better for the scalar upper NTT stages on this target.
+
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
 non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a
 lightweight sink, while the other breakdown metrics separate state
