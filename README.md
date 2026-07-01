@@ -1374,6 +1374,36 @@ Keep the current store/reload shape in the AVX512 x6/x7 PRF/CBD decoders. The
 compiler and memory pipeline already handle this small local temporary well
 enough that explicit extraction does not produce a defensible integrated win.
 
+A narrower native AVX512 encryption PRF/CBD fixed-nonce experiment was also
+rejected. The candidate specialized the x7 PRF helper for the fixed encryption
+nonce sequence `{0, 1, 2, 3, 4, 5, 6}` so the wrapper no longer built a local
+nonce array or passed it into `mlkem_prf_cbd_eta2x7_32()`. It passed native and
+AVX2-only `make test`, but the direct stage did not improve and the integrated
+encryption rows were not robust enough to justify the extra helper. The likely
+reason is that clang already folds the fixed nonce setup cheaply, while the
+remaining cost is dominated by Keccak and CBD decode work.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage KEM_ITERS=3000 STAGE_ITERS=100000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 fixed-nonce PRF/CBD highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 878.75 | 878.71 | 1.0000x | 0.9993x |
+| `mlkem_core_stage_encrypt_noise` | n/a | n/a | 1.0020x | 1.0012x |
+| `mlkem_core_stage_kpke_encrypt_cached` | n/a | n/a | 0.9957x | 1.0001x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | n/a | n/a | 0.9962x | 0.9988x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | n/a | n/a | 0.9996x | 0.9988x |
+
+Keep the generic AVX512 x7 PRF/CBD helper for encryption. Fixed-nonce
+specialization does not currently buy real core speed, so the simpler shared
+helper is preferable.
+
 ### Independent Core Optimization A/B (2026-07-01, keygen add/encode fusion)
 
 Two keygen `that = A^T*s + e` fusion experiments were rejected. Both were aimed
