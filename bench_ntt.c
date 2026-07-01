@@ -320,6 +320,25 @@ static uint64_t bench_ntt_inplace(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ntt3_inplace(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt(bench_a0[lane], bench_a0[lane]);
+    ntt(bench_a1[lane], bench_a1[lane]);
+    ntt(bench_a2[lane], bench_a2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 17u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 19u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 23u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 #if defined(__AVX2__)
 static uint64_t bench_ntt_head_l7_l4(size_t iters) {
   uint64_t acc = 0;
@@ -545,6 +564,7 @@ int main(int argc, char **argv) {
   printf("mlkem_ntt_bench_iterations=%zu\n", iters);
   print_metric("mlkem_ntt_copy", bench_ntt_copy(iters), iters);
   print_metric("mlkem_ntt_inplace", bench_ntt_inplace(iters), iters);
+  print_metric("mlkem_ntt3_inplace", bench_ntt3_inplace(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);

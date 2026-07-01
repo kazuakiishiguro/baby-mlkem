@@ -623,6 +623,7 @@ helpers:
 |---|---|
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
+| `mlkem_ntt3_inplace` | three consecutive in-place forward NTTs, matching the K=3 batch shape in keygen/encrypt/decrypt |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -666,6 +667,25 @@ and the AVX2 lower tail. Within the tail, `l1` is the largest single prepared
 stage, but the earlier isolated `l4` replacement regressed KEM throughput; the
 next implementation attempt should therefore fuse multiple stages or change data
 layout instead of swapping one stage in isolation.
+
+A new `mlkem_ntt3_inplace` metric was added as the baseline for that next design
+step. It measures three consecutive in-place forward NTTs as one operation, which
+matches the K=3 shape used by keygen secret/error transforms, encapsulation
+`rhat`, and decapsulation `u`. It intentionally does not implement a new packed
+algorithm yet; it makes future real cross-polynomial packing measurable against
+`HEAD` instead of relying on indirect stage rows.
+
+Current `mlkem_ntt3_inplace` snapshot, pinned to CPU 0, `clang`, `200000`
+iterations:
+
+| Build | `mlkem_ntt_inplace` ns/op | `mlkem_ntt3_inplace` ns/op | Per-poly ns/op |
+|---|---:|---:|---:|
+| native `AVX2_BACKEND=core` | 169.93 | 509.86 | 169.95 |
+| AVX2-only `-mavx2 -mbmi2 -mpopcnt` | 197.87 | 580.20 | 193.40 |
+
+The useful target for a packed K=3 forward NTT is therefore not another call-site
+shuffle. It must make `mlkem_ntt3_inplace` materially lower than three independent
+`ntt(in, in)` calls while preserving the existing single-polynomial path.
 
 A narrow experiment replacing the `l1` tail helper's four 2-coefficient
 gather/scatter pairs with one 16-coefficient block load, dword permutes, and one
