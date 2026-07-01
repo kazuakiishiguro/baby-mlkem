@@ -554,6 +554,29 @@ static void stage_prepare_sample_ntt4_streams(void) {
   }
 }
 
+static uint64_t bench_sample_ntt4_full_raw(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    sample_ntt4(stage_rho[lane], row, col,
+                stage_tmp_ahat[lane][0][0], stage_tmp_ahat[lane][0][1],
+                stage_tmp_ahat[lane][0][2], stage_tmp_ahat[lane][1][0]);
+    switch (i & 3u) {
+      case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
+      case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
+      case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
+      default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_sample_ntt4_store_rate(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -1032,6 +1055,8 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_sample_matrix_tail",
                bench_sample_matrix_tail(iters), iters);
 #if defined(__AVX2__)
+  print_metric("mlkem_core_stage_sample_ntt4_full_raw",
+               bench_sample_ntt4_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_store_rate",
                bench_sample_ntt4_store_rate(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_keccak_store3",

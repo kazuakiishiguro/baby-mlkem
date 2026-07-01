@@ -751,6 +751,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
+| `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
@@ -769,7 +770,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
 
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
-non-AVX2 builds. They separate the x4 public-matrix sampler into state
+non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a
+lightweight sink, while the other breakdown metrics separate state
 transpose/store, Keccak+store, and rejection-parse portions so future sampler
 redesign work can target the dominant part instead of repeatedly tuning parser
 bookkeeping in isolation.
