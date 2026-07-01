@@ -953,6 +953,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
 | `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
+| `mlkem_core_stage_keygen_accum_only` | isolated keygen public-vector `A^T*s` NTT-domain multiply-add, excluding error add and public-key encode |
+| `mlkem_core_stage_keygen_add_only` | isolated keygen public-vector error add, using precomputed `A^T*s` and `ehat` |
 | `mlkem_core_stage_keygen_public_encode_only` | isolated keygen public-key d12 encode for the already accumulated `that` vector |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
@@ -2659,7 +2661,15 @@ pinned CPU 0, `clang`, 20,000-iteration snapshot, native measured
 ns/op, and 36.57 ns/op respectively. The split rows have independent sink
 overhead, but the direction is clear: public-key d12 encode is now a small
 component, so future keygen work should target the K=3 accumulation/add
-schedule rather than another d12 encode rewrite.
+schedule rather than another d12 encode rewrite. The `keygen_accum_only` and
+`keygen_add_only` rows further split the accumulation/add boundary so future
+attempts can separate arithmetic wins from the already vectorized error-add
+pass. A pinned CPU 0, `clang`, 40,000-iteration snapshot measured native
+`keygen_accum_only` at 372.87 ns/op and `keygen_add_only` at 200.65 ns/op;
+AVX2-only measured 441.12 ns/op and 204.39 ns/op respectively. These rows have
+separate checksum overhead and are not additive, but they confirm that the next
+core target is still the `A^T*s` accumulation arithmetic rather than the
+existing vectorized error-add pass.
 
 A follow-up K=3 three-output accumulation experiment was rejected. The candidate
 computed all three public-key columns in one `ntt_mul_acc3_cols3_factored_gamma()`

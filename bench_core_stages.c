@@ -33,6 +33,7 @@ static poly256 stage_e_raw[STAGE_BENCH_LANES][K];
 static poly256 stage_r_raw[STAGE_BENCH_LANES][K];
 static poly256 stage_shat[STAGE_BENCH_LANES][K];
 static poly256 stage_ehat[STAGE_BENCH_LANES][K];
+static poly256 stage_that_accum[STAGE_BENCH_LANES][K];
 static poly256 stage_that[STAGE_BENCH_LANES][K];
 static poly256 stage_rhat[STAGE_BENCH_LANES][K];
 static poly256 stage_e1[STAGE_BENCH_LANES][K];
@@ -190,8 +191,9 @@ static void derive_keygen_lane(size_t lane) {
     ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][i], stage_shat[lane][0],
                                 stage_ahat[lane][1][i], stage_shat[lane][1],
                                 stage_ahat[lane][2][i], stage_shat[lane][2],
-                                stage_that[lane][i]);
-    ntt_add(stage_that[lane][i], stage_ehat[lane][i], stage_that[lane][i]);
+                                stage_that_accum[lane][i]);
+    ntt_add(stage_that_accum[lane][i], stage_ehat[lane][i],
+            stage_that[lane][i]);
     byte_encode(12, stage_that[lane][i], stage_ek[lane] + i * 384);
   }
   memcpy(stage_ek[lane] + K * 384, stage_rho[lane], 32);
@@ -898,6 +900,45 @@ static uint64_t bench_keygen_accum_add_only(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_keygen_accum_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int col = 0; col < K; col++) {
+      ntt_mul_acc3_factored_gamma(stage_ahat[lane][0][col],
+                                  stage_shat[lane][0],
+                                  stage_ahat[lane][1][col],
+                                  stage_shat[lane][1],
+                                  stage_ahat[lane][2][col],
+                                  stage_shat[lane][2],
+                                  stage_tmp_vec0[lane][col]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_add_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int col = 0; col < K; col++) {
+      ntt_add(stage_that_accum[lane][col], stage_ehat[lane][col],
+              stage_tmp_vec0[lane][col]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_keygen_public_encode_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1480,6 +1521,10 @@ int main(int argc, char **argv) {
                bench_keygen_accum_encode(iters), iters);
   print_metric("mlkem_core_stage_keygen_accum_add_only",
                bench_keygen_accum_add_only(iters), iters);
+  print_metric("mlkem_core_stage_keygen_accum_only",
+               bench_keygen_accum_only(iters), iters);
+  print_metric("mlkem_core_stage_keygen_add_only",
+               bench_keygen_add_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_public_encode_only",
                bench_keygen_public_encode_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise", bench_encrypt_noise(iters),
