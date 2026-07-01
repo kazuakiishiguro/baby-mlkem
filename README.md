@@ -1236,6 +1236,38 @@ stage about 1% faster, but the full decapsulation path is neutral to slightly
 negative, likely because the wider instructions add front-end/downclock cost
 around much larger NTT and multiply-accumulate work.
 
+
+A decrypt-side decode-to-NTT scheduling experiment was rejected. The candidate
+changed `kpke_decrypt()` to run `ntt(u[i], u[i])` immediately after each d10
+ciphertext `u[i]` decode, instead of decoding all `u[0..2]` and `v` first and
+then transforming the three `u` polynomials. The intent was producer/consumer
+locality: use each freshly decoded `u[i]` while it is still warm.
+
+The candidate passed native `make test` and AVX2-only `make test`, but the
+stage confirmation moved the full decrypt rows slightly negative, so no KEM A/B
+was run.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected decode-to-NTT scheduling highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_decrypt_cached` | 786.99 | 792.35 | 0.9932x | 0.9987x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 791.42 | 795.15 | 0.9953x | 0.9988x |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 215.77 | 215.74 | 1.0001x | 1.0005x |
+| `mlkem_core_stage_decrypt_u_ntt` | 689.67 | 691.85 | 0.9968x | 1.0006x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 748.72 | 751.35 | 0.9965x | 0.9996x |
+
+Keep `kpke_decrypt()` in the existing decode-all, secret-cache, then NTT order.
+The attempted locality gain is smaller than the cost of moving large NTT work
+before the rest of ciphertext preparation and secret-key cache handling.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
