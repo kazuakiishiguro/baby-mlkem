@@ -1444,6 +1444,32 @@ Keep the existing `ntt_mul_acc3_factored_gamma()` plus separate `ntt_add()` and
 the vector add/encode fusion is only a sub-percent local stage improvement with
 weak KEM evidence, so the extra code path is not worth carrying.
 
+A native AVX512 follow-up that widened the generic `poly256_add()` helper from
+16-lane AVX2 vectors to 32-lane AVX512 vectors was also rejected. The candidate
+passed native and AVX2-only core `make test`, but the direct keygen
+accumulate/add/encode stage regressed. The wider helper adds AVX512 mask and zmm
+overhead to a small 16-bit modular add where the existing AVX2 path is already
+cheap.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=120000 KEM_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 `poly256_add()` widening highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 425.44 | 432.20 | 0.9844x | 0.9848x |
+| `mlkem_core_stage_kpke_keygen_full` | 3396.03 | 3412.16 | 0.9953x | 0.9982x |
+| `mlkem_keygen_core` | n/a | n/a | 0.9947x | 1.0002x |
+| `mlkem_roundtrip_core` | n/a | n/a | n/a | 1.0017x |
+
+Keep `poly256_add()` on the AVX2 implementation even for native AVX512 builds.
+The target stage is worse, while the full KEM rows are at best noise-level.
+
 ### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
