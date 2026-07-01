@@ -687,6 +687,42 @@ The useful target for a packed K=3 forward NTT is therefore not another call-sit
 shuffle. It must make `mlkem_ntt3_inplace` materially lower than three independent
 `ntt(in, in)` calls while preserving the existing single-polynomial path.
 
+A K=3 forward-NTT head+tail interleave experiment was rejected. The candidate
+added `ntt3_inplace(f0, f1, f2)`, interleaving the upper forward-NTT stages across
+three polynomials and also interleaving the existing AVX2/AVX512 tail helpers
+across the same three polynomials. Production AVX2 paths routed keygen `shat`,
+keygen `ehat`, encapsulation `rhat`, and decapsulation `u` through this helper;
+`bench_ntt` also validated `ntt3_inplace()` against three independent `ntt()`
+results.
+
+Correctness passed native `make test`, AVX2-only `make test`, and short
+native/AVX2-only `bench-ntt-run` validation. The direct `mlkem_ntt3_inplace` A/B
+rejected it: reusing the same zeta/load schedule across three polynomials without
+changing the in-memory representation increased instruction pressure and lost on
+both native and AVX2-only builds.
+
+A/B command shape:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected K=3 head+tail interleave highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt3_inplace` native | 510.09 | 531.75 | 0.9593x | 0.9635x |
+| `mlkem_ntt3_inplace` AVX2-only | 587.74 | 674.69 | 0.8711x | 0.8715x |
+
+Keep the baseline three independent `ntt()` calls. The next viable K=3 attempt
+must actually change representation, for example by packing same-index
+coefficients from multiple polynomials into SIMD lanes before butterfly work, not
+just by interleaving existing per-polynomial butterflies.
+
 A narrow experiment replacing the `l1` tail helper's four 2-coefficient
 gather/scatter pairs with one 16-coefficient block load, dword permutes, and one
 block store was also rejected. It improved the NTT microbench
