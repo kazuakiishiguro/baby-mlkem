@@ -844,10 +844,19 @@ SUITES=ntt,keccak RUNS=3 ./scripts/bench_core_ab.sh HEAD
 ```
 
 Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
-`C_COMPILER`, `PIN_CPU`, `RUNS`, `WARMUP_RUNS`, `KEM_ITERS`, `STAGE_ITERS`,
-`NTT_ITERS`, and `KECCAK_ITERS` control the run. Use this local A/B output as
-the first filter before documenting an optimization as an independent-core
-speedup.
+`C_COMPILER`, `ARCH_CFLAGS`, `PIN_CPU`, `RUNS`, `WARMUP_RUNS`, `KEM_ITERS`,
+`STAGE_ITERS`, `NTT_ITERS`, and `KECCAK_ITERS` control the run. `ARCH_CFLAGS`
+is forwarded to both the baseline and candidate builds when set; leave it unset
+to use the Makefile default `-march=native`. Use this local A/B output as the
+first filter before documenting an optimization as an independent-core speedup.
+
+For example, force an AVX2-only comparison without AVX512 by overriding the
+architecture flags for both sides:
+
+```bash
+ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" SUITES=stage RUNS=3 \
+  STAGE_ITERS=5000 ./scripts/bench_core_ab.sh HEAD
+```
 
 ### Core-Only No-Cache Comparison Snapshot (2026-06-30)
 
