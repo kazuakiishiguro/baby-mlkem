@@ -1456,12 +1456,64 @@ rows are noisier, but the longer confirmation did not show a decrypt-side
 regression and the roundtrip core row moved in the same direction.
 
 A follow-up experiment that collapsed the two 8-lane decompression helper calls
-into one 16-lane helper and one 256-bit store was rejected. AVX2 stage A/B
+into one 16-lane helper and one 256-bit store while keeping the widened 32-bit
+multiply was rejected. AVX2 stage A/B
 against `233bac2` with `RUNS=13` and `STAGE_ITERS=120000` regressed
 `mlkem_core_stage_ciphertext_decode_decompress` median speedup to `0.9853x` and
 `mlkem_core_stage_kpke_decrypt_cached` to `0.9998x`. Keep the two 8-lane helper
 calls; the compiler schedules that shape better than the wider packed helper on
 this target.
+
+### Independent Core Optimization A/B (2026-07-01, AVX2 d10 mulhrs decompress)
+
+Baseline is commit `3dc14d6` with the accepted AVX2 `d = 10` tail path and the
+rejected widened-helper experiment reverted; candidate is the working tree after
+rewriting the `DU = 10` decompression arithmetic to stay in 16-bit lanes. This
+is a core implementation change and does not call an external backend.
+
+The implementation uses the exact identity
+`((3329 * v + 512) >> 10) = 3*v + ((257*v + 512) >> 10)` for each 10-bit
+coefficient. The second term is computed as `_mm256_mulhrs_epi16(v, 8224)`,
+because `(v * 8224 + 16384) >> 15` equals `((257*v + 512) >> 10)` for
+`0 <= v < 1024`. This removes the previous 16-bit-to-32-bit widening and
+32-bit multiply from the d10 decode/decompress path. A temporary checker
+compared 10,000 random 320-byte inputs against the scalar reference and also
+checked the identity for all `v = 0..1023`.
+
+AVX2-only stage command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=120000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 255.71 | 220.75 | 1.158x | 1.157x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 964.59 | 926.53 | 1.041x | 1.040x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 979.10 | 942.03 | 1.039x | 1.038x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=13 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 4099.62 | 4047.34 | 1.013x | 1.008x |
+| `mlkem_decaps_core` | 8555.93 | 8186.83 | 1.045x | 1.055x |
+| `mlkem_roundtrip_core` | 27003.70 | 25812.84 | 1.046x | 1.031x |
+
+Unlike the rejected widened 16-lane helper above, this change is useful because
+it removes the expensive 32-bit arithmetic rather than merely repacking it.
 
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 

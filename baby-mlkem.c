@@ -3346,14 +3346,11 @@ static void compress_poly(int d, const poly256 x, uint16_t *out) {
 }
 
 #if defined(__AVX2__)
-static inline __m128i decompress_d10_vec8_avx2(__m128i v16) {
-  const __m256i q = _mm256_set1_epi32(Q);
-  const __m256i half = _mm256_set1_epi32(512);
-  __m256i v = _mm256_cvtepu16_epi32(v16);
-  v = _mm256_mullo_epi32(v, q);
-  v = _mm256_add_epi32(v, half);
-  v = _mm256_srli_epi32(v, 10);
-  return pack_i32x8_to_i16x8(v);
+static inline __m256i decompress_d10_vec_avx2(__m256i v) {
+  /* Exact: (3329*v + 512) >> 10 = 3*v + ((257*v + 512) >> 10). */
+  const __m256i mul = _mm256_set1_epi16(8224);
+  __m256i q3 = _mm256_add_epi16(v, _mm256_slli_epi16(v, 1));
+  return _mm256_add_epi16(q3, _mm256_mulhrs_epi16(v, mul));
 }
 
 static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
@@ -3378,10 +3375,7 @@ static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
     v = _mm256_blend_epi16(v, v6, 0x88);
     v = _mm256_and_si256(v, mask);
 
-    _mm_storeu_si128((__m128i *)(out + i),
-                     decompress_d10_vec8_avx2(_mm256_castsi256_si128(v)));
-    _mm_storeu_si128((__m128i *)(out + i + 8),
-                     decompress_d10_vec8_avx2(_mm256_extracti128_si256(v, 1)));
+    _mm256_storeu_si256((__m256i *)(out + i), decompress_d10_vec_avx2(v));
   }
 
   /* Build the final two 10-byte groups without reading past the buffer. */
@@ -3403,10 +3397,7 @@ static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
     v = _mm256_blend_epi16(v, v6, 0x88);
     v = _mm256_and_si256(v, mask);
 
-    _mm_storeu_si128((__m128i *)(out + N - 16),
-                     decompress_d10_vec8_avx2(_mm256_castsi256_si128(v)));
-    _mm_storeu_si128((__m128i *)(out + N - 8),
-                     decompress_d10_vec8_avx2(_mm256_extracti128_si256(v, 1)));
+    _mm256_storeu_si256((__m256i *)(out + N - 16), decompress_d10_vec_avx2(v));
   }
 }
 
