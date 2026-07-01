@@ -3060,9 +3060,8 @@ static inline uint16_t compress_coeff_d4(int16_t x) {
   return (uint16_t)((((uint32_t)n * 315u) >> 20) & 0x000Fu);
 }
 
-/* This 16-bit compressor wins on the AVX512-capable native path; AVX2-only
- * builds keep clang's auto-vectorized scalar code, which benchmarks better. */
-#if defined(__AVX2__) && defined(__AVX512F__)
+/* AVX2 fused compression/encoding avoids scalar bit packing in ciphertext output. */
+#if defined(__AVX2__)
 static inline void compress_poly_d10_avx2(const poly256 x, uint16_t *out) {
   const __m256i v = _mm256_set1_epi16(20159);
   const __m256i v8 = _mm256_slli_epi16(v, 3);
@@ -3630,7 +3629,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
   uint8_t *p = out_c;
-#if defined(__AVX2__) && defined(__AVX512F__)
+#if defined(__AVX2__)
   for (int i = 0; i < K; i++) {
     compress_encode_poly_d10_avx2(u[i], p);
     p += (N * DU) / 8;

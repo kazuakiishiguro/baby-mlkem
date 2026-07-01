@@ -48,7 +48,7 @@ static uint8_t stage_tmp_msg[STAGE_BENCH_LANES][32];
 #if !defined(__AVX2__)
 static uint8_t stage_tmp_prf[STAGE_BENCH_LANES][64 * ETA1];
 #endif
-#if !(defined(__AVX2__) && defined(__AVX512F__))
+#if !defined(__AVX2__)
 static uint16_t stage_tmp_cbuf[STAGE_BENCH_LANES][N];
 #endif
 static poly256 stage_tmp_ahat[STAGE_BENCH_LANES][K][K];
@@ -825,7 +825,7 @@ static uint64_t bench_ciphertext_compress_encode(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     uint8_t *p = stage_tmp_ct[lane];
-#if defined(__AVX2__) && defined(__AVX512F__)
+#if defined(__AVX2__)
     for (int j = 0; j < K; j++) {
       compress_encode_poly_d10_avx2(stage_u[lane][j], p);
       p += (N * DU) / 8;
