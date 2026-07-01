@@ -2700,6 +2700,45 @@ accumulation. The next keygen attempt should either reduce the per-column scalar
 critical path itself or add a vectorized accumulation path, not only coalesce the
 three output columns into one larger scalar loop.
 
+A narrow NTT accumulation `restrict` qualifier experiment was rejected. The
+candidate changed `ntt_mul_add()`, `ntt_mul_acc3()`,
+`ntt_mul_acc3_pair_values()`, and `ntt_mul_acc3_factored_gamma()` signatures from
+`poly256` parameters to `int16_t [restrict N]` parameters, reflecting the actual
+non-overlap between accumulation inputs and outputs. It passed native and
+AVX2-only `make test`, but the direct helper rows were essentially neutral and
+KEM keygen did not show a clean win.
+
+Restrict AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Restrict native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=40000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected restrict highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 96.40 | 97.19 | 0.9920x | 0.9985x |
+| `mlkem_ntt_mul_acc3_factored` | 96.74 | 97.52 | 0.9920x | 0.9998x |
+| `mlkem_core_stage_keygen_accum_only` | 372.25 | 373.00 | 0.9980x | 0.9997x |
+| `mlkem_core_stage_keygen_accum_encode` | 422.65 | 422.23 | 1.0010x | 1.0019x |
+| `mlkem_keygen` | 5310.35 | 5319.38 | 0.9983x | 1.0003x |
+| `mlkem_keygen_core` | 5286.01 | 5295.13 | 0.9983x | 1.0007x |
+
+Do not carry the restrict-only source change. Clang's current lowering for the
+hot scalar accumulation loop is already effectively alias-insensitive here, and
+the direct `A^T*s` metric did not move. Future work needs to change the
+arithmetic schedule or representation, not just pointer qualifiers.
+
 Native stage A/B command:
 
 ```bash
