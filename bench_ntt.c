@@ -122,6 +122,56 @@ static void ntt3_unpack_aos4(const int16_t in[N][4], poly256 a0, poly256 a1,
   }
 }
 
+#if defined(__AVX2__)
+static inline void ntt3_aos4_butterfly_avx2(int16_t a[4], int16_t b[4],
+                                            __m256i zeta) {
+  __m128i a16 = _mm_loadl_epi64((const __m128i *)&a[0]);
+  __m128i b16 = _mm_loadl_epi64((const __m128i *)&b[0]);
+  __m256i av = _mm256_cvtepu16_epi32(a16);
+  __m256i bv = _mm256_cvtepu16_epi32(b16);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(bv, zeta));
+  _mm_storel_epi64((__m128i *)&a[0],
+                   pack_i32x8_to_i16x8(mod_q_add_i32x8(av, t)));
+  _mm_storel_epi64((__m128i *)&b[0],
+                   pack_i32x8_to_i16x8(mod_q_sub_i32x8(av, t)));
+}
+#endif
+
+static inline void ntt3_aos4_butterfly_scalar(int16_t a[4], int16_t b[4],
+                                              uint16_t zeta) {
+  for (int lane = 0; lane < 3; lane++) {
+    uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)b[lane];
+    int16_t t = mod_q_reduce_ntt_u32(prod);
+    int16_t av = a[lane];
+    b[lane] = mod_q_sub_i16(av, t);
+    a[lane] = mod_q_add_i16(av, t);
+  }
+  a[3] = 0;
+  b[3] = 0;
+}
+
+static void ntt3_aos4_inplace(int16_t f[N][4]) {
+  ensure_ntt_roots();
+  int k = 1;
+  for (int log2len = 7; log2len > 0; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k++];
+#if defined(__AVX2__)
+      __m256i zeta_v = _mm256_set1_epi32(zeta);
+#endif
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+#if defined(__AVX2__)
+        ntt3_aos4_butterfly_avx2(f[idx], f[idx + length], zeta_v);
+#else
+        ntt3_aos4_butterfly_scalar(f[idx], f[idx + length], zeta);
+#endif
+      }
+    }
+  }
+}
+
 static void bench_forward_ntt_level(poly256 f, int log2len, int k_start) {
   int k = k_start;
   int length = 1 << log2len;
@@ -284,6 +334,17 @@ static void validate_ntt_helpers(void) {
   check_equal(got, tmp, "forward ntt tail level sequence");
 #endif
 
+  ntt3_pack_aos4(bench_a0[0], bench_a1[0], bench_a2[0], bench_ntt3_aos4[0]);
+  ntt3_aos4_inplace(bench_ntt3_aos4[0]);
+  ntt3_unpack_aos4(bench_ntt3_aos4[0], got, want, accum);
+  ntt(bench_a0[0], tmp);
+  check_equal(got, tmp, "ntt3_aos4 poly0");
+  ntt(bench_a1[0], tmp);
+  check_equal(want, tmp, "ntt3_aos4 poly1");
+  ntt(bench_a2[0], tmp);
+  check_equal(accum, tmp, "ntt3_aos4 poly2");
+
+  ntt(bench_a0[0], tmp);
   ntt_inv(tmp, got);
   check_equal(got, bench_a0[0], "ntt_inv(ntt(x))");
 
@@ -417,6 +478,67 @@ static uint64_t bench_ntt3_pack_unpack_aos4(size_t iters) {
     acc += (uint16_t)bench_a0[lane][(i * 43u) & (N - 1)];
     acc += (uint16_t)bench_a1[lane][(i * 47u) & (N - 1)];
     acc += (uint16_t)bench_a2[lane][(i * 53u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_aos4_inplace(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+  }
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_aos4_inplace(bench_ntt3_aos4[lane]);
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 59u) & (N - 1)][0];
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 61u) & (N - 1)][1];
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 67u) & (N - 1)][2];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_pack_ntt_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+    ntt3_aos4_inplace(bench_ntt3_aos4[lane]);
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 71u) & (N - 1)][0];
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 73u) & (N - 1)][1];
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 79u) & (N - 1)][2];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_pack_ntt_unpack_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+    ntt3_aos4_inplace(bench_ntt3_aos4[lane]);
+    ntt3_unpack_aos4(bench_ntt3_aos4[lane], bench_a0[lane], bench_a1[lane],
+                     bench_a2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 83u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 89u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 97u) & (N - 1)];
   }
   t1 = now_ns();
   bench_ntt_sink ^= acc;
@@ -653,6 +775,12 @@ int main(int argc, char **argv) {
   print_metric("mlkem_ntt3_unpack_aos4", bench_ntt3_unpack_aos4(iters), iters);
   print_metric("mlkem_ntt3_pack_unpack_aos4",
                bench_ntt3_pack_unpack_aos4(iters), iters);
+  print_metric("mlkem_ntt3_aos4_inplace", bench_ntt3_aos4_inplace(iters),
+               iters);
+  print_metric("mlkem_ntt3_pack_ntt_aos4", bench_ntt3_pack_ntt_aos4(iters),
+               iters);
+  print_metric("mlkem_ntt3_pack_ntt_unpack_aos4",
+               bench_ntt3_pack_ntt_unpack_aos4(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);

@@ -627,6 +627,9 @@ helpers:
 | `mlkem_ntt3_pack_aos4` | diagnostic pack of three polynomials into `[coefficient][poly0, poly1, poly2, pad]` layout |
 | `mlkem_ntt3_unpack_aos4` | diagnostic unpack from the padded K=3 AoS4 layout back to three polynomials |
 | `mlkem_ntt3_pack_unpack_aos4` | diagnostic round-trip pack plus unpack cost for a future packed K=3 NTT representation |
+| `mlkem_ntt3_aos4_inplace` | bench-only K=3 forward NTT directly over the padded AoS4 layout, excluding pack/unpack |
+| `mlkem_ntt3_pack_ntt_aos4` | diagnostic pack plus bench-only AoS4 K=3 forward NTT |
+| `mlkem_ntt3_pack_ntt_unpack_aos4` | diagnostic standalone AoS4 K=3 forward NTT including pack and unpack |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -708,6 +711,29 @@ each transform must save more than about 37 ns on native and 97 ns on AVX2-only
 just to break even. A more plausible design should either keep data in the
 packed layout across neighboring stages or generate/consume CBD/decode data in
 that layout directly.
+
+A bench-only AoS4 packed-NTT prototype then tested whether that layout can pay
+for itself inside the transform. It runs the full forward NTT over
+`[coefficient][poly0, poly1, poly2, pad]`, using the fourth lane as padding and
+checking the unpacked result against three independent `ntt()` calls. Pinned CPU
+0, `clang`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Speedup vs `mlkem_ntt3_inplace` |
+|---|---|---:|---:|
+| native | `mlkem_ntt3_inplace` | 510.54 | 1.000x |
+| native | `mlkem_ntt3_aos4_inplace` | 1377.63 | 0.371x |
+| native | `mlkem_ntt3_pack_ntt_aos4` | 1529.71 | 0.334x |
+| native | `mlkem_ntt3_pack_ntt_unpack_aos4` | 1548.40 | 0.330x |
+| AVX2-only | `mlkem_ntt3_inplace` | 584.02 | 1.000x |
+| AVX2-only | `mlkem_ntt3_aos4_inplace` | 1319.51 | 0.443x |
+| AVX2-only | `mlkem_ntt3_pack_ntt_aos4` | 1348.66 | 0.433x |
+| AVX2-only | `mlkem_ntt3_pack_ntt_unpack_aos4` | 1419.90 | 0.411x |
+
+Reject this coefficient-major AoS4 transform shape. It vectorizes only three
+useful polynomial lanes per butterfly, so each 256-bit operation does too little
+work and loses badly to the current single-polynomial NTT tail and compiler-
+vectorized upper levels. A viable packed K=3 design needs a wider tile that also
+uses coefficient parallelism, not just the three K columns plus one padding lane.
 
 A follow-up CBD-side diagnostic checks the input-generation part of that same
 layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,
