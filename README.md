@@ -1195,6 +1195,47 @@ Keep `kpke_prepare_public_no_cache()` in decode, matrix-sample, then hash-tail
 order. The extra locality from adjacent decode/hash public-key reads is too
 small next to the sampler and K-PKE arithmetic costs.
 
+
+A native AVX512 d10 ciphertext decode/decompress experiment was also rejected.
+The candidate added a `decompress_decode_poly_d10_avx512()` path that unpacked
+four 10-byte ciphertext groups into one zmm register and decompressed 32
+coefficients at a time. This follows the same wide-lane batching idea used in
+high-throughput finite-field code, but here the direct stage win did not carry
+through to KEM decapsulation.
+
+The candidate passed native `make test` and AVX2-only `make test`. AVX2-only
+kept the existing AVX2 d10 decoder because the new path was guarded by
+`__AVX512F__ && __AVX512BW__`.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 d10 decode/decompress highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 215.79 | 213.42 | 1.0111x | 1.0104x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 786.54 | 789.47 | 0.9963x | 0.9999x |
+| `mlkem_decaps` | 2911.89 | 2909.72 | 1.0007x | 0.9999x |
+| `mlkem_decaps_core` | 4392.35 | 4400.78 | 0.9981x | 0.9997x |
+| `mlkem_roundtrip_core` | 14640.25 | 14621.85 | 1.0013x | 1.0006x |
+
+Keep the narrower AVX2 d10 decoder. The zmm path makes the isolated decode
+stage about 1% faster, but the full decapsulation path is neutral to slightly
+negative, likely because the wider instructions add front-end/downclock cost
+around much larger NTT and multiply-accumulate work.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
