@@ -45,6 +45,7 @@ static poly256 stage_uhead[STAGE_BENCH_LANES][K];
 #endif
 static poly256 stage_uhat[STAGE_BENCH_LANES][K];
 static poly256 stage_v[STAGE_BENCH_LANES];
+static uint16_t stage_u_d10[STAGE_BENCH_LANES][K][N];
 static poly256 stage_w_ntt[STAGE_BENCH_LANES];
 #if defined(__AVX2__)
 static poly256 stage_w_inv_head[STAGE_BENCH_LANES];
@@ -56,6 +57,7 @@ static uint8_t stage_tmp_pk[STAGE_BENCH_LANES][STAGE_PK_BYTES];
 static uint8_t stage_tmp_dk[STAGE_BENCH_LANES][STAGE_DK_PKE_BYTES];
 static uint8_t stage_tmp_ct[STAGE_BENCH_LANES][STAGE_CT_BYTES];
 static uint8_t stage_tmp_msg[STAGE_BENCH_LANES][32];
+static uint16_t stage_tmp_u16[STAGE_BENCH_LANES][K][N];
 #if !defined(__AVX2__)
 static uint8_t stage_tmp_prf[STAGE_BENCH_LANES][64 * ETA1];
 #endif
@@ -260,6 +262,7 @@ static void derive_encrypt_lane(size_t lane) {
 
   for (int i = 0; i < K; i++) {
     compress_poly(DU, stage_u[lane][i], cbuf);
+    memcpy(stage_u_d10[lane][i], cbuf, sizeof(cbuf));
     byte_encode_u16(DU, cbuf, p);
     p += (N * DU) / 8;
   }
@@ -1136,6 +1139,33 @@ static uint64_t bench_encrypt_accum_inv_v(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__)
+static void bench_byte_encode_d10_avx2(const uint16_t *vals, uint8_t *out) {
+  const __m256i shift2 = _mm256_set1_epi64x(
+      (1024LL << 48) + (1LL << 32) + (1024LL << 16) + 1);
+  const __m256i sllvdidx = _mm256_set1_epi64x(12);
+  const __m256i shufbidx = _mm256_set_epi8(
+       8,  4,  3,  2,  1,  0, -1, -1,
+      -1, -1, -1, -1, 12, 11, 10,  9,
+      -1, -1, -1, -1, -1, -1, 12, 11,
+      10,  9,  8,  4,  3,  2,  1,  0);
+
+  for (int i = 0; i < N; i += 16) {
+    __m256i f = _mm256_loadu_si256((const __m256i *)(const void *)(vals + i));
+    f = _mm256_madd_epi16(f, shift2);
+    f = _mm256_sllv_epi32(f, sllvdidx);
+    f = _mm256_srli_epi64(f, 12);
+    f = _mm256_shuffle_epi8(f, shufbidx);
+    __m128i t0 = _mm256_castsi256_si128(f);
+    __m128i t1 = _mm256_extracti128_si256(f, 1);
+    t0 = _mm_blend_epi16(t0, t1, 0xE0);
+    uint8_t *p = out + (size_t)(i / 16) * 20;
+    _mm_storeu_si128((__m128i *)(void *)p, t0);
+    _mm_storeu_si32((void *)(p + 16), t1);
+  }
+}
+#endif
+
 static uint64_t bench_ciphertext_compress_encode(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1184,6 +1214,48 @@ static uint64_t bench_ciphertext_compress_encode_d10(size_t iters) {
       p += (N * DU) / 8;
     }
 #endif
+    acc ^= stage_tmp_ct[lane][(i * 19u) % (K * ((N * DU) / 8))];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ciphertext_compress_encode_d10_compress_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+#if defined(__AVX2__)
+      compress_poly_d10_avx2(stage_u[lane][j], stage_tmp_u16[lane][j]);
+#else
+      compress_poly(DU, stage_u[lane][j], stage_tmp_u16[lane][j]);
+#endif
+    }
+    acc ^= stage_tmp_u16[lane][i % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ciphertext_compress_encode_d10_pack_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    uint8_t *p = stage_tmp_ct[lane];
+    for (int j = 0; j < K; j++) {
+#if defined(__AVX2__)
+      bench_byte_encode_d10_avx2(stage_u_d10[lane][j], p);
+#else
+      byte_encode_u16(DU, stage_u_d10[lane][j], p);
+#endif
+      p += (N * DU) / 8;
+    }
     acc ^= stage_tmp_ct[lane][(i * 19u) % (K * ((N * DU) / 8))];
   }
   t1 = now_ns();
@@ -1622,6 +1694,10 @@ int main(int argc, char **argv) {
                bench_ciphertext_compress_encode(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_compress_encode_d10",
                bench_ciphertext_compress_encode_d10(iters), iters);
+  print_metric("mlkem_core_stage_ciphertext_compress_encode_d10_compress_only",
+               bench_ciphertext_compress_encode_d10_compress_only(iters), iters);
+  print_metric("mlkem_core_stage_ciphertext_compress_encode_d10_pack_only",
+               bench_ciphertext_compress_encode_d10_pack_only(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_compress_encode_d4",
                bench_ciphertext_compress_encode_d4(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_decode_decompress",
