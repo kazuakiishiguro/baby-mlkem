@@ -170,11 +170,21 @@ static void run_ntt_tail_l3_avx2(poly256 f) {
 }
 
 static void run_ntt_tail_l2_avx2(poly256 f) {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    ntt_butterfly4x4_avx512(f + start, f + start + 4,
+                            f + start + 8, f + start + 12,
+                            f + start + 16, f + start + 20,
+                            f + start + 24, f + start + 28,
+                            ZETA_NTT_TAIL_L2X2[i]);
+  }
+#else
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly4x2_avx2(f + start, f + start + 4,
                           f + start + 8, f + start + 12,
                           ZETA_NTT_TAIL_L2[i]);
   }
+#endif
 }
 
 static void run_ntt_tail_l1_avx2(poly256 f) {

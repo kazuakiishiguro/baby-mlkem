@@ -2018,6 +2018,83 @@ direct `sample_ntt4_store_rate` median speedup regressed to `0.9948x` and
 `sample_ntt4_keccak_store3` median speedup regressed to `0.9985x`; keep the
 existing local `last[4]` store in `sample_ntt4_store_rate()`.
 
+### Independent Core Optimization A/B (2026-07-01, AVX512 forward NTT tail l2)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `e5df22b` before widening the forward NTT tail l2 butterfly; candidate is
+the working tree after the AVX512 l2 change. This is a core-vs-core comparison
+and does not use the vendored Kyber/PQClean AVX2 backends for the candidate
+path.
+
+The implementation keeps the core path vendor-free and does not add any
+cross-operation cache. On native AVX512BW-capable builds, `ntt_tail_avx2()` now
+processes two adjacent l2 16-coefficient blocks at once with a 512-bit helper.
+AVX2-only and non-AVX512 builds keep the previous 256-bit l2 helper. The NTT
+bench harness was also aligned so `mlkem_ntt_tail_avx2_l2` measures the same
+AVX512/AVX2 split used by the real tail path.
+
+Correctness checks:
+
+```bash
+git diff --check
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-ntt-run CC=clang AVX2_BACKEND=core BENCH_NTT_ITERS=1000
+make bench-ntt-run CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" BENCH_NTT_ITERS=1000
+```
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+NTT A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_tail_avx2_l2` | 31.38 | 30.76 | 1.020x | 1.017x |
+| `mlkem_ntt_tail_avx2` | 94.27 | 93.54 | 1.008x | 1.008x |
+| `mlkem_ntt_inplace` | 170.56 | 171.15 | 0.997x | 1.003x |
+| `mlkem_ntt_copy` | 172.55 | 172.18 | 1.002x | 1.000x |
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 763.93 | 762.28 | 1.002x | 1.002x |
+| `mlkem_core_stage_decrypt_u_ntt_tail` | 466.73 | 466.93 | 1.000x | 1.001x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 693.47 | 695.29 | 0.997x | 1.002x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1560.39 | 1564.92 | 0.997x | 1.001x |
+| `mlkem_core_stage_kpke_keygen_full` | 3409.59 | 3400.41 | 1.003x | 1.002x |
+
+Native KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 5303.94 | 5277.10 | 1.005x | 1.002x |
+| `mlkem_encaps` | 2115.66 | 2116.96 | 0.999x | 1.001x |
+| `mlkem_decaps` | 2947.85 | 2939.03 | 1.003x | 1.003x |
+| `mlkem_roundtrip` | 10358.23 | 10335.99 | 1.002x | 1.002x |
+| `mlkem_keygen_core` | 5262.73 | 5259.29 | 1.001x | 1.000x |
+| `mlkem_roundtrip_core` | 14752.80 | 14722.10 | 1.002x | 1.003x |
+
+The direct acceptance signal is the l2/tail NTT improvement. Full KEM movement
+is intentionally described as small because this changes only one forward NTT
+tail stage; the useful outcome is a local 512-bit butterfly without relying on
+vendored external arithmetic code.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 sample_ntt8 static stream scratch)
 
 A native AVX512 follow-up that moved `sample_ntt8_matrix()`'s `uint8_t

@@ -968,6 +968,7 @@ static __m256i ZETA_NTT_INV_HEAD_L1[16];
 static __m512i ZETA_NTT_HEAD_AVX512[15];
 static __m512i ZETA_NTT_INV_TAIL_AVX512[15];
 static __m512i ZETA_NTT_TAIL_L3X2[8];
+static __m512i ZETA_NTT_TAIL_L2X2[8];
 #endif
 #endif
 static int NTT_ROOTS_READY = 0;
@@ -1204,6 +1205,35 @@ static inline void store_i16x4_pair(int16_t *a, int16_t *b, __m128i v) {
   _mm_storel_epi64((__m128i *)b, _mm_srli_si128(v, 8));
 }
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static inline __m256i load_i16x4_quad(const int16_t *a0, const int16_t *a1,
+                                      const int16_t *a2, const int16_t *a3) {
+  __m256i v = _mm256_castsi128_si256(load_i16x4_pair(a0, a1));
+  return _mm256_inserti128_si256(v, load_i16x4_pair(a2, a3), 1);
+}
+
+static inline void store_i16x4_quad(int16_t *a0, int16_t *a1,
+                                    int16_t *a2, int16_t *a3,
+                                    __m256i v) {
+  store_i16x4_pair(a0, a1, _mm256_castsi256_si128(v));
+  store_i16x4_pair(a2, a3, _mm256_extracti128_si256(v, 1));
+}
+
+static inline void ntt_butterfly4x4_avx512(int16_t *a0, int16_t *b0,
+                                           int16_t *a1, int16_t *b1,
+                                           int16_t *a2, int16_t *b2,
+                                           int16_t *a3, int16_t *b3,
+                                           __m512i zeta) {
+  __m512i a = _mm512_cvtepu16_epi32(load_i16x4_quad(a0, a1, a2, a3));
+  __m512i b = _mm512_cvtepu16_epi32(load_i16x4_quad(b0, b1, b2, b3));
+  __m512i t = mod_q_reduce_ntt_u32x16(_mm512_mullo_epi32(b, zeta));
+  store_i16x4_quad(a0, a1, a2, a3,
+                   _mm512_cvtusepi32_epi16(mod_q_add_i32x16(a, t)));
+  store_i16x4_quad(b0, b1, b2, b3,
+                   _mm512_cvtusepi32_epi16(mod_q_sub_i32x16(a, t)));
+}
+#endif
+
 static inline void ntt_butterfly4x2_avx2(int16_t *a0, int16_t *b0,
                                          int16_t *a1, int16_t *b1,
                                          __m256i zeta) {
@@ -1262,11 +1292,21 @@ static void ntt_tail_avx2(poly256 f) {
     ntt_butterfly8_avx2(f + start, f + start + 8, ZETA_NTT_TAIL_L3[i]);
   }
 #endif
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    ntt_butterfly4x4_avx512(f + start, f + start + 4,
+                            f + start + 8, f + start + 12,
+                            f + start + 16, f + start + 20,
+                            f + start + 24, f + start + 28,
+                            ZETA_NTT_TAIL_L2X2[i]);
+  }
+#else
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly4x2_avx2(f + start, f + start + 4,
                           f + start + 8, f + start + 12,
                           ZETA_NTT_TAIL_L2[i]);
   }
+#endif
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly2x4_avx2(f + start, f + start + 2,
                           f + start + 4, f + start + 6,
@@ -1418,6 +1458,13 @@ static void init_ntt_roots(void) {
         ZETA[k], ZETA[k], ZETA[k], ZETA[k],
         ZETA[k + 1], ZETA[k + 1], ZETA[k + 1], ZETA[k + 1],
         ZETA[k + 1], ZETA[k + 1], ZETA[k + 1], ZETA[k + 1]);
+
+    k = 32 + 4 * i;
+    ZETA_NTT_TAIL_L2X2[i] = _mm512_setr_epi32(
+        ZETA[k], ZETA[k], ZETA[k], ZETA[k],
+        ZETA[k + 1], ZETA[k + 1], ZETA[k + 1], ZETA[k + 1],
+        ZETA[k + 2], ZETA[k + 2], ZETA[k + 2], ZETA[k + 2],
+        ZETA[k + 3], ZETA[k + 3], ZETA[k + 3], ZETA[k + 3]);
   }
 #endif
 #endif
