@@ -3080,6 +3080,36 @@ Keep native AVX512 final fusion limited to `ntt_inv_sub_from_inplace()` and
 `ntt_inv_add3_inplace()`. Those two integrated cleanly; generic add/add2 fusion
 shows useful local rows but insufficient whole-core robustness.
 
+An AVX512 inverse-final constant-hoist follow-up was also rejected. The candidate
+precomputed `3303` and `ZETA[1] * 3303` as global `__m512i` constants during
+`init_ntt_roots()` and reused them from the accepted AVX512 inverse final-fusion
+helpers. It passed native and AVX2-only core `make test`, but the A/B result was
+weaker than keeping local `_mm512_set1_epi32()` construction. The likely reason
+is that the compiler already handles these broadcasts cheaply, while global
+vector loads and the changed code layout perturb nearby inverse-NTT helpers.
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=240000 STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 inverse constant-hoist highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv` | 169.02 | 169.73 | 0.9958x | 0.9963x |
+| `mlkem_ntt_inv_add` | 177.41 | 178.67 | 0.9930x | 0.9928x |
+| `mlkem_ntt_inv_add2` | 187.25 | 188.99 | 0.9908x | 0.9909x |
+| `mlkem_ntt_inv_sub_from` | 169.05 | 169.31 | 0.9985x | 0.9988x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1111.35 | 1113.16 | 0.9984x | 0.9990x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1863.84 | 1866.82 | 0.9984x | 0.9982x |
+| `mlkem_core_stage_kpke_keygen_full` | 3401.21 | 3420.26 | 0.9944x | 0.9967x |
+
+Keep the accepted AVX512 inverse helpers using local vector broadcasts for the
+scale constants. This keeps the source simpler and measured faster.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
