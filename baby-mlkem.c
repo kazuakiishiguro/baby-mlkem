@@ -2415,7 +2415,9 @@ static void sample_ntt4(const uint8_t *seed,
                         poly256 out2,
                         poly256 out3) {
   __m256i st[25];
-  uint8_t stream[4][504];
+  /* Keep the x4 stream scratch off the stack; this file already uses global
+     scratch/caches. */
+  static uint8_t stream[4][504];
   int16_t *outs[4] = {out0, out1, out2, out3};
 
   for (int i = 0; i < 25; i++) {

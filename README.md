@@ -1169,6 +1169,47 @@ The implementation now enables `compress_encode_poly_d10_avx2()` and
 `compress_encode_poly_d4_avx2()` for all AVX2 core builds. Non-AVX2 builds keep
 the scalar `compress_poly()` plus `byte_encode_u16()` path.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
+
+Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
+candidate keeps the same sampler logic but stores the 4x504-byte temporary
+stream in static scratch instead of per-call stack storage. This is a core
+implementation change, not a cache or external-backend optimization.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1352.73 | 1350.67 | 1.002x |
+| `mlkem_core_stage_sample_matrix` | 4675.75 | 4258.40 | 1.098x |
+| `mlkem_core_stage_kpke_keygen_full` | 6747.60 | 6732.75 | 1.002x |
+| `mlkem_keygen_core` | 9671.07 | 9396.98 | 1.029x |
+| `mlkem_roundtrip_core` | 26367.66 | 26161.21 | 1.008x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=16000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keygen_core` | 9419.45 | 8854.80 | 1.064x |
+| `mlkem_decaps_core` | 8393.26 | 7858.29 | 1.068x |
+| `mlkem_roundtrip_core` | 27283.58 | 26046.08 | 1.048x |
+
+The direct x4 sampler body only moves slightly, but removing the large per-call
+stack scratch stabilizes the surrounding keygen/roundtrip core path on AVX2-only
+builds.
+
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
