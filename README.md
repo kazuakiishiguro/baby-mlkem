@@ -2018,6 +2018,38 @@ direct `sample_ntt4_store_rate` median speedup regressed to `0.9948x` and
 `sample_ntt4_keccak_store3` median speedup regressed to `0.9985x`; keep the
 existing local `last[4]` store in `sample_ntt4_store_rate()`.
 
+### Independent Core Optimization A/B (2026-07-01, AVX512 sample_ntt8 static stream scratch)
+
+A native AVX512 follow-up that moved `sample_ntt8_matrix()`'s `uint8_t
+stream[8][504]` scratch from the stack to static storage was rejected. This was
+modeled after the accepted AVX2 x4 sampler scratch change above, but the x8 path
+behaved differently: the direct public-matrix sampler row regressed clearly.
+
+The candidate changed only the storage duration of the 8x504-byte stream buffer
+inside `sample_ntt8_matrix()`. It passed native `make test`, AVX2-only
+`make test`, and `git diff --check`.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 1901.04 | 1961.43 | 0.969x | 0.965x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 787.48 | 794.88 | 0.991x | 1.001x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 830.79 | 839.95 | 0.989x | 0.998x |
+| `mlkem_core_stage_kpke_keygen_full` | 3402.47 | 3396.43 | 1.002x | 1.002x |
+
+Keep `sample_ntt8_matrix()`'s stream buffer on the stack. Unlike the AVX2 x4
+sampler, moving the larger AVX512 x8 stream to static storage hurts the direct
+sample-matrix stage enough that any surrounding keygen noise is not a defensible
+acceptance signal.
+
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
