@@ -755,6 +755,12 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
+| `mlkem_core_stage_sample_ntt4_initial_extra_groups` | AVX2-only x4 sampler groups that need a refill after the first 504 bytes per lane |
+| `mlkem_core_stage_sample_ntt4_initial_extra_group_pct` | percent of x4 sampler groups that need a refill after the first 504 bytes per lane |
+| `mlkem_core_stage_sample_ntt4_initial_extra_lanes` | AVX2-only x4 sampler lanes that need a refill after the first 504 bytes |
+| `mlkem_core_stage_sample_ntt4_initial_extra_lane_pct` | percent of x4 sampler lanes that need a refill after the first 504 bytes |
+| `mlkem_core_stage_sample_ntt4_initial_avg_accepts` | average accepted coefficients after the first 504-byte parse |
+| `mlkem_core_stage_sample_ntt4_initial_min_accepts` | minimum accepted coefficients observed after the first 504-byte parse |
 | `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
@@ -775,6 +781,13 @@ lightweight sink, while the other breakdown metrics separate state
 transpose/store, Keccak+store, and rejection-parse portions so future sampler
 redesign work can target the dominant part instead of repeatedly tuning parser
 bookkeeping in isolation.
+
+The refill counters quantify how often the first three Keccak rates are
+insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
+3.245% of x4 groups and 0.815% of individual lanes needed a refill after the
+first 504 bytes. That keeps the refill path below the primary optimization
+target; direct Keccak-state-to-parser work should focus first on the common
+three-rate path.
 
 Historical snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
 iterations, before the later core AVX2 and cache optimization series:

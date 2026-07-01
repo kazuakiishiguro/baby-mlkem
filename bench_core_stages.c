@@ -648,6 +648,63 @@ static uint64_t bench_sample_ntt4_parse_504(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+static void print_sample_ntt4_initial_accept_stats(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t total_accepts = 0;
+  uint64_t extra_groups = 0;
+  uint64_t extra_lanes = 0;
+  int min_accepts = N;
+
+  sample_ntt_parse_init_avx2();
+  for (size_t i = 0; i < iters; i++) {
+    uint8_t seed[32];
+    __m256i st[25];
+    fill_bytes(seed, sizeof(seed), 0xA5A50000u + i);
+    stage_sample_ntt4_init(seed, row, col, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      sample_ntt4_store_block(stage_tmp_sample_stream[0],
+                              (size_t)block * 168, st);
+    }
+
+    int counts[4];
+    counts[0] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[0][0], 504, stage_tmp_ahat[0][0][0], 0);
+    counts[1] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[0][1], 504, stage_tmp_ahat[0][0][1], 0);
+    counts[2] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[0][2], 504, stage_tmp_ahat[0][0][2], 0);
+    counts[3] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[0][3], 504, stage_tmp_ahat[0][1][0], 0);
+
+    int group_needs_extra = 0;
+    for (int lane = 0; lane < 4; lane++) {
+      total_accepts += (uint64_t)counts[lane];
+      if (counts[lane] < min_accepts) min_accepts = counts[lane];
+      if (counts[lane] < N) {
+        extra_lanes++;
+        group_needs_extra = 1;
+      }
+    }
+    extra_groups += (uint64_t)group_needs_extra;
+  }
+
+  double groups = (double)iters;
+  double lanes = (double)(iters * 4u);
+  printf("mlkem_core_stage_sample_ntt4_initial_extra_groups=%llu\n",
+         (unsigned long long)extra_groups);
+  printf("mlkem_core_stage_sample_ntt4_initial_extra_group_pct=%.6f\n",
+         groups > 0.0 ? (100.0 * (double)extra_groups / groups) : 0.0);
+  printf("mlkem_core_stage_sample_ntt4_initial_extra_lanes=%llu\n",
+         (unsigned long long)extra_lanes);
+  printf("mlkem_core_stage_sample_ntt4_initial_extra_lane_pct=%.6f\n",
+         lanes > 0.0 ? (100.0 * (double)extra_lanes / lanes) : 0.0);
+  printf("mlkem_core_stage_sample_ntt4_initial_avg_accepts=%.6f\n",
+         lanes > 0.0 ? (double)total_accepts / lanes : 0.0);
+  printf("mlkem_core_stage_sample_ntt4_initial_min_accepts=%d\n", min_accepts);
+}
 #endif
 
 static uint64_t bench_keygen_noise_ntt(size_t iters) {
@@ -1063,6 +1120,7 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
                bench_sample_ntt4_parse_504(iters), iters);
+  print_sample_ntt4_initial_accept_stats(iters);
 #endif
   print_metric("mlkem_core_stage_keygen_noise_ntt",
                bench_keygen_noise_ntt(iters), iters);
