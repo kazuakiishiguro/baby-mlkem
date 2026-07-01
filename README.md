@@ -1515,6 +1515,15 @@ KEM A/B highlights:
 Unlike the rejected widened 16-lane helper above, this change is useful because
 it removes the expensive 32-bit arithmetic rather than merely repacking it.
 
+A follow-up decrypt scheduling experiment that ran `ntt(u[i], u[i])` immediately
+after each `DU = 10` decode/decompress was rejected. The intent was to consume
+freshly written `u` coefficients while they were still hot, but AVX2 stage A/B
+against `c2acb8a` with `RUNS=13` and `STAGE_ITERS=100000` regressed
+`mlkem_core_stage_kpke_decrypt_cached` median speedup to `0.9957x` and
+`mlkem_core_stage_kpke_decrypt_uncached` to `0.9963x`. Keep the existing decrypt
+schedule: decode the full ciphertext, parse/cache the secret key, then transform
+the three `u` polynomials in place before accumulation.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
