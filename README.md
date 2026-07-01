@@ -1397,7 +1397,45 @@ cache. On AVX512 builds, keygen still samples the first eight public-matrix
 entries with `sample_ntt8_matrix()`, but the final `(2,2)` SHAKE128 matrix tail
 uses lane 6 of the existing six-lane SHAKE256 PRF `keccakf8()` call for the
 first tail block. Remaining tail blocks continue through the local `keccakf4()`
-state. AVX2-only builds keep the previous path.
+state. At that point, AVX2-only builds kept the previous path; the later AVX2
+section below adds the analogous x4 keygen-only co-schedule.
+
+### Independent Core Optimization A/B (2026-07-01, AVX2 keygen tail/noise co-scheduling)
+
+Baseline is commit `7049074` before the AVX2 keygen co-schedule; candidate is
+the working tree after moving the final `(2,2)` public-matrix tail into the same
+first `keccakf4()` call that generates keygen PRF nonces 4 and 5. This is a
+core implementation change, not a cache or external-backend optimization. The
+change removes one typical AVX2 x4 Keccak permutation from `kpke_keygen()` by
+sharing independent vector lanes; the remaining tail blocks continue in the same
+local Keccak state.
+
+AVX2-only stage command:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=80000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 6726.96 | 6331.42 | 1.063x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2719.70 | 2720.04 | 1.000x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1088.29 | 1087.35 | 1.001x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=13 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keygen_core` | 9103.04 | 8471.98 | 1.075x |
+| `mlkem_roundtrip_core` | 26414.71 | 25612.89 | 1.031x |
 
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 

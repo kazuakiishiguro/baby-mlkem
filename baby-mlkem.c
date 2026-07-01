@@ -29,6 +29,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define MLKEM_NOINLINE __attribute__((noinline))
+#else
+#define MLKEM_NOINLINE
+#endif
+
 #if defined(USE_PQCLEAN_AVX2_BACKEND) || defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
 /* PQClean FIPS202 symbols are renamed via Makefile defines. */
 void pq_shake128(uint8_t *output, size_t outlen, const uint8_t *input,
@@ -2703,6 +2709,10 @@ static inline uint64_t keccak_lane1_u64(__m256i v) {
   return (uint64_t)_mm_extract_epi64(_mm256_castsi256_si128(v), 1);
 }
 
+static inline uint64_t keccak_lane2_u64(__m256i v) {
+  return (uint64_t)_mm_cvtsi128_si64(_mm256_extracti128_si256(v, 1));
+}
+
 static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
                                            const uint8_t *rho,
                                            poly256 out,
@@ -3373,6 +3383,12 @@ static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
 #endif
 }
 
+#if defined(__AVX2__)
+static MLKEM_NOINLINE void mlkem_keygen_matrix_noise_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32],
+    poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]);
+#endif
+
 static void kpke_prepare_public_ghash_no_cache(const uint8_t *ek_pke,
                                                const uint8_t *in0,
                                                const uint8_t *in1,
@@ -3444,11 +3460,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     ntt(ehat[i], ehat[i]);
   }
 #elif defined(__AVX2__)
-  sample_matrix(rho, kpke_public_cache_ahat);
-  {
-    mlkem_keygen_prf_cbd_eta2_32(sigma, shat[0], shat[1], shat[2],
-                                 ehat[0], ehat[1], ehat[2]);
-  }
+  mlkem_keygen_matrix_noise_avx2(sigma, rho, kpke_public_cache_ahat,
+                                 shat, ehat);
   for (int i = 0; i < K; i++) {
     ntt(shat[i], shat[i]);
     byte_encode(12, shat[i], dk_pke + i * 384);
@@ -4050,3 +4063,80 @@ static void mlkem_decaps_ct(const uint8_t *c,
 #endif
   mlkem_decaps(c, (size_t)(K * ((N * DU) / 8) + (N * DV) / 8), dk, k_out);
 }
+
+#if defined(__AVX2__)
+static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
+    poly256 s0, poly256 s1, poly256 s2,
+    poly256 e0, poly256 e1, poly256 e2) {
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  __m256i st[25];
+  uint64_t stream[21];
+
+  mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(sigma + 0),
+                            (long long)load64_le(sigma + 0));
+  st[1] = _mm256_set_epi64x(0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(sigma + 8),
+                            (long long)load64_le(sigma + 8));
+  st[2] = _mm256_set_epi64x(0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(sigma + 16),
+                            (long long)load64_le(sigma + 16));
+  st[3] = _mm256_set_epi64x(0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(sigma + 24),
+                            (long long)load64_le(sigma + 24));
+  st[4] = _mm256_set_epi64x(
+      0, 0x1f0202LL,
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)));
+  st[16] = _mm256_set_epi64x(0, 0,
+                             (long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56));
+  st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
+                                     e1 + 16 * lane, e2 + 16 * lane);
+  }
+  for (int lane = 0; lane < 21; lane++) {
+    stream[lane] = keccak_lane2_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), tail, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = keccak_lane2_u64(st[lane]);
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), tail, count);
+  }
+}
+
+static MLKEM_NOINLINE void mlkem_keygen_matrix_noise_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32],
+    poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+
+  sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2],
+              ahat[1][0]);
+  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
+              ahat[2][1]);
+  mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
+      sigma, rho, ahat[2][2], shat[0], shat[1], shat[2],
+      ehat[0], ehat[1], ehat[2]);
+}
+#endif
