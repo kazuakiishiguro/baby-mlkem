@@ -1031,6 +1031,55 @@ produce `kdash || rdash`. This removes one scalar Keccak permutation from
 cold/no-cache decapsulation and avoids a second public-key preparation pass
 inside `kpke_encrypt()`.
 
+### Independent Core Optimization A/B (2026-07-01, AVX512 message recovery)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `4bd110b` before the AVX512 message recovery path; candidate is commit
+`8d8c888` after the change. This is a core-vs-core comparison and does not use
+the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+The implementation keeps the core path vendor-free and does not add any
+cross-operation cache. On native AVX512BW-capable builds,
+`mlkem_recover_message()` now compares 32 coefficients at a time and writes the
+resulting AVX512 mask directly as four message bytes. This replaces the native
+path's previous AVX2 `movemask + pext` sequence over 16 coefficients at a time.
+AVX2-only and non-AVX2 builds keep the previous code path.
+
+Native focused stage A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=180000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh 4bd110b
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 758.86 | 757.71 | 1.002x | 1.002x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 829.35 | 827.98 | 1.002x | 1.001x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 836.28 | 834.22 | 1.002x | 1.002x |
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=15 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=18000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh 4bd110b
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 2951.24 | 2944.41 | 1.002x | 1.002x |
+| `mlkem_decaps_core` | 4443.15 | 4442.35 | 1.000x | 1.000x |
+| `mlkem_roundtrip` | 10354.85 | 10354.44 | 1.000x | 1.001x |
+| `mlkem_roundtrip_core` | 14709.91 | 14707.68 | 1.000x | 0.999x |
+
+The effect is intentionally described as small and local: message recovery is
+only the tail of K-PKE decrypt, so full KEM movement is near benchmark noise.
+The focused decrypt stage is the defensible signal for this change.
+
 ### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
