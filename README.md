@@ -1181,6 +1181,36 @@ extra squeeze, with average first-pass accepts `255.974600` and minimum `247`.
 Future tail work should therefore target the lane-0 Keccak-state extraction or
 stream scratch layout, not parser bookkeeping or refill handling.
 
+A direct follow-up moving the smaller `sample_ntt4_one()` `stream[63]` and refill
+`extra[21]` scratch arrays from the stack to static storage was rejected. Native
+and AVX2-only core `make test` passed, but AVX2-only stage A/B did not show a
+clear target win: `sample_ntt4_one_full_raw` was only marginally positive,
+`sample_matrix_tail` was neutral, and full `sample_matrix` was slightly negative
+on median. Keep the static scratch optimization limited to the larger x4
+`sample_ntt4()` stream buffer; the one-lane tail scratch is not large enough to
+justify the global storage and code-layout perturbation.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | 1416.82 | 1348.55 | 1.0506x | 1.0015x |
+| `mlkem_core_stage_sample_ntt4_one_keccak_store3` | 855.52 | 849.91 | 1.0066x | 0.9997x |
+| `mlkem_core_stage_sample_ntt4_one_parse_504` | 31.28 | 31.67 | 0.9875x | 0.9877x |
+| `mlkem_core_stage_sample_matrix_tail` | 1601.35 | 1531.93 | 1.0453x | 1.0002x |
+| `mlkem_core_stage_sample_matrix` | 4730.63 | 4671.60 | 1.0126x | 0.9984x |
+| `mlkem_core_stage_kpke_keygen_full` | 7260.29 | 6871.01 | 1.0567x | 1.0801x |
+
+KEM confirmation was skipped because the direct sampler target rows were neutral
+or negative on median; the large `kpke_keygen_full` stage movement is treated as
+layout noise without matching `sample_matrix` evidence.
+
 Historical snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
 iterations, before the later core AVX2 and cache optimization series:
 
