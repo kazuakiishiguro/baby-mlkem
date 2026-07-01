@@ -2513,6 +2513,55 @@ KEM A/B highlights:
 Unlike the rejected widened 16-lane helper above, this change is useful because
 it removes the expensive 32-bit arithmetic rather than merely repacking it.
 
+A follow-up d10 unpack scheduling experiment was rejected. The candidate kept
+the accepted 16-bit `mulhrs` decompression identity, but changed the 10-bit
+byte unpack from three constant right shifts plus three `_mm256_blend_epi16()`
+operations to one `_mm256_mulhi_epu16()` with per-lane shift multipliers plus a
+single blend. This reduced the number of shuffle-side operations in the local
+unpack schedule, but moved work onto the multiply pipeline and changed code
+layout. Native and AVX2-only `make test` passed, and the direct decode stage
+improved slightly, but KEM-level no-regression failed.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=120000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 220.47 | 219.61 | 1.0039x | 1.0039x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 929.00 | 927.05 | 1.0021x | 1.0001x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 937.91 | 938.51 | 0.9994x | 0.9999x |
+| `mlkem_core_stage_kpke_keygen_full` | 6524.69 | 6941.14 | 0.9400x | 0.9655x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected d10 unpack `mulhi` schedule KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps_core` | 8061.24 | 8210.73 | 0.9818x | 1.0474x |
+| `mlkem_encaps_core` | 8847.74 | 9317.61 | 0.9496x | 0.9493x |
+| `mlkem_keygen_core` | 8827.81 | 9067.86 | 0.9735x | 0.9355x |
+| `mlkem_roundtrip_core` | 25869.68 | 26741.96 | 0.9674x | 0.9832x |
+
+Keep the existing shift/blend unpack schedule in `decompress_decode_poly_d10_avx2()`.
+The local decode row is only about `0.4%` faster with `mulhi`, while the broader
+KEM rows show unacceptable code-layout / pipeline side effects. Future d10 work
+should remove larger data movement or fuse with later decrypt work, not trade
+cheap shifts for another vector multiply in this helper.
+
 A follow-up decrypt scheduling experiment that ran `ntt(u[i], u[i])` immediately
 after each `DU = 10` decode/decompress was rejected. The intent was to consume
 freshly written `u` coefficients while they were still hot, but AVX2 stage A/B
