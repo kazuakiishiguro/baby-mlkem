@@ -1585,6 +1585,15 @@ stage removes one full scale/add pass for each AVX2 inverse-add call. The KEM
 rows still include higher-noise sampling and hashing work, so use the NTT/stage
 rows as the primary attribution for why this change is faster.
 
+A follow-up AVX2 experiment that changed the `u` side to compute all three
+`ntt_mul_acc3()` accumulations first and then call an AVX2-only
+`ntt_inv_add3_inplace()` final-fusion helper was rejected. Stage A/B against
+`c45445c` showed `encrypt_accum_inv_u` average speedup `0.9974x`,
+`encrypt_accum_inv` average speedup `0.9985x`, and `kpke_encrypt_uncached`
+median speedup `0.9602x`. This confirms that the AVX2-only path should keep the
+per-row accumulation/inverse-add order, even though the AVX512 path can still
+benefit from its wider batched helper.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 decrypt inverse final fusion)
 
 Baseline is commit `8402ce5` before fusing the decrypt inverse-NTT final stage;
