@@ -961,6 +961,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
+| `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_compress_encode_d10` | isolated ciphertext DU=10 compression/encoding for the three `u` polynomials, with lightweight sink |
@@ -1184,6 +1186,32 @@ single `v` path, so the next arithmetic work should prioritize reducing repeated
 `u`-side accumulation/inverse-NTT-add overhead before targeting `v`.
 Compression, bit-packing, and ciphertext decode/decompress remain smaller
 contributors.
+
+Encryption `u` accumulation split metrics were added later to separate the three
+`ntt_mul_acc3()` accumulations from the following three inverse-NTT-add paths.
+The inverse-add-only row copies precomputed NTT-domain accumulations into scratch
+buffers before calling the mutating inverse-add helpers, so it is diagnostic and
+should not be added back exactly to the fused `encrypt_accum_inv_u` row. A
+`clang`, `BENCH_STAGES_ITERS=50000` snapshot measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_encrypt_accum_inv` | 1097.81 |
+| native | `mlkem_core_stage_encrypt_accum_inv_u` | 866.32 |
+| native | `mlkem_core_stage_encrypt_accum_u_only` | 374.87 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_only` | 685.33 |
+| native | `mlkem_core_stage_encrypt_accum_inv_v` | 404.14 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv` | 1330.52 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1042.19 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_u_only` | 451.90 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_only` | 794.41 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_v` | 472.22 |
+
+The split points the next encryption-accumulation work at the `u` inverse-add
+side rather than another `ntt_mul_acc3()` rewrite. Prior Karatsuba, reciprocal
+reduction, AVX2 vector-helper, and generic batching attempts already showed that
+the multiplication helper is hard to improve robustly; the remaining larger
+diagnostic row is the inverse-NTT-add side.
 
 Ciphertext compression/decode split metrics were added later to separate the
 three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
