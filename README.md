@@ -773,7 +773,17 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
+| `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
+| `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
+| `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
+
+The decrypt split metrics are diagnostic and intentionally reuse precomputed
+intermediates where noted. On one pinned AVX2 run with 20,000 iterations,
+`decrypt_u_ntt` measured 773.17 ns/op, `decrypt_accum_inv` measured 471.97
+ns/op, and `decrypt_recover_message` measured 6.25 ns/op. This points future
+decrypt work at forward NTT or accumulation/inverse-NTT structure rather than
+message recovery.
 
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
 non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a

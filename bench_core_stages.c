@@ -39,7 +39,9 @@ static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
 static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u[STAGE_BENCH_LANES][K];
+static poly256 stage_uhat[STAGE_BENCH_LANES][K];
 static poly256 stage_v[STAGE_BENCH_LANES];
+static poly256 stage_w[STAGE_BENCH_LANES];
 
 static uint8_t stage_tmp_pk[STAGE_BENCH_LANES][STAGE_PK_BYTES];
 static uint8_t stage_tmp_dk[STAGE_BENCH_LANES][STAGE_DK_PKE_BYTES];
@@ -236,6 +238,15 @@ static void derive_encrypt_lane(size_t lane) {
   }
   compress_poly(DV, stage_v[lane], cbuf);
   byte_encode_u16(DV, cbuf, p);
+
+  for (int i = 0; i < K; i++) {
+    memcpy(stage_uhat[lane][i], stage_u[lane][i], sizeof(poly256));
+    ntt(stage_uhat[lane][i], stage_uhat[lane][i]);
+  }
+  ntt_mul_acc3(stage_shat[lane][0], stage_uhat[lane][0],
+               stage_shat[lane][1], stage_uhat[lane][1],
+               stage_shat[lane][2], stage_uhat[lane][2], stage_w[lane]);
+  ntt_inv_sub_from_inplace(stage_v[lane], stage_w[lane]);
 }
 
 static void validate_sample_matrix_matches_scalar(void) {
@@ -1056,6 +1067,55 @@ static uint64_t bench_ciphertext_decode_decompress(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_decrypt_u_ntt(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
+      ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_decrypt_accum_inv(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 w;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    ntt_mul_acc3(stage_shat[lane][0], stage_uhat[lane][0],
+                 stage_shat[lane][1], stage_uhat[lane][1],
+                 stage_shat[lane][2], stage_uhat[lane][2], w);
+    ntt_inv_sub_from_inplace(stage_v[lane], w);
+    acc ^= checksum_poly(w);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_decrypt_recover_message(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    recover_message(stage_w[lane], stage_tmp_msg[lane]);
+    acc ^= stage_tmp_msg[lane][(i * 23u) & 31u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1146,6 +1206,12 @@ int main(int argc, char **argv) {
                bench_ciphertext_compress_encode(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_decode_decompress",
                bench_ciphertext_decode_decompress(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_u_ntt", bench_decrypt_u_ntt(iters),
+               iters);
+  print_metric("mlkem_core_stage_decrypt_accum_inv",
+               bench_decrypt_accum_inv(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_recover_message",
+               bench_decrypt_recover_message(iters), iters);
   print_metric("mlkem_core_stage_decrypt_ntt_accum_recover",
                bench_decrypt_ntt_accum_recover(iters), iters);
   printf("mlkem_core_stage_bench_sink=%llu\n",
