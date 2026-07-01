@@ -1455,6 +1455,14 @@ The defensible effect is still the local decode/decompress stage. Full KEM
 rows are noisier, but the longer confirmation did not show a decrypt-side
 regression and the roundtrip core row moved in the same direction.
 
+A follow-up experiment that collapsed the two 8-lane decompression helper calls
+into one 16-lane helper and one 256-bit store was rejected. AVX2 stage A/B
+against `233bac2` with `RUNS=13` and `STAGE_ITERS=120000` regressed
+`mlkem_core_stage_ciphertext_decode_decompress` median speedup to `0.9853x` and
+`mlkem_core_stage_kpke_decrypt_cached` to `0.9998x`. Keep the two 8-lane helper
+calls; the compiler schedules that shape better than the wider packed helper on
+this target.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
