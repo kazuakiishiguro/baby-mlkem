@@ -2452,6 +2452,35 @@ speedup `1.0027x`, but `sample_ntt4_full_raw` `0.9970x`,
 `sample_matrix` `0.9971x`. The compiler branch hint is too small and noisy for
 the full sampler path, so keep the plain ready check.
 
+A BMI2 index-generation variant was rejected. This copied the classic
+Kyber/PQClean `pdep`/`pext` idea into the independent core parser by replacing
+the 256-entry shuffle-index table lookup with `_pdep_u64()` plus `_pext_u64()`
+when `__BMI2__` is available. It passed native, AVX2+BMI2, and AVX2 no-BMI2
+`make test`, but the sampler path regressed sharply on the native build.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+BMI2 sampler-index A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 142.07 | 163.98 | 0.8664x | 0.7787x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 606.44 | 658.43 | 0.9210x | 0.9188x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 788.26 | 842.70 | 0.9354x | 0.9326x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 845.03 | 925.49 | 0.9131x | 0.8948x |
+| `mlkem_core_stage_sample_matrix` | 1895.59 | 2009.68 | 0.9432x | 0.9445x |
+| `mlkem_core_stage_kpke_keygen_full` | 3411.47 | 3530.02 | 0.9664x | 0.9642x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3663.16 | 3762.65 | 0.9736x | 0.9705x |
+
+Keep the current table-based shuffle-index generation. On this target, avoiding
+four tiny table loads is not worth the latency and port pressure of repeated
+BMI2 `pdep`/`pext` in the hot rejection parser.
+
 ### Independent Core Optimization A/B (2026-07-01, keygen tail/noise co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
