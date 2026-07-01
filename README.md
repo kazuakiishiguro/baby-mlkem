@@ -884,6 +884,12 @@ transpose/store, Keccak+store, and rejection-parse portions so future sampler
 redesign work can target the dominant part instead of repeatedly tuning parser
 bookkeeping in isolation.
 
+A later AVX2 parser experiment that added a 256-byte accepted-lane popcount
+lookup table beside the existing shuffle-index table was rejected. Stage A/B
+against `f3e4b81` regressed `sample_ntt4_parse_504` median speedup to `0.9666x`
+and `sample_ntt4_full_raw` median speedup to `0.9974x`; keep the in-loop
+`POPCNT` operations instead of adding more table loads to the hot parser path.
+
 The refill counters quantify how often the first three Keccak rates are
 insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
 3.245% of x4 groups and 0.815% of individual lanes needed a refill after the
