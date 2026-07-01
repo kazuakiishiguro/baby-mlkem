@@ -25,6 +25,7 @@ static poly256 bench_ntt_inv_level_work[7][NTT_BENCH_LANES];
 static poly256 bench_ntt_head_work[NTT_BENCH_LANES];
 static poly256 bench_ntt_tail_work[3][NTT_BENCH_LANES];
 #endif
+static int16_t bench_ntt3_aos4[NTT_BENCH_LANES][N][4];
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -93,6 +94,31 @@ static void init_inputs(void) {
     fill_poly(bench_add0[lane], 0x7000u + (uint32_t)lane);
     fill_poly(bench_add1[lane], 0x8000u + (uint32_t)lane);
     memset(bench_out[lane], 0, sizeof(poly256));
+  }
+}
+
+static void ntt3_pack_aos4(const poly256 a0, const poly256 a1,
+                           const poly256 a2, int16_t out[N][4]) {
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+  for (int i = 0; i < N; i++) {
+    out[i][0] = a0[i];
+    out[i][1] = a1[i];
+    out[i][2] = a2[i];
+    out[i][3] = 0;
+  }
+}
+
+static void ntt3_unpack_aos4(const int16_t in[N][4], poly256 a0, poly256 a1,
+                             poly256 a2) {
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+  for (int i = 0; i < N; i++) {
+    a0[i] = in[i][0];
+    a1[i] = in[i][1];
+    a2[i] = in[i][2];
   }
 }
 
@@ -339,6 +365,64 @@ static uint64_t bench_ntt3_inplace(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ntt3_pack_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+    acc += (uint16_t)bench_ntt3_aos4[lane][(i * 29u) & (N - 1)][i & 3u];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_unpack_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+  }
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_unpack_aos4(bench_ntt3_aos4[lane], bench_a0[lane], bench_a1[lane],
+                     bench_a2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 31u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 37u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 41u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_pack_unpack_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_pack_aos4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                   bench_ntt3_aos4[lane]);
+    ntt3_unpack_aos4(bench_ntt3_aos4[lane], bench_a0[lane], bench_a1[lane],
+                     bench_a2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 43u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 47u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 53u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 #if defined(__AVX2__)
 static uint64_t bench_ntt_head_l7_l4(size_t iters) {
   uint64_t acc = 0;
@@ -565,6 +649,10 @@ int main(int argc, char **argv) {
   print_metric("mlkem_ntt_copy", bench_ntt_copy(iters), iters);
   print_metric("mlkem_ntt_inplace", bench_ntt_inplace(iters), iters);
   print_metric("mlkem_ntt3_inplace", bench_ntt3_inplace(iters), iters);
+  print_metric("mlkem_ntt3_pack_aos4", bench_ntt3_pack_aos4(iters), iters);
+  print_metric("mlkem_ntt3_unpack_aos4", bench_ntt3_unpack_aos4(iters), iters);
+  print_metric("mlkem_ntt3_pack_unpack_aos4",
+               bench_ntt3_pack_unpack_aos4(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);

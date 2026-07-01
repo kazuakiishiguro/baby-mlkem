@@ -624,6 +624,9 @@ helpers:
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
 | `mlkem_ntt3_inplace` | three consecutive in-place forward NTTs, matching the K=3 batch shape in keygen/encrypt/decrypt |
+| `mlkem_ntt3_pack_aos4` | diagnostic pack of three polynomials into `[coefficient][poly0, poly1, poly2, pad]` layout |
+| `mlkem_ntt3_unpack_aos4` | diagnostic unpack from the padded K=3 AoS4 layout back to three polynomials |
+| `mlkem_ntt3_pack_unpack_aos4` | diagnostic round-trip pack plus unpack cost for a future packed K=3 NTT representation |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -682,6 +685,29 @@ iterations:
 |---|---:|---:|---:|
 | native `AVX2_BACKEND=core` | 169.93 | 509.86 | 169.95 |
 | AVX2-only `-mavx2 -mbmi2 -mpopcnt` | 197.87 | 580.20 | 193.40 |
+
+A later K=3 packed-layout diagnostic added an AoS4 representation,
+`[coefficient][poly0, poly1, poly2, pad]`, to estimate the pack/unpack overhead
+that any real cross-polynomial NTT layout has to overcome. Pinned CPU 0,
+`clang`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_ntt3_inplace` | 507.54 |
+| native | `mlkem_ntt3_pack_aos4` | 15.29 |
+| native | `mlkem_ntt3_unpack_aos4` | 18.67 |
+| native | `mlkem_ntt3_pack_unpack_aos4` | 37.03 |
+| AVX2-only | `mlkem_ntt3_inplace` | 583.22 |
+| AVX2-only | `mlkem_ntt3_pack_aos4` | 26.51 |
+| AVX2-only | `mlkem_ntt3_unpack_aos4` | 71.23 |
+| AVX2-only | `mlkem_ntt3_pack_unpack_aos4` | 96.92 |
+
+This diagnostic is not a packed NTT implementation. It shows the conversion
+budget: a standalone packed K=3 NTT that packs inputs and unpacks outputs around
+each transform must save more than about 37 ns on native and 97 ns on AVX2-only
+just to break even. A more plausible design should either keep data in the
+packed layout across neighboring stages or generate/consume CBD/decode data in
+that layout directly.
 
 The useful target for a packed K=3 forward NTT is therefore not another call-site
 shuffle. It must make `mlkem_ntt3_inplace` materially lower than three independent
