@@ -3571,6 +3571,38 @@ speedup `1.0027x`, but `sample_ntt4_full_raw` `0.9970x`,
 `sample_matrix` `0.9971x`. The compiler branch hint is too small and noisy for
 the full sampler path, so keep the plain ready check.
 
+A narrow `sample_ntt4()` parse/refill bookkeeping unroll was rejected. The
+candidate removed the local `outs[4]` array and replaced the two four-lane loops
+around `sample_ntt_parse_stream_avx2_ready()` with explicit `count0..count3`
+calls. It did not change the parser, Keccak schedule, stream layout, or refill
+semantics. Native and AVX2-only `make test` passed, but AVX2-only stage/KEM A/B
+showed that the direct sampler movement did not translate to keygen.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=24000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected `sample_ntt4()` unroll highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1725.19 | 1621.64 | 1.0639x | 1.0032x |
+| `mlkem_core_stage_sample_matrix` | 5315.43 | 5086.09 | 1.0451x | 1.0091x |
+| `mlkem_core_stage_kpke_keygen_full` | 7138.05 | 7422.66 | 0.9617x | 0.9664x |
+| `mlkem_keygen` | 8975.41 | 8865.23 | 1.0124x | 0.9976x |
+| `mlkem_keygen_core` | 8953.68 | 8831.76 | 1.0138x | 0.9994x |
+| `mlkem_roundtrip_core` | 26451.36 | 26044.92 | 1.0156x | 1.0029x |
+
+Keep the compact loop in `sample_ntt4()`. The unrolled bookkeeping can improve
+some isolated sampler rows, but it perturbs the integrated AVX2-only keygen
+layout enough that the no-regression signal is not clean. Future x4 sampler work
+should target Keccak/store or the parser representation itself, not just the
+small lane-loop scaffolding.
+
 A BMI2 index-generation variant was rejected. This copied the classic
 Kyber/PQClean `pdep`/`pext` idea into the independent core parser by replacing
 the 256-entry shuffle-index table lookup with `_pdep_u64()` plus `_pext_u64()`
