@@ -4285,11 +4285,11 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
 #endif
 
   /* m = random 32 if seed==NULL, else seed. */
-  uint8_t m[32];
-  if (!seed) {
-    randombytes(m, 32);
-  } else {
-    memcpy(m, seed, 32);
+  uint8_t m_random[32];
+  const uint8_t *m = seed;
+  if (!m) {
+    randombytes(m_random, 32);
+    m = m_random;
   }
   /* H(ek) => 32 (cached for repeated encaps with same key) */
   uint8_t h_local[32];

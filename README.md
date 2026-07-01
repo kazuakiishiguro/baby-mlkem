@@ -1514,6 +1514,48 @@ Keep the existing `ghash[64]` path in `mlkem_encaps()`. Avoiding the final
 32-byte copy is not enough to offset the extra helper/codegen shape, and the
 AVX2-only run does not support adoption.
 
+
+A deterministic encapsulation message-copy cleanup was accepted. The candidate
+keeps the existing `ghash[64]` SHA3-512 path, but changes `mlkem_encaps()` so a
+non-null encapsulation seed is used directly as `m` instead of first copying it
+into a local `m[32]` buffer. Random encapsulation still fills a local 32-byte
+buffer and then uses that buffer as `m`. This removes one 32-byte copy from the
+common `mlkem_encaps_derand()` / benchmark path without changing `m`, `k`, `r`,
+or ciphertext generation.
+
+The candidate passed native `make test`, AVX2-only `make test`, native KEM A/B,
+and AVX2-only KEM A/B. The effect is intentionally scoped to deterministic
+encapsulation; keygen and decapsulation movement is unrelated noise.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted deterministic encaps message-copy highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` native | 2087.23 | 2086.62 | 1.0003x | 1.0005x |
+| `mlkem_encaps_core` native | 4876.32 | 4874.79 | 1.0003x | 1.0006x |
+| `mlkem_roundtrip_core` native | 14657.31 | 14636.82 | 1.0014x | 1.0000x |
+| `mlkem_encaps` AVX2-only | 3045.73 | 3139.98 | 0.9700x | 1.0003x |
+| `mlkem_encaps_core` AVX2-only | 8926.92 | 8832.19 | 1.0107x | 1.0091x |
+
+This is a small copy-elision cleanup. The reliable claim is removal of the local
+seed-to-message copy for deterministic encapsulation; the KEM rows are kept only
+to show non-regression of the exercised path.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
