@@ -3034,6 +3034,52 @@ The accepted claim is encapsulation-focused: the local `u` inverse-add stage
 improves clearly, and the KEM confirmation keeps encapsulation and roundtrip
 positive.
 
+A narrower native AVX512 follow-up that applied the same final-fusion pattern to
+`ntt_inv_add_inplace()` and `ntt_inv_add2_inplace()` was rejected. The candidate
+passed native and AVX2-only core `make test`, and it did speed the direct
+`ntt_inv_add`/`ntt_inv_add2` microbench rows plus the local encapsulation `v`
+inverse-add stage. However, the same binary also weakened the already accepted
+AVX512 decrypt inverse-sub path and did not produce clean core KEM evidence. The
+likely cause is instruction/cache/code-layout pressure around several nearby
+inverse-NTT helpers; the local add/add2 win is not enough to justify carrying the
+extra path.
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=220000 STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 `ntt_inv_add`/`add2` final-fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_add` | 177.47 | 171.64 | 1.0339x | 1.0343x |
+| `mlkem_ntt_inv_add2` | 187.19 | 183.10 | 1.0224x | 1.0261x |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 414.43 | 405.48 | 1.0221x | 1.0243x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1881.43 | 1863.47 | 1.0096x | 1.0051x |
+| `mlkem_ntt_inv_sub_from` | 169.10 | 171.08 | 0.9884x | 0.9884x |
+| `mlkem_core_stage_decrypt_accum_inv` | 401.85 | 403.94 | 0.9948x | 0.9961x |
+
+Native KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2090.60 | 2092.87 | 0.9989x | 1.0035x |
+| `mlkem_encaps_core` | 4881.90 | 4895.63 | 0.9972x | 0.9989x |
+| `mlkem_decaps_core` | 4430.59 | 4418.14 | 1.0028x | 0.9970x |
+| `mlkem_roundtrip_core` | 14717.62 | 14671.88 | 1.0031x | 1.0001x |
+
+Keep native AVX512 final fusion limited to `ntt_inv_sub_from_inplace()` and
+`ntt_inv_add3_inplace()`. Those two integrated cleanly; generic add/add2 fusion
+shows useful local rows but insufficient whole-core robustness.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
