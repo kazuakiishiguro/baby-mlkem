@@ -1031,6 +1031,50 @@ produce `kdash || rdash`. This removes one scalar Keccak permutation from
 cold/no-cache decapsulation and avoids a second public-key preparation pass
 inside `kpke_encrypt()`.
 
+### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `4adb1f0` before ciphertext compress/pack fusion; candidate is the
+working tree after the change. This is a core-vs-core comparison and does not
+use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+The implementation follows the same broad idea used by the public
+PQ-Crystals Kyber AVX2 code: compress the ciphertext coefficients and bit-pack
+those small residues in one vectorized pass instead of materializing a
+`uint16_t` intermediate and then calling a scalar byte encoder. Reference:
+`https://github.com/pq-crystals/kyber/tree/main/avx2`.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 67.37 | 53.51 | 1.259x | 1.258x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1921.09 | 1921.71 | 1.000x | 1.003x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3656.03 | 3658.24 | 0.999x | 1.003x |
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2128.61 | 2124.09 | 1.002x | 1.002x |
+| `mlkem_encaps_core` | 4912.82 | 4937.08 | 0.995x | 1.001x |
+| `mlkem_roundtrip` | 10443.00 | 10383.41 | 1.006x | 1.003x |
+| `mlkem_roundtrip_core` | 14760.44 | 14739.01 | 1.001x | 1.000x |
+
+The effect is intentionally described as local: ciphertext compress/encode is
+about 25% faster, while full KEM impact is small because this stage is a small
+fraction of encapsulation. The fused path is enabled only for the native
+AVX512-capable core build, matching the existing `compress_poly_d{10,4}_avx2()`
+selection; AVX2-only builds keep the prior scalar/auto-vectorized path because
+that path has benchmarked better for this codebase.
+
 ### Independent Core Optimization A/B (2026-07-01, keygen tail/noise co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
