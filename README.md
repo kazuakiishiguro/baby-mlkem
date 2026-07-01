@@ -1594,6 +1594,14 @@ median speedup `0.9602x`. This confirms that the AVX2-only path should keep the
 per-row accumulation/inverse-add order, even though the AVX512 path can still
 benefit from its wider batched helper.
 
+A narrower experiment replacing the final fused AVX2 32-bit modular add/sub
+operations with packed 16-bit modular add/sub was also rejected. NTT micro A/B
+showed only small wins for `ntt_inv_add` (`1.0037x`) and `ntt_inv_add2`
+(`1.0043x`), while stage/KEM confirmation regressed `decrypt_inv_sub_from`
+median speedup to `0.9988x`, `encaps_core` average speedup to `0.9866x`, and
+`roundtrip_core` average speedup to `0.9941x`. Keep the final fused arithmetic in
+32-bit lanes after the reduction.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 decrypt inverse final fusion)
 
 Baseline is commit `8402ce5` before fusing the decrypt inverse-NTT final stage;
