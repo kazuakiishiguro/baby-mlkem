@@ -1551,6 +1551,15 @@ old scalar byte encoder on 10,000 random inputs, but stage A/B against
 `kpke_keygen_full` to `0.9782x`. Keep the current simple 12-bit pair encoder;
 the compiler emits a better store sequence than the 48-bit helper here.
 
+A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
+`_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
+It matched the scalar decoder on 10,000 random inputs, but stage A/B against
+`22cc78d` with `RUNS=13` and `STAGE_ITERS=100000` showed no reliable integrated
+win: `kpke_decrypt_uncached` median speedup was `0.9996x`,
+`kpke_decrypt_cached` was `1.0003x`, and the large `kpke_encrypt_uncached`
+movement was dominated by sample-matrix noise. Keep the existing maskload tail
+until a direct d12-decode microbench proves otherwise.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
