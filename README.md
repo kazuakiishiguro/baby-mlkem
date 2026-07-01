@@ -1542,6 +1542,15 @@ median speedup to `0.9820x`, `kpke_decrypt_uncached` to `0.9875x`, and
 uops in the already-hot inverse final loop cost more than the separate `v`
 materialization pass saves.
 
+A 12-bit key byte-encoding experiment that packed four coefficients into a
+48-bit word and stored six bytes with `memcpy()` was rejected. It matched the
+old scalar byte encoder on 10,000 random inputs, but stage A/B against
+`c5494c7` with `RUNS=13` and `STAGE_ITERS=100000` regressed
+`mlkem_core_stage_keygen_accum_encode` median speedup to `0.9113x`,
+`mlkem_core_stage_keygen_noise_ntt_encode` to `0.9703x`, and
+`kpke_keygen_full` to `0.9782x`. Keep the current simple 12-bit pair encoder;
+the compiler emits a better store sequence than the 48-bit helper here.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
