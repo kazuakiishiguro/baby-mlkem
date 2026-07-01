@@ -1050,6 +1050,21 @@ stores/loads (`decrypt_ntt_accum_only` median `0.9246x`, `kpke_decrypt_cached`
 median `0.9396x`), so the production change is guarded to AVX512-capable
 builds and AVX2-only keeps the original vector tail plus scalar accumulation.
 
+A narrower AVX512 encryption-side `v` inverse-add final fusion was accepted. The
+previous generic `ntt_inv_add()` / `ntt_inv_add2()` AVX512 final-fusion variant
+was rejected because the local wins came with decrypt/code-layout regressions,
+so this change introduces a separate `ntt_inv_add_v_inplace()` wrapper and uses
+it only for `v = invntt(sum_i(that[i] * rhat[i])) + e2 + message`. Native CPU 0
+stage A/B against `79c1b2d` with `RUNS=13` and `STAGE_ITERS=40000` showed
+median speedups of `encrypt_accum_inv_v` `1.0252x`, `encrypt_accum_inv`
+`1.0082x`, and `kpke_encrypt_cached` `1.0037x`. Native KEM A/B with `RUNS=17`
+and `KEM_ITERS=50000` showed `mlkem_encaps` median `1.0042x`,
+`mlkem_encaps_core` median `1.0021x`, and `mlkem_roundtrip` median `1.0010x`;
+`mlkem_roundtrip_core` remained effectively flat at `0.9995x`. AVX2-only stage
+A/B kept the target rows neutral because the wrapper falls back to the existing
+AVX2 helper (`encrypt_accum_inv_v` median `1.0003x`, `kpke_encrypt_cached`
+median `0.9996x`).
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and

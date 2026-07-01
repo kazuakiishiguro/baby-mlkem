@@ -1222,6 +1222,20 @@ static inline void ntt_inv_add3_fused_final_avx512(
   }
 }
 
+static inline void ntt_inv_add_fused_final_single_avx512(
+    const poly256 add, poly256 out) {
+  ntt_inv_before_final_avx512(out);
+
+  const __m512i scale = _mm512_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)ZETA[1] * 3303u);
+  const __m512i zeta_scale = _mm512_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 16) {
+    ntt_inv_add_final_chunk_avx512(add + j, add + N / 2 + j,
+                                   out + j, out + N / 2 + j,
+                                   scale, zeta_scale);
+  }
+}
+
 static inline __m512i ntt_inv_scale16_avx512(const int16_t *p,
                                              __m512i scale) {
   __m512i x = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)p));
@@ -1850,6 +1864,14 @@ static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
     out[i] = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add[i]);
   }
 #endif
+#endif
+}
+
+static inline void ntt_inv_add_v_inplace(const poly256 add, poly256 out) {
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_add_fused_final_single_avx512(add, out);
+#else
+  ntt_inv_add_inplace(add, out);
 #endif
 }
 
@@ -4094,7 +4116,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
                  kpke_public_cache_that[1], rhat[1],
                  kpke_public_cache_that[2], rhat[2], v);
-    ntt_inv_add_inplace(e2, v);
+    ntt_inv_add_v_inplace(e2, v);
   }
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
