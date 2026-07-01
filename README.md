@@ -1902,6 +1902,37 @@ the zmm shuffle still works in 128-bit lanes, the static shuffle mask adds a
 load, and the result still has to be split into four 12-byte chunks. Keep the
 AVX2 16-coefficient packer on native AVX512 builds too.
 
+A forward-NTT/d12 secret-key encode fusion experiment was also rejected. The
+candidate duplicated the AVX2 forward-NTT tail and, in the final `length = 2`
+stage, packed the freshly computed 16 coefficients directly into the d12
+secret-key encoding while still storing the NTT-domain `shat` polynomial for the
+public-key multiply. This was intended to remove the immediate reload by
+`byte_encode_d12_avx2()` after `ntt(shat)`. It passed native `make test`,
+AVX2-only `make test`, and `git diff --check`, but the direct NTT+encode row
+regressed clearly. The extra final-stage unpacking, duplicated tail body, and
+code-layout pressure cost more than the eliminated encode reload.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected forward-NTT/d12 encode fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1423.71 | 1468.73 | 0.9693x | 0.9702x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1561.10 | 1612.97 | 0.9678x | 0.9660x |
+| `mlkem_core_stage_kpke_keygen_full` | 3402.51 | 3496.20 | 0.9732x | 0.9779x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1870.25 | 1881.55 | 0.9940x | 0.9947x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 747.58 | 754.98 | 0.9902x | 0.9900x |
+
+Keep `ntt(shat)` and `byte_encode_d12_avx2()` as separate passes. The existing
+byte encoder's contiguous reload is cheap enough that fusing it into the NTT
+final stage is not a useful core optimization on the native build.
+
 ### Independent Core Optimization A/B (2026-07-01, NTT accumulation reciprocal reduction)
 
 A follow-up attempt to replace the remaining 32-bit `% Q` operations in
