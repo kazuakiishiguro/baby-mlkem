@@ -2148,6 +2148,31 @@ sampler, moving the larger AVX512 x8 stream to static storage hurts the direct
 sample-matrix stage enough that any surrounding keygen noise is not a defensible
 acceptance signal.
 
+A separate producer/consumer fusion experiment for `sample_ntt8_matrix()` was
+also rejected. The candidate stored only one 168-byte SHAKE128 rate block per
+lane, parsed it immediately, and reused that scratch for the next block instead
+of first writing all three blocks to `stream[8][504]` and parsing each lane once.
+This reduced scratch size and write/read traffic, but increased parser call
+overhead and hurt the integrated public-matrix path.
+
+Native stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=60000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 1897.64 | 1994.55 | 0.951x | 0.949x |
+| `mlkem_core_stage_kpke_keygen_full` | 3394.63 | 3537.57 | 0.960x | 0.971x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3650.38 | 3754.45 | 0.972x | 0.974x |
+
+Keep the existing three-block store followed by one 504-byte parse per lane. For
+this parser, larger contiguous chunks beat tighter producer/consumer fusion.
+
 A narrower AVX512 `sample_ntt8_store_rate()` experiment replacing the two
 `sample_ntt4_store_last()` calls for `st[20]` with one `_mm512_storeu_si512()` to
 `uint64_t last[8]` plus eight 8-byte copies was also rejected. This was the
