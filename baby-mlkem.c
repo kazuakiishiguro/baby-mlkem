@@ -3384,22 +3384,29 @@ static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
                      decompress_d10_vec8_avx2(_mm256_extracti128_si256(v, 1)));
   }
 
-  /* Avoid a 16-byte overread on the final half-block. */
-  for (int i = N - 16; i < N; i += 4) {
-    const uint8_t *p = in + (size_t)(i / 4) * 5;
-    uint16_t b0 = p[0];
-    uint16_t b1 = p[1];
-    uint16_t b2 = p[2];
-    uint16_t b3 = p[3];
-    uint16_t b4 = p[4];
-    uint16_t v0 = (uint16_t)(b0 | ((b1 & 0x03u) << 8));
-    uint16_t v1 = (uint16_t)((b1 >> 2) | ((b2 & 0x0Fu) << 6));
-    uint16_t v2 = (uint16_t)((b2 >> 4) | ((b3 & 0x3Fu) << 4));
-    uint16_t v3 = (uint16_t)((b3 >> 6) | (b4 << 2));
-    out[i + 0] = (int16_t)(((uint32_t)v0 * Q + 512u) >> 10);
-    out[i + 1] = (int16_t)(((uint32_t)v1 * Q + 512u) >> 10);
-    out[i + 2] = (int16_t)(((uint32_t)v2 * Q + 512u) >> 10);
-    out[i + 3] = (int16_t)(((uint32_t)v3 * Q + 512u) >> 10);
+  /* Build the final two 10-byte groups without reading past the buffer. */
+  {
+    const uint8_t *p = in + (size_t)((N - 16) / 4) * 5;
+    __m128i hi = _mm_loadl_epi64((const __m128i *)(const void *)(p + 10));
+    hi = _mm_insert_epi16(
+        hi, (int)((uint16_t)p[18] | ((uint16_t)p[19] << 8)), 4);
+    __m256i bytes = _mm256_castsi128_si256(
+        _mm_loadu_si128((const __m128i *)(const void *)p));
+    bytes = _mm256_inserti128_si256(bytes, hi, 1);
+
+    __m256i v = _mm256_shuffle_epi8(bytes, shuf);
+    __m256i v2 = _mm256_srli_epi16(v, 2);
+    __m256i v4 = _mm256_srli_epi16(v, 4);
+    __m256i v6 = _mm256_srli_epi16(v, 6);
+    v = _mm256_blend_epi16(v, v2, 0x22);
+    v = _mm256_blend_epi16(v, v4, 0x44);
+    v = _mm256_blend_epi16(v, v6, 0x88);
+    v = _mm256_and_si256(v, mask);
+
+    _mm_storeu_si128((__m128i *)(out + N - 16),
+                     decompress_d10_vec8_avx2(_mm256_castsi256_si128(v)));
+    _mm_storeu_si128((__m128i *)(out + N - 8),
+                     decompress_d10_vec8_avx2(_mm256_extracti128_si256(v, 1)));
   }
 }
 
