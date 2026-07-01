@@ -1896,6 +1896,12 @@ needed. New local x2/x3 helpers keep the same `keccakf4()` permutation but skip
 stream extraction and CBD decode for dummy lanes, avoiding unnecessary work
 without calling or modifying vendored Kyber/PQClean code.
 
+A later AVX2 experiment moving the smaller x2/x3 PRF/CBD stream scratch arrays
+from stack to static storage was rejected. Stage A/B against `2bb59a9` showed
+`keygen_noise_prf_cbd` median speedup `0.9904x` and
+`encrypt_noise_prf_cbd` median speedup `0.9898x`, so the accepted static-scratch
+idea should remain limited to the larger x4 `sample_ntt4()` stream buffer.
+
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
