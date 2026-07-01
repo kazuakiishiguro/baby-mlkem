@@ -2561,6 +2561,18 @@ encapsulation/re-encryption improvement. It is not a broad roundtrip win; the
 longer confirmation kept encapsulation positive but roundtrip-core noise moved
 slightly negative.
 
+A follow-up attempt to replace `maskz_mov + add` with `_mm512_mask_add_epi16()`
+was rejected. It passed native and AVX2-only core `make test`, but the native
+KEM-only confirmation was only neutral and the focused stage rows did not improve
+cleanly. KEM A/B against the accepted maskz version with `RUNS=15`,
+`KEM_ITERS=50000` showed `mlkem_encaps` median speedup `1.0004x`,
+`mlkem_encaps_core` `0.9992x`, and `mlkem_roundtrip_core` `1.0012x`. A native
+stage A/B with `RUNS=11` and `STAGE_ITERS=120000` showed
+`mlkem_core_stage_kpke_encrypt_cached` median speedup `0.9992x` and
+`mlkem_core_stage_encrypt_accum_inv_v` `1.0001x`. Keep the explicit
+`maskz_mov + add` shape; it is no slower in the integrated path and is easier to
+read as materializing the message polynomial.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
