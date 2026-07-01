@@ -108,17 +108,23 @@ fi
 
 printf "base_ref=%s\n" "$BASE_REF"
 printf "candidate_root=%s\n" "$ROOT_DIR"
+make_args=(CC="$C_COMPILER" AVX2_BACKEND=core)
+if [ "${ARCH_CFLAGS+x}" ]; then
+  make_args+=(ARCH_CFLAGS="$ARCH_CFLAGS")
+fi
+
 printf "compiler=%s avx2_backend=core suites=%s runs=%s warmup_runs=%s pin_cpu=%s\n" \
   "$C_COMPILER" "$SUITES" "$RUNS" "$WARMUP_RUNS" "${PIN_CPU:-<unset>}"
+printf "arch_cflags=%s\n" "${ARCH_CFLAGS:-<make default>}"
 printf "iters: kem=%s stage=%s ntt=%s keccak=%s\n" \
   "$KEM_ITERS" "$STAGE_ITERS" "$NTT_ITERS" "$KECCAK_ITERS"
 
 git -C "$ROOT_DIR" worktree add --detach "$BASE_DIR" "$BASE_REF" >/dev/null
 
-make -C "$BASE_DIR" clean CC="$C_COMPILER" AVX2_BACKEND=core >/dev/null
-make -C "$ROOT_DIR" clean CC="$C_COMPILER" AVX2_BACKEND=core >/dev/null
-make -C "$BASE_DIR" "${build_targets[@]}" CC="$C_COMPILER" AVX2_BACKEND=core >/dev/null
-make -C "$ROOT_DIR" "${build_targets[@]}" CC="$C_COMPILER" AVX2_BACKEND=core >/dev/null
+make -C "$BASE_DIR" clean "${make_args[@]}" >/dev/null
+make -C "$ROOT_DIR" clean "${make_args[@]}" >/dev/null
+make -C "$BASE_DIR" "${build_targets[@]}" "${make_args[@]}" >/dev/null
+make -C "$ROOT_DIR" "${build_targets[@]}" "${make_args[@]}" >/dev/null
 
 for suite in "${SUITE_LIST[@]}"; do
   suite="${suite//[[:space:]]/}"
