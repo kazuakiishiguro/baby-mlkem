@@ -2932,6 +2932,57 @@ win. The defensible effect is the local decrypt inverse-sub stage: the fused
 final stage removes one scale/sub scan and improves the decrypt-focused stage
 rows without relying on caches or vendored code.
 
+A native AVX512 follow-up applies the same final-fusion idea to the AVX512
+`ntt_inv_sub_from_inplace()` path used by decrypt. The helper runs the AVX2
+inverse head and AVX512 tail levels through `log2len = 6`, then folds the final
+`log2len = 7` inverse butterfly, the `3303` inverse scale, and `v - scaled(w)`
+into one 16-lane AVX512 pass. AVX2-only builds keep the existing AVX2 fused
+helper. This remains a core implementation change and does not use a cache or a
+vendored backend.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=220000 STAGE_ITERS=80000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native AVX512 decrypt final-fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_sub_from` | 177.56 | 169.08 | 1.0502x | 1.0499x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 354.52 | 343.24 | 1.0329x | 1.0324x |
+| `mlkem_core_stage_decrypt_accum_inv` | 412.41 | 402.68 | 1.0242x | 1.0260x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 759.08 | 747.51 | 1.0155x | 1.0155x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 794.89 | 793.21 | 1.0021x | 1.0023x |
+
+Longer native KEM confirmation:
+
+```bash
+RUNS=21 WARMUP_RUNS=5 SUITES=kem KEM_ITERS=60000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 2938.95 | 2933.08 | 1.0020x | 1.0016x |
+| `mlkem_decaps_core` | 4459.93 | 4424.24 | 1.0081x | 1.0027x |
+| `mlkem_roundtrip` | 10339.14 | 10325.96 | 1.0013x | 1.0006x |
+| `mlkem_roundtrip_core` | 14726.99 | 14671.47 | 1.0038x | 1.0005x |
+
+The accepted claim is local and decrypt-focused: the change reliably speeds the
+AVX512 inverse-sub helper and decrypt stage, while full KEM movement is small but
+confirmed no-regression in the longer run.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
