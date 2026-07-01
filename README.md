@@ -1626,6 +1626,33 @@ regressed. KEM confirmation was skipped because the target stage rows were
 already clearly negative. Keep the current 32-bit multiply/reduce form for this
 half of the final pass.
 
+A narrower AVX2 code-layout experiment marking only
+`ntt_inv_add_fused_final_avx2()` as `MLKEM_NOINLINE` was also rejected. This was
+intended to reduce inlined code pressure in the encapsulation `u` inverse-add
+path without changing arithmetic. AVX2-only `make test` passed, but the direct
+stage rows regressed, so KEM confirmation was skipped and the source was
+reverted.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+No-inline final helper rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 781.70 | 792.59 | 0.9863x | 0.9862x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1031.89 | 1033.07 | 0.9989x | 0.9976x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | 318.55 | 319.07 | 0.9984x | 0.9994x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2802.13 | 2752.05 | 1.0182x | 0.9922x |
+
+Keep the AVX2 fused final add helper inline. The call boundary costs more than
+any code-layout benefit in the direct inverse-add rows.
+
 AVX2-only NTT/stage A/B command:
 
 ```bash
