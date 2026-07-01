@@ -967,6 +967,10 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
@@ -1205,26 +1209,34 @@ exactly match the accepted three-polynomial fused final helper. A `clang`,
 
 | Build | Metric | ns/op |
 |---|---|---:|
-| native | `mlkem_core_stage_encrypt_accum_inv` | 1097.78 |
-| native | `mlkem_core_stage_encrypt_accum_inv_u` | 866.18 |
-| native | `mlkem_core_stage_encrypt_accum_u_only` | 373.26 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_only` | 693.48 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 433.08 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 297.68 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 268.93 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 255.84 |
-| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 459.85 |
-| native | `mlkem_core_stage_encrypt_accum_inv_v` | 405.13 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv` | 1303.25 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1032.38 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_u_only` | 437.17 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_only` | 781.20 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 462.82 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 310.61 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 279.05 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 263.50 |
-| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 510.80 |
-| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_v` | 467.07 |
+| native | `mlkem_core_stage_encrypt_accum_inv` | 1096.96 |
+| native | `mlkem_core_stage_encrypt_accum_inv_u` | 864.19 |
+| native | `mlkem_core_stage_encrypt_accum_u_only` | 373.79 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_only` | 692.89 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 431.26 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 299.23 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 268.96 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 262.41 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | 233.01 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | 231.04 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | 231.34 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 278.55 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 458.30 |
+| native | `mlkem_core_stage_encrypt_accum_inv_v` | 405.14 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv` | 1326.98 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1029.32 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_u_only` | 439.52 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_only` | 795.43 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_only` | 467.71 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | 316.57 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | 284.28 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | 268.45 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | 266.08 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | 261.09 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | 262.13 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 340.39 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 520.29 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_v` | 470.78 |
 
 The split points the next encryption-accumulation work at the `u` inverse-add
 side rather than another `ntt_mul_acc3()` rewrite. Prior Karatsuba, reciprocal
@@ -1232,9 +1244,12 @@ reduction, AVX2 vector-helper, and generic batching attempts already showed that
 the multiplication helper is hard to improve robustly. Within AVX2-only
 inverse-add, the head and tail/final diagnostics are both large. The finer
 head-level rows show l1, l2, and l3 are all material after scratch-copy overhead,
-with no single stage dominating. The next useful implementation work should
-therefore target a structural inverse-head cleanup or the tail/final arithmetic
-pass with KEM confirmation, not another whole-`ntt_mul_acc3()` experiment.
+with no single stage dominating. The tail split shows l4, l5, and l6 are similar
+and smaller than the final butterfly plus scale/add row. The next useful
+implementation work should therefore target the final pass or a structural
+inverse-head cleanup with KEM confirmation, not another whole-`ntt_mul_acc3()`
+experiment. The already rejected packed 16-bit final-add rewrite should not be
+repeated.
 
 An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
 changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
