@@ -1341,6 +1341,109 @@ Keep the accepted 16-coefficient AVX2 message recovery packer. The 32-coefficien
 shape halves the loop count, but the AVX2 lane-local pack ordering forces extra
 byte rearrangement work and loses in the direct recover-message stage.
 
+### Independent Core Optimization A/B (2026-07-01, AVX512 PRF/CBD lane extraction)
+
+An AVX512 PRF/CBD decode experiment replacing the local `uint64_t words[8]`
+store/reload in `sample_poly_cbd_eta2x6_state_avx512()` and
+`sample_poly_cbd_eta2x7_state_avx512()` with direct `_mm512_castsi512_si128()` /
+`_mm512_extracti32x4_epi32()` lane-pair extraction was rejected. The intent was
+to remove a stack round-trip in the native AVX512 keygen/encryption PRF/CBD
+path, matching the data-movement reductions that helped earlier x4 PRF/CBD and
+sample-matrix work.
+
+The candidate passed native `make test`, AVX2-only `make test`, and
+`git diff --check`, but the direct PRF/CBD stage movement was noise-sized.
+
+Native stage A/B command:
+
+```bash
+RUNS=11 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 699.28 | 696.24 | 1.004x | 1.000x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 878.59 | 878.09 | 1.001x | 1.000x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1569.68 | 1566.93 | 1.002x | 1.000x |
+| `mlkem_core_stage_encrypt_noise` | 1026.32 | 1025.62 | 1.001x | 1.002x |
+
+Keep the current store/reload shape in the AVX512 x6/x7 PRF/CBD decoders. The
+compiler and memory pipeline already handle this small local temporary well
+enough that explicit extraction does not produce a defensible integrated win.
+
+### Independent Core Optimization A/B (2026-07-01, keygen add/encode fusion)
+
+Two keygen `that = A^T*s + e` fusion experiments were rejected. Both were aimed
+at removing or combining the separate `ntt_add()` pass before d12 public-key
+encoding, without changing the independent core arithmetic or using a vendored
+backend.
+
+The first variant added `ehat` inside the scalar `ntt_mul_acc3_factored_gamma()`
+loop. It passed native and AVX2-only `make test`, but it moved the modular add
+onto the scalar multiply/reduction critical path and lost clearly. The existing
+separate `ntt_add()` pass is cheap because it uses AVX2 16-bit vector add/sub.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected scalar-add highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 488.51 | 510.17 | 0.958x | 0.957x |
+| `mlkem_core_stage_kpke_keygen_full` | 6817.79 | 6827.96 | 0.999x | 0.997x |
+
+The second variant kept the add vectorized and fused `ntt_add()` with the d12
+AVX2 encoder pass, storing the canonical `that` coefficients and emitting the
+encoded public-key bytes from the same loaded vectors. This avoided the scalar
+critical-path problem and showed a very small direct stage win, but the effect
+was too small and the KEM confirmation did not give a clean no-regression signal.
+
+AVX2-only stage confirmation command:
+
+```bash
+RUNS=11 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=160000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Vector add/encode stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 487.90 | 486.43 | 1.003x | 1.005x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1604.23 | 1604.42 | 1.000x | 1.001x |
+
+KEM no-regression command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 8757.35 | 8995.55 | 0.974x | 0.995x |
+| `mlkem_keygen_core` | 8737.80 | 8994.42 | 0.972x | 0.979x |
+| `mlkem_encaps` | 3018.11 | 3035.37 | 0.994x | 0.999x |
+| `mlkem_roundtrip_core` | 26072.20 | 26745.64 | 0.975x | 1.011x |
+
+Keep the existing `ntt_mul_acc3_factored_gamma()` plus separate `ntt_add()` and
+`byte_encode_d12_avx2()` sequence. The scalar-add fusion is directly slower, and
+the vector add/encode fusion is only a sub-percent local stage improvement with
+weak KEM evidence, so the extra code path is not worth carrying.
+
 ### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
