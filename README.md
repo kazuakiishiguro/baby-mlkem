@@ -2797,6 +2797,37 @@ The reciprocal-reduction idea is useful for ranges where it avoids actual
 division or 64-bit modulo, but here it adds a 64-bit multiply on the critical
 path and loses about four percent in the direct helper microbench.
 
+### Independent Core Optimization A/B (2026-07-02, NTT accumulation 32-bit GAMMA table)
+
+A narrow `GAMMA` representation experiment was rejected. The candidate changed
+`GAMMA[128]` from `uint16_t` to `uint32_t` so the K=3 accumulation helpers could
+load a native 32-bit multiplier for `(c0_hi % Q) * GAMMA[i]` instead of loading
+16 bits and zero-extending. Native and AVX2-only `make test` passed, but the
+larger table and changed load shape regressed the direct NTT accumulation
+helpers.
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected 32-bit `GAMMA` table highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 95.91 | 96.43 | 0.9946x | 0.9194x |
+| `mlkem_ntt_mul_acc3_factored` | 96.26 | 96.45 | 0.9980x | 0.9226x |
+| `mlkem_ntt_copy` | 198.93 | 198.86 | 1.0003x | 1.0005x |
+| `mlkem_ntt_inplace` | 196.62 | 196.80 | 0.9991x | 1.0000x |
+
+Keep `GAMMA` as `uint16_t`. The hot scalar loop already handles the narrow load
+well, and the wider table does not reduce the critical arithmetic path. Future
+accumulation work should change scheduling or representation more substantially
+than table element width.
+
 ### Independent Core Optimization A/B (2026-07-02, NTT accumulation Karatsuba cross term)
 
 A classic Karatsuba-style base-multiplication rewrite for `ntt_mul_acc3()` and
