@@ -1567,8 +1567,7 @@ static inline void ntt_inv_butterflies_inplace(poly256 out) {
 }
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
-static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
-                                                     poly256 out) {
+static inline uint16_t ntt_inv_before_final_avx2(poly256 out) {
   ntt_inv_head_avx2(out);
 
   int k = 15;
@@ -1591,9 +1590,76 @@ static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
     }
   }
 
+  return ZETA[k];
+}
+
+static inline void ntt_inv_add_fused_final_avx2(const poly256 add,
+                                                poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
   const __m256i scale = _mm256_set1_epi32(3303);
-  const uint16_t zeta_scaled =
-      mod_q_reduce_ntt_u32((uint32_t)ZETA[k] * 3303u);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i a0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add + j)));
+    __m256i a1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add + N / 2 + j)));
+    _mm_storeu_si128((__m128i *)(out + j),
+                     pack_i32x8_to_i16x8(mod_q_add_i32x8(scaled0, a0)));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(mod_q_add_i32x8(scaled1, a1)));
+  }
+}
+
+static inline void ntt_inv_add2_fused_final_avx2(const poly256 add0,
+                                                 const poly256 add1,
+                                                 poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i a00 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add0 + j)));
+    __m256i a01 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add0 + N / 2 + j)));
+    __m256i a10 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add1 + j)));
+    __m256i a11 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add1 + N / 2 + j)));
+    __m256i out0 = mod_q_add_i32x8(mod_q_add_i32x8(scaled0, a00), a10);
+    __m256i out1 = mod_q_add_i32x8(mod_q_add_i32x8(scaled1, a01), a11);
+    _mm_storeu_si128((__m128i *)(out + j), pack_i32x8_to_i16x8(out0));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(out1));
+  }
+}
+
+static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
+                                                     poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
   const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
   for (int j = 0; j < N / 2; j += 8) {
     __m256i a = _mm256_cvtepu16_epi32(
@@ -1630,6 +1696,9 @@ static inline void ntt_inv_scale(poly256 out) {
 }
 
 static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_inv_add_fused_final_avx2(add, out);
+#else
   ntt_inv_butterflies_inplace(out);
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_inv_add_scale_avx512(add, out);
@@ -1639,11 +1708,15 @@ static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
     out[i] = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add[i]);
   }
 #endif
+#endif
 }
 
 static inline void ntt_inv_add2_inplace(const poly256 add0,
                                         const poly256 add1,
                                         poly256 out) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_inv_add2_fused_final_avx2(add0, add1, out);
+#else
   ntt_inv_butterflies_inplace(out);
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_inv_add2_scale_avx512(add0, add1, out);
@@ -1653,6 +1726,7 @@ static inline void ntt_inv_add2_inplace(const poly256 add0,
     int16_t sum = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add0[i]);
     out[i] = mod_q_add_i16(sum, add1[i]);
   }
+#endif
 #endif
 }
 

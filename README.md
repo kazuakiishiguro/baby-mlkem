@@ -1539,6 +1539,52 @@ RUNS=13 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=40000 \
 | `mlkem_keygen_core` | 9103.04 | 8471.98 | 1.075x |
 | `mlkem_roundtrip_core` | 26414.71 | 25612.89 | 1.031x |
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 inverse-add final fusion)
+
+Baseline is commit `8a1308a` before extending the final-stage fusion to inverse
+NTT add paths; candidate is the working tree after applying the same AVX2 final
+`log2len = 7` butterfly plus `3303` scale folding to `ntt_inv_add_inplace()`
+and `ntt_inv_add2_inplace()`. This is a core implementation change and does
+not use caches or vendored AVX2 backends. The already-fused decrypt
+`ntt_inv_sub_from_inplace()` path is unchanged except that it now shares the
+common pre-final helper.
+
+AVX2-only NTT/stage command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=50000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_add` | 213.25 | 200.80 | 1.062x | 1.059x |
+| `mlkem_ntt_inv_add2` | 227.28 | 211.54 | 1.074x | 1.075x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1374.54 | 1324.32 | 1.038x | 1.038x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1073.85 | 1037.85 | 1.035x | 1.037x |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 481.64 | 475.81 | 1.012x | 1.024x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 7254.38 | 7196.57 | 1.008x | 1.010x |
+
+AVX2-only KEM confirmation command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 3170.43 | 3048.43 | 1.040x | 1.020x |
+| `mlkem_encaps_core` | 9023.93 | 8940.77 | 1.009x | 1.052x |
+| `mlkem_roundtrip_core` | 26992.24 | 26713.25 | 1.010x | 1.024x |
+
+The main effect is the local inverse-add post-processing scan: the fused final
+stage removes one full scale/add pass for each AVX2 inverse-add call. The KEM
+rows still include higher-noise sampling and hashing work, so use the NTT/stage
+rows as the primary attribution for why this change is faster.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 decrypt inverse final fusion)
 
 Baseline is commit `8402ce5` before fusing the decrypt inverse-NTT final stage;
