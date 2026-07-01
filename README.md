@@ -1312,6 +1312,46 @@ The implementation now enables `compress_encode_poly_d10_avx2()` and
 `compress_encode_poly_d4_avx2()` for all AVX2 core builds. Non-AVX2 builds keep
 the scalar `compress_poly()` plus `byte_encode_u16()` path.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 d4 decode/decompress)
+
+Baseline is commit `6cabe0a` before adding the AVX2 `d = 4` ciphertext
+decode/decompress path; candidate is the working tree after the change. This is
+a core implementation change and does not call an external backend.
+
+The implementation adds `decompress_decode_poly_d4_avx2()`, which unpacks the
+128-byte `DV = 4` ciphertext component as 16 bytes to 32 coefficients per loop
+and applies `((v * Q + 8) >> 4)` with AVX2 16-bit operations. The `DU = 10`
+path and non-AVX2 builds keep the existing scalar code.
+
+AVX2-only stage command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=100000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 374.46 | 366.31 | 1.022x | 1.021x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 1081.60 | 1074.92 | 1.006x | 1.006x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 1096.96 | 1094.17 | 1.003x | 1.006x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B was noisier, as expected for an 8 ns local stage win inside full
+decapsulation. The run showed `mlkem_roundtrip_core` median speedup `1.011x`
+and `mlkem_decaps` median speedup `0.998x`; treat the local
+`ciphertext_decode_decompress` row as the defensible signal for this change.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
