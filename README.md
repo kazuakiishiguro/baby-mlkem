@@ -709,6 +709,27 @@ just to break even. A more plausible design should either keep data in the
 packed layout across neighboring stages or generate/consume CBD/decode data in
 that layout directly.
 
+A follow-up CBD-side diagnostic checks the input-generation part of that same
+layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,
+while `mlkem_cbd_eta2x3_pack_aos4` adds the diagnostic AoS4 pack step after the
+three normal polynomial outputs have already been produced. Pinned CPU 0,
+`clang`, `AVX2_BACKEND=core`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Extra vs CBD x3 |
+|---|---|---:|---:|
+| native | `mlkem_cbd_eta2` | 7.32 | - |
+| native | `mlkem_cbd_eta2x3` | 22.93 | - |
+| native | `mlkem_cbd_eta2x3_pack_aos4` | 39.65 | +16.72 |
+| AVX2-only | `mlkem_cbd_eta2` | 9.62 | - |
+| AVX2-only | `mlkem_cbd_eta2x3` | 29.14 | - |
+| AVX2-only | `mlkem_cbd_eta2x3_pack_aos4` | 58.90 | +29.76 |
+
+This makes the packed-layout target more specific: converting three already
+decoded CBD polynomials into AoS4 costs about 17 ns on native and 30 ns on
+AVX2-only. A serious packed K=3 NTT should therefore either save more than that
+input-side conversion cost, or avoid the conversion by decoding CBD/noise
+directly into the packed representation.
+
 The useful target for a packed K=3 forward NTT is therefore not another call-site
 shuffle. It must make `mlkem_ntt3_inplace` materially lower than three independent
 `ntt(in, in)` calls while preserving the existing single-polynomial path.
@@ -906,6 +927,8 @@ metrics isolate these helpers:
 | `mlkem_sha3_512_64` | `sha3_512()` over a 64-byte input |
 | `mlkem_prf_eta2` | `mlkem_prf(ETA2, seed[32], nonce)` |
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
+| `mlkem_cbd_eta2x3` | three prepared ETA2 CBD decodes, matching one K=3 NTT input vector |
+| `mlkem_cbd_eta2x3_pack_aos4` | three ETA2 CBD decodes followed by pack into the diagnostic K=3 AoS4 layout |
 | `mlkem_sample_ntt_parse` | one `sample_ntt_parse_stream()` pass over 504 bytes |
 | `mlkem_sample_ntt_full` | full `sample_ntt()` including SHAKE128 squeezing and parsing |
 

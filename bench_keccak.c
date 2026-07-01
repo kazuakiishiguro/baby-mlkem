@@ -14,12 +14,15 @@ static uint8_t bench_seed32[KECCAK_BENCH_LANES][32];
 static uint8_t bench_msg64[KECCAK_BENCH_LANES][64];
 static uint8_t bench_pk[KECCAK_BENCH_LANES][K * 384 + 32];
 static uint8_t bench_prfout[KECCAK_BENCH_LANES][64 * ETA1];
+static uint8_t bench_prfout3[KECCAK_BENCH_LANES][3][64 * ETA2];
 static uint8_t bench_stream[KECCAK_BENCH_LANES][SAMPLE_NTT_STREAM_CHUNK];
 static uint64_t bench_state[KECCAK_BENCH_LANES][25];
 #if defined(__AVX2__)
 static __m256i bench_state4[KECCAK_BENCH_LANES][25];
 #endif
 static poly256 bench_poly[KECCAK_BENCH_LANES];
+static poly256 bench_poly3[KECCAK_BENCH_LANES][3];
+static int16_t bench_cbd_aos4[KECCAK_BENCH_LANES][N][4];
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -65,6 +68,19 @@ static uint64_t checksum_poly(const poly256 p) {
     acc *= 0x9E3779B97F4A7C15ULL;
   }
   return acc;
+}
+
+static void pack_poly3_aos4(const poly256 p0, const poly256 p1,
+                            const poly256 p2, int16_t out[N][4]) {
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+  for (int i = 0; i < N; i++) {
+    out[i][0] = p0[i];
+    out[i][1] = p1[i];
+    out[i][2] = p2[i];
+    out[i][3] = 0;
+  }
 }
 
 static uint64_t checksum_state(const uint64_t st[25]) {
@@ -329,6 +345,54 @@ static uint64_t bench_sample_poly_cbd_eta2(size_t iters) {
   return t1 - t0;
 }
 
+static void prepare_cbd3_inputs(void) {
+  init_inputs();
+  for (int lane = 0; lane < KECCAK_BENCH_LANES; lane++) {
+    for (int poly = 0; poly < 3; poly++) {
+      fill_bytes(bench_prfout3[lane][poly], sizeof(bench_prfout3[lane][poly]),
+                 0x9000u + (uint64_t)lane * 3u + (uint64_t)poly);
+    }
+  }
+}
+
+static uint64_t bench_sample_poly_cbd_eta2x3(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_cbd3_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][0], bench_poly3[lane][0]);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][1], bench_poly3[lane][1]);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][2], bench_poly3[lane][2]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 29u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 31u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][2][(i * 37u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_poly_cbd_eta2x3_pack_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_cbd3_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][0], bench_poly3[lane][0]);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][1], bench_poly3[lane][1]);
+    sample_poly_cbd(ETA2, bench_prfout3[lane][2], bench_poly3[lane][2]);
+    pack_poly3_aos4(bench_poly3[lane][0], bench_poly3[lane][1],
+                    bench_poly3[lane][2], bench_cbd_aos4[lane]);
+    acc ^= (uint16_t)bench_cbd_aos4[lane][(i * 41u) & (N - 1)][i & 3u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_sample_ntt_parse(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -392,6 +456,9 @@ int main(int argc, char **argv) {
   print_metric("mlkem_sha3_512_64", bench_sha3_512_64(iters), iters);
   print_metric("mlkem_prf_eta2", bench_mlkem_prf_eta2(iters), iters);
   print_metric("mlkem_cbd_eta2", bench_sample_poly_cbd_eta2(iters), iters);
+  print_metric("mlkem_cbd_eta2x3", bench_sample_poly_cbd_eta2x3(iters), iters);
+  print_metric("mlkem_cbd_eta2x3_pack_aos4",
+               bench_sample_poly_cbd_eta2x3_pack_aos4(iters), iters);
   print_metric("mlkem_sample_ntt_parse", bench_sample_ntt_parse(iters), iters);
   print_metric("mlkem_sample_ntt_full", bench_sample_ntt_full(iters), iters);
   printf("mlkem_keccak_bench_sink=%llu\n",
