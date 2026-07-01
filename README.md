@@ -631,6 +631,11 @@ helpers:
 | `mlkem_ntt3_pack_ntt_aos4` | diagnostic pack plus bench-only AoS4 K=3 forward NTT |
 | `mlkem_ntt3_pack_ntt_unpack_aos4` | diagnostic standalone AoS4 K=3 forward NTT including pack and unpack |
 | `mlkem_ntt3_2coeff_inplace` | bench-only K=3 forward NTT that processes two coefficients across three polynomials per AVX2 vector, without changing storage layout |
+| `mlkem_ntt3_pack_tile2x3` | diagnostic pack into `[coeff pair][poly0 c0, poly1 c0, poly2 c0, poly0 c1, poly1 c1, poly2 c1, pad, pad]` |
+| `mlkem_ntt3_unpack_tile2x3` | diagnostic unpack from the K=3 x 2-coefficient tiled layout |
+| `mlkem_ntt3_tile2x3_inplace` | bench-only K=3 forward NTT over the contiguous K=3 x 2-coefficient tiled layout |
+| `mlkem_ntt3_pack_ntt_tile2x3` | diagnostic pack plus tiled K=3 x 2-coefficient forward NTT |
+| `mlkem_ntt3_pack_ntt_unpack_tile2x3` | diagnostic standalone tiled K=3 x 2-coefficient forward NTT including pack and unpack |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -756,6 +761,33 @@ contiguous. The next packed NTT design should use a real tiled in-memory layout
 that provides contiguous loads/stores for both coefficient and polynomial
 parallelism, or avoid cross-polynomial NTT packing and move to a different
 bottleneck.
+
+A contiguous tile follow-up implemented that real tiled-memory version as
+`mlkem_ntt3_tile2x3_inplace`. The tile layout stores two adjacent coefficients
+for the three K polynomials in one 8-lane vector, leaving only two padding lanes,
+so every non-final butterfly can use contiguous loads and stores instead of
+scalar gathers. Pinned CPU 0, `clang`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Speedup vs `mlkem_ntt3_inplace` |
+|---|---|---:|---:|
+| native | `mlkem_ntt3_inplace` | 509.00 | 1.000x |
+| native | `mlkem_ntt3_pack_tile2x3` | 21.51 | - |
+| native | `mlkem_ntt3_unpack_tile2x3` | 20.35 | - |
+| native | `mlkem_ntt3_tile2x3_inplace` | 783.80 | 0.649x |
+| native | `mlkem_ntt3_pack_ntt_unpack_tile2x3` | 823.71 | 0.618x |
+| AVX2-only | `mlkem_ntt3_inplace` | 582.04 | 1.000x |
+| AVX2-only | `mlkem_ntt3_pack_tile2x3` | 51.19 | - |
+| AVX2-only | `mlkem_ntt3_unpack_tile2x3` | 73.38 | - |
+| AVX2-only | `mlkem_ntt3_tile2x3_inplace` | 770.10 | 0.756x |
+| AVX2-only | `mlkem_ntt3_pack_ntt_unpack_tile2x3` | 893.68 | 0.651x |
+
+This confirms the memory-layout part of the hypothesis: contiguous tiles reduce
+the normal-layout K=3 x 2-coefficient prototype from about 2.1 us to about 0.77
+us. It still loses to three existing NTTs because a K=3-only AVX2 tile has at
+most six useful 16-bit lanes out of eight. The next packed NTT attempt should
+not be another standalone K=3 layout; it would need to combine more independent
+polynomials or fuse surrounding work enough to pay for the 6/8 lane ceiling and
+conversion cost.
 
 A follow-up CBD-side diagnostic checks the input-generation part of that same
 layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,
