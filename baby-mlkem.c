@@ -1566,6 +1566,58 @@ static inline void ntt_inv_butterflies_inplace(poly256 out) {
 #endif
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
+                                                     poly256 out) {
+  ntt_inv_head_avx2(out);
+
+  int k = 15;
+  for (int log2len = 4; log2len <= 6; log2len++) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k--];
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = out[idx];
+        int16_t u = out[idx + length];
+        out[idx] = mod_q_add_i16(t, u);
+        int16_t tmp2 = mod_q_sub_i16(u, t);
+        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
+        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
+      }
+    }
+  }
+
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled =
+      mod_q_reduce_ntt_u32((uint32_t)ZETA[k] * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i m0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(minuend + j)));
+    __m256i m1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(minuend + N / 2 + j)));
+    _mm_storeu_si128((__m128i *)(out + j),
+                     pack_i32x8_to_i16x8(mod_q_sub_i32x8(m0, scaled0)));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(mod_q_sub_i32x8(m1, scaled1)));
+  }
+}
+#endif
+
 static inline void ntt_inv_scale(poly256 out) {
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_inv_scale_avx512(out);
@@ -1657,6 +1709,9 @@ static inline void ntt_inv_add3_inplace(const poly256 add0,
 
 static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
                                             poly256 out) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_inv_sub_from_fused_final_avx2(minuend, out);
+#else
   ntt_inv_butterflies_inplace(out);
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_inv_sub_from_scale_avx512(minuend, out);
@@ -1665,6 +1720,7 @@ static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     out[i] = mod_q_sub_i16(minuend[i], mod_q_reduce_ntt_u32(tmp));
   }
+#endif
 #endif
 }
 

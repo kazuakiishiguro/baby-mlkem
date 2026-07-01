@@ -1539,6 +1539,49 @@ RUNS=13 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=40000 \
 | `mlkem_keygen_core` | 9103.04 | 8471.98 | 1.075x |
 | `mlkem_roundtrip_core` | 26414.71 | 25612.89 | 1.031x |
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 decrypt inverse final fusion)
+
+Baseline is commit `8402ce5` before fusing the decrypt inverse-NTT final stage;
+candidate is the working tree after folding the final `log2len = 7` inverse
+butterfly, the mandatory `3303` inverse-NTT scale, and `v - scaled(w)` into one
+AVX2 pass for `ntt_inv_sub_from_inplace()`. This is a core implementation
+change: it removes a full post-inverse polynomial scan from the decrypt path and
+does not add a cache or use an external backend.
+
+AVX2-only stage command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=50000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_inv_sub_from` | 391.89 | 381.50 | 1.027x | 1.027x |
+| `mlkem_core_stage_decrypt_accum_inv` | 472.65 | 461.98 | 1.023x | 1.022x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 897.67 | 886.97 | 1.012x | 1.012x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 1102.25 | 1094.76 | 1.007x | 1.007x |
+
+KEM-only confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=24000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 4174.74 | 4343.32 | 0.961x | 0.999x |
+| `mlkem_decaps_core` | 8313.88 | 8025.69 | 1.036x | 1.001x |
+| `mlkem_roundtrip_core` | 26935.84 | 26106.89 | 1.032x | 1.031x |
+
+The public `mlkem_decaps` row is noisy and should not be read as a broad KEM
+win. The defensible effect is the local decrypt inverse-sub stage: the fused
+final stage removes one scale/sub scan and improves the decrypt-focused stage
+rows without relying on caches or vendored code.
+
 ### Independent Core Optimization A/B (2026-06-30, sample-matrix x4 transpose store)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
