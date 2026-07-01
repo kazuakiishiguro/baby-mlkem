@@ -78,6 +78,8 @@ static poly256 stage_tmp_vec1[STAGE_BENCH_LANES][K];
 static poly256 stage_tmp_poly[STAGE_BENCH_LANES];
 #if defined(__AVX2__)
 static uint8_t stage_tmp_sample_stream[STAGE_BENCH_LANES][4][504];
+static __m256i stage_tmp_sample_refill_st[STAGE_BENCH_LANES][25];
+static int stage_tmp_sample_refill_count[STAGE_BENCH_LANES][4];
 #endif
 
 static uint64_t now_ns(void) {
@@ -767,6 +769,114 @@ static uint64_t bench_sample_ntt4_parse_504(size_t iters) {
         stage_tmp_ahat[lane][1][0], 0);
     acc ^= (uint64_t)(count0 + 3 * count1 + 5 * count2 + 7 * count3);
     acc ^= (uint16_t)stage_tmp_ahat[lane][(i / K) % K][i % K][0];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static void stage_prepare_sample_ntt4_refill_cases(void) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  size_t found = 0;
+
+  sample_ntt_parse_init_avx2();
+  for (size_t i = 0; found < STAGE_BENCH_LANES && i < 100000; i++) {
+    uint8_t seed[32];
+    __m256i st[25];
+    int count[4];
+    int need_more = 0;
+
+    fill_bytes(seed, sizeof(seed), 0xC4C40000u + i);
+    stage_sample_ntt4_init(seed, row, col, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      sample_ntt4_store_block(stage_tmp_sample_stream[found],
+                              (size_t)block * 168, st);
+    }
+
+    count[0] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[found][0], 504,
+        stage_tmp_ahat[found][0][0], 0);
+    count[1] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[found][1], 504,
+        stage_tmp_ahat[found][0][1], 0);
+    count[2] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[found][2], 504,
+        stage_tmp_ahat[found][0][2], 0);
+    count[3] = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[found][3], 504,
+        stage_tmp_ahat[found][1][0], 0);
+
+    for (int lane = 0; lane < 4; lane++) {
+      need_more |= count[lane] < N;
+    }
+    if (!need_more) {
+      continue;
+    }
+
+    for (int lane = 0; lane < 25; lane++) {
+      stage_tmp_sample_refill_st[found][lane] = st[lane];
+    }
+    for (int lane = 0; lane < 4; lane++) {
+      stage_tmp_sample_refill_count[found][lane] = count[lane];
+    }
+    found++;
+  }
+
+  if (found != STAGE_BENCH_LANES) {
+    fprintf(stderr, "failed to prepare sample_ntt4 refill cases\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
+static uint64_t bench_sample_ntt4_refill_keccak_store1(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  stage_prepare_sample_ntt4_refill_cases();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    keccakf4(stage_tmp_sample_refill_st[lane]);
+    sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
+                           stage_tmp_sample_stream[lane][1],
+                           stage_tmp_sample_stream[lane][2],
+                           stage_tmp_sample_stream[lane][3],
+                           stage_tmp_sample_refill_st[lane]);
+    acc ^= stage_tmp_sample_stream[lane][i & 3u][(i * 19u) % 168u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_refill_step_once(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  stage_prepare_sample_ntt4_refill_cases();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int count[4];
+    for (int j = 0; j < 4; j++) {
+      count[j] = stage_tmp_sample_refill_count[lane][j];
+    }
+
+    keccakf4(stage_tmp_sample_refill_st[lane]);
+    sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
+                           stage_tmp_sample_stream[lane][1],
+                           stage_tmp_sample_stream[lane][2],
+                           stage_tmp_sample_stream[lane][3],
+                           stage_tmp_sample_refill_st[lane]);
+    for (int j = 0; j < 4; j++) {
+      if (count[j] < N) {
+        count[j] = sample_ntt_parse_stream_avx2_ready(
+            stage_tmp_sample_stream[lane][j], 168,
+            stage_tmp_ahat[lane][j / K][j % K], count[j]);
+      }
+    }
+    acc ^= (uint64_t)(count[0] + 3 * count[1] + 5 * count[2] + 7 * count[3]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][(i / K) % K][i % K][i & 255u];
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -2463,6 +2573,10 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
                bench_sample_ntt4_parse_504(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_refill_keccak_store1",
+               bench_sample_ntt4_refill_keccak_store1(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_refill_step_once",
+               bench_sample_ntt4_refill_step_once(iters), iters);
   print_sample_ntt4_initial_accept_stats(iters);
   print_metric("mlkem_core_stage_sample_ntt4_one_full_raw",
                bench_sample_ntt4_one_full_raw(iters), iters);

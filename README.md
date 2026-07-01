@@ -942,6 +942,8 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional refill Keccak-f4 block plus stream stores, conditioned on groups that need refill |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | AVX2-only x4 sampler one additional refill step including Keccak/store and parsing only lanes still below 256 coefficients |
 | `mlkem_core_stage_sample_ntt4_one_full_raw` | AVX2-only one-lane x4 tail sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_one_keccak_store3` | AVX2-only one-lane x4 tail sampler initial three Keccak-f4 blocks plus lane-0 stream stores |
 | `mlkem_core_stage_sample_ntt4_one_parse_504` | AVX2-only one-lane x4 tail sampler parse of one 504-byte rejection stream |
@@ -1150,6 +1152,30 @@ insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
 first 504 bytes. That keeps the refill path below the primary optimization
 target; direct Keccak-state-to-parser work should focus first on the common
 three-rate path.
+
+A later refill-cost split measured the conditional cost of one extra refill
+step, using only x4 sampler groups that actually needed at least one lane refill
+after the first 504 bytes. Pinned CPU 0, `clang`, 50,000-iteration snapshots:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_sample_ntt4_full_raw` | 601.51 |
+| native | `mlkem_core_stage_sample_ntt4_keccak_store3` | 500.42 |
+| native | `mlkem_core_stage_sample_ntt4_parse_504` | 148.57 |
+| native | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 169.47 |
+| native | `mlkem_core_stage_sample_ntt4_refill_step_once` | 179.97 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_full_raw` | 1313.50 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_keccak_store3` | 797.39 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_parse_504` | 115.51 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 403.87 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_refill_step_once` | 406.97 |
+
+The same 50,000-iteration run found 3.384% of x4 groups and 0.856% of lanes
+needed a refill, with average first-pass accepts `255.974000` and minimum `238`.
+That makes the amortized refill-step cost about 6 ns/op on native and 14 ns/op
+on AVX2-only, far below the common three-block Keccak/store path. Do not spend
+the next sampler work on refill handling unless the main three-rate path has
+already been redesigned.
 
 A later one-lane tail diagnostic split measured the `sample_ntt4_one()` path
 used for the final public-matrix entry `(2,2)`. These rows are diagnostic and
