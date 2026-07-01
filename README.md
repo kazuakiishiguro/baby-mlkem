@@ -3252,6 +3252,29 @@ fixed-length paths for the ML-KEM `32`-byte keygen seed hash and `64`-byte
 `keccak_ctx` path. The stage suite was noisier than the direct Keccak and KEM
 measurements, so the KEM rows above are the acceptance signal for this change.
 
+A later split-input variant was rejected. The candidate added a local
+`sha3_512_32x2(in0, in1, out)` helper and replaced the `inbuf[64]` concatenation
+in `mlkem_encaps()`, the cache-enabled `mlkem_decaps()` path, and the scalar
+no-cache public-preparation fallback. It passed native and AVX2-only core
+`make test`, but the KEM signal was neutral at best. Non-inline helper form
+regressed `mlkem_encaps` median speedup to `0.9969x`; the `static inline` form
+recovered that to effectively flat.
+
+Split 32+32 SHA3-512 helper KEM A/B, `30000` iterations, thirteen repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 2938.08 | 2939.44 | 0.9995x | 0.9986x |
+| `mlkem_decaps_core` | 4439.74 | 4456.46 | 0.9962x | 1.0011x |
+| `mlkem_encaps` | 2115.51 | 2114.70 | 1.0004x | 1.0001x |
+| `mlkem_encaps_core` | 4923.64 | 4918.93 | 1.0010x | 1.0006x |
+| `mlkem_roundtrip` | 10381.00 | 10354.50 | 1.0026x | 1.0016x |
+| `mlkem_roundtrip_core` | 14714.99 | 14715.27 | 1.0000x | 1.0007x |
+
+Keep the existing contiguous 64-byte fixed-length `sha3_512()` path. The
+64-byte stack concatenation is not a measurable bottleneck next to the Keccak
+permutation, and direct split loading does not produce a defensible KEM win.
+
 ### Independent Core Optimization A/B (2026-06-30, fixed-input PRF SHAKE256)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
