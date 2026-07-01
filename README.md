@@ -2276,6 +2276,54 @@ Stage A/B highlights:
 Keep the existing three-block store followed by one 504-byte parse per lane. For
 this parser, larger contiguous chunks beat tighter producer/consumer fusion.
 
+A later stream row-padding experiment was also rejected. The candidate changed
+the x4/x8 sampler scratch layout from tightly packed 504-byte rows to
+32-byte-aligned 512-byte rows, with 192-byte rows for the rare extra squeeze
+block, while still parsing only the original 504 or 168 produced bytes. The
+bench harness was adjusted to the same stride so the diagnostic parser rows did
+not pass a 504-byte row to a 512-stride helper. Native and AVX2-only core
+`make test` passed, and `git diff --check` passed.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=11 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 1905.57 | 1891.65 | 1.0074x | 1.0032x |
+| `mlkem_core_stage_kpke_keygen_full` | 3410.58 | 3390.65 | 1.0059x | 1.0025x |
+| `mlkem_keygen_core` | 5261.55 | 5259.10 | 1.0005x | 1.0009x |
+| `mlkem_roundtrip_core` | 14775.46 | 14703.03 | 1.0049x | 1.0019x |
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=11 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=24000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.64 | 4.73 | 1.6156x | 1.6186x |
+| `mlkem_core_stage_sample_matrix` | 4459.12 | 4425.88 | 1.0075x | 0.9997x |
+| `mlkem_keygen_core` | 8937.21 | 9326.58 | 0.9583x | 0.8822x |
+| `mlkem_encaps_core` | 8875.20 | 9129.67 | 0.9721x | 0.9072x |
+| `mlkem_roundtrip_core` | 26462.49 | 26634.13 | 0.9936x | 0.9978x |
+
+Keep the tightly packed 504-byte sampler streams. The padded layout improves an
+isolated store-rate diagnostic and is harmless-to-slightly-positive on the
+native AVX512 path, but it badly destabilizes AVX2-only end-to-end KEM rows.
+This is another case where an address-layout microbench win does not survive the
+full keygen/encapsulation dataflow.
+
 An AVX512VBMI2 parser compaction experiment was also rejected. The candidate
 kept the existing 48-byte decode shape but replaced the AVX2 table-shuffle
 packing of accepted 12-bit values with `_mm512_mask_compressstoreu_epi16()` over
