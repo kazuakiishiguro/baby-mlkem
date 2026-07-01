@@ -1586,6 +1586,46 @@ well enough, and the new d10 split metric shows no median improvement in the
 actual fused ciphertext encoder. Future d10 compress work needs to change the
 compression or packing schedule itself, not only constant construction.
 
+A d10 two-vector compression scheduling experiment was rejected. The candidate
+changed the AVX2 d10 compression path to process two independent 16-coefficient
+vectors per loop body and reused that helper in the fused
+`compress_encode_poly_d10_avx2()` path. The goal was to expose more instruction
+level parallelism around the d10 multiply-high and `mulhrs` sequence without
+changing the compression identity or ciphertext format. Native and AVX2-only
+`make test` passed.
+
+The targeted AVX2-only stage A/B looked promising for the fused d10 row, but the
+full KEM confirmation regressed core roundtrip and did not produce a robust
+encapsulation win. Keep the current single-vector d10 compression schedule; the
+compiler and out-of-order core already overlap enough work, and the extra helper
+shape/register pressure is not justified by the KEM result.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=120000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected d10 two-vector scheduling highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 57.08 | 54.57 | 1.0461x | 1.0374x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 52.22 | 49.62 | 1.0523x | 1.0421x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_compress_only` | 30.10 | 30.02 | 1.0025x | 0.9977x |
+| `mlkem_encaps_core` | 8680.81 | 8714.61 | 0.9961x | 0.9989x |
+| `mlkem_roundtrip_core` | 25822.96 | 26309.63 | 0.9815x | 0.9780x |
+
 An AVX512BW d4 ciphertext compress/encode path was rejected. The candidate
 processed 32 coefficients per zmm register, combined adjacent 4-bit compressed
 coefficients with 32-bit shifts, and stored two 16-byte chunks for each 64 input
