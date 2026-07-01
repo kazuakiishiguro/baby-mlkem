@@ -37,7 +37,7 @@ static poly256 stage_that[STAGE_BENCH_LANES][K];
 static poly256 stage_rhat[STAGE_BENCH_LANES][K];
 static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
-static poly256 stage_mu[STAGE_BENCH_LANES];
+static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u[STAGE_BENCH_LANES][K];
 static poly256 stage_v[STAGE_BENCH_LANES];
 
@@ -111,13 +111,6 @@ static uint64_t checksum_poly(const poly256 p) {
     acc *= 0x9E3779B97F4A7C15ULL;
   }
   return acc;
-}
-
-static void build_mu(const uint8_t msg[32], poly256 out) {
-  for (int i = 0; i < N; i++) {
-    int bit = (msg[i >> 3] >> (i & 7)) & 1;
-    out[i] = bit ? (int16_t)((Q + 1) / 2) : 0;
-  }
 }
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
@@ -207,7 +200,8 @@ static void derive_encrypt_lane(size_t lane) {
     memcpy(stage_rhat[lane][i], stage_r_raw[lane][i], sizeof(poly256));
     ntt(stage_rhat[lane][i], stage_rhat[lane][i]);
   }
-  build_mu(stage_msg[lane], stage_mu[lane]);
+  memcpy(stage_e2_msg[lane], stage_e2[lane], sizeof(poly256));
+  mlkem_add_message_to_poly(stage_msg[lane], stage_e2_msg[lane]);
 
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(stage_ahat[lane][i][0], stage_rhat[lane][0],
@@ -219,7 +213,7 @@ static void derive_encrypt_lane(size_t lane) {
   ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
                accum);
-  ntt_inv_add2(accum, stage_e2[lane], stage_mu[lane], stage_v[lane]);
+  ntt_inv_add(accum, stage_e2_msg[lane], stage_v[lane]);
 
   for (int i = 0; i < K; i++) {
     compress_poly(DU, stage_u[lane][i], cbuf);
@@ -744,7 +738,7 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
     ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                  stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
                  stage_tmp_poly[lane]);
-    ntt_inv_add2_inplace(stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
+    ntt_inv_add_inplace(stage_e2_msg[lane], stage_tmp_poly[lane]);
     acc ^= checksum_poly(stage_tmp_poly[lane]);
   }
   t1 = now_ns();
@@ -781,7 +775,7 @@ static uint64_t bench_encrypt_accum_inv_v(size_t iters) {
     ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                  stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
                  stage_tmp_poly[lane]);
-    ntt_inv_add2_inplace(stage_e2[lane], stage_mu[lane], stage_tmp_poly[lane]);
+    ntt_inv_add_inplace(stage_e2_msg[lane], stage_tmp_poly[lane]);
     acc ^= checksum_poly(stage_tmp_poly[lane]);
   }
   t1 = now_ns();

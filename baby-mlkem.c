@@ -3434,6 +3434,79 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   kpke_public_cache_finish_generated(ek_pke, 0);
 }
 
+#if defined(__AVX2__)
+static inline void mlkem_add_message_to_poly_vec_avx2(__m256i m,
+                                                       int16_t *out) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  __m256i x = _mm256_loadu_si256((const __m256i *)(const void *)out);
+  x = _mm256_add_epi16(x, m);
+  __m256i ge_q = _mm256_cmpgt_epi16(x, q_minus_1);
+  x = _mm256_sub_epi16(x, _mm256_and_si256(ge_q, q));
+  _mm256_storeu_si256((__m256i *)(void *)out, x);
+}
+#endif
+
+static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
+                                             poly256 out) {
+#if defined(__AVX2__)
+  __m256i f, g0, g1, g2, g3, h0, h1, h2, h3;
+  const __m256i shift = _mm256_broadcastsi128_si256(_mm_set_epi32(0, 1, 2, 3));
+  const __m256i idx = _mm256_broadcastsi128_si256(
+      _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2,
+                   13, 12, 9, 8, 5, 4, 1, 0));
+  const __m256i hqs = _mm256_set1_epi16((Q + 1) / 2);
+
+#define ADDMSG64(i)                                                            \
+  do {                                                                         \
+    g3 = _mm256_shuffle_epi32(f, 0x55 * (i));                                  \
+    g3 = _mm256_sllv_epi32(g3, shift);                                         \
+    g3 = _mm256_shuffle_epi8(g3, idx);                                         \
+    g0 = _mm256_slli_epi16(g3, 12);                                            \
+    g1 = _mm256_slli_epi16(g3, 8);                                             \
+    g2 = _mm256_slli_epi16(g3, 4);                                             \
+    g0 = _mm256_srai_epi16(g0, 15);                                            \
+    g1 = _mm256_srai_epi16(g1, 15);                                            \
+    g2 = _mm256_srai_epi16(g2, 15);                                            \
+    g3 = _mm256_srai_epi16(g3, 15);                                            \
+    g0 = _mm256_and_si256(g0, hqs);                                            \
+    g1 = _mm256_and_si256(g1, hqs);                                            \
+    g2 = _mm256_and_si256(g2, hqs);                                            \
+    g3 = _mm256_and_si256(g3, hqs);                                            \
+    h0 = _mm256_unpacklo_epi64(g0, g1);                                        \
+    h2 = _mm256_unpackhi_epi64(g0, g1);                                        \
+    h1 = _mm256_unpacklo_epi64(g2, g3);                                        \
+    h3 = _mm256_unpackhi_epi64(g2, g3);                                        \
+    g0 = _mm256_permute2x128_si256(h0, h1, 0x20);                              \
+    g2 = _mm256_permute2x128_si256(h0, h1, 0x31);                              \
+    g1 = _mm256_permute2x128_si256(h2, h3, 0x20);                              \
+    g3 = _mm256_permute2x128_si256(h2, h3, 0x31);                              \
+    mlkem_add_message_to_poly_vec_avx2(                                        \
+        g0, out + 16 * (0 + 2 * (i) + 0));                                     \
+    mlkem_add_message_to_poly_vec_avx2(                                        \
+        g1, out + 16 * (0 + 2 * (i) + 1));                                     \
+    mlkem_add_message_to_poly_vec_avx2(                                        \
+        g2, out + 16 * (8 + 2 * (i) + 0));                                     \
+    mlkem_add_message_to_poly_vec_avx2(                                        \
+        g3, out + 16 * (8 + 2 * (i) + 1));                                     \
+  } while (0)
+
+  f = _mm256_loadu_si256((const __m256i *)(const void *)msg);
+  ADDMSG64(0);
+  ADDMSG64(1);
+  ADDMSG64(2);
+  ADDMSG64(3);
+#undef ADDMSG64
+#else
+  for (int i = 0; i < 256; i++) {
+    int bit = (msg[i >> 3] >> (i & 7)) & 1;
+    if (bit) {
+      out[i] = mod_q_add_i16(out[i], (Q + 1) / 2);
+    }
+  }
+#endif
+}
+
 static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
                                          const uint8_t *r, size_t rlen,
                                          uint8_t *out_c,
@@ -3481,18 +3554,9 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     ntt_inv_add_inplace(e1[i], u[i]);
   }
 
-  /* mu => interpret m as 256 bits => each coefficient 0/1 */
-  static poly256 mu;
+  /* Fold mu directly into e2; e2 is not needed after v is formed. */
   if (mlen == 32) {
-    for (int i = 0; i < 256; i++) {
-      int bit = (m[i >> 3] >> (i & 7)) & 1;
-      if (bit)
-        mu[i] = (Q + 1) / 2;
-      else
-        mu[i] = 0;
-    }
-  } else {
-    memset(mu, 0, sizeof(mu));
+    mlkem_add_message_to_poly(m, e2);
   }
 
   /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */
@@ -3501,7 +3565,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
                  kpke_public_cache_that[1], rhat[1],
                  kpke_public_cache_that[2], rhat[2], v);
-    ntt_inv_add2_inplace(e2, mu, v);
+    ntt_inv_add_inplace(e2, v);
   }
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
