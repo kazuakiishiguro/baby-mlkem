@@ -1236,6 +1236,41 @@ with no single stage dominating. The next useful implementation work should
 therefore target a structural inverse-head cleanup or the tail/final arithmetic
 pass with KEM confirmation, not another whole-`ntt_mul_acc3()` experiment.
 
+An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
+changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
+16-coefficient blocks, then `l2`, then `l3`) to one block-local pass that ran
+`l1 -> l2 -> l3` for each 16-coefficient block before advancing. The transform
+remained correct and native plus AVX2-only `make test` passed, but the integrated
+AVX2-only stage paths regressed badly.
+
+The likely cause is scheduling rather than arithmetic: each individual head
+level stayed essentially flat, but the combined head path lost the level-wise
+instruction locality / out-of-order overlap that the original three-pass shape
+gets from running the same butterfly helper repeatedly. Keep the existing
+level-wise `ntt_inv_head_avx2()` ordering. Future inverse-head work should avoid
+serializing all three helper shapes inside one small block unless it also keeps
+intermediate values in registers, which would be a different and much larger
+rewrite.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected inverse-head block-local ordering highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_head_only` | 465.05 | 598.45 | 0.7771x | 0.7774x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 788.31 | 933.13 | 0.8448x | 0.8452x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1042.19 | 1181.12 | 0.8824x | 0.8811x |
+| `mlkem_core_stage_decrypt_inv_head` | 276.08 | 316.56 | 0.8721x | 0.8721x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.80 | 430.51 | 0.8869x | 0.8865x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2782.73 | 3120.62 | 0.8917x | 0.9188x |
+
 Ciphertext compression/decode split metrics were added later to separate the
 three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
 split rows use lightweight sinks, so they are diagnostic and should not be added
