@@ -1618,6 +1618,43 @@ the full KEM rows are dominated by unrelated sampling/encapsulation/decapsulatio
 noise, and the roundtrip core row moved opposite to the isolated keygen encode
 rows.
 
+### Independent Core Optimization A/B (2026-07-01, NTT accumulation reciprocal reduction)
+
+A follow-up attempt to replace the remaining 32-bit `% Q` operations in
+`ntt_mul_acc3()` and `ntt_mul_acc3_factored_gamma()` was rejected. The first
+variant tried to reuse `mod_q_reduce_ntt_u32()` on three-product accumulator
+ranges and failed correctness because that reducer relies on the `x * 315u`
+product not overflowing 32 bits; it is safe for single `Q^2` products, not for
+three-product sums.
+
+The safe variant used a 64-bit reciprocal reducer with
+`mu = floor(2^32 / 3329) = 1290167`, verified by a temporary C checker against
+`x % 3329` for all `x <= 100000000`. It passed AVX2 `make test` and the
+`bench_ntt` correctness smoke test, but it was slower than clang's existing
+constant-modulo lowering for this hot loop.
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+NTT A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 87.98 | 91.64 | 0.960x | 0.959x |
+| `mlkem_ntt_mul_acc3_factored` | 88.33 | 92.07 | 0.959x | 0.960x |
+| `mlkem_ntt_copy` | 198.86 | 199.44 | 0.997x | 0.999x |
+| `mlkem_ntt_inplace` | 196.33 | 197.00 | 0.997x | 0.999x |
+
+Keep the compiler-generated 32-bit `% Q` in the K=3 NTT accumulation helpers.
+The reciprocal-reduction idea is useful for ranges where it avoids actual
+division or 64-bit modulo, but here it adds a 64-bit multiply on the critical
+path and loses about four percent in the direct helper microbench.
+
 A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
 `_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
 It matched the scalar decoder on 10,000 random inputs, but stage A/B against
