@@ -1075,6 +1075,49 @@ AVX512-capable core build, matching the existing `compress_poly_d{10,4}_avx2()`
 selection; AVX2-only builds keep the prior scalar/auto-vectorized path because
 that path has benchmarked better for this codebase.
 
+### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `0262389` before batching the `u` inverse-NTT add path; candidate is the
+working tree after the change. This is a core-vs-core comparison and does not
+use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+The implementation computes all three `u` NTT-domain accumulations first, then
+uses a native AVX512-capable `ntt_inv_add3_inplace()` helper to process the
+three inverse-NTT tail schedules and final scale/add loop together. This reuses
+the same twiddle schedule and scale constant across the three `u` polynomials.
+The AVX2-only and non-AVX2 paths keep the previous per-polynomial order.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv_u` | 895.70 | 891.25 | 1.005x | 1.006x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1137.04 | 1128.32 | 1.008x | 1.007x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1913.61 | 1896.69 | 1.009x | 1.011x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3648.65 | 3650.19 | 1.000x | 1.007x |
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2116.26 | 2107.08 | 1.004x | 1.003x |
+| `mlkem_encaps_core` | 4905.66 | 4892.53 | 1.003x | 1.004x |
+| `mlkem_roundtrip` | 10375.32 | 10383.70 | 0.999x | 1.000x |
+| `mlkem_roundtrip_core` | 14692.87 | 14695.44 | 1.000x | 1.000x |
+
+A more aggressive variant that also batched the AVX2 inverse-NTT head stages was
+rejected: it made `mlkem_core_stage_encrypt_accum_inv_u` slower in A/B. The
+accepted version therefore limits batching to the AVX512 tail and scale/add
+part, where it measured consistently useful without changing AVX2-only behavior.
+
 ### Independent Core Optimization A/B (2026-07-01, e2/message fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
