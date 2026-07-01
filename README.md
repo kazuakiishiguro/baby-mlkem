@@ -971,6 +971,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | AVX2 builds only: final inverse butterfly plus inverse-NTT scale after precomputed l6 outputs, excluding the `e1` add |
+| `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | AVX2 builds only: final `e1` add against precomputed final-scaled `u` outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
@@ -1250,6 +1252,30 @@ implementation work should therefore target the final pass or a structural
 inverse-head cleanup with KEM confirmation, not another whole-`ntt_mul_acc3()`
 experiment. The already rejected packed 16-bit final-add rewrite should not be
 repeated.
+
+A follow-up diagnostic split separates the final pass itself into final
+butterfly plus inverse-NTT scale, and the final `e1` add against precomputed
+scaled outputs. These rows include their own scratch copies and are diagnostic,
+so they should not be added to reconstruct `final_only`. A `clang`,
+`BENCH_STAGES_ITERS=50000` snapshot measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_encrypt_accum_inv_u` | 880.19 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 280.28 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 249.52 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | 212.45 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 459.04 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1023.31 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 321.10 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 288.08 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | 239.14 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 510.99 |
+
+This narrows the next production target inside the final pass: optimize the
+final butterfly plus scale/reduction path first. The isolated add path is still
+visible, but the prior packed 16-bit final-add experiment already showed that
+changing that add form is not robust at KEM level.
 
 An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
 changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
