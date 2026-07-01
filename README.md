@@ -1727,6 +1727,40 @@ Keep the current local `words[4]` extraction in `sample_ntt4_one()`. The direct
 extract form is cleaner, but the measured tail improvement is only noise-sized
 and the full keygen stage moved the wrong way.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 NTT accumulation helper)
+
+An AVX2 `ntt_mul_acc3_avx2()` experiment processing four base-pairs at a time
+was rejected. The design reduced each single 16-bit product with the existing
+vector `mod_q_reduce_ntt_u32x8()` before adding terms, so it avoided the unsafe
+wide-accumulator range that broke the earlier reciprocal-reduction attempt. It
+passed AVX2 `make test` and the `bench_ntt` correctness smoke test against the
+three-pass `ntt_mul_add()` reference.
+
+The problem was instruction count: reducing each single product separately adds
+far more vector multiplies, reductions, shuffles, and packs than the current
+scalar helper's clang-lowered constant modulo.
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+NTT A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 105.57 | 212.62 | 0.497x | 0.424x |
+| `mlkem_ntt_mul_acc3_factored` | 105.73 | 212.35 | 0.498x | 0.426x |
+| `mlkem_ntt_copy` | 198.89 | 198.96 | 1.000x | 1.001x |
+| `mlkem_ntt_inplace` | 196.32 | 196.58 | 0.999x | 0.999x |
+
+Keep the scalar K=3 NTT accumulation helper. A useful AVX2 rewrite would need a
+Harvey/Montgomery-style layout that reduces the number of modular reductions,
+not merely vectorizes every individual product.
+
 A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
 `_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
 It matched the scalar decoder on 10,000 random inputs, but stage A/B against
