@@ -1524,6 +1524,15 @@ against `c2acb8a` with `RUNS=13` and `STAGE_ITERS=100000` regressed
 schedule: decode the full ciphertext, parse/cache the secret key, then transform
 the three `u` polynomials in place before accumulation.
 
+A `DV = 4` decompression rewrite using the exact identity
+`((3329*v + 8) >> 4) = 208*v + (v >> 3)` for `v = 0..15` was also rejected.
+Replacing the AVX2 `mullo/add/shift` helper with shift/add arithmetic kept
+correctness, but stage A/B against `6dffcfd` with `RUNS=13` and
+`STAGE_ITERS=120000` showed `mlkem_core_stage_ciphertext_decode_decompress`
+median speedup only `1.0005x`, `kpke_decrypt_cached` `0.9997x`, and
+`kpke_decrypt_uncached` `0.9991x`. Keep the compact 16-bit multiply for d4;
+removing that multiply adds enough shift/add work to cancel the benefit.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
