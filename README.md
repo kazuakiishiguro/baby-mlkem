@@ -1556,6 +1556,49 @@ This is a small copy-elision cleanup. The reliable claim is removal of the local
 seed-to-message copy for deterministic encapsulation; the KEM rows are kept only
 to show non-regression of the exercised path.
 
+
+A keygen hash-cache input-copy elision experiment was rejected. The candidate
+avoided copying the freshly generated 1184-byte public key into
+`mlkem_ek_hash_cache_input` during top-level keygen. Instead, the hash cache
+kept only `H(ek)` and a generation number, and `mlkem_encaps()` could validate
+that hash cache entry by matching the same generation against the already-filled
+public cache `ek`. The goal was to reuse the public cache's `ek` copy instead of
+keeping a duplicate hash-cache input copy.
+
+The candidate passed native `make test` and AVX2-only `make test`, but the
+runtime signal was not robust. Native keygen improved slightly, but native
+encapsulation core moved negative and AVX2-only keygen median regressed. The
+extra cache-matching state and branch complexity are not justified.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected hash-cache input-copy elision highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` native | 5317.07 | 5281.58 | 1.0067x | 1.0019x |
+| `mlkem_encaps_core` native | 4873.84 | 4906.39 | 0.9934x | 0.9989x |
+| `mlkem_keygen` AVX2-only | 9077.84 | 9054.78 | 1.0025x | 0.9885x |
+| `mlkem_keygen_core` AVX2-only | 9078.04 | 9025.52 | 1.0058x | 1.0103x |
+| `mlkem_encaps_core` AVX2-only | 9270.52 | 8881.16 | 1.0438x | 1.0107x |
+
+Keep the simpler hash cache that owns its input copy. The duplicate 1184-byte
+copy in keygen is measurable in isolation, but avoiding it makes cache-hit
+validation more complex and does not produce stable KEM wins.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
