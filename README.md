@@ -667,6 +667,18 @@ stage, but the earlier isolated `l4` replacement regressed KEM throughput; the
 next implementation attempt should therefore fuse multiple stages or change data
 layout instead of swapping one stage in isolation.
 
+A narrow experiment replacing the `l1` tail helper's four 2-coefficient
+gather/scatter pairs with one 16-coefficient block load, dword permutes, and one
+block store was also rejected. It improved the NTT microbench
+(`mlkem_ntt_tail_avx2_l1` `41.76` -> `31.92` ns/op, `mlkem_ntt_tail_avx2`
+`97.37` -> `87.82` ns/op, `mlkem_ntt_inplace` `194.85` -> `185.27` ns/op), and
+stage A/B showed `decrypt_u_ntt` median speedup `1.0439x` and
+`encrypt_noise_ntt` median speedup `1.0400x`. Longer KEM A/B rejected it because
+`mlkem_keygen_core` regressed reproducibly (`0.8927x` and `0.8906x` median
+speedup in two KEM-only confirmations) and `mlkem_roundtrip` also regressed.
+This suggests future tail work must be validated through keygen/roundtrip, not
+accepted on NTT microbench or stage splits alone.
+
 Current scalar forward-level snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, `200000` iterations:
 
