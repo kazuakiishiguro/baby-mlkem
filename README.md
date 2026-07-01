@@ -3571,6 +3571,38 @@ speedup `1.0027x`, but `sample_ntt4_full_raw` `0.9970x`,
 `sample_matrix` `0.9971x`. The compiler branch hint is too small and noisy for
 the full sampler path, so keep the plain ready check.
 
+A narrow 504-byte AVX2 parser specialization was rejected. The candidate added a
+`sample_ntt_parse_504_avx2_ready()` path for the common initial three-rate stream
+used by `sample_ntt4()` and `sample_ntt8_matrix()`, keeping the existing generic
+parser for 168-byte refill blocks. It changed only fixed-length loop bounds and
+removed the `stream_len` / nonzero-`count` genericity from the initial parse;
+the shuffle-index table, compaction shape, Keccak schedule, and stream layout
+were unchanged. Native and AVX2-only `make test` passed, but direct AVX2 sampler
+metrics regressed, so KEM confirmation was not pursued.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected 504-byte parser highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 117.35 | 118.52 | 0.9901x | 0.9981x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1496.89 | 1596.05 | 0.9379x | 0.9960x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1683.76 | 1803.31 | 0.9337x | 0.9963x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1799.30 | 1909.11 | 0.9425x | 0.9989x |
+| `mlkem_core_stage_sample_matrix` | 4703.32 | 4997.57 | 0.9411x | 0.9971x |
+
+Keep the generic `sample_ntt_parse_stream_avx2_ready()` for the 504-byte initial
+parse. The compiler already handles the hot fixed-size call well enough, and a
+large duplicated fixed-length parser adds code-layout pressure without improving
+the integrated x4 sampler rows.
+
 A narrow `sample_ntt4()` parse/refill bookkeeping unroll was rejected. The
 candidate removed the local `outs[4]` array and replaced the two four-lane loops
 around `sample_ntt_parse_stream_avx2_ready()` with explicit `count0..count3`
