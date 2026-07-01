@@ -44,6 +44,7 @@ static poly256 stage_uhead[STAGE_BENCH_LANES][K];
 #endif
 static poly256 stage_uhat[STAGE_BENCH_LANES][K];
 static poly256 stage_v[STAGE_BENCH_LANES];
+static poly256 stage_w_ntt[STAGE_BENCH_LANES];
 static poly256 stage_w[STAGE_BENCH_LANES];
 
 static uint8_t stage_tmp_pk[STAGE_BENCH_LANES][STAGE_PK_BYTES];
@@ -256,7 +257,8 @@ static void derive_encrypt_lane(size_t lane) {
   }
   ntt_mul_acc3(stage_shat[lane][0], stage_uhat[lane][0],
                stage_shat[lane][1], stage_uhat[lane][1],
-               stage_shat[lane][2], stage_uhat[lane][2], stage_w[lane]);
+               stage_shat[lane][2], stage_uhat[lane][2], stage_w_ntt[lane]);
+  memcpy(stage_w[lane], stage_w_ntt[lane], sizeof(poly256));
   ntt_inv_sub_from_inplace(stage_v[lane], stage_w[lane]);
 }
 
@@ -1149,6 +1151,38 @@ static uint64_t bench_decrypt_u_ntt_tail(size_t iters) {
 }
 #endif
 
+static uint64_t bench_decrypt_accum_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 w;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    ntt_mul_acc3(stage_shat[lane][0], stage_uhat[lane][0],
+                 stage_shat[lane][1], stage_uhat[lane][1],
+                 stage_shat[lane][2], stage_uhat[lane][2], w);
+    acc ^= checksum_poly(w);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_decrypt_inv_sub_from(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    memcpy(stage_tmp_poly[lane], stage_w_ntt[lane], sizeof(poly256));
+    ntt_inv_sub_from_inplace(stage_v[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_decrypt_accum_inv(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1279,6 +1313,10 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_decrypt_u_ntt_tail",
                bench_decrypt_u_ntt_tail(iters), iters);
 #endif
+  print_metric("mlkem_core_stage_decrypt_accum_only",
+               bench_decrypt_accum_only(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_inv_sub_from",
+               bench_decrypt_inv_sub_from(iters), iters);
   print_metric("mlkem_core_stage_decrypt_accum_inv",
                bench_decrypt_accum_inv(iters), iters);
   print_metric("mlkem_core_stage_decrypt_recover_message",

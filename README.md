@@ -830,6 +830,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
+| `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
+| `mlkem_core_stage_decrypt_inv_sub_from` | decrypt-side inverse NTT subtraction only, using a precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
@@ -842,7 +844,13 @@ decrypt work at forward NTT or accumulation/inverse-NTT structure rather than
 message recovery. A later pinned AVX2 diagnostic split measured
 `decrypt_u_ntt_head` at 489.59 ns/op and `decrypt_u_ntt_tail` at 494.93 ns/op;
 these standalone head/tail probes include their own copy and sink overhead, so
-they should rank the two halves rather than be added back to full NTT time.
+they should rank the two halves rather than be added back to full NTT time. A
+newer pinned AVX2 20,000-iteration split measured `decrypt_accum_only` at
+272.64 ns/op and `decrypt_inv_sub_from` at 390.02 ns/op while the combined
+`decrypt_accum_inv` row measured 479.44 ns/op. The split rows have independent
+copy/sink overhead, but they show the remaining decrypt-side accumulation work
+is more constrained by inverse-NTT subtraction than by the already-fused K=3
+`ntt_mul_acc3()` accumulation.
 
 A narrow experiment replacing only the forward-NTT `log2len = 4` / length-16
 stage with two `ntt_butterfly8_avx2()` calls per block was rejected: AVX2
