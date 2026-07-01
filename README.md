@@ -963,6 +963,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | isolated ciphertext DU=10 compression/encoding for the three `u` polynomials, with lightweight sink |
+| `mlkem_core_stage_ciphertext_compress_encode_d4` | isolated ciphertext DV=4 compression/encoding for the `v` polynomial, with lightweight sink |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
 | `mlkem_core_stage_ciphertext_decode_decompress_d10` | isolated ciphertext DU=10 decode/decompression for the three `u` polynomials, with lightweight sink |
 | `mlkem_core_stage_ciphertext_decode_decompress_d4` | isolated ciphertext DV=4 decode/decompression for the `v` polynomial, with lightweight sink |
@@ -1181,22 +1183,25 @@ single `v` path, so the next arithmetic work should prioritize reducing repeated
 Compression, bit-packing, and ciphertext decode/decompress remain smaller
 contributors.
 
-Ciphertext decode/decompress split metrics were added later to separate the
+Ciphertext compression/decode split metrics were added later to separate the
 three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
 split rows use lightweight sinks, so they are diagnostic and should not be added
-back to the historical combined row, which keeps its existing checksum shape.
+back to the historical combined rows, which keep their existing sink shapes.
 A pinned AVX2-only, `clang`, `BENCH_STAGES_ITERS=50000` snapshot measured:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_ciphertext_decode_decompress` | 220.13 |
-| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 29.27 |
-| `mlkem_core_stage_ciphertext_decode_decompress_d4` | 7.14 |
+| `mlkem_core_stage_ciphertext_compress_encode` | 56.14 |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 51.79 |
+| `mlkem_core_stage_ciphertext_compress_encode_d4` | 4.93 |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 220.44 |
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 29.37 |
+| `mlkem_core_stage_ciphertext_decode_decompress_d4` | 7.22 |
 
-The split confirms that future ciphertext decode/decompress work should target
-the three `DU = 10` decoders first. The `DV = 4` component is already small, and
-previous d4 shift/add and inverse-subtraction fusion experiments did not survive
-stage/KEM confirmation.
+The split confirms that future ciphertext compression/decode work should target
+the three `DU = 10` `u` paths first. The `DV = 4` components are already small,
+and previous d4 shift/add and inverse-subtraction fusion experiments did not
+survive stage/KEM confirmation.
 
 ### Independent Core Local A/B Runner
 
