@@ -4589,6 +4589,38 @@ A/B highlights:
 
 Keep the signed nibble LUT and canonicalize with AVX2 compare/add.
 
+A narrower AVX2 ETA2 CBD constant-hoist experiment was rejected. The candidate
+changed `cbd_eta2_canonicalize_i8x16()` and the `sample_poly_cbd_eta2_store1/2`
+helpers to pass prebuilt `lut`, `mask`, `zero`, and `Q` vectors from the outer
+byte/state decode loops instead of constructing them in the small helpers. The
+intent was to remove repeated constant setup in the x4/x6/x7 PRF/CBD state
+paths. Native and AVX2-only `make test` passed, but AVX2-only stage A/B showed
+that the extra helper arguments/code shape did not improve the integrated noise
+paths and regressed full keygen.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected CBD constant-hoist highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 1274.66 | 1330.59 | 0.9580x | 0.9999x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1462.65 | 1515.81 | 0.9649x | 0.9993x |
+| `mlkem_core_stage_keygen_noise_ntt` | 2310.93 | 2361.11 | 0.9787x | 0.9999x |
+| `mlkem_core_stage_kpke_keygen_full` | 7041.53 | 7097.35 | 0.9921x | 0.9923x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2823.15 | 2824.23 | 0.9996x | 0.9992x |
+
+Keep the current local constants inside the small CBD helpers. Clang already
+handles the immediate vector constants well enough, and explicitly threading
+those vectors through the helper interface increases register pressure/code
+layout without a PRF/CBD win.
+
 ### Independent Core Optimization A/B (2026-06-30, inverse NTT AVX2 head)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
