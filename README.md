@@ -2143,6 +2143,54 @@ Keep l1 on the existing AVX2 helper. At length 2, the extra gather/pack/scatter
 work needed to fill 16 AVX512 lanes costs more than the wider multiply/reduce
 saves.
 
+A native AVX512 inverse-head follow-up was also rejected. The first candidate
+added 512-bit helpers for inverse NTT head l2 and l3, mirroring the accepted
+forward-tail l2 shape. It passed native and AVX2-only `make test`, but the full
+inverse paths regressed even though the isolated head stage looked faster.
+
+Native NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 inverse-head l2+l3 A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv` | 169.12 | 171.40 | 0.9867x | 0.9863x |
+| `mlkem_ntt_inv_add` | 177.62 | 179.37 | 0.9903x | 0.9895x |
+| `mlkem_ntt_inv_add2` | 187.44 | 189.11 | 0.9912x | 0.9914x |
+| `mlkem_ntt_inv_sub_from` | 177.61 | 179.31 | 0.9905x | 0.9901x |
+| `mlkem_core_stage_decrypt_inv_head` | 268.45 | 263.39 | 1.0192x | 1.0118x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1132.59 | 1153.07 | 0.9822x | 0.9872x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 893.21 | 910.23 | 0.9813x | 0.9860x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 762.35 | 766.01 | 0.9952x | 0.9982x |
+
+A narrower l3-only variant was also tested with the AVX2 l2 helper restored:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 inverse-head l3-only A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_inv_head` | 265.88 | 260.68 | 1.0200x | 1.0202x |
+| `mlkem_ntt_inv` | 169.80 | 169.34 | 1.0027x | 0.9980x |
+| `mlkem_ntt_inv_add` | 177.49 | 177.85 | 0.9980x | 0.9989x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1131.40 | 1137.83 | 0.9944x | 0.9947x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 892.76 | 897.23 | 0.9950x | 0.9951x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 762.04 | 762.10 | 0.9999x | 0.9972x |
+
+Keep inverse-head l2 and l3 on the existing AVX2 helpers. The isolated inverse
+head can improve, but introducing zmm butterflies into the full inverse path does
+not pay for the lane packing/extraction and likely perturbs the surrounding
+AVX512/AVX2 schedule.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 sample_ntt8 static stream scratch)
 
 A native AVX512 follow-up that moved `sample_ntt8_matrix()`'s `uint8_t
