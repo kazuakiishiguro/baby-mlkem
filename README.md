@@ -2050,6 +2050,35 @@ sampler, moving the larger AVX512 x8 stream to static storage hurts the direct
 sample-matrix stage enough that any surrounding keygen noise is not a defensible
 acceptance signal.
 
+A narrower AVX512 `sample_ntt8_store_rate()` experiment replacing the two
+`sample_ntt4_store_last()` calls for `st[20]` with one `_mm512_storeu_si512()` to
+`uint64_t last[8]` plus eight 8-byte copies was also rejected. This was the
+opposite direction of the rejected x4 helper reuse above: x4 should keep the
+local `last[4]` store, so the question was whether x8 should also avoid the
+extract helper for the final 8-byte word. The candidate passed native
+`make test`, AVX2-only `make test`, and `git diff --check`, but the full
+sample-matrix path did not improve.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 1.67 | 1.66 | 1.005x | 1.006x |
+| `mlkem_core_stage_sample_matrix` | 1899.82 | 1901.54 | 0.999x | 0.999x |
+| `mlkem_core_stage_sample_matrix_tail` | 702.70 | 708.47 | 0.992x | 0.998x |
+| `mlkem_core_stage_kpke_keygen_full` | 3409.37 | 3407.35 | 1.001x | 0.997x |
+
+Keep the existing `sample_ntt4_store_last()` calls in `sample_ntt8_store_rate()`.
+The isolated store-rate probe moves by about half a percent, but the direct
+public-matrix stage is flat-to-slower, so this is not a production win.
+
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
