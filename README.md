@@ -1065,6 +1065,22 @@ A/B kept the target rows neutral because the wrapper falls back to the existing
 AVX2 helper (`encrypt_accum_inv_v` median `1.0003x`, `kpke_encrypt_cached`
 median `0.9996x`).
 
+An AVX512 encryption-side `rhat` boundary fusion was accepted. The implementation
+keeps `rhat[0..2]` in the pre-final-l1 NTT form, computes the final l1 pair
+values once, and feeds those values into the three public-matrix `u`
+accumulations plus the `that`/`v` accumulation. This avoids materializing final
+`rhat` coefficients only to reload each one across four subsequent K=3
+accumulations. Native CPU 0 stage A/B against `85659a0` with `RUNS=13` and
+`STAGE_ITERS=40000` showed full encrypt median speedups of
+`kpke_encrypt_cached` `1.0095x` and `kpke_encrypt_uncached` `1.0078x`. Native
+KEM A/B with `RUNS=17` and `KEM_ITERS=50000` showed `mlkem_encaps` median
+`1.0045x`, `mlkem_encaps_core` median `1.0005x`, `mlkem_roundtrip` median
+`1.0031x`, and `mlkem_roundtrip_core` median `1.0021x`. AVX2-only builds keep
+the original final-vector tail plus accumulation schedule; AVX2-only stage A/B
+kept the target split rows neutral (`encrypt_accum_inv_v` median `1.0004x`,
+`encrypt_accum_inv` median `1.0004x`) and `kpke_encrypt_cached` median was
+`1.0048x`.
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and

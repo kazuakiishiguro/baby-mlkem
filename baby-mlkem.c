@@ -2075,6 +2075,43 @@ static void ntt3_mul_acc3_fused_final_avx512(
                              y2[2], y2[3], pair_idx + 1, out);
   }
 }
+
+static void ntt3_mul_acc4_fused_final_avx512(
+    const poly256 a00, const poly256 a01, const poly256 a02,
+    const poly256 a10, const poly256 a11, const poly256 a12,
+    const poly256 a20, const poly256 a21, const poly256 a22,
+    const poly256 a30, const poly256 a31, const poly256 a32,
+    poly256 b0, poly256 b1, poly256 b2,
+    poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
+  ntt_before_final_l1_avx512(b0);
+  ntt_before_final_l1_avx512(b1);
+  ntt_before_final_l1_avx512(b2);
+
+  int pair_idx = 0;
+  for (int start = 0, k = 64; start < N; start += 4, k++, pair_idx += 2) {
+    uint16_t zeta = ZETA[k];
+    uint32_t y0[4], y1[4], y2[4];
+    ntt_final_l1_pair_values(b0, start, zeta, y0);
+    ntt_final_l1_pair_values(b1, start, zeta, y1);
+    ntt_final_l1_pair_values(b2, start, zeta, y2);
+    ntt_mul_acc3_pair_values(a00, y0[0], y0[1], a01, y1[0], y1[1],
+                             a02, y2[0], y2[1], pair_idx, out0);
+    ntt_mul_acc3_pair_values(a10, y0[0], y0[1], a11, y1[0], y1[1],
+                             a12, y2[0], y2[1], pair_idx, out1);
+    ntt_mul_acc3_pair_values(a20, y0[0], y0[1], a21, y1[0], y1[1],
+                             a22, y2[0], y2[1], pair_idx, out2);
+    ntt_mul_acc3_pair_values(a30, y0[0], y0[1], a31, y1[0], y1[1],
+                             a32, y2[0], y2[1], pair_idx, out3);
+    ntt_mul_acc3_pair_values(a00, y0[2], y0[3], a01, y1[2], y1[3],
+                             a02, y2[2], y2[3], pair_idx + 1, out0);
+    ntt_mul_acc3_pair_values(a10, y0[2], y0[3], a11, y1[2], y1[3],
+                             a12, y2[2], y2[3], pair_idx + 1, out1);
+    ntt_mul_acc3_pair_values(a20, y0[2], y0[3], a21, y1[2], y1[3],
+                             a22, y2[2], y2[3], pair_idx + 1, out2);
+    ntt_mul_acc3_pair_values(a30, y0[2], y0[3], a31, y1[2], y1[3],
+                             a32, y2[2], y2[3], pair_idx + 1, out3);
+  }
+}
 #endif
 
 static void ntt_mul_acc3_factored_gamma(const poly256 a0, const poly256 b0,
@@ -4083,41 +4120,40 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
       sample_poly_cbd(ETA2, prfout, e2);
     }
   }
+  /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
+  static poly256 u[K];
+  /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */
+  static poly256 v;
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt3_mul_acc4_fused_final_avx512(
+      kpke_public_cache_ahat[0][0], kpke_public_cache_ahat[0][1],
+      kpke_public_cache_ahat[0][2], kpke_public_cache_ahat[1][0],
+      kpke_public_cache_ahat[1][1], kpke_public_cache_ahat[1][2],
+      kpke_public_cache_ahat[2][0], kpke_public_cache_ahat[2][1],
+      kpke_public_cache_ahat[2][2], kpke_public_cache_that[0],
+      kpke_public_cache_that[1], kpke_public_cache_that[2], rhat[0], rhat[1],
+      rhat[2], u[0], u[1], u[2], v);
+  ntt_inv_add3_inplace(e1[0], e1[1], e1[2], u[0], u[1], u[2]);
+#else
   for (int i = 0; i < K; i++) {
     ntt(rhat[i], rhat[i]);
   }
-
-  /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
-  static poly256 u[K];
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  for (int i = 0; i < K; i++) {
-    ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
-                 kpke_public_cache_ahat[i][1], rhat[1],
-                 kpke_public_cache_ahat[i][2], rhat[2], u[i]);
-  }
-  ntt_inv_add3_inplace(e1[0], e1[1], e1[2], u[0], u[1], u[2]);
-#else
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
                  kpke_public_cache_ahat[i][1], rhat[1],
                  kpke_public_cache_ahat[i][2], rhat[2], u[i]);
     ntt_inv_add_inplace(e1[i], u[i]);
   }
+  ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
+               kpke_public_cache_that[1], rhat[1],
+               kpke_public_cache_that[2], rhat[2], v);
 #endif
 
   /* Fold mu directly into e2; e2 is not needed after v is formed. */
   if (mlen == 32) {
     mlkem_add_message_to_poly(m, e2);
   }
-
-  /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */
-  static poly256 v;
-  {
-    ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
-                 kpke_public_cache_that[1], rhat[1],
-                 kpke_public_cache_that[2], rhat[2], v);
-    ntt_inv_add_v_inplace(e2, v);
-  }
+  ntt_inv_add_v_inplace(e2, v);
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
   uint8_t *p = out_c;
