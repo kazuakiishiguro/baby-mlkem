@@ -1306,6 +1306,68 @@ experiment below, this makes a one-sided rewrite less attractive: the next
 production attempt should remove shared load/extend/reduction work or change the
 final-pass structure as a whole, not only rewrite the low or high multiply.
 
+An AVX2 hand-written inverse-tail helper experiment was rejected. The candidate
+replaced the AVX2-only scalar/vectorizer-driven inverse-tail loops (`l4` through
+`l7`, and `l4` through `l6` before the fused final pass) with a 16-coefficient
+intrinsic helper: low/high halves were loaded as 16-bit vectors, modular sum and
+difference were computed in 16-bit lanes, and only the zeta multiply/reduction
+was widened to 32-bit lanes. It passed native and AVX2-only core `make test` and
+produced strong local NTT/stage wins, but KEM confirmation was not stable enough
+for a production change. The inline form regressed `encaps_core` badly in two
+KEM runs; the `MLKEM_NOINLINE` form preserved the local wins and improved some
+KEM medians, but `roundtrip_core` and unrelated `keygen_core` rows still moved
+against the candidate in repeat runs. Keep the current scalar/vectorizer-driven
+AVX2 tail loops until a layout-stable version proves whole-KEM robustness.
+
+Inline AVX2-only NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv` | 198.69 | 186.19 | 1.0672x | 1.0744x |
+| `mlkem_ntt_inv_add` | 201.60 | 191.53 | 1.0526x | 1.0518x |
+| `mlkem_ntt_inv_add2` | 211.73 | 201.73 | 1.0496x | 1.0491x |
+| `mlkem_ntt_inv_sub_from` | 201.26 | 191.14 | 1.0530x | 1.0524x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1041.17 | 1007.06 | 1.0339x | 1.0323x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 801.90 | 765.22 | 1.0479x | 1.0404x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.91 | 371.57 | 1.0278x | 1.0268x |
+
+Inline AVX2-only KEM confirmations rejected the form despite those local wins:
+
+| Metric | Run | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 1 | 8499.32 | 9017.83 | 0.9425x | 0.9200x |
+| `mlkem_roundtrip_core` | 1 | 25487.15 | 26478.48 | 0.9626x | 0.9637x |
+| `mlkem_encaps_core` | 2 | 8960.49 | 9079.02 | 0.9869x | 0.9481x |
+| `mlkem_roundtrip_core` | 2 | 26228.71 | 26512.69 | 0.9893x | 1.0188x |
+
+`MLKEM_NOINLINE` helper A/B kept the local stage win:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_add` | 201.00 | 192.64 | 1.0434x | 1.0435x |
+| `mlkem_ntt_inv_add2` | 211.74 | 203.75 | 1.0392x | 1.0394x |
+| `mlkem_ntt_inv_sub_from` | 201.21 | 192.65 | 1.0444x | 1.0444x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1037.31 | 1014.49 | 1.0225x | 1.0240x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 795.81 | 763.06 | 1.0429x | 1.0437x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.99 | 373.74 | 1.0221x | 1.0213x |
+
+But repeated noinline KEM confirmation was still unstable:
+
+| Metric | Run | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 1 | 8831.23 | 8967.42 | 0.9848x | 1.0722x |
+| `mlkem_roundtrip_core` | 1 | 26385.78 | 26388.12 | 0.9999x | 1.0350x |
+| `mlkem_keygen_core` | 1 | 9105.15 | 9149.67 | 0.9951x | 0.9829x |
+| `mlkem_encaps_core` | 2 | 8854.20 | 8714.76 | 1.0160x | 1.0592x |
+| `mlkem_roundtrip_core` | 2 | 26044.34 | 26109.63 | 0.9975x | 0.9826x |
+| `mlkem_keygen_core` | 2 | 9039.72 | 9217.44 | 0.9807x | 0.9441x |
+
 An AVX2 final zeta-scale constant experiment was rejected. The candidate changed
 `ntt_inv_before_final_avx2()` to stop returning the final zeta and replaced the
 per-call `mod_q_reduce_ntt_u32(ZETA[1] * 3303)` setup in the AVX2 final fused
