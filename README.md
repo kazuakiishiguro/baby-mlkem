@@ -1533,6 +1533,15 @@ median speedup only `1.0005x`, `kpke_decrypt_cached` `0.9997x`, and
 `kpke_decrypt_uncached` `0.9991x`. Keep the compact 16-bit multiply for d4;
 removing that multiply adds enough shift/add work to cancel the benefit.
 
+A stronger `DV = 4` fusion experiment that skipped materializing `v` and
+decoded the compressed c2 bytes inside the AVX2 inverse final subtraction was
+rejected. It kept correctness, but stage A/B against `f8bc443` with `RUNS=13`
+and `STAGE_ITERS=100000` regressed `mlkem_core_stage_kpke_decrypt_cached`
+median speedup to `0.9820x`, `kpke_decrypt_uncached` to `0.9875x`, and
+`decrypt_inv_sub_from` to `0.9855x`. The extra nibble decode and decompression
+uops in the already-hot inverse final loop cost more than the separate `v`
+materialization pass saves.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
 Baseline is commit `6c63b52` before moving the AVX2 x4 sampler stream scratch;
