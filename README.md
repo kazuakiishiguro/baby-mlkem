@@ -1075,6 +1075,58 @@ AVX512-capable core build, matching the existing `compress_poly_d{10,4}_avx2()`
 selection; AVX2-only builds keep the prior scalar/auto-vectorized path because
 that path has benchmarked better for this codebase.
 
+### Independent Core Optimization A/B (2026-07-01, e2/message fusion)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `719fc50` before the `e2`/message fusion; candidate is the working tree
+after the change. This is a core-vs-core comparison and does not use the
+vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+The implementation stops materializing `mu` as a separate polynomial in the
+K-PKE encryption path. Instead, it folds the message polynomial directly into
+`e2`, which is no longer needed separately after `v` is formed, then uses the
+single-add inverse NTT path. On AVX2 builds, message expansion follows the same
+coefficient layout as the Kyber AVX2 `poly_frommsg()` style expansion, but adds
+those coefficients directly into `e2` instead of storing an intermediate `mu`.
+This is a data-flow reduction, not a cache or repeated-key optimization.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv_v` | 419.71 | 410.01 | 1.024x | 1.024x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1147.17 | 1137.30 | 1.009x | 1.008x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1926.14 | 1917.16 | 1.005x | 1.004x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3699.26 | 3714.14 | 0.996x | 0.998x |
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2120.61 | 2113.17 | 1.004x | 1.002x |
+| `mlkem_encaps_core` | 4906.13 | 4903.58 | 1.001x | 1.000x |
+| `mlkem_roundtrip_core` | 14710.18 | 14669.08 | 1.003x | 1.004x |
+
+AVX2-only KEM no-regression check, built with
+`ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"`, `16000` iterations, nine repeated runs:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 3332.24 | 3251.42 | 1.025x | 1.006x |
+| `mlkem_roundtrip` | 17662.25 | 17060.50 | 1.035x | 1.026x |
+| `mlkem_roundtrip_core` | 28899.41 | 27158.74 | 1.064x | 1.052x |
+
+The main defensible effect is the local `v` accumulation/inverse-NTT stage. Full
+KEM impact is intentionally described as small because message folding is a
+minor fraction of encapsulation.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
