@@ -3664,6 +3664,57 @@ layout enough that the no-regression signal is not clean. Future x4 sampler work
 should target Keccak/store or the parser representation itself, not just the
 small lane-loop scaffolding.
 
+A narrow `sample_ntt4()` suffix-specialization experiment was rejected. The
+candidate tried to remove the per-call `row[4]` / `col[4]` suffix construction
+for the two fixed AVX2 x4 public-matrix batches. Two forms were tested: first
+four scalar `uint64_t suffix0..3` arguments, then a lower-pressure `__m256i
+suffix` argument using `SAMPLE_NTT4_BATCH{0,1}_SUFFIX` constants so the four
+output pointers stay in integer argument registers. Native and AVX2-only
+`make test` passed for the vector-argument form, but the optimization was too
+small for the full sampler and did not satisfy KEM no-regression.
+
+AVX2-only stage A/B command for the vector-argument form:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected suffix-specialization stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1528.21 | 1535.97 | 0.9949x | 0.9998x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1718.32 | 1726.83 | 0.9951x | 0.9985x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1835.10 | 1844.54 | 0.9949x | 0.9997x |
+| `mlkem_core_stage_sample_matrix` | 4808.32 | 4811.12 | 0.9994x | 1.0005x |
+| `mlkem_core_stage_kpke_keygen_full` | 6810.40 | 6687.16 | 1.0184x | 1.0016x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected suffix-specialization KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 9093.68 | 8678.22 | 1.0479x | 1.0057x |
+| `mlkem_encaps_core` | 8979.06 | 8758.75 | 1.0252x | 1.0009x |
+| `mlkem_decaps_core` | 8119.98 | 8597.48 | 0.9445x | 0.8995x |
+| `mlkem_roundtrip_core` | 26340.48 | 26147.80 | 1.0074x | 1.0324x |
+
+Keep the current `row[4]` / `col[4]` interface. Eliminating a few suffix
+integer operations is not the limiting work in `sample_ntt4()`; Keccak, stream
+storage, and the rejection parser dominate. The scalar-suffix form also
+increased integer argument pressure, while the vector-suffix form was only
+neutral locally and failed the KEM no-regression gate because of the large
+`mlkem_decaps_core` regression.
+
 A BMI2 index-generation variant was rejected. This copied the classic
 Kyber/PQClean `pdep`/`pext` idea into the independent core parser by replacing
 the 256-entry shuffle-index table lookup with `_pdep_u64()` plus `_pext_u64()`
