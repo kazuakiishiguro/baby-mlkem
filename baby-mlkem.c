@@ -1598,6 +1598,57 @@ static inline void ntt_inv_add2_inplace(const poly256 add0,
 #endif
 }
 
+static inline void ntt_inv_add3_inplace(const poly256 add0,
+                                        const poly256 add1,
+                                        const poly256 add2,
+                                        poly256 out0,
+                                        poly256 out1,
+                                        poly256 out2) {
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_head_avx2(out0);
+  ntt_inv_head_avx2(out1);
+  ntt_inv_head_avx2(out2);
+
+  int k = 0;
+  for (int log2len = 4; log2len <= 7; log2len++) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      __m512i zeta = ZETA_NTT_INV_TAIL_AVX512[k++];
+      for (int j = 0; j < length; j += 16) {
+        int off0 = start + j;
+        int off1 = off0 + length;
+        ntt_inv_butterfly16_avx512(out0 + off0, out0 + off1, zeta);
+        ntt_inv_butterfly16_avx512(out1 + off0, out1 + off1, zeta);
+        ntt_inv_butterfly16_avx512(out2 + off0, out2 + off1, zeta);
+      }
+    }
+  }
+
+  const __m512i scale = _mm512_set1_epi32(3303);
+  for (int i = 0; i < N; i += 16) {
+    __m512i s0 = ntt_inv_scale16_avx512(out0 + i, scale);
+    __m512i s1 = ntt_inv_scale16_avx512(out1 + i, scale);
+    __m512i s2 = ntt_inv_scale16_avx512(out2 + i, scale);
+    __m512i a0 = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(add0 + i)));
+    __m512i a1 = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(add1 + i)));
+    __m512i a2 = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(add2 + i)));
+    _mm256_storeu_si256((__m256i *)(out0 + i),
+                        _mm512_cvtusepi32_epi16(mod_q_add_i32x16(s0, a0)));
+    _mm256_storeu_si256((__m256i *)(out1 + i),
+                        _mm512_cvtusepi32_epi16(mod_q_add_i32x16(s1, a1)));
+    _mm256_storeu_si256((__m256i *)(out2 + i),
+                        _mm512_cvtusepi32_epi16(mod_q_add_i32x16(s2, a2)));
+  }
+#else
+  ntt_inv_add_inplace(add0, out0);
+  ntt_inv_add_inplace(add1, out1);
+  ntt_inv_add_inplace(add2, out2);
+#endif
+}
+
 static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
                                             poly256 out) {
   ntt_inv_butterflies_inplace(out);
@@ -3547,12 +3598,21 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
   static poly256 u[K];
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  for (int i = 0; i < K; i++) {
+    ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
+                 kpke_public_cache_ahat[i][1], rhat[1],
+                 kpke_public_cache_ahat[i][2], rhat[2], u[i]);
+  }
+  ntt_inv_add3_inplace(e1[0], e1[1], e1[2], u[0], u[1], u[2]);
+#else
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
                  kpke_public_cache_ahat[i][1], rhat[1],
                  kpke_public_cache_ahat[i][2], rhat[2], u[i]);
     ntt_inv_add_inplace(e1[i], u[i]);
   }
+#endif
 
   /* Fold mu directly into e2; e2 is not needed after v is formed. */
   if (mlen == 32) {

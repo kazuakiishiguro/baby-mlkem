@@ -203,12 +203,23 @@ static void derive_encrypt_lane(size_t lane) {
   memcpy(stage_e2_msg[lane], stage_e2[lane], sizeof(poly256));
   mlkem_add_message_to_poly(stage_msg[lane], stage_e2_msg[lane]);
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  for (int i = 0; i < K; i++) {
+    ntt_mul_acc3(stage_ahat[lane][i][0], stage_rhat[lane][0],
+                 stage_ahat[lane][i][1], stage_rhat[lane][1],
+                 stage_ahat[lane][i][2], stage_rhat[lane][2], stage_u[lane][i]);
+  }
+  ntt_inv_add3_inplace(stage_e1[lane][0], stage_e1[lane][1],
+                       stage_e1[lane][2], stage_u[lane][0],
+                       stage_u[lane][1], stage_u[lane][2]);
+#else
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(stage_ahat[lane][i][0], stage_rhat[lane][0],
                  stage_ahat[lane][i][1], stage_rhat[lane][1],
                  stage_ahat[lane][i][2], stage_rhat[lane][2], accum);
     ntt_inv_add(accum, stage_e1[lane][i], stage_u[lane][i]);
   }
+#endif
 
   ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
@@ -728,6 +739,17 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+    }
+    ntt_inv_add3_inplace(stage_e1[lane][0], stage_e1[lane][1],
+                         stage_e1[lane][2], stage_tmp_vec0[lane][0],
+                         stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2]);
+#else
     for (int row = 0; row < K; row++) {
       ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
                    stage_ahat[lane][row][1], stage_rhat[lane][1],
@@ -735,6 +757,7 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
                    stage_tmp_vec0[lane][row]);
       ntt_inv_add_inplace(stage_e1[lane][row], stage_tmp_vec0[lane][row]);
     }
+#endif
     ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                  stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
                  stage_tmp_poly[lane]);
@@ -752,6 +775,17 @@ static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+    }
+    ntt_inv_add3_inplace(stage_e1[lane][0], stage_e1[lane][1],
+                         stage_e1[lane][2], stage_tmp_vec0[lane][0],
+                         stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2]);
+#else
     for (int row = 0; row < K; row++) {
       ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
                    stage_ahat[lane][row][1], stage_rhat[lane][1],
@@ -759,6 +793,7 @@ static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
                    stage_tmp_vec0[lane][row]);
       ntt_inv_add_inplace(stage_e1[lane][row], stage_tmp_vec0[lane][row]);
     }
+#endif
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
   t1 = now_ns();
