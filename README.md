@@ -905,6 +905,29 @@ loops was rejected. Keccak A/B against `704354b` with AVX2-only flags showed
 also regressed to `0.9921x`. Keep the vector Keccak round loops rolled; the
 code-size/register-pressure cost outweighed loop overhead.
 
+A narrower AVX2-only follow-up using `#pragma clang loop unroll_count(2)` on
+`keccakf4()` was also rejected. This kept correctness but did not produce a
+stable direct Keccak win, and the integrated PRF/SHAKE rows were neutral.
+
+AVX2-only Keccak A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak KECCAK_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Keccak highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 451.43 | 441.32 | 1.0229x | 0.9734x |
+| `mlkem_prf_eta2` | 221.19 | 221.63 | 0.9980x | 0.9994x |
+| `mlkem_sample_ntt_full` | 690.25 | 692.83 | 0.9963x | 1.0019x |
+
+Keep the `keccakf4()` round loop in its current rolled form. Small fixed-factor
+unroll hints are not a reliable alternative to the already rejected full unroll.
+
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 
