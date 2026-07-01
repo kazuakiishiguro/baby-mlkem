@@ -2719,6 +2719,35 @@ first tail block. Remaining tail blocks continue through the local `keccakf4()`
 state. At that point, AVX2-only builds kept the previous path; the later AVX2
 section below adds the analogous x4 keygen-only co-schedule.
 
+A follow-up lazy tail-state experiment was rejected. The candidate delayed
+building the AVX2 `tail_st[25]` continuation state for lane 6 until the rare
+case where the first 168-byte tail block failed to produce all 256 coefficients.
+It passed native and AVX2-only core `make test`, but it did not improve the
+integrated keygen path. The saved work is too small and likely offset by branch,
+stack, or code-layout effects around the already co-scheduled Keccak path.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=100000 KEM_ITERS=35000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Lazy AVX512 tail-state highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 3404.04 | 3416.08 | 0.9965x | 0.9974x |
+| `mlkem_core_stage_sample_matrix_tail` | 707.29 | 709.19 | 0.9973x | 0.9991x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 697.09 | 697.37 | 0.9996x | 0.9996x |
+| `mlkem_keygen` | 5290.52 | 5311.58 | 0.9960x | 0.9972x |
+| `mlkem_keygen_core` | 5272.83 | 5267.73 | 1.0010x | 0.9985x |
+| `mlkem_roundtrip_core` | 14783.49 | 14691.70 | 1.0062x | 1.0013x |
+
+Keep the eager `tail_st` construction in the AVX512 keygen co-schedule. The
+rare-case lazy branch does not help the direct keygen rows and is not worth the
+extra control flow.
+
 A later keygen NTT/encode scheduling experiment was rejected. The candidate ran
 all six `shat`/`ehat` forward NTTs first and then encoded the three `shat`
 polynomials into the secret key, instead of keeping the existing
