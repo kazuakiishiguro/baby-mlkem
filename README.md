@@ -1325,6 +1325,12 @@ The direct x4 sampler body only moves slightly, but removing the large per-call
 stack scratch stabilizes the surrounding keygen/roundtrip core path on AVX2-only
 builds.
 
+A later narrow experiment that reused `sample_ntt4_store_last()` for the final
+8-byte word of each x4 lane was rejected. Stage A/B against `6660169` showed the
+direct `sample_ntt4_store_rate` median speedup regressed to `0.9948x` and
+`sample_ntt4_keccak_store3` median speedup regressed to `0.9985x`; keep the
+existing local `last[4]` store in `sample_ntt4_store_rate()`.
+
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
