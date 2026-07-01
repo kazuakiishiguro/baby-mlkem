@@ -2467,6 +2467,37 @@ Keep the existing `sample_ntt4_store_last()` calls in `sample_ntt8_store_rate()`
 The isolated store-rate probe moves by about half a percent, but the direct
 public-matrix stage is flat-to-slower, so this is not a production win.
 
+A native AVX512 one-lane matrix-tail experiment was also rejected. The candidate
+added `sample_ntt8_one()` and used it for the final `(2,2)` polynomial in
+`sample_matrix()`, replacing the existing `sample_ntt4_one()` tail on AVX512
+builds. The idea was to keep the public-matrix tail in the AVX512 Keccak family
+and extract lane 0 directly from `keccakf8()`. It passed native `make test`,
+AVX2-only `make test`, and `git diff --check`, but the full public-matrix path
+regressed badly. The direct tail row moved slightly positive, yet paying for
+three `keccakf8()` permutations for one live sampler lane was much more
+expensive than the existing `keccakf4()` tail.
+
+Native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=100000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX512 one-lane matrix-tail highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_tail` | 703.41 | 700.18 | 1.0046x | 1.0088x |
+| `mlkem_core_stage_sample_matrix` | 1886.65 | 2287.07 | 0.8249x | 0.8259x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3630.34 | 3963.14 | 0.9160x | 0.9119x |
+| `mlkem_core_stage_kpke_keygen_full` | 3393.47 | 3396.52 | 0.9991x | 0.9997x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 604.80 | 606.26 | 0.9976x | 1.0012x |
+
+Keep `sample_matrix()` using `sample_ntt4_one()` for the final matrix entry on
+native AVX512 builds. AVX512 is useful for the eight-lane batch, but it is the
+wrong granularity for a single live SHAKE128 sampler lane.
+
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
