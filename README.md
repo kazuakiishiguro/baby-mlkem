@@ -1697,6 +1697,36 @@ Keep the explicit XOR trees in the Keccak Theta step. `vpternlog` remains useful
 for Chi (`x ^ (~y & z)`), where the implementation already uses it when
 available, but replacing parity XORs with ternary logic loses on this target.
 
+### Independent Core Optimization A/B (2026-07-01, sample_ntt4_one lane extraction)
+
+A narrow AVX2 `sample_ntt4_one()` experiment replacing the per-state-word
+`uint64_t words[4]` store with direct `keccak_lane0_u64()` extraction was
+rejected. The idea was to avoid a 256-bit store plus scalar reload when building
+the `(2,2)` public-matrix tail stream, similar to lane-extraction cleanups used
+in other SIMD crypto code. It passed native and AVX2-only `make test`, but the
+focused stage A/B did not show a useful integrated win.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_tail` | 1648.34 | 1561.51 | 1.056x | 1.001x |
+| `mlkem_core_stage_sample_matrix` | 4854.93 | 4700.32 | 1.033x | 1.000x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1546.02 | 1512.57 | 1.022x | 1.002x |
+| `mlkem_core_stage_kpke_keygen_full` | 6830.99 | 6930.13 | 0.986x | 0.981x |
+
+Keep the current local `words[4]` extraction in `sample_ntt4_one()`. The direct
+extract form is cleaner, but the measured tail improvement is only noise-sized
+and the full keygen stage moved the wrong way.
+
 A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
 `_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
 It matched the scalar decoder on 10,000 random inputs, but stage A/B against
