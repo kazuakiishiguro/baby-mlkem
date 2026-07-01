@@ -3001,8 +3001,36 @@ static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
  * 5) Byte/Bit encode/decode, compress, etc.
  * =============================================================================
  */
+#if defined(__AVX2__)
+static inline void store_i8x12(uint8_t *out, __m128i v) {
+  _mm_storel_epi64((__m128i *)(void *)out, v);
+  _mm_storeu_si32((void *)(out + 8), _mm_srli_si128(v, 8));
+}
+
+static void byte_encode_d12_avx2(const poly256 f, uint8_t *out) {
+  const __m256i mask = _mm256_set1_epi16(0x0fff);
+  const __m256i pack = _mm256_set1_epi32((4096 << 16) | 1);
+  const __m256i shuf = _mm256_setr_epi8(
+      0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1,
+      0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1);
+
+  for (int i = 0; i < N; i += 16) {
+    __m256i v = _mm256_and_si256(
+        _mm256_loadu_si256((const __m256i *)(const void *)(f + i)), mask);
+    __m256i words = _mm256_madd_epi16(v, pack);
+    __m256i bytes = _mm256_shuffle_epi8(words, shuf);
+    uint8_t *p = out + (size_t)(i / 16) * 24;
+    store_i8x12(p, _mm256_castsi256_si128(bytes));
+    store_i8x12(p + 12, _mm256_extracti128_si256(bytes, 1));
+  }
+}
+#endif
+
 static void byte_encode(int d, const poly256 f, uint8_t *out) {
   if (d == 12) {
+#if defined(__AVX2__)
+    byte_encode_d12_avx2(f, out);
+#else
     for (int i = 0; i < N / 2; i++) {
       uint16_t v0 = (uint16_t)f[2 * i] & 0x0FFFu;
       uint16_t v1 = (uint16_t)f[2 * i + 1] & 0x0FFFu;
@@ -3010,6 +3038,7 @@ static void byte_encode(int d, const poly256 f, uint8_t *out) {
       out[3 * i + 1] = (uint8_t)((v0 >> 8) | ((v1 & 0x0Fu) << 4));
       out[3 * i + 2] = (uint8_t)(v1 >> 4);
     }
+#endif
     return;
   }
 

@@ -1551,6 +1551,73 @@ old scalar byte encoder on 10,000 random inputs, but stage A/B against
 `kpke_keygen_full` to `0.9782x`. Keep the current simple 12-bit pair encoder;
 the compiler emits a better store sequence than the 48-bit helper here.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 d12 key encode)
+
+Baseline is commit `3a884e4` with the rejected d12 decode-tail experiment only
+documented; candidate is the working tree after adding a core AVX2
+`byte_encode_d12_avx2()` path for `byte_encode(12)`. This is an independent
+core implementation change: it does not call the vendored Kyber or PQClean AVX2
+backend.
+
+The implementation packs sixteen 12-bit coefficients at a time. `_mm256_madd_epi16`
+forms each adjacent coefficient pair as a 24-bit little-endian word
+`v0 + 4096*v1`, then `_mm256_shuffle_epi8` drops the unused fourth byte from
+each 32-bit lane. Each 128-bit half is stored as twelve bytes. This differs from
+the rejected scalar 48-bit helper above: the useful work is done by vector pair
+packing and byte shuffle, not by constructing wider scalar words.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2"
+```
+
+A temporary checker also compared the AVX2 encoder against the old scalar
+encoder on 10,000 random input polynomials.
+
+AVX2-only stage command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=100000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 514.65 | 488.03 | 1.055x | 1.055x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1621.14 | 1605.98 | 1.009x | 1.010x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 927.04 | 926.43 | 1.001x | 1.001x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 942.97 | 940.69 | 1.002x | 1.003x |
+
+KEM confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 8996.19 | 9123.83 | 0.986x | 1.008x |
+| `mlkem_keygen_core` | 8969.77 | 9079.55 | 0.988x | 1.003x |
+| `mlkem_roundtrip_core` | 26276.45 | 26849.39 | 0.979x | 0.962x |
+
+Treat this as a narrow key-encoding win, not as an end-to-end KEM speedup claim:
+the full KEM rows are dominated by unrelated sampling/encapsulation/decapsulation
+noise, and the roundtrip core row moved opposite to the isolated keygen encode
+rows.
+
 A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
 `_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
 It matched the scalar decoder on 10,000 random inputs, but stage A/B against
