@@ -772,6 +772,12 @@ iterations:
 | `mlkem_sample_ntt_parse` | 98.88 |
 | `mlkem_sample_ntt_full` | 691.40 |
 
+A later experiment forcing full unrolling of the AVX2/AVX512 vector Keccak round
+loops was rejected. Keccak A/B against `704354b` with AVX2-only flags showed
+`mlkem_keccakf4` median speedup `0.9082x`, while `mlkem_prf_eta2` median speedup
+also regressed to `0.9921x`. Keep the vector Keccak round loops rolled; the
+code-size/register-pressure cost outweighed loop overhead.
+
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 
