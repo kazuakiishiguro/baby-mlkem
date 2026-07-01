@@ -862,7 +862,12 @@ inverse butterflies again measured `decrypt_inv_head` at 274.08 ns/op and
 `decrypt_inv_tail` at 269.45 ns/op. The head/tail standalone probes have their
 own copy/sink overhead, but the near tie means a single isolated inverse stage
 is unlikely to carry the full win; future work should fuse or reschedule across
-both inverse-head and inverse-tail boundaries.
+both inverse-head and inverse-tail boundaries. A narrow AVX2 experiment
+replacing only the inverse-tail `log2len = 4` / length-16 stage with
+`ntt_inv_butterfly8_avx2()` was also rejected: stage A/B against the split
+baseline showed `decrypt_inv_tail` average speedup `0.9967x`,
+`decrypt_inv_sub_from` average speedup `0.9963x`, and
+`decrypt_accum_inv` average speedup `0.9965x`.
 
 A narrow experiment replacing only the forward-NTT `log2len = 4` / length-16
 stage with two `ntt_butterfly8_avx2()` calls per block was rejected: AVX2
