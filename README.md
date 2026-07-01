@@ -972,6 +972,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | AVX2 builds only: final inverse butterfly plus inverse-NTT scale after precomputed l6 outputs, excluding the `e1` add |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | AVX2 builds only: low-half `sum * 3303` scale/reduction portion of the final inverse pass |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | AVX2 builds only: high-half `diff * zeta_scale` scale/reduction portion of the final inverse pass |
 | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | AVX2 builds only: final `e1` add against precomputed final-scaled `u` outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
@@ -1276,6 +1278,33 @@ This narrows the next production target inside the final pass: optimize the
 final butterfly plus scale/reduction path first. The isolated add path is still
 visible, but the prior packed 16-bit final-add experiment already showed that
 changing that add form is not robust at KEM level.
+
+A later low/high diagnostic split separates that final scale row into the
+low-half `sum * 3303` output and the high-half `diff * zeta_scale` output. These
+rows also include their own scratch copies and are diagnostic. A `clang`,
+`BENCH_STAGES_ITERS=50000` snapshot measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_encrypt_accum_inv_u` | 866.41 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 279.85 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 250.07 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | 225.91 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | 224.40 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | 212.44 |
+| native | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 456.92 |
+| AVX2-only | `mlkem_core_stage_encrypt_accum_inv_u` | 1023.93 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_only` | 322.56 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 289.58 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | 250.48 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | 247.31 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | 239.52 |
+| AVX2-only | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 512.29 |
+
+The low and high scale halves are effectively balanced. After the negative-scale
+experiment below, this makes a one-sided rewrite less attractive: the next
+production attempt should remove shared load/extend/reduction work or change the
+final-pass structure as a whole, not only rewrite the low or high multiply.
 
 An AVX2 final zeta-scale constant experiment was rejected. The candidate changed
 `ntt_inv_before_final_avx2()` to stop returning the final zeta and replaced the
