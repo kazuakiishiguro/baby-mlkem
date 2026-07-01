@@ -630,6 +630,7 @@ helpers:
 | `mlkem_ntt3_aos4_inplace` | bench-only K=3 forward NTT directly over the padded AoS4 layout, excluding pack/unpack |
 | `mlkem_ntt3_pack_ntt_aos4` | diagnostic pack plus bench-only AoS4 K=3 forward NTT |
 | `mlkem_ntt3_pack_ntt_unpack_aos4` | diagnostic standalone AoS4 K=3 forward NTT including pack and unpack |
+| `mlkem_ntt3_2coeff_inplace` | bench-only K=3 forward NTT that processes two coefficients across three polynomials per AVX2 vector, without changing storage layout |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -734,6 +735,27 @@ useful polynomial lanes per butterfly, so each 256-bit operation does too little
 work and loses badly to the current single-polynomial NTT tail and compiler-
 vectorized upper levels. A viable packed K=3 design needs a wider tile that also
 uses coefficient parallelism, not just the three K columns plus one padding lane.
+
+A follow-up bench-only `mlkem_ntt3_2coeff_inplace` prototype kept the normal
+three-polynomial storage layout but processed two coefficients across the three
+polynomials per AVX2 vector. That raises theoretical lane use from AoS4's three
+useful lanes to six useful lanes, but requires scalar gathers and scalar lane
+extraction stores for every butterfly. Pinned CPU 0, `clang`, `200000`-iteration
+snapshots measured:
+
+| Build | Metric | ns/op | Speedup vs `mlkem_ntt3_inplace` |
+|---|---|---:|---:|
+| native | `mlkem_ntt3_inplace` | 523.29 | 1.000x |
+| native | `mlkem_ntt3_2coeff_inplace` | 2156.40 | 0.243x |
+| AVX2-only | `mlkem_ntt3_inplace` | 584.30 | 1.000x |
+| AVX2-only | `mlkem_ntt3_2coeff_inplace` | 2073.41 | 0.282x |
+
+Reject this normal-layout K=3 x 2-coefficient vectorization as well. Lane
+occupancy alone is not enough; the memory-access pattern must also remain
+contiguous. The next packed NTT design should use a real tiled in-memory layout
+that provides contiguous loads/stores for both coefficient and polynomial
+parallelism, or avoid cross-polynomial NTT packing and move to a different
+bottleneck.
 
 A follow-up CBD-side diagnostic checks the input-generation part of that same
 layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,

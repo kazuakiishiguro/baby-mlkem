@@ -172,6 +172,68 @@ static void ntt3_aos4_inplace(int16_t f[N][4]) {
   }
 }
 
+#if defined(__AVX2__)
+static inline void ntt3_2coeff_store_a(__m128i v, poly256 f0, poly256 f1,
+                                       poly256 f2, int i0, int i1) {
+  f0[i0] = (int16_t)_mm_extract_epi16(v, 0);
+  f1[i0] = (int16_t)_mm_extract_epi16(v, 1);
+  f2[i0] = (int16_t)_mm_extract_epi16(v, 2);
+  f0[i1] = (int16_t)_mm_extract_epi16(v, 3);
+  f1[i1] = (int16_t)_mm_extract_epi16(v, 4);
+  f2[i1] = (int16_t)_mm_extract_epi16(v, 5);
+}
+
+static inline void ntt3_2coeff_butterfly_avx2(poly256 f0, poly256 f1,
+                                              poly256 f2, int i0, int i1,
+                                              int length, __m256i zeta) {
+  __m128i a16 = _mm_setr_epi16(f0[i0], f1[i0], f2[i0], f0[i1], f1[i1],
+                               f2[i1], 0, 0);
+  __m128i b16 = _mm_setr_epi16(f0[i0 + length], f1[i0 + length],
+                               f2[i0 + length], f0[i1 + length],
+                               f1[i1 + length], f2[i1 + length], 0, 0);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
+  ntt3_2coeff_store_a(pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t)),
+                      f0, f1, f2, i0, i1);
+  ntt3_2coeff_store_a(pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t)),
+                      f0, f1, f2, i0 + length, i1 + length);
+}
+#endif
+
+static void ntt3_2coeff_inplace(poly256 f0, poly256 f1, poly256 f2) {
+#if !defined(__AVX2__)
+  ntt(f0, f0);
+  ntt(f1, f1);
+  ntt(f2, f2);
+#else
+  ensure_ntt_roots();
+  int k = 1;
+  for (int log2len = 7; log2len > 0; log2len--) {
+    int length = 1 << log2len;
+    if (length == 1) {
+      for (int start = 0; start < N; start += 4) {
+        uint16_t zeta0 = ZETA[k++];
+        uint16_t zeta1 = ZETA[k++];
+        __m256i zeta = _mm256_setr_epi32(zeta0, zeta0, zeta0, zeta1,
+                                         zeta1, zeta1, 0, 0);
+        ntt3_2coeff_butterfly_avx2(f0, f1, f2, start, start + 2,
+                                   length, zeta);
+      }
+      continue;
+    }
+
+    for (int start = 0; start < N; start += (2 * length)) {
+      __m256i zeta = _mm256_set1_epi32(ZETA[k++]);
+      for (int j = 0; j < length; j += 2) {
+        ntt3_2coeff_butterfly_avx2(f0, f1, f2, start + j,
+                                   start + j + 1, length, zeta);
+      }
+    }
+  }
+#endif
+}
+
 static void bench_forward_ntt_level(poly256 f, int log2len, int k_start) {
   int k = k_start;
   int length = 1 << log2len;
@@ -343,6 +405,17 @@ static void validate_ntt_helpers(void) {
   check_equal(want, tmp, "ntt3_aos4 poly1");
   ntt(bench_a2[0], tmp);
   check_equal(accum, tmp, "ntt3_aos4 poly2");
+
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  memcpy(want, bench_a1[0], sizeof(poly256));
+  memcpy(accum, bench_a2[0], sizeof(poly256));
+  ntt3_2coeff_inplace(got, want, accum);
+  ntt(bench_a0[0], tmp);
+  check_equal(got, tmp, "ntt3_2coeff poly0");
+  ntt(bench_a1[0], tmp);
+  check_equal(want, tmp, "ntt3_2coeff poly1");
+  ntt(bench_a2[0], tmp);
+  check_equal(accum, tmp, "ntt3_2coeff poly2");
 
   ntt(bench_a0[0], tmp);
   ntt_inv(tmp, got);
@@ -539,6 +612,23 @@ static uint64_t bench_ntt3_pack_ntt_unpack_aos4(size_t iters) {
     acc += (uint16_t)bench_a0[lane][(i * 83u) & (N - 1)];
     acc += (uint16_t)bench_a1[lane][(i * 89u) & (N - 1)];
     acc += (uint16_t)bench_a2[lane][(i * 97u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt3_2coeff_inplace(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt3_2coeff_inplace(bench_a0[lane], bench_a1[lane], bench_a2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 101u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 103u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 107u) & (N - 1)];
   }
   t1 = now_ns();
   bench_ntt_sink ^= acc;
@@ -781,6 +871,8 @@ int main(int argc, char **argv) {
                iters);
   print_metric("mlkem_ntt3_pack_ntt_unpack_aos4",
                bench_ntt3_pack_ntt_unpack_aos4(iters), iters);
+  print_metric("mlkem_ntt3_2coeff_inplace",
+               bench_ntt3_2coeff_inplace(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);
