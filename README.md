@@ -2507,6 +2507,60 @@ The main defensible effect is the local `v` accumulation/inverse-NTT stage. Full
 KEM impact is intentionally described as small because message folding is a
 minor fraction of encapsulation.
 
+A native AVX512 follow-up specializes the message-add part of that folded path.
+When AVX512F+BW is available, `mlkem_add_message_to_poly()` now loads each
+32-bit message word as an AVX512 mask and materializes 32 coefficients of either
+`0` or `(Q + 1) / 2` with `_mm512_maskz_mov_epi16()`. It then adds those
+coefficients to `e2` and conditionally subtracts `Q` in the same 32-lane vector.
+AVX2-only builds keep the accepted `poly_frommsg`-style 16-lane expansion. This
+keeps the independent core vendor-free and removes the AVX2 shuffle/unpack
+message expansion on native AVX512 builds.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 1912.44 | 1896.52 | 1.0084x | 1.0036x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1132.12 | 1132.00 | 1.0001x | 1.0006x |
+| `mlkem_encaps` | 2115.04 | 2117.46 | 0.9989x | 1.0034x |
+| `mlkem_encaps_core` | 4908.42 | 4904.53 | 1.0008x | 1.0004x |
+| `mlkem_decaps_core` | 4443.70 | 4420.86 | 1.0052x | 1.0052x |
+
+Longer native KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2124.80 | 2108.85 | 1.0076x | 1.0040x |
+| `mlkem_encaps_core` | 4914.95 | 4911.85 | 1.0006x | 1.0018x |
+| `mlkem_decaps` | 2941.28 | 2939.70 | 1.0005x | 1.0016x |
+| `mlkem_decaps_core` | 4445.54 | 4466.41 | 0.9953x | 1.0015x |
+| `mlkem_roundtrip_core` | 14715.08 | 14731.66 | 0.9989x | 0.9979x |
+
+The accepted claim is intentionally narrow: this is a small native AVX512
+encapsulation/re-encryption improvement. It is not a broad roundtrip win; the
+longer confirmation kept encapsulation positive but roundtrip-core noise moved
+slightly negative.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is

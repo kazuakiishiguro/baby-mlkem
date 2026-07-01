@@ -3811,7 +3811,20 @@ static inline void mlkem_add_message_to_poly_vec_avx2(__m256i m,
 
 static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
                                              poly256 out) {
-#if defined(__AVX2__)
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  const __m512i hqs = _mm512_set1_epi16((Q + 1) / 2);
+  for (int block = 0; block < 8; block++) {
+    __mmask32 bits = (__mmask32)load32_le(msg + 4 * block);
+    __m512i m = _mm512_maskz_mov_epi16(bits, hqs);
+    __m512i x = _mm512_loadu_si512((const void *)(out + 32 * block));
+    x = _mm512_add_epi16(x, m);
+    __mmask32 ge_q = _mm512_cmpgt_epi16_mask(x, q_minus_1);
+    x = _mm512_mask_sub_epi16(x, ge_q, x, q);
+    _mm512_storeu_si512((void *)(out + 32 * block), x);
+  }
+#elif defined(__AVX2__)
   __m256i f, g0, g1, g2, g3, h0, h1, h2, h3;
   const __m256i shift = _mm256_broadcastsi128_si256(_mm_set_epi32(0, 1, 2, 3));
   const __m256i idx = _mm256_broadcastsi128_si256(
