@@ -963,6 +963,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three Keccak-f4 blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
 | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional refill Keccak-f4 block plus stream stores, conditioned on groups that need refill |
@@ -1175,6 +1176,30 @@ insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
 first 504 bytes. That keeps the refill path below the primary optimization
 target; direct Keccak-state-to-parser work should focus first on the common
 three-rate path.
+
+A later Keccak/store split added `sample_ntt4_keccak3_only` to separate the
+common three Keccak-f4 permutations from the stream transpose/store work. Pinned
+CPU 0, `clang`, 50,000-iteration snapshots:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_sample_ntt4_full_raw` | 603.49 |
+| native | `mlkem_core_stage_sample_ntt4_store_rate` | 1.83 |
+| native | `mlkem_core_stage_sample_ntt4_keccak3_only` | 501.43 |
+| native | `mlkem_core_stage_sample_ntt4_keccak_store3` | 500.49 |
+| native | `mlkem_core_stage_sample_ntt4_parse_504` | 153.80 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_full_raw` | 1312.92 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_store_rate` | 7.54 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_keccak3_only` | 828.43 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_keccak_store3` | 852.47 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_parse_504` | 112.39 |
+
+The split is diagnostic and not additive, but it is clear enough: the common
+three-block path is dominated by `keccakf4()`, not the state transpose/store.
+The native store delta is within noise, and AVX2-only store overhead is roughly
+24 ns over three rates. Future x4 sampler work should not focus on another
+`sample_ntt4_store_rate()` rewrite unless paired with a larger Keccak/state
+layout change.
 
 A later refill-cost split measured the conditional cost of one extra refill
 step, using only x4 sampler groups that actually needed at least one lane refill

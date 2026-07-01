@@ -725,6 +725,28 @@ static uint64_t bench_sample_ntt4_store_rate(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_sample_ntt4_keccak3_only(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    stage_sample_ntt4_init(stage_rho[lane], row, col, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+    }
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 3u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_sample_ntt4_keccak_store3(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -2569,6 +2591,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_store_rate",
                bench_sample_ntt4_store_rate(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_keccak3_only",
+               bench_sample_ntt4_keccak3_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_keccak_store3",
                bench_sample_ntt4_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
