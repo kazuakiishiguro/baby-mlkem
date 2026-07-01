@@ -1268,6 +1268,55 @@ Keep `kpke_decrypt()` in the existing decode-all, secret-cache, then NTT order.
 The attempted locality gain is smaller than the cost of moving large NTT work
 before the rest of ciphertext preparation and secret-key cache handling.
 
+
+A small ciphertext d10 compress/encode store cleanup was accepted. The change
+replaces the final 4-byte `memcpy()` in `compress_encode_poly_d10_avx2()` with
+an explicit `_mm_storeu_si32()` after computing the 20-byte packed ciphertext
+chunk pointer once. This is a code-generation cleanup rather than an algorithmic
+change; it keeps the core path vendor-free and leaves the packed output format
+unchanged.
+
+The candidate passed native `make test`, AVX2-only `make test`, native KEM A/B,
+and AVX2-only KEM A/B. The direct stage effect is intentionally recorded as
+small: this is not a new bottleneck breakthrough, only a low-risk store-path
+cleanup that did not regress KEM.
+
+Native stage A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=stage STAGE_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted d10 compress/encode store cleanup highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 53.65 | 53.62 | 1.0004x | 1.0006x |
+| `mlkem_encaps_core` native | 4953.34 | 4878.09 | 1.0154x | 1.0001x |
+| `mlkem_roundtrip_core` native | 14788.28 | 14649.85 | 1.0094x | 1.0017x |
+| `mlkem_encaps_core` AVX2-only | 9189.34 | 8548.82 | 1.0749x | 1.0514x |
+| `mlkem_roundtrip_core` AVX2-only | 26880.25 | 25646.55 | 1.0481x | 1.0648x |
+
+Treat this as a minor accepted cleanup. The reliable claim is removal of a
+scalar-looking 4-byte copy in the d10 compress/encode hot path; the larger KEM
+speedups in the AVX2-only run are too noisy to attribute solely to this change.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is

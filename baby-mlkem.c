@@ -3436,8 +3436,9 @@ static void compress_encode_poly_d10_avx2(const poly256 x, uint8_t *out) {
     __m128i t0 = _mm256_castsi256_si128(f);
     __m128i t1 = _mm256_extracti128_si256(f, 1);
     t0 = _mm_blend_epi16(t0, t1, 0xE0);
-    _mm_storeu_si128((__m128i *)(void *)(out + (size_t)(i / 16) * 20), t0);
-    memcpy(out + (size_t)(i / 16) * 20 + 16, &t1, 4);
+    uint8_t *p = out + (size_t)(i / 16) * 20;
+    _mm_storeu_si128((__m128i *)(void *)p, t0);
+    _mm_storeu_si32((void *)(p + 16), t1);
   }
 }
 
