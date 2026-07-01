@@ -3685,7 +3685,16 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 }
 
 static void mlkem_recover_message(const poly256 w, uint8_t out[32]) {
-#if defined(__AVX2__) && defined(__BMI2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  const __m512i half_q = _mm512_set1_epi16((Q + 1) / 2);
+  const __m512i quarter_q = _mm512_set1_epi16((Q + 1) / 4);
+  for (int block = 0; block < 8; block++) {
+    __m512i v = _mm512_loadu_si512((const void *)(w + 32 * block));
+    __m512i diff = _mm512_abs_epi16(_mm512_sub_epi16(v, half_q));
+    uint32_t bits = (uint32_t)_mm512_cmpgt_epi16_mask(quarter_q, diff);
+    memcpy(out + 4 * block, &bits, sizeof(bits));
+  }
+#elif defined(__AVX2__) && defined(__BMI2__)
   const __m256i half_q = _mm256_set1_epi16((Q + 1) / 2);
   const __m256i quarter_q = _mm256_set1_epi16((Q + 1) / 4);
   for (int block = 0; block < 16; block++) {
