@@ -1819,6 +1819,33 @@ the full KEM rows are dominated by unrelated sampling/encapsulation/decapsulatio
 noise, and the roundtrip core row moved opposite to the isolated keygen encode
 rows.
 
+A native AVX512 follow-up was rejected. The candidate widened the d12 key
+encoder to pack 32 coefficients at a time with `_mm512_madd_epi16`,
+`_mm512_shuffle_epi8`, and four 12-byte stores. Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 d12 encode A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 424.52 | 426.46 | 0.9955x | 0.9953x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1560.60 | 1561.12 | 0.9997x | 0.9995x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1423.16 | 1430.66 | 0.9948x | 0.9937x |
+| `mlkem_core_stage_kpke_keygen_full` | 3407.63 | 3421.55 | 0.9959x | 0.9940x |
+| `mlkem_keygen` | 5303.66 | 5322.51 | 0.9965x | 0.9956x |
+| `mlkem_keygen_core` | 5278.34 | 5299.28 | 0.9960x | 0.9967x |
+| `mlkem_roundtrip` | 20132.26 | 20189.13 | 0.9972x | 0.9985x |
+| `mlkem_roundtrip_core` | 19237.71 | 19264.76 | 0.9986x | 1.0003x |
+
+Halving the loop count did not pay for the wider shuffle and lane extraction:
+the zmm shuffle still works in 128-bit lanes, the static shuffle mask adds a
+load, and the result still has to be split into four 12-byte chunks. Keep the
+AVX2 16-coefficient packer on native AVX512 builds too.
+
 ### Independent Core Optimization A/B (2026-07-01, NTT accumulation reciprocal reduction)
 
 A follow-up attempt to replace the remaining 32-bit `% Q` operations in
