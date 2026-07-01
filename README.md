@@ -1126,12 +1126,37 @@ KEM A/B highlights:
 | `mlkem_roundtrip` | 10443.00 | 10383.41 | 1.006x | 1.003x |
 | `mlkem_roundtrip_core` | 14760.44 | 14739.01 | 1.001x | 1.000x |
 
-The effect is intentionally described as local: ciphertext compress/encode is
-about 25% faster, while full KEM impact is small because this stage is a small
-fraction of encapsulation. The fused path is enabled only for the native
-AVX512-capable core build, matching the existing `compress_poly_d{10,4}_avx2()`
-selection; AVX2-only builds keep the prior scalar/auto-vectorized path because
-that path has benchmarked better for this codebase.
+The original effect was intentionally described as local: ciphertext
+compress/encode was about 25% faster on the native AVX512-capable core build,
+while full KEM impact was small because this stage is a small fraction of
+encapsulation.
+
+Additional AVX2-only A/B after fixing `ARCH_CFLAGS` forwarding showed that the
+same fused compress/pack path is also useful without AVX512. Baseline is commit
+`ab346f1` before enabling the fused packer for AVX2-only builds; candidate is
+the working tree after the change.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=11 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=10000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 208.52 | 56.27 | 3.706x | 3.701x |
+| `mlkem_encaps` | 3206.78 | 3108.28 | 1.032x | 1.053x |
+| `mlkem_encaps_core` | 9021.32 | 8659.20 | 1.042x | 1.017x |
+| `mlkem_roundtrip` | 17121.61 | 16673.88 | 1.027x | 1.034x |
+| `mlkem_roundtrip_core` | 27085.22 | 26406.50 | 1.026x | 1.037x |
+
+The implementation now enables `compress_encode_poly_d10_avx2()` and
+`compress_encode_poly_d4_avx2()` for all AVX2 core builds. Non-AVX2 builds keep
+the scalar `compress_poly()` plus `byte_encode_u16()` path.
 
 ### Independent Core Optimization A/B (2026-07-01, u inverse-NTT add batching)
 
