@@ -1021,6 +1021,19 @@ probes each include independent copy and sink overhead. This metric is the next
 reference point for any attempt to fuse the final forward-NTT schedule with the
 secret accumulation path.
 
+A decrypt-only secret-cache experiment precomputing `GAMMA[i] * s_hat[2*i+1]`
+for the odd secret coefficients was rejected. The candidate replaced the
+`c0_hi % Q` plus gamma multiply inside decrypt accumulation with three extra
+precomputed secret-side loads per base pair and routed the matching stage
+metrics through the same helper. Native and AVX2-only correctness passed, but
+stage A/B against `823d48e` with `RUNS=13` and `STAGE_ITERS=40000` regressed the
+hot decrypt rows. Native median speedups were `decrypt_accum_only` `0.7020x`,
+`decrypt_ntt_accum_only` `0.8806x`, and `kpke_decrypt_cached` `0.8961x`.
+AVX2-only median speedups were `decrypt_accum_only` `0.8392x`,
+`decrypt_ntt_accum_only` `0.9480x`, and `kpke_decrypt_cached` `0.9633x`. Keep
+the current compact accumulation; on this target the extra loads are more
+expensive than the scalar reduction and gamma multiply they replace.
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and
