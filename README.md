@@ -942,12 +942,19 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | AVX2-only one-lane x4 tail sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_sample_ntt4_one_keccak_store3` | AVX2-only one-lane x4 tail sampler initial three Keccak-f4 blocks plus lane-0 stream stores |
+| `mlkem_core_stage_sample_ntt4_one_parse_504` | AVX2-only one-lane x4 tail sampler parse of one 504-byte rejection stream |
 | `mlkem_core_stage_sample_ntt4_initial_extra_groups` | AVX2-only x4 sampler groups that need a refill after the first 504 bytes per lane |
 | `mlkem_core_stage_sample_ntt4_initial_extra_group_pct` | percent of x4 sampler groups that need a refill after the first 504 bytes per lane |
 | `mlkem_core_stage_sample_ntt4_initial_extra_lanes` | AVX2-only x4 sampler lanes that need a refill after the first 504 bytes |
 | `mlkem_core_stage_sample_ntt4_initial_extra_lane_pct` | percent of x4 sampler lanes that need a refill after the first 504 bytes |
 | `mlkem_core_stage_sample_ntt4_initial_avg_accepts` | average accepted coefficients after the first 504-byte parse |
 | `mlkem_core_stage_sample_ntt4_initial_min_accepts` | minimum accepted coefficients observed after the first 504-byte parse |
+| `mlkem_core_stage_sample_ntt4_one_initial_extra_lanes` | AVX2-only one-lane x4 tail sampler lanes that need a refill after the first 504 bytes |
+| `mlkem_core_stage_sample_ntt4_one_initial_extra_lane_pct` | percent of one-lane x4 tail sampler lanes that need a refill after the first 504 bytes |
+| `mlkem_core_stage_sample_ntt4_one_initial_avg_accepts` | average accepted coefficients after the one-lane x4 tail sampler first 504-byte parse |
+| `mlkem_core_stage_sample_ntt4_one_initial_min_accepts` | minimum accepted coefficients observed in the one-lane x4 tail sampler after the first 504-byte parse |
 | `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
@@ -1141,6 +1148,38 @@ insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
 first 504 bytes. That keeps the refill path below the primary optimization
 target; direct Keccak-state-to-parser work should focus first on the common
 three-rate path.
+
+A later one-lane tail diagnostic split measured the `sample_ntt4_one()` path
+used for the final public-matrix entry `(2,2)`. These rows are diagnostic and
+exclude the full-polynomial checksum overhead used by `sample_matrix_tail`. A
+`clang`, `BENCH_STAGES_ITERS=50000` snapshot measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_sample_matrix` | 1919.71 |
+| native | `mlkem_core_stage_sample_matrix_tail` | 725.74 |
+| native | `mlkem_core_stage_sample_ntt4_full_raw` | 598.43 |
+| native | `mlkem_core_stage_sample_ntt4_keccak_store3` | 499.45 |
+| native | `mlkem_core_stage_sample_ntt4_parse_504` | 226.61 |
+| native | `mlkem_core_stage_sample_ntt4_one_full_raw` | 539.95 |
+| native | `mlkem_core_stage_sample_ntt4_one_keccak_store3` | 490.67 |
+| native | `mlkem_core_stage_sample_ntt4_one_parse_504` | 27.80 |
+| AVX2-only | `mlkem_core_stage_sample_matrix` | 4138.92 |
+| AVX2-only | `mlkem_core_stage_sample_matrix_tail` | 1410.66 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_full_raw` | 1313.20 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_keccak_store3` | 793.40 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_parse_504` | 112.94 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_one_full_raw` | 1221.02 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_one_keccak_store3` | 809.37 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_one_parse_504` | 29.54 |
+
+The tail parser itself is small: one 504-byte tail stream parses in roughly
+28-30 ns, while the initial three Keccak-f4 permutations plus lane-0 stream
+stores dominate. The one-lane tail also has the same refill probability as an
+individual x4 sampler lane: in this snapshot 0.835% of tail lanes needed an
+extra squeeze, with average first-pass accepts `255.974600` and minimum `247`.
+Future tail work should therefore target the lane-0 Keccak-state extraction or
+stream scratch layout, not parser bookkeeping or refill handling.
 
 Historical snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`, `20000`
 iterations, before the later core AVX2 and cache optimization series:

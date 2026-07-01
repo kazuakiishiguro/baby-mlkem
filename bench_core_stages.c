@@ -829,6 +829,131 @@ static void print_sample_ntt4_initial_accept_stats(size_t iters) {
          lanes > 0.0 ? (double)total_accepts / lanes : 0.0);
   printf("mlkem_core_stage_sample_ntt4_initial_min_accepts=%d\n", min_accepts);
 }
+
+static void stage_sample_ntt4_one_init(const uint8_t *seed, uint8_t row,
+                                       uint8_t col, __m256i st[25]) {
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set1_epi64x(
+      (long long)((uint64_t)row | ((uint64_t)col << 8) | (0x1FULL << 16)));
+  st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+}
+
+static void stage_sample_ntt4_one_store_stream(uint8_t stream[504],
+                                               size_t block,
+                                               const __m256i st[25]) {
+  for (int lane = 0; lane < 21; lane++) {
+    uint64_t words[4];
+    uint64_t word;
+    _mm256_storeu_si256((__m256i *)words, st[lane]);
+    word = words[0];
+    memcpy(stream + ((block * 21u + (size_t)lane) * 8u), &word, 8);
+  }
+}
+
+static void stage_prepare_sample_ntt4_one_streams(void) {
+  for (int lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    __m256i st[25];
+    stage_sample_ntt4_one_init(stage_rho[lane], 2, 2, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      stage_sample_ntt4_one_store_stream(stage_tmp_sample_stream[lane][0],
+                                         (size_t)block, st);
+    }
+  }
+}
+
+static uint64_t bench_sample_ntt4_one_full_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    sample_ntt4_one(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_one_keccak_store3(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    stage_sample_ntt4_one_init(stage_rho[lane], 2, 2, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      stage_sample_ntt4_one_store_stream(stage_tmp_sample_stream[lane][0],
+                                         (size_t)block, st);
+    }
+    acc ^= stage_tmp_sample_stream[lane][0][(i * 17u) % 504u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_one_parse_504(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  stage_prepare_sample_ntt4_one_streams();
+  sample_ntt_parse_init_avx2();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int count = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[lane][0], 504, stage_tmp_ahat[lane][2][2], 0);
+    acc ^= (uint64_t)count;
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static void print_sample_ntt4_one_initial_accept_stats(size_t iters) {
+  uint64_t total_accepts = 0;
+  uint64_t extra_lanes = 0;
+  int min_accepts = N;
+
+  sample_ntt_parse_init_avx2();
+  for (size_t i = 0; i < iters; i++) {
+    uint8_t seed[32];
+    __m256i st[25];
+    fill_bytes(seed, sizeof(seed), 0xB4B40000u + i);
+    stage_sample_ntt4_one_init(seed, 2, 2, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      stage_sample_ntt4_one_store_stream(stage_tmp_sample_stream[0][0],
+                                         (size_t)block, st);
+    }
+
+    int count = sample_ntt_parse_stream_avx2_ready(
+        stage_tmp_sample_stream[0][0], 504, stage_tmp_ahat[0][2][2], 0);
+    total_accepts += (uint64_t)count;
+    if (count < min_accepts) min_accepts = count;
+    if (count < N) extra_lanes++;
+  }
+
+  double lanes = (double)iters;
+  printf("mlkem_core_stage_sample_ntt4_one_initial_extra_lanes=%llu\n",
+         (unsigned long long)extra_lanes);
+  printf("mlkem_core_stage_sample_ntt4_one_initial_extra_lane_pct=%.6f\n",
+         lanes > 0.0 ? (100.0 * (double)extra_lanes / lanes) : 0.0);
+  printf("mlkem_core_stage_sample_ntt4_one_initial_avg_accepts=%.6f\n",
+         lanes > 0.0 ? (double)total_accepts / lanes : 0.0);
+  printf("mlkem_core_stage_sample_ntt4_one_initial_min_accepts=%d\n",
+         min_accepts);
+}
 #endif
 
 static uint64_t bench_keygen_noise_ntt(size_t iters) {
@@ -2305,6 +2430,13 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
                bench_sample_ntt4_parse_504(iters), iters);
   print_sample_ntt4_initial_accept_stats(iters);
+  print_metric("mlkem_core_stage_sample_ntt4_one_full_raw",
+               bench_sample_ntt4_one_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_one_keccak_store3",
+               bench_sample_ntt4_one_keccak_store3(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_one_parse_504",
+               bench_sample_ntt4_one_parse_504(iters), iters);
+  print_sample_ntt4_one_initial_accept_stats(iters);
 #endif
   print_metric("mlkem_core_stage_keygen_noise_ntt",
                bench_keygen_noise_ntt(iters), iters);
