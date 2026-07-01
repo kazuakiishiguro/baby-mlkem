@@ -890,6 +890,14 @@ against `f3e4b81` regressed `sample_ntt4_parse_504` median speedup to `0.9666x`
 and `sample_ntt4_full_raw` median speedup to `0.9974x`; keep the in-loop
 `POPCNT` operations instead of adding more table loads to the hot parser path.
 
+A follow-up experiment that parsed each 168-byte Keccak rate immediately instead
+of first storing the common three-rate 504-byte stream was also rejected. Stage
+A/B against `a47d649` showed `sample_ntt4_full_raw` median speedup `0.9625x`,
+`sample_matrix_x4_batch0` median speedup `0.9689x`, and `sample_matrix` median
+speedup `0.9617x`. Keep the three-rate store-then-parse schedule; interleaving
+Keccak output storage and parser work hurts the full x4 sampler even if isolated
+store/parse probes look neutral.
+
 The refill counters quantify how often the first three Keccak rates are
 insufficient. On one pinned AVX2 diagnostic run with 20,000 iterations, only
 3.245% of x4 groups and 0.815% of individual lanes needed a refill after the
