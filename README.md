@@ -1034,6 +1034,22 @@ AVX2-only median speedups were `decrypt_accum_only` `0.8392x`,
 the current compact accumulation; on this target the extra loads are more
 expensive than the scalar reduction and gamma multiply they replace.
 
+An AVX512-capable decrypt boundary fusion was accepted. The implementation runs
+the three decoded `u` polynomials through the existing AVX512 forward NTT head
+and lower `l3`/`l2` tail stages, then computes the final `l1` butterflies as
+base-pair values and feeds them directly into the K=3 secret accumulation. This
+avoids writing the final `ntt(u)` arrays only to reload them immediately for
+`ntt_mul_acc3()`. Native CPU 0 stage A/B against `725d515` with `RUNS=13` and
+`STAGE_ITERS=40000` showed median speedups of `decrypt_ntt_accum_only`
+`1.0420x`, `decrypt_ntt_accum_recover` `1.0423x`, and `kpke_decrypt_cached`
+`1.0462x`. Native KEM A/B with `RUNS=17` and `KEM_ITERS=50000` showed
+`mlkem_decaps` median `1.0086x` and `mlkem_decaps_core` median `1.0048x`, with
+roundtrip effectively neutral. The same fused-final shape was rejected for
+AVX2-only builds because scalarizing the final `l1` stage outweighed the saved
+stores/loads (`decrypt_ntt_accum_only` median `0.9246x`, `kpke_decrypt_cached`
+median `0.9396x`), so the production change is guarded to AVX512-capable
+builds and AVX2-only keeps the original vector tail plus scalar accumulation.
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and

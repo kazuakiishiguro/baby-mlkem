@@ -1221,6 +1221,15 @@ static uint64_t bench_decrypt_ntt_accum_only(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
+    }
+    ntt3_mul_acc3_fused_final_avx512(
+        stage_shat[lane][0], stage_tmp_vec0[lane][0], stage_shat[lane][1],
+        stage_tmp_vec0[lane][1], stage_shat[lane][2],
+        stage_tmp_vec0[lane][2], w);
+#else
     for (int j = 0; j < K; j++) {
       memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
       ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
@@ -1228,6 +1237,7 @@ static uint64_t bench_decrypt_ntt_accum_only(size_t iters) {
     ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
                  stage_shat[lane][1], stage_tmp_vec0[lane][1],
                  stage_shat[lane][2], stage_tmp_vec0[lane][2], w);
+#endif
     acc ^= checksum_poly(w);
   }
   t1 = now_ns();
@@ -1351,6 +1361,15 @@ static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
+    }
+    ntt3_mul_acc3_fused_final_avx512(
+        stage_shat[lane][0], stage_tmp_vec0[lane][0], stage_shat[lane][1],
+        stage_tmp_vec0[lane][1], stage_shat[lane][2],
+        stage_tmp_vec0[lane][2], w);
+#else
     for (int j = 0; j < K; j++) {
       memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
       ntt(stage_tmp_vec0[lane][j], stage_tmp_vec0[lane][j]);
@@ -1358,6 +1377,7 @@ static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
     ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
                  stage_shat[lane][1], stage_tmp_vec0[lane][1],
                  stage_shat[lane][2], stage_tmp_vec0[lane][2], w);
+#endif
     ntt_inv_sub_from_inplace(stage_v[lane], w);
     recover_message(w, stage_tmp_msg[lane]);
     acc ^= stage_tmp_msg[lane][(i * 23u) & 31u];

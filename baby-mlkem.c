@@ -1986,6 +1986,75 @@ static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
   }
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static void ntt_before_final_l1_avx512(poly256 f) {
+  ntt_head_avx512(f);
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    ntt_butterfly8x2_avx512(f + start, f + start + 8, f + start + 16,
+                            f + start + 24, ZETA_NTT_TAIL_L3X2[i]);
+  }
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    ntt_butterfly4x4_avx512(f + start, f + start + 4, f + start + 8,
+                            f + start + 12, f + start + 16, f + start + 20,
+                            f + start + 24, f + start + 28,
+                            ZETA_NTT_TAIL_L2X2[i]);
+  }
+}
+
+static inline void ntt_mul_acc3_pair_values(
+    const poly256 a0, uint32_t y00, uint32_t y01, const poly256 a1,
+    uint32_t y10, uint32_t y11, const poly256 a2, uint32_t y20,
+    uint32_t y21, int pair_idx, poly256 out) {
+  int idx0 = 2 * pair_idx, idx1 = idx0 + 1;
+  uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
+  uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
+  uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
+  uint32_t g = GAMMA[pair_idx];
+  uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+  uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+  uint32_t c0 = c0_lo + (c0_hi % Q) * g;
+  uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
+                x20 * y21 + x21 * y20;
+  out[idx0] = (int16_t)(c0 % Q);
+  out[idx1] = (int16_t)(c1 % Q);
+}
+
+static inline void ntt_final_l1_pair_values(poly256 f, int start,
+                                            uint16_t zeta, uint32_t out[4]) {
+  uint32_t t0 = mod_q_reduce_ntt_u32(
+      (uint32_t)zeta * (uint32_t)(uint16_t)f[start + 2]);
+  uint32_t t1 = mod_q_reduce_ntt_u32(
+      (uint32_t)zeta * (uint32_t)(uint16_t)f[start + 3]);
+  int16_t a0 = f[start + 0];
+  int16_t a1 = f[start + 1];
+  out[0] = (uint16_t)mod_q_add_i16(a0, (int16_t)t0);
+  out[1] = (uint16_t)mod_q_add_i16(a1, (int16_t)t1);
+  out[2] = (uint16_t)mod_q_sub_i16(a0, (int16_t)t0);
+  out[3] = (uint16_t)mod_q_sub_i16(a1, (int16_t)t1);
+}
+
+static void ntt3_mul_acc3_fused_final_avx512(
+    const poly256 a0, poly256 b0, const poly256 a1, poly256 b1,
+    const poly256 a2, poly256 b2, poly256 out) {
+  ntt_before_final_l1_avx512(b0);
+  ntt_before_final_l1_avx512(b1);
+  ntt_before_final_l1_avx512(b2);
+
+  int pair_idx = 0;
+  for (int start = 0, k = 64; start < N; start += 4, k++, pair_idx += 2) {
+    uint16_t zeta = ZETA[k];
+    uint32_t y0[4], y1[4], y2[4];
+    ntt_final_l1_pair_values(b0, start, zeta, y0);
+    ntt_final_l1_pair_values(b1, start, zeta, y1);
+    ntt_final_l1_pair_values(b2, start, zeta, y2);
+    ntt_mul_acc3_pair_values(a0, y0[0], y0[1], a1, y1[0], y1[1], a2,
+                             y2[0], y2[1], pair_idx, out);
+    ntt_mul_acc3_pair_values(a0, y0[2], y0[3], a1, y1[2], y1[3], a2,
+                             y2[2], y2[3], pair_idx + 1, out);
+  }
+}
+#endif
+
 static void ntt_mul_acc3_factored_gamma(const poly256 a0, const poly256 b0,
                                         const poly256 a1, const poly256 b1,
                                         const poly256 a2, const poly256 b2,
@@ -4162,12 +4231,18 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 
   /* w = v - invntt( sum_i(s-hat[i]*ntt(u[i])) ) */
   static poly256 w;
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt3_mul_acc3_fused_final_avx512(
+      kpke_secret_cache_shat[0], u[0], kpke_secret_cache_shat[1], u[1],
+      kpke_secret_cache_shat[2], u[2], w);
+#else
   for (int i = 0; i < K; i++) {
     ntt(u[i], u[i]);
   }
   ntt_mul_acc3(kpke_secret_cache_shat[0], u[0],
                kpke_secret_cache_shat[1], u[1],
                kpke_secret_cache_shat[2], u[2], w);
+#endif
   ntt_inv_sub_from_inplace(v, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
