@@ -646,6 +646,34 @@ static uint64_t bench_sample_matrix_tail(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_sample_matrix_tail_scalar(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    sample_ntt(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][2][2]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_tail_scalar_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    sample_ntt(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 #if defined(__AVX2__)
 static void stage_sample_ntt4_init(const uint8_t *seed,
                                    const uint8_t row[4],
@@ -2586,6 +2614,10 @@ int main(int argc, char **argv) {
                bench_sample_matrix_x4_batch1(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_tail",
                bench_sample_matrix_tail(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_tail_scalar",
+               bench_sample_matrix_tail_scalar(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_tail_scalar_raw",
+               bench_sample_matrix_tail_scalar_raw(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",
                bench_sample_ntt4_full_raw(iters), iters);

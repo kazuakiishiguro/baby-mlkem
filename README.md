@@ -1096,6 +1096,8 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
+| `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
+| `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three Keccak-f4 blocks, excluding stream stores |
@@ -1391,6 +1393,29 @@ individual x4 sampler lane: in this snapshot 0.835% of tail lanes needed an
 extra squeeze, with average first-pass accepts `255.974600` and minimum `247`.
 Future tail work should therefore target the lane-0 Keccak-state extraction or
 stream scratch layout, not parser bookkeeping or refill handling.
+
+A later scalar-tail comparison checked whether `sample_ntt4_one()` is still the
+right final-entry path on AVX2-only builds. It measures the current tail row, a
+forced scalar `sample_ntt()` tail with the same checksum cost, and a lightweight
+scalar raw row comparable to `sample_ntt4_one_full_raw`. Pinned CPU 0, `clang`,
+`20000`-iteration snapshots measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_sample_matrix_tail` | 702.22 |
+| native | `mlkem_core_stage_sample_matrix_tail_scalar` | 783.61 |
+| native | `mlkem_core_stage_sample_ntt4_one_full_raw` | 518.39 |
+| native | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | 597.46 |
+| AVX2-only | `mlkem_core_stage_sample_matrix_tail` | 2003.02 |
+| AVX2-only | `mlkem_core_stage_sample_matrix_tail_scalar` | 873.87 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_one_full_raw` | 1810.73 |
+| AVX2-only | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | 682.71 |
+
+This changes the tail decision by target. Native still prefers the one-lane x4
+tail, but AVX2-only wastes too much work running four identical Keccak lanes and
+then extracting only lane 0. The next implementation attempt should route the
+final `(2,2)` sample-matrix entry through scalar `sample_ntt()` for AVX2-only
+builds while preserving the current native/AVX512 path.
 
 A direct follow-up moving the smaller `sample_ntt4_one()` `stream[63]` and refill
 `extra[21]` scratch arrays from the stack to static storage was rejected. Native
