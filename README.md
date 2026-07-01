@@ -958,6 +958,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_ntt` | keygen secret/error PRF, CBD, NTT, and secret-key encode |
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
+| `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
+| `mlkem_core_stage_keygen_secret_encode_only` | isolated keygen secret-key d12 encode for the already transformed `shat` vector |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
 | `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
 | `mlkem_core_stage_keygen_accum_only` | isolated keygen public-vector `A^T*s` NTT-domain multiply-add, excluding error add and public-key encode |
@@ -1268,6 +1270,24 @@ single `v` path, so the next arithmetic work should prioritize reducing repeated
 `u`-side accumulation/inverse-NTT-add overhead before targeting `v`.
 Compression, bit-packing, and ciphertext decode/decompress remain smaller
 contributors.
+
+A later keygen secret-noise split added `keygen_noise_ntt_only` and
+`keygen_secret_encode_only` rows to separate the six forward NTTs from the
+secret-key d12 encode. Pinned CPU 0, `clang`, 50,000-iteration snapshots measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_keygen_noise_ntt_encode` | 1426.20 |
+| native | `mlkem_core_stage_keygen_noise_ntt_only` | 1391.78 |
+| native | `mlkem_core_stage_keygen_secret_encode_only` | 36.53 |
+| AVX2-only | `mlkem_core_stage_keygen_noise_ntt_encode` | 1593.04 |
+| AVX2-only | `mlkem_core_stage_keygen_noise_ntt_only` | 1546.29 |
+| AVX2-only | `mlkem_core_stage_keygen_secret_encode_only` | 36.28 |
+
+The split confirms that the remaining `keygen_noise_ntt_encode` cost is the six
+forward NTTs. Another d12 secret-key encode rewrite is unlikely to move keygen;
+future work should target forward-NTT scheduling or reusable NTT-side arithmetic
+instead.
 
 Encryption `u` accumulation split metrics were added later to separate the three
 `ntt_mul_acc3()` accumulations from the following three inverse-NTT-add paths.
