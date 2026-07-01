@@ -2661,6 +2661,35 @@ overhead, but the direction is clear: public-key d12 encode is now a small
 component, so future keygen work should target the K=3 accumulation/add
 schedule rather than another d12 encode rewrite.
 
+A follow-up K=3 three-output accumulation experiment was rejected. The candidate
+computed all three public-key columns in one `ntt_mul_acc3_cols3_factored_gamma()`
+loop, reusing `shat[0..2]` and `GAMMA[i]` loads before keeping the existing
+separate vectorized `ntt_add()` and d12 encode passes. This is the right class
+of core experiment, but the larger scalar loop increased instruction/register
+pressure enough to lose despite the operand reuse. The candidate passed native
+and AVX2-only `make test`; AVX2-only A/B was not pursued after the native stage
+regression was already clear.
+
+K=3 columns native stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=40000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected K=3 columns highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_add_only` | 403.42 | 427.99 | 0.9426x | 0.9461x |
+| `mlkem_core_stage_keygen_accum_encode` | 429.30 | 457.26 | 0.9388x | 0.9381x |
+| `mlkem_core_stage_kpke_keygen_full` | 3419.93 | 3465.87 | 0.9867x | 0.9849x |
+
+Keep the three separate `ntt_mul_acc3_factored_gamma()` calls for keygen public
+accumulation. The next keygen attempt should either reduce the per-column scalar
+critical path itself or add a vectorized accumulation path, not only coalesce the
+three output columns into one larger scalar loop.
+
 Native stage A/B command:
 
 ```bash
