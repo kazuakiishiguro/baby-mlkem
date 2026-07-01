@@ -39,6 +39,9 @@ static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
 static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u[STAGE_BENCH_LANES][K];
+#if defined(__AVX2__)
+static poly256 stage_uhead[STAGE_BENCH_LANES][K];
+#endif
 static poly256 stage_uhat[STAGE_BENCH_LANES][K];
 static poly256 stage_v[STAGE_BENCH_LANES];
 static poly256 stage_w[STAGE_BENCH_LANES];
@@ -117,6 +120,10 @@ static uint64_t checksum_poly(const poly256 p) {
   }
   return acc;
 }
+
+#if defined(__AVX2__)
+static void stage_ntt_head_avx2(poly256 f);
+#endif
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
   mlkem_recover_message(w, out);
@@ -242,6 +249,10 @@ static void derive_encrypt_lane(size_t lane) {
   for (int i = 0; i < K; i++) {
     memcpy(stage_uhat[lane][i], stage_u[lane][i], sizeof(poly256));
     ntt(stage_uhat[lane][i], stage_uhat[lane][i]);
+#if defined(__AVX2__)
+    memcpy(stage_uhead[lane][i], stage_u[lane][i], sizeof(poly256));
+    stage_ntt_head_avx2(stage_uhead[lane][i]);
+#endif
   }
   ntt_mul_acc3(stage_shat[lane][0], stage_uhat[lane][0],
                stage_shat[lane][1], stage_uhat[lane][1],
@@ -1084,6 +1095,60 @@ static uint64_t bench_decrypt_u_ntt(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__)
+static void stage_ntt_head_avx2(poly256 f) {
+  int k = 1;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k++];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
+        int16_t t = mod_q_reduce_ntt_u32(prod);
+        int16_t a = f[idx];
+        f[idx + length] = mod_q_sub_i16(a, t);
+        f[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+}
+
+static uint64_t bench_decrypt_u_ntt_head(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_u[lane][j], sizeof(poly256));
+      stage_ntt_head_avx2(stage_tmp_vec0[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_decrypt_u_ntt_tail(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_uhead[lane][j], sizeof(poly256));
+      ntt_tail_avx2(stage_tmp_vec0[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_decrypt_accum_inv(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1208,6 +1273,12 @@ int main(int argc, char **argv) {
                bench_ciphertext_decode_decompress(iters), iters);
   print_metric("mlkem_core_stage_decrypt_u_ntt", bench_decrypt_u_ntt(iters),
                iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_core_stage_decrypt_u_ntt_head",
+               bench_decrypt_u_ntt_head(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_u_ntt_tail",
+               bench_decrypt_u_ntt_tail(iters), iters);
+#endif
   print_metric("mlkem_core_stage_decrypt_accum_inv",
                bench_decrypt_accum_inv(iters), iters);
   print_metric("mlkem_core_stage_decrypt_recover_message",

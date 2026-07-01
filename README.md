@@ -774,6 +774,8 @@ stage metrics.
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
 | `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
+| `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
+| `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
 | `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
@@ -783,7 +785,10 @@ intermediates where noted. On one pinned AVX2 run with 20,000 iterations,
 `decrypt_u_ntt` measured 773.17 ns/op, `decrypt_accum_inv` measured 471.97
 ns/op, and `decrypt_recover_message` measured 6.25 ns/op. This points future
 decrypt work at forward NTT or accumulation/inverse-NTT structure rather than
-message recovery.
+message recovery. A later pinned AVX2 diagnostic split measured
+`decrypt_u_ntt_head` at 489.59 ns/op and `decrypt_u_ntt_tail` at 494.93 ns/op;
+these standalone head/tail probes include their own copy and sink overhead, so
+they should rank the two halves rather than be added back to full NTT time.
 
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
 non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a
