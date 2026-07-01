@@ -1194,6 +1194,56 @@ produce `kdash || rdash`. This removes one scalar Keccak permutation from
 cold/no-cache decapsulation and avoids a second public-key preparation pass
 inside `kpke_encrypt()`.
 
+A follow-up scratch-placement experiment for the accepted public work
+co-scheduling was rejected. The candidate moved the 504-byte tail sampler
+`stream[63]` scratch in both `sha3_256_sample_ntt_tail_avx2()` and
+`sha3_512_sample_ntt_tail_avx2()` from the stack to static storage. This was
+modeled after the accepted AVX2 x4 sampler scratch placement, but the longer
+KEM confirmation did not show a robust core win for the public-prepare path.
+
+The candidate passed native `make test`, AVX2-only `make test`, and
+`git diff --check`. The first native stage/KEM A/B was flat-to-slightly-positive
+in KEM core rows, but the longer native KEM confirmation regressed the direct
+core encapsulation/decapsulation rows, so the source was reverted.
+
+Initial native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=35000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Initial highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3609.15 | 3615.77 | 0.9982x | 0.9996x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 788.31 | 790.98 | 0.9966x | 0.9999x |
+| `mlkem_encaps_core` | 4906.71 | 4903.82 | 1.0006x | 1.0002x |
+| `mlkem_decaps_core` | 4455.22 | 4414.09 | 1.0093x | 1.0017x |
+| `mlkem_roundtrip_core` | 14764.36 | 14721.90 | 1.0029x | 1.0087x |
+
+Longer native KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected hash-tail static scratch highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 4873.94 | 4893.00 | 0.9961x | 0.9982x |
+| `mlkem_decaps_core` | 4401.07 | 4402.17 | 0.9997x | 0.9986x |
+| `mlkem_roundtrip_core` | 14622.33 | 14633.52 | 0.9992x | 0.9989x |
+| `mlkem_encaps` | 2090.68 | 2087.78 | 1.0014x | 1.0015x |
+| `mlkem_decaps` | 2916.06 | 2914.70 | 1.0005x | 0.9997x |
+
+Keep the hash-tail co-scheduling stream scratch on the stack. The accepted x4
+sampler static scratch result does not transfer cleanly to these public-prepare
+helpers; the core KEM rows are too sensitive to code/layout effects.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 message recovery)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
