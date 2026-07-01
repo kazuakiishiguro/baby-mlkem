@@ -790,6 +790,14 @@ message recovery. A later pinned AVX2 diagnostic split measured
 these standalone head/tail probes include their own copy and sink overhead, so
 they should rank the two halves rather than be added back to full NTT time.
 
+A narrow experiment replacing only the forward-NTT `log2len = 4` / length-16
+stage with two `ntt_butterfly8_avx2()` calls per block was rejected: AVX2
+stage/KEM A/B showed `decrypt_u_ntt` median speedup `0.991x`,
+`encrypt_noise_ntt` median speedup `0.990x`, and `roundtrip_core` median
+speedup `0.947x`. Future forward-NTT work should therefore redesign scheduling
+across multiple stages instead of swapping one scalar/vectorized head level in
+isolation.
+
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
 non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a
 lightweight sink, while the other breakdown metrics separate state
