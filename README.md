@@ -1075,6 +1075,50 @@ AVX512-capable core build, matching the existing `compress_poly_d{10,4}_avx2()`
 selection; AVX2-only builds keep the prior scalar/auto-vectorized path because
 that path has benchmarked better for this codebase.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
+
+Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
+commit `beac787` before the AVX2 sample parser init hoist; candidate is the
+working tree after the change. This is a core-vs-core comparison and does not
+use the vendored Kyber/PQClean AVX2 backends for the candidate path.
+
+The implementation hoists `sample_ntt_parse_init_avx2()` out of the per-lane
+`sample_ntt4()` parse calls and calls `sample_ntt_parse_stream_avx2_ready()`
+directly. This removes repeated wrapper/init checks in the AVX2-only matrix
+sampling path. It does not add caching, reuse sampled data across operations, or
+call an external backend.
+
+AVX2-only focused KEM A/B: both baseline and candidate were built with
+`ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"`, then run with `20000` iterations,
+fifteen repeated runs, two warmups, pinned to CPU 0.
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 10152.88 | 9578.06 | 1.060x | 1.047x |
+| `mlkem_keygen_core` | 10126.98 | 9554.08 | 1.060x | 1.047x |
+| `mlkem_roundtrip` | 17891.43 | 17331.09 | 1.032x | 1.035x |
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Native highlights, treated as a no-regression check rather than the target of
+this optimization:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 1896.56 | 1923.79 | 0.986x | 1.000x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 796.44 | 785.13 | 1.014x | 1.005x |
+| `mlkem_keygen` | 5287.65 | 5265.34 | 1.004x | 1.004x |
+| `mlkem_keygen_core` | 5261.66 | 5241.18 | 1.004x | 1.003x |
+
+The useful effect is AVX2-only. The native AVX512-capable KEM path already uses
+the `sample_ntt8_matrix()` path for most matrix generation, so this change is
+expected to be approximately neutral there.
+
 ### Independent Core Optimization A/B (2026-07-01, keygen tail/noise co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
