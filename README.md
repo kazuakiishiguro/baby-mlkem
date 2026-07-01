@@ -679,6 +679,15 @@ speedup in two KEM-only confirmations) and `mlkem_roundtrip` also regressed.
 This suggests future tail work must be validated through keygen/roundtrip, not
 accepted on NTT microbench or stage splits alone.
 
+A follow-up attempt kept default `ntt()` unchanged for keygen and routed only the
+encryption `rhat` and decryption `u` transforms through the block-load `l1` tail.
+This preserved the stage-level wins (`decrypt_u_ntt` median speedup `1.0426x`,
+`decrypt_u_ntt_tail` `1.0573x`, `encrypt_noise_ntt` `1.0244x`), but was also
+rejected after longer KEM confirmation: `mlkem_encaps_core` median speedup
+`0.9545x`, `mlkem_decaps_core` `0.9676x`, and `mlkem_roundtrip_core` `0.9512x`.
+The result reinforces that the block-load `l1` shape is not currently a safe
+production path even when keygen is excluded.
+
 Current scalar forward-level snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, `200000` iterations:
 
