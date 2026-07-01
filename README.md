@@ -623,7 +623,10 @@ helpers:
 |---|---|
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
-| `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared forward-NTT level, from length 128 down to length 2 |
+| `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
+| `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
+| `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
+| `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared scalar forward-NTT level, from length 128 down to length 2 |
 | `mlkem_ntt_inv` | `ntt_inv()` |
 | `mlkem_ntt_inv_level_l1` .. `mlkem_ntt_inv_level_l7` | one prepared inverse-NTT level, from length 2 up to length 128 |
 | `mlkem_ntt_inv_add` | `ntt_inv_add()` |
@@ -637,42 +640,63 @@ NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
 core arithmetic direction-finding, not ML-KEM KEM throughput results. The
 forward- and inverse-level metrics mutate a prepared input state for a single
 level; use them to rank implementation targets, not as additive replacements for
-full `ntt()` or `ntt_inv()`. The inverse-level rows time the scalar level kernel
-for direction finding; the current full inverse NTT already uses a self-contained
-AVX2 head for `l1`..`l3`.
+full `ntt()` or `ntt_inv()`. The AVX2 forward split rows measure the actual
+current full-NTT split: scalar/vectorized C upper stages followed by the
+self-contained AVX2 tail. The scalar forward-level `l2`/`l1` rows are kept only
+for direction finding and are not the implementation used by full AVX2 `ntt()`.
+The inverse-level rows also time scalar level kernels for direction finding;
+the current full inverse NTT already uses a self-contained AVX2 head for
+`l1`..`l3`.
 
-Current forward-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
-`200000` iterations:
+Current AVX2 forward split snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, `200000` iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_ntt_level_l7` | 23.99 |
-| `mlkem_ntt_level_l6` | 24.30 |
-| `mlkem_ntt_level_l5` | 24.38 |
-| `mlkem_ntt_level_l4` | 26.03 |
-| `mlkem_ntt_level_l3` | 207.78 |
-| `mlkem_ntt_level_l2` | 212.10 |
-| `mlkem_ntt_level_l1` | 225.38 |
+| `mlkem_ntt_copy` | 197.12 |
+| `mlkem_ntt_inplace` | 194.85 |
+| `mlkem_ntt_head_l7_l4` | 96.92 |
+| `mlkem_ntt_tail_avx2` | 97.37 |
+| `mlkem_ntt_tail_avx2_l3` | 26.79 |
+| `mlkem_ntt_tail_avx2_l2` | 29.18 |
+| `mlkem_ntt_tail_avx2_l1` | 41.76 |
 
-This points the next self-contained AVX2 work at the fine-grained forward NTT
-levels (`l3`..`l1`) before revisiting broad changes to the full scalar loop.
+This shows the current forward NTT is roughly balanced between the upper stages
+and the AVX2 lower tail. Within the tail, `l1` is the largest single prepared
+stage, but the earlier isolated `l4` replacement regressed KEM throughput; the
+next implementation attempt should therefore fuse multiple stages or change data
+layout instead of swapping one stage in isolation.
+
+Current scalar forward-level snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, `200000` iterations:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_ntt_level_l7` | 24.20 |
+| `mlkem_ntt_level_l6` | 24.36 |
+| `mlkem_ntt_level_l5` | 24.93 |
+| `mlkem_ntt_level_l4` | 26.20 |
+| `mlkem_ntt_level_l3` | 29.92 |
+| `mlkem_ntt_level_l2` | 231.52 |
+| `mlkem_ntt_level_l1` | 246.47 |
 
 Current inverse-level snapshot, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
 `200000` iterations:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_ntt_inv_level_l1` | 242.39 |
-| `mlkem_ntt_inv_level_l2` | 237.36 |
-| `mlkem_ntt_inv_level_l3` | 209.23 |
-| `mlkem_ntt_inv_level_l4` | 20.04 |
-| `mlkem_ntt_inv_level_l5` | 19.17 |
-| `mlkem_ntt_inv_level_l6` | 19.61 |
-| `mlkem_ntt_inv_level_l7` | 19.53 |
+| `mlkem_ntt_inv_level_l1` | 247.20 |
+| `mlkem_ntt_inv_level_l2` | 233.35 |
+| `mlkem_ntt_inv_level_l3` | 28.03 |
+| `mlkem_ntt_inv_level_l4` | 23.60 |
+| `mlkem_ntt_inv_level_l5` | 22.49 |
+| `mlkem_ntt_inv_level_l6` | 22.01 |
+| `mlkem_ntt_inv_level_l7` | 21.63 |
 
-This explains why broad AVX2 work on the remaining inverse stages (`l4`..`l7`)
-is unlikely to pay off: those scalar stage kernels are already small compared
-with the inverse head and final scale/add/sub fusion work.
+The inverse snapshot still argues against broad work on the already-small upper
+inverse stages (`l4`..`l7`). For decrypt, the larger remaining targets are the
+forward NTT split above and the fused accumulation/inverse path rather than
+message recovery or isolated scalar inverse-tail levels.
 
 ### Independent Core Keccak/Sampling Microbench (2026-06-29)
 

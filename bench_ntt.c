@@ -21,6 +21,10 @@ static poly256 bench_add1[NTT_BENCH_LANES];
 static poly256 bench_out[NTT_BENCH_LANES];
 static poly256 bench_ntt_level_work[7][NTT_BENCH_LANES];
 static poly256 bench_ntt_inv_level_work[7][NTT_BENCH_LANES];
+#if defined(__AVX2__)
+static poly256 bench_ntt_head_work[NTT_BENCH_LANES];
+static poly256 bench_ntt_tail_work[3][NTT_BENCH_LANES];
+#endif
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -100,7 +104,7 @@ static void bench_forward_ntt_level(poly256 f, int log2len, int k_start) {
     for (int j = 0; j < length; j++) {
       int idx = start + j;
       uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
-      int16_t t = (int16_t)(prod % Q);
+      int16_t t = mod_q_reduce_ntt_u32(prod);
       int16_t a = f[idx];
       f[idx + length] = mod_q_sub_i16(a, t);
       f[idx] = mod_q_add_i16(a, t);
@@ -140,6 +144,68 @@ static void prepare_ntt_level_inputs(void) {
   }
 }
 
+#if defined(__AVX2__)
+static void run_ntt_head_l7_l4(poly256 f) {
+  int k = 1;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k++];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
+        int16_t t = mod_q_reduce_ntt_u32(prod);
+        int16_t a = f[idx];
+        f[idx + length] = mod_q_sub_i16(a, t);
+        f[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+}
+
+static void run_ntt_tail_l3_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly8_avx2(f + start, f + start + 8, ZETA_NTT_TAIL_L3[i]);
+  }
+}
+
+static void run_ntt_tail_l2_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly4x2_avx2(f + start, f + start + 4,
+                          f + start + 8, f + start + 12,
+                          ZETA_NTT_TAIL_L2[i]);
+  }
+}
+
+static void run_ntt_tail_l1_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly2x4_avx2(f + start, f + start + 2,
+                          f + start + 4, f + start + 6,
+                          f + start + 8, f + start + 10,
+                          f + start + 12, f + start + 14,
+                          ZETA_NTT_TAIL_L1[i]);
+  }
+}
+
+static void prepare_ntt_split_inputs(void) {
+  poly256 cur;
+
+  ensure_ntt_roots();
+  init_inputs();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    memcpy(bench_ntt_head_work[lane], bench_a0[lane], sizeof(poly256));
+
+    memcpy(cur, bench_a0[lane], sizeof(poly256));
+    run_ntt_head_l7_l4(cur);
+    memcpy(bench_ntt_tail_work[0][lane], cur, sizeof(poly256));
+    run_ntt_tail_l3_avx2(cur);
+    memcpy(bench_ntt_tail_work[1][lane], cur, sizeof(poly256));
+    run_ntt_tail_l2_avx2(cur);
+    memcpy(bench_ntt_tail_work[2][lane], cur, sizeof(poly256));
+  }
+}
+#endif
+
 static void prepare_ntt_inv_level_inputs(void) {
   ensure_ntt_roots();
   init_inputs();
@@ -167,6 +233,20 @@ static void validate_ntt_helpers(void) {
     bench_forward_ntt_level(got, 7 - level, 1 << level);
   }
   check_equal(got, tmp, "forward ntt level sequence");
+
+#if defined(__AVX2__)
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  run_ntt_head_l7_l4(got);
+  ntt_tail_avx2(got);
+  check_equal(got, tmp, "forward ntt head/tail split");
+
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  run_ntt_head_l7_l4(got);
+  run_ntt_tail_l3_avx2(got);
+  run_ntt_tail_l2_avx2(got);
+  run_ntt_tail_l1_avx2(got);
+  check_equal(got, tmp, "forward ntt tail level sequence");
+#endif
 
   ntt_inv(tmp, got);
   check_equal(got, bench_a0[0], "ntt_inv(ntt(x))");
@@ -229,6 +309,83 @@ static uint64_t bench_ntt_inplace(size_t iters) {
   bench_ntt_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__)
+static uint64_t bench_ntt_head_l7_l4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_head_l7_l4(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 53u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_tail_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_tail_avx2(bench_ntt_tail_work[0][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[0][lane][(i * 59u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_tail_l3_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_tail_l3_avx2(bench_ntt_tail_work[0][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[0][lane][(i * 61u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_tail_l2_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_tail_l2_avx2(bench_ntt_tail_work[1][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[1][lane][(i * 67u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_tail_l1_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_tail_l1_avx2(bench_ntt_tail_work[2][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[2][lane][(i * 71u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_ntt_level(size_t iters, int level) {
   uint64_t acc = 0;
@@ -378,6 +535,16 @@ int main(int argc, char **argv) {
   printf("mlkem_ntt_bench_iterations=%zu\n", iters);
   print_metric("mlkem_ntt_copy", bench_ntt_copy(iters), iters);
   print_metric("mlkem_ntt_inplace", bench_ntt_inplace(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
+  print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);
+  print_metric("mlkem_ntt_tail_avx2_l3", bench_ntt_tail_l3_avx2(iters),
+               iters);
+  print_metric("mlkem_ntt_tail_avx2_l2", bench_ntt_tail_l2_avx2(iters),
+               iters);
+  print_metric("mlkem_ntt_tail_avx2_l1", bench_ntt_tail_l1_avx2(iters),
+               iters);
+#endif
   print_metric("mlkem_ntt_level_l7", bench_ntt_level(iters, 0), iters);
   print_metric("mlkem_ntt_level_l6", bench_ntt_level(iters, 1), iters);
   print_metric("mlkem_ntt_level_l5", bench_ntt_level(iters, 2), iters);
