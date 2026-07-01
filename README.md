@@ -1655,6 +1655,48 @@ The reciprocal-reduction idea is useful for ranges where it avoids actual
 division or 64-bit modulo, but here it adds a 64-bit multiply on the critical
 path and loses about four percent in the direct helper microbench.
 
+### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
+
+A Keccak vector-permutation experiment replacing the five-input Theta column
+parity XOR trees in `keccakf4()` and `keccakf8()` with two AVX512
+`vpternlog` three-input XOR operations was rejected. This follows a common
+SIMD/zkp-style idea of collapsing boolean networks into ternary logic, but on
+this implementation the added ternary operations did not schedule better than
+the existing XOR tree.
+
+The combined `keccakf4()`/`keccakf8()` variant passed native and AVX2-only
+`make test`, but native Keccak A/B showed the direct x4 permutation regressed:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak KECCAK_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 163.03 | 165.54 | 0.985x | 0.985x |
+| `mlkem_prf_eta2` | 187.57 | 187.70 | 0.999x | 1.001x |
+| `mlkem_sample_ntt_full` | 590.41 | 589.36 | 1.002x | 1.000x |
+
+A narrower `keccakf8()`-only variant also passed native `make test`, but native
+stage A/B did not show a useful AVX512 x8 sampler/PRF win:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=60000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 696.02 | 700.23 | 0.994x | 0.994x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 886.16 | 884.35 | 1.002x | 0.993x |
+| `mlkem_core_stage_sample_matrix` | 1887.22 | 1889.45 | 0.999x | 0.997x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 607.50 | 603.81 | 1.006x | 1.001x |
+
+Keep the explicit XOR trees in the Keccak Theta step. `vpternlog` remains useful
+for Chi (`x ^ (~y & z)`), where the implementation already uses it when
+available, but replacing parity XORs with ternary logic loses on this target.
+
 A narrow AVX2 `byte_decode_d12_avx2()` tail experiment replacing the existing
 `_mm256_maskload_epi32()` with explicit 16-byte plus 8-byte loads was rejected.
 It matched the scalar decoder on 10,000 random inputs, but stage A/B against
