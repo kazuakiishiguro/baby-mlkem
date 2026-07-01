@@ -4238,10 +4238,9 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
        - z => 32
      => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
   */
-  uint8_t h[32];
+  uint8_t *h = dk + (K * 384) + (K * 384 + 32);
   sha3_256_copy_1184(dk + (K * 384), ek_pke, h);
-  memcpy(dk + (K * 384) + (K * 384 + 32), h, 32);
-  memcpy(dk + (K * 384) + (K * 384 + 32) + 32, z, 32);
+  memcpy(h + 32, z, 32);
   if (mlkem_internal_caches_enabled) {
     mlkem_ek_hash_cache_store(ek, h);
     kpke_public_cache_generation = mlkem_ek_hash_cache_generation;

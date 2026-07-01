@@ -1432,6 +1432,46 @@ The AVX2-only averages were noisy, including unrelated encaps/decaps movement;
 the acceptance signal is the non-negative keygen median plus the simpler single
 load feeding both the copy and absorb paths.
 
+
+A follow-up top-level keygen hash-output copy cleanup was accepted. The
+candidate writes `sha3_256_copy_1184()` output directly into the `H(ek_pke)`
+field inside `dk` instead of first writing to a local `h[32]` buffer and then
+copying those 32 bytes into the secret key. The cache store now reads the hash
+from the same `dk` field. This preserves the secret-key layout and does not
+change the public-key hash computation.
+
+The candidate passed native `make test`, AVX2-only `make test`, native KEM A/B,
+and AVX2-only KEM A/B. The effect is intentionally scoped to top-level keygen;
+no claim is made for encaps/decaps rows.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted direct hash-output write highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` native | 5286.99 | 5287.06 | 1.0000x | 1.0002x |
+| `mlkem_keygen_core` native | 5264.64 | 5264.71 | 1.0000x | 1.0002x |
+| `mlkem_keygen` AVX2-only | 8945.20 | 8910.67 | 1.0039x | 1.0021x |
+| `mlkem_keygen_core` AVX2-only | 8931.12 | 8889.45 | 1.0047x | 1.0032x |
+
+This is a small copy-elision cleanup: it removes one local 32-byte hash buffer
+and one 32-byte copy in keygen, while keeping all Keccak work and output bytes
+unchanged.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
