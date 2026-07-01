@@ -723,6 +723,39 @@ must actually change representation, for example by packing same-index
 coefficients from multiple polynomials into SIMD lanes before butterfly work, not
 just by interleaving existing per-polynomial butterflies.
 
+A hand-written AVX2 forward-head experiment was also rejected. The candidate
+added precomputed `ZETA_NTT_HEAD_L7_L4` vectors and replaced the AVX2-only
+compiler-vectorized upper forward-NTT stages (`log2len = 7..4`) with an explicit
+`ntt_head_avx2()` built from repeated `ntt_butterfly8_avx2()` calls. The native
+AVX512 head path was left unchanged; the goal was to reduce the three-polynomial
+forward-NTT baseline by making the single-polynomial AVX2 head cheaper.
+
+Correctness passed native `make test`, AVX2-only `make test`, and AVX2-only
+`bench-ntt-run` validation. Direct AVX2-only NTT A/B rejected it because the
+manual helper was slower than clang's existing vectorized scalar loop in the full
+forward transform.
+
+AVX2-only A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX2 forward-head highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_copy` | 199.10 | 209.18 | 0.9518x | 0.9546x |
+| `mlkem_ntt_inplace` | 196.64 | 205.31 | 0.9578x | 0.9578x |
+| `mlkem_ntt3_inplace` | 587.87 | 616.46 | 0.9536x | 0.9547x |
+
+Keep the compiler-vectorized AVX2 upper forward-NTT loop. The next useful
+forward-NTT attempt should avoid manually re-expressing the same per-polynomial
+butterflies and instead change either the multi-polynomial representation or a
+larger fused operation around NTT.
+
 A narrow experiment replacing the `l1` tail helper's four 2-coefficient
 gather/scatter pairs with one 16-coefficient block load, dword permutes, and one
 block store was also rejected. It improved the NTT microbench
