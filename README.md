@@ -2797,6 +2797,40 @@ The reciprocal-reduction idea is useful for ranges where it avoids actual
 division or 64-bit modulo, but here it adds a 64-bit multiply on the critical
 path and loses about four percent in the direct helper microbench.
 
+### Independent Core Optimization A/B (2026-07-02, NTT accumulation Karatsuba cross term)
+
+A classic Karatsuba-style base-multiplication rewrite for `ntt_mul_acc3()` and
+`ntt_mul_acc3_factored_gamma()` was rejected. The candidate reused the already
+needed `x0*y0` and `x1*y1` products and computed each cross term as
+`(x0 + x1) * (y0 + y1) - x0*y0 - x1*y1`, reducing the apparent per-pair
+multiply count from twelve to nine. This follows the right family of classical
+finite-field multiplication optimizations, and native plus AVX2-only `make test`
+passed.
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected Karatsuba cross-term highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 90.57 | 94.09 | 0.9626x | 0.9601x |
+| `mlkem_ntt_mul_acc3_factored` | 90.86 | 96.66 | 0.9400x | 0.9393x |
+| `mlkem_ntt_copy` | 199.01 | 199.01 | 1.0000x | 1.0006x |
+| `mlkem_ntt_inplace` | 196.56 | 196.52 | 1.0002x | 1.0003x |
+
+Keep the direct schoolbook cross products in the K=3 NTT accumulation helpers.
+Here the saved integer multiplies are cheaper than the extra dependent
+add/subtract chain introduced by Karatsuba, and clang's constant-modulo lowering
+already schedules the current scalar loop well. A useful accumulation rewrite
+still needs a different representation or reduction schedule, not this local
+cross-term transform.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
