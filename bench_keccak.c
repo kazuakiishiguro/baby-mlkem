@@ -83,6 +83,91 @@ static void pack_poly3_aos4(const poly256 p0, const poly256 p1,
   }
 }
 
+#if defined(__AVX2__)
+static inline void bench_cbd_eta2_decode32_avx2(__m128i bytes,
+                                                __m256i *out0,
+                                                __m256i *out1) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  __m256i lo = cbd_eta2_canonicalize_i8x16(lo8);
+  __m256i hi = cbd_eta2_canonicalize_i8x16(hi8);
+  __m256i a = _mm256_unpacklo_epi16(lo, hi);
+  __m256i b = _mm256_unpackhi_epi16(lo, hi);
+  *out0 = _mm256_permute2x128_si256(a, b, 0x20);
+  *out1 = _mm256_permute2x128_si256(a, b, 0x31);
+}
+
+static inline void bench_store_aos4_i16x16_avx2(__m256i v0, __m256i v1,
+                                                __m256i v2,
+                                                int16_t out[16][4]) {
+  const __m256i zero = _mm256_setzero_si256();
+  __m256i ab_lo = _mm256_unpacklo_epi16(v0, v1);
+  __m256i ab_hi = _mm256_unpackhi_epi16(v0, v1);
+  __m256i cz_lo = _mm256_unpacklo_epi16(v2, zero);
+  __m256i cz_hi = _mm256_unpackhi_epi16(v2, zero);
+  __m256i q0 = _mm256_unpacklo_epi32(ab_lo, cz_lo);
+  __m256i q1 = _mm256_unpackhi_epi32(ab_lo, cz_lo);
+  __m256i q2 = _mm256_unpacklo_epi32(ab_hi, cz_hi);
+  __m256i q3 = _mm256_unpackhi_epi32(ab_hi, cz_hi);
+  int16_t *base = &out[0][0];
+  _mm256_storeu_si256((__m256i *)(base + 0),
+                      _mm256_permute2x128_si256(q0, q1, 0x20));
+  _mm256_storeu_si256((__m256i *)(base + 16),
+                      _mm256_permute2x128_si256(q2, q3, 0x20));
+  _mm256_storeu_si256((__m256i *)(base + 32),
+                      _mm256_permute2x128_si256(q0, q1, 0x31));
+  _mm256_storeu_si256((__m256i *)(base + 48),
+                      _mm256_permute2x128_si256(q2, q3, 0x31));
+}
+#endif
+
+static inline int16_t bench_cbd_eta2_scalar_value(uint32_t d, int j) {
+  int a = (int)((d >> (4 * j)) & 0x3u);
+  int b = (int)((d >> (4 * j + 2)) & 0x3u);
+  int val = a - b;
+  return (int16_t)(val < 0 ? val + Q : val);
+}
+
+static void sample_poly_cbd_eta2x3_aos4_direct(const uint8_t *data0,
+                                               const uint8_t *data1,
+                                               const uint8_t *data2,
+                                               int16_t out[N][4]) {
+#if defined(__AVX2__)
+  for (int i = 0; i < N / 32; i++) {
+    __m256i p0_lo, p0_hi, p1_lo, p1_hi, p2_lo, p2_hi;
+    bench_cbd_eta2_decode32_avx2(
+        _mm_loadu_si128((const __m128i *)(data0 + 16 * i)), &p0_lo, &p0_hi);
+    bench_cbd_eta2_decode32_avx2(
+        _mm_loadu_si128((const __m128i *)(data1 + 16 * i)), &p1_lo, &p1_hi);
+    bench_cbd_eta2_decode32_avx2(
+        _mm_loadu_si128((const __m128i *)(data2 + 16 * i)), &p2_lo, &p2_hi);
+    bench_store_aos4_i16x16_avx2(p0_lo, p1_lo, p2_lo, out + 32 * i);
+    bench_store_aos4_i16x16_avx2(p0_hi, p1_hi, p2_hi,
+                                 out + 32 * i + 16);
+  }
+  return;
+#endif
+
+  for (int i = 0; i < N / 8; i++) {
+    uint32_t t0 = load32_le(data0 + 4 * i);
+    uint32_t t1 = load32_le(data1 + 4 * i);
+    uint32_t t2 = load32_le(data2 + 4 * i);
+    uint32_t d0 = (t0 & 0x55555555u) + ((t0 >> 1) & 0x55555555u);
+    uint32_t d1 = (t1 & 0x55555555u) + ((t1 >> 1) & 0x55555555u);
+    uint32_t d2 = (t2 & 0x55555555u) + ((t2 >> 1) & 0x55555555u);
+    for (int j = 0; j < 8; j++) {
+      out[8 * i + j][0] = bench_cbd_eta2_scalar_value(d0, j);
+      out[8 * i + j][1] = bench_cbd_eta2_scalar_value(d1, j);
+      out[8 * i + j][2] = bench_cbd_eta2_scalar_value(d2, j);
+      out[8 * i + j][3] = 0;
+    }
+  }
+}
+
 static uint64_t checksum_state(const uint64_t st[25]) {
   uint64_t acc = 0x94D049BB133111EBULL;
   for (int i = 0; i < 25; i++) {
@@ -167,6 +252,26 @@ static void validate_keccakf4_matches_scalar(void) {
 }
 #endif
 
+static void validate_cbd3_aos4_matches_pack(void) {
+  uint8_t prf[3][64 * ETA2];
+  poly256 p0, p1, p2;
+  int16_t packed[N][4];
+  int16_t direct[N][4];
+
+  for (int poly = 0; poly < 3; poly++) {
+    fill_bytes(prf[poly], sizeof(prf[poly]), 0xA000u + (uint64_t)poly);
+  }
+  sample_poly_cbd(ETA2, prf[0], p0);
+  sample_poly_cbd(ETA2, prf[1], p1);
+  sample_poly_cbd(ETA2, prf[2], p2);
+  pack_poly3_aos4(p0, p1, p2, packed);
+  sample_poly_cbd_eta2x3_aos4_direct(prf[0], prf[1], prf[2], direct);
+  if (memcmp(packed, direct, sizeof(packed)) != 0) {
+    fprintf(stderr, "direct CBD AoS4 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
 static void validate_keccak_helpers(void) {
   uint8_t out0[64], out1[64];
   uint8_t prf0[64 * ETA1], prf1[64 * ETA1];
@@ -176,6 +281,7 @@ static void validate_keccak_helpers(void) {
 #if defined(__AVX2__)
   validate_keccakf4_matches_scalar();
 #endif
+  validate_cbd3_aos4_matches_pack();
   sha3_256(bench_seed32[0], sizeof(bench_seed32[0]), out0);
   pq_sha3_256(out1, bench_seed32[0], sizeof(bench_seed32[0]));
   if (memcmp(out0, out1, 32) != 0) {
@@ -393,6 +499,24 @@ static uint64_t bench_sample_poly_cbd_eta2x3_pack_aos4(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_sample_poly_cbd_eta2x3_direct_aos4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_cbd3_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sample_poly_cbd_eta2x3_aos4_direct(bench_prfout3[lane][0],
+                                       bench_prfout3[lane][1],
+                                       bench_prfout3[lane][2],
+                                       bench_cbd_aos4[lane]);
+    acc ^= (uint16_t)bench_cbd_aos4[lane][(i * 43u) & (N - 1)][i & 3u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_sample_ntt_parse(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -459,6 +583,8 @@ int main(int argc, char **argv) {
   print_metric("mlkem_cbd_eta2x3", bench_sample_poly_cbd_eta2x3(iters), iters);
   print_metric("mlkem_cbd_eta2x3_pack_aos4",
                bench_sample_poly_cbd_eta2x3_pack_aos4(iters), iters);
+  print_metric("mlkem_cbd_eta2x3_direct_aos4",
+               bench_sample_poly_cbd_eta2x3_direct_aos4(iters), iters);
   print_metric("mlkem_sample_ntt_parse", bench_sample_ntt_parse(iters), iters);
   print_metric("mlkem_sample_ntt_full", bench_sample_ntt_full(iters), iters);
   printf("mlkem_keccak_bench_sink=%llu\n",

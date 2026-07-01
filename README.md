@@ -718,17 +718,22 @@ three normal polynomial outputs have already been produced. Pinned CPU 0,
 | Build | Metric | ns/op | Extra vs CBD x3 |
 |---|---|---:|---:|
 | native | `mlkem_cbd_eta2` | 7.32 | - |
-| native | `mlkem_cbd_eta2x3` | 22.93 | - |
-| native | `mlkem_cbd_eta2x3_pack_aos4` | 39.65 | +16.72 |
-| AVX2-only | `mlkem_cbd_eta2` | 9.62 | - |
-| AVX2-only | `mlkem_cbd_eta2x3` | 29.14 | - |
-| AVX2-only | `mlkem_cbd_eta2x3_pack_aos4` | 58.90 | +29.76 |
+| native | `mlkem_cbd_eta2x3` | 22.80 | - |
+| native | `mlkem_cbd_eta2x3_pack_aos4` | 40.36 | +17.56 |
+| native | `mlkem_cbd_eta2x3_direct_aos4` | 38.77 | +15.97 |
+| AVX2-only | `mlkem_cbd_eta2` | 9.59 | - |
+| AVX2-only | `mlkem_cbd_eta2x3` | 29.66 | - |
+| AVX2-only | `mlkem_cbd_eta2x3_pack_aos4` | 59.99 | +30.33 |
+| AVX2-only | `mlkem_cbd_eta2x3_direct_aos4` | 46.24 | +16.58 |
 
 This makes the packed-layout target more specific: converting three already
-decoded CBD polynomials into AoS4 costs about 17 ns on native and 30 ns on
-AVX2-only. A serious packed K=3 NTT should therefore either save more than that
-input-side conversion cost, or avoid the conversion by decoding CBD/noise
-directly into the packed representation.
+decoded CBD polynomials into AoS4 costs about 18 ns on native and 30 ns on
+AVX2-only. Direct CBD-to-AoS4 generation cuts the AVX2-only overhead roughly in
+half, but still costs about 16 ns more than producing three normal polynomial
+outputs because the padded/interleaved AoS4 stores are heavier. A serious packed
+K=3 NTT therefore has to consume this representation directly and recover that
+input-side cost inside the transform; direct packed CBD alone is not a complete
+optimization.
 
 The useful target for a packed K=3 forward NTT is therefore not another call-site
 shuffle. It must make `mlkem_ntt3_inplace` materially lower than three independent
@@ -929,6 +934,7 @@ metrics isolate these helpers:
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
 | `mlkem_cbd_eta2x3` | three prepared ETA2 CBD decodes, matching one K=3 NTT input vector |
 | `mlkem_cbd_eta2x3_pack_aos4` | three ETA2 CBD decodes followed by pack into the diagnostic K=3 AoS4 layout |
+| `mlkem_cbd_eta2x3_direct_aos4` | direct ETA2 CBD decode of three prepared inputs into the diagnostic K=3 AoS4 layout |
 | `mlkem_sample_ntt_parse` | one `sample_ntt_parse_stream()` pass over 504 bytes |
 | `mlkem_sample_ntt_full` | full `sample_ntt()` including SHAKE128 squeezing and parsing |
 
