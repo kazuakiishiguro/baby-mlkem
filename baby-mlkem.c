@@ -3958,15 +3958,17 @@ static void mlkem_recover_message(const poly256 w, uint8_t out[32]) {
     uint32_t bits = (uint32_t)_mm512_cmpgt_epi16_mask(quarter_q, diff);
     memcpy(out + 4 * block, &bits, sizeof(bits));
   }
-#elif defined(__AVX2__) && defined(__BMI2__)
+#elif defined(__AVX2__)
   const __m256i half_q = _mm256_set1_epi16((Q + 1) / 2);
   const __m256i quarter_q = _mm256_set1_epi16((Q + 1) / 4);
+  const __m256i zero = _mm256_setzero_si256();
   for (int block = 0; block < 16; block++) {
     __m256i v = _mm256_loadu_si256((const __m256i *)(w + 16 * block));
     __m256i diff = _mm256_abs_epi16(_mm256_sub_epi16(v, half_q));
     __m256i is_one = _mm256_cmpgt_epi16(quarter_q, diff);
-    uint32_t mask = (uint32_t)_mm256_movemask_epi8(is_one);
-    uint32_t bits = _pext_u32(mask, 0x55555555u);
+    __m256i packed = _mm256_packs_epi16(is_one, zero);
+    uint32_t mask = (uint32_t)_mm256_movemask_epi8(packed);
+    uint32_t bits = (mask & 0x000000ffu) | ((mask >> 8) & 0x0000ff00u);
     out[2 * block + 0] = (uint8_t)bits;
     out[2 * block + 1] = (uint8_t)(bits >> 8);
   }

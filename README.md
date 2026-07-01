@@ -1243,6 +1243,73 @@ The effect is intentionally described as small and local: message recovery is
 only the tail of K-PKE decrypt, so full KEM movement is near benchmark noise.
 The focused decrypt stage is the defensible signal for this change.
 
+### Independent Core Optimization A/B (2026-07-01, AVX2 message recovery without BMI2 pext)
+
+Baseline is commit `021c6f7` before replacing the AVX2 message recovery bit
+packing; candidate is the working tree after changing `mlkem_recover_message()`
+from BMI2 `_pext_u32(movemask, 0x55555555)` to `packs_epi16 + movemask` bit
+collection. This is a core implementation change and does not call vendored
+Kyber/PQClean code.
+
+The AVX2 path still compares sixteen 16-bit coefficients at a time. Instead of
+extracting one bit from each 16-bit comparison result with BMI2 `pext`, it packs
+the sixteen comparison words to one byte per coefficient, takes a byte movemask,
+and combines the low and high 128-bit halves. This removes the BMI2 dependency
+from the AVX2 message recovery path and avoids `pext` on CPUs where it is not a
+cheap operation. AVX512BW builds keep the existing 32-coefficient mask path.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+
+make clean CC=clang AVX2_BACKEND=core && \
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mno-bmi2 -mno-avx512f -mno-avx512bw"
+```
+
+A temporary checker also compared `mlkem_recover_message()` against the scalar
+reference on 10,000 random polynomials.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=60000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_recover_message` | 6.03 | 5.86 | 1.028x | 1.029x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 895.96 | 889.17 | 1.008x | 1.008x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 927.00 | 927.53 | 0.999x | 0.999x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 941.23 | 941.15 | 1.000x | 1.000x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 4140.10 | 3968.62 | 1.043x | 1.001x |
+| `mlkem_decaps_core` | 8221.44 | 7918.79 | 1.038x | 1.106x |
+| `mlkem_roundtrip_core` | 26458.26 | 26546.22 | 0.997x | 0.952x |
+
+Treat the focused decrypt stage as the acceptance signal. The KEM run was noisy:
+keygen and encaps rows, which do not execute message recovery, moved
+substantially, so the roundtrip rows are not a clean signal for this narrow
+decrypt-tail change.
+
 ### Independent Core Optimization A/B (2026-07-01, ciphertext compress/pack fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
