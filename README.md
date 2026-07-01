@@ -1107,6 +1107,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three Keccak-f4 blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
+| `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
 | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional refill Keccak-f4 block plus stream stores, conditioned on groups that need refill |
 | `mlkem_core_stage_sample_ntt4_refill_step_once` | AVX2-only x4 sampler one additional refill step including Keccak/store and parsing only lanes still below 256 coefficients |
 | `mlkem_core_stage_sample_ntt4_one_full_raw` | AVX2-only one-lane x4 tail sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
@@ -1365,6 +1366,33 @@ That makes the amortized refill-step cost about 6 ns/op on native and 14 ns/op
 on AVX2-only, far below the common three-block Keccak/store path. Do not spend
 the next sampler work on refill handling unless the main three-rate path has
 already been redesigned.
+
+A later common three-rate step diagnostic measured the first `sample_ntt4()`
+phase as one unit: Keccak state init, the first three Keccak/store blocks,
+four 504-byte parses, and the refill-decision bookkeeping. Pinned CPU 0, `clang`,
+50,000-iteration snapshots:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_sample_ntt4_full_raw` | 603.61 |
+| native | `mlkem_core_stage_sample_ntt4_keccak_store3` | 501.78 |
+| native | `mlkem_core_stage_sample_ntt4_parse_504` | 151.56 |
+| native | `mlkem_core_stage_sample_ntt4_common3_step` | 657.08 |
+| native | `mlkem_core_stage_sample_ntt4_refill_step_once` | 180.82 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_full_raw` | 1350.62 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_keccak_store3` | 891.76 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_parse_504` | 117.01 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_common3_step` | 998.15 |
+| AVX2-only | `mlkem_core_stage_sample_ntt4_refill_step_once` | 420.25 |
+
+This split is also diagnostic and should not be added back to `full_raw`, but
+the AVX2-only row is useful: `common3_step` is within about 11 ns of
+`keccak_store3 + parse_504`, so there is no large hidden bookkeeping gap before
+the refill loop. The remaining sampler target is still the Keccak/state
+representation or a larger common-path redesign, not NAF-style sparse
+bookkeeping or another narrow refill-control tweak. The native `common3_step`
+row overmeasures `full_raw`, so use it only as a reminder that these probes are
+layout-sensitive.
 
 A later one-lane tail diagnostic split measured the `sample_ntt4_one()` path
 used for the final public-matrix entry `(2,2)`. These rows are diagnostic and

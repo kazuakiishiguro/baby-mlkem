@@ -825,6 +825,44 @@ static uint64_t bench_sample_ntt4_parse_504(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_sample_ntt4_common3_step(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  sample_ntt_parse_init_avx2();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    int count[4];
+    int need_more = 0;
+    int16_t *outs[4] = {stage_tmp_ahat[lane][0][0],
+                        stage_tmp_ahat[lane][0][1],
+                        stage_tmp_ahat[lane][0][2],
+                        stage_tmp_ahat[lane][1][0]};
+
+    stage_sample_ntt4_init(stage_rho[lane], row, col, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4(st);
+      sample_ntt4_store_block(stage_tmp_sample_stream[lane],
+                              (size_t)block * 168, st);
+    }
+    for (int j = 0; j < 4; j++) {
+      count[j] = sample_ntt_parse_stream_avx2_ready(
+          stage_tmp_sample_stream[lane][j], 504, outs[j], 0);
+      need_more |= count[j] < N;
+    }
+
+    acc ^= (uint64_t)(count[0] + 3 * count[1] + 5 * count[2] + 7 * count[3]);
+    acc ^= (uint64_t)(unsigned)need_more;
+    acc ^= (uint16_t)outs[i & 3u][0];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static void stage_prepare_sample_ntt4_refill_cases(void) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -2629,6 +2667,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
                bench_sample_ntt4_parse_504(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_common3_step",
+               bench_sample_ntt4_common3_step(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_refill_keccak_store1",
                bench_sample_ntt4_refill_keccak_store1(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_refill_step_once",
