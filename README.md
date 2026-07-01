@@ -1472,6 +1472,48 @@ This is a small copy-elision cleanup: it removes one local 32-byte hash buffer
 and one 32-byte copy in keygen, while keeping all Keccak work and output bytes
 unchanged.
 
+
+An encapsulation SHA3-512 split-output experiment was rejected. The candidate
+kept the existing `m || H(ek)` 64-byte input buffer, but added a local
+`sha3_512_64_split_output()` helper that wrote the first 32 output bytes
+directly to the shared secret `k` and the second 32 bytes to the local `r`
+buffer, instead of writing `ghash[64]` and then copying `ghash[0..31]` to `k`.
+This is an output-copy elision only; it does not change the SHA3-512 input or
+permutation count.
+
+The candidate passed native `make test` and AVX2-only `make test`, but the
+native encapsulation core row was flat-to-negative and the AVX2-only KEM run
+moved sharply negative. The source change was reverted.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected SHA3-512 split-output highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` native | 2085.26 | 2084.42 | 1.0004x | 1.0001x |
+| `mlkem_encaps_core` native | 4930.13 | 4902.98 | 1.0055x | 0.9994x |
+| `mlkem_roundtrip_core` native | 14712.19 | 14626.89 | 1.0058x | 1.0019x |
+| `mlkem_encaps` AVX2-only | 3010.63 | 3045.25 | 0.9886x | 0.9994x |
+| `mlkem_encaps_core` AVX2-only | 8970.65 | 9546.21 | 0.9397x | 0.8380x |
+
+Keep the existing `ghash[64]` path in `mlkem_encaps()`. Avoiding the final
+32-byte copy is not enough to offset the extra helper/codegen shape, and the
+AVX2-only run does not support adoption.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
