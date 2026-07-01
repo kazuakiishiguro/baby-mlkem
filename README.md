@@ -964,6 +964,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_decode_decompress` | ciphertext DU/DV decode and decompression |
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | isolated ciphertext DU=10 decode/decompression for the three `u` polynomials, with lightweight sink |
+| `mlkem_core_stage_ciphertext_decode_decompress_d4` | isolated ciphertext DV=4 decode/decompression for the `v` polynomial, with lightweight sink |
 | `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
@@ -1178,6 +1180,23 @@ single `v` path, so the next arithmetic work should prioritize reducing repeated
 `u`-side accumulation/inverse-NTT-add overhead before targeting `v`.
 Compression, bit-packing, and ciphertext decode/decompress remain smaller
 contributors.
+
+Ciphertext decode/decompress split metrics were added later to separate the
+three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
+split rows use lightweight sinks, so they are diagnostic and should not be added
+back to the historical combined row, which keeps its existing checksum shape.
+A pinned AVX2-only, `clang`, `BENCH_STAGES_ITERS=50000` snapshot measured:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress` | 220.13 |
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 29.27 |
+| `mlkem_core_stage_ciphertext_decode_decompress_d4` | 7.14 |
+
+The split confirms that future ciphertext decode/decompress work should target
+the three `DU = 10` decoders first. The `DV = 4` component is already small, and
+previous d4 shift/add and inverse-subtraction fusion experiments did not survive
+stage/KEM confirmation.
 
 ### Independent Core Local A/B Runner
 

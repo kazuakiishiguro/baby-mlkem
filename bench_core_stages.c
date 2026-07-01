@@ -1184,6 +1184,39 @@ static uint64_t bench_ciphertext_decode_decompress(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ciphertext_decode_decompress_d10(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    const uint8_t *p = stage_ct[lane];
+    for (int j = 0; j < K; j++) {
+      decompress_decode_poly(DU, p, stage_tmp_vec0[lane][j]);
+      p += (N * DU) / 8;
+    }
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ciphertext_decode_decompress_d4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    const uint8_t *p = stage_ct[lane] + K * ((N * DU) / 8);
+    decompress_decode_poly(DV, p, stage_tmp_poly[lane]);
+    acc ^= (uint16_t)stage_tmp_poly[lane][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_decrypt_u_ntt(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1543,6 +1576,10 @@ int main(int argc, char **argv) {
                bench_ciphertext_compress_encode(iters), iters);
   print_metric("mlkem_core_stage_ciphertext_decode_decompress",
                bench_ciphertext_decode_decompress(iters), iters);
+  print_metric("mlkem_core_stage_ciphertext_decode_decompress_d10",
+               bench_ciphertext_decode_decompress_d10(iters), iters);
+  print_metric("mlkem_core_stage_ciphertext_decode_decompress_d4",
+               bench_ciphertext_decode_decompress_d4(iters), iters);
   print_metric("mlkem_core_stage_decrypt_u_ntt", bench_decrypt_u_ntt(iters),
                iters);
 #if defined(__AVX2__)
