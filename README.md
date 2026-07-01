@@ -2375,6 +2375,38 @@ rejected: it made `mlkem_core_stage_encrypt_accum_inv_u` slower in A/B. The
 accepted version therefore limits batching to the AVX512 tail and scale/add
 part, where it measured consistently useful without changing AVX2-only behavior.
 
+A follow-up native AVX512 output-fusion variant was rejected. The candidate kept
+the accepted three-way `u` accumulation and inverse-tail batching, but changed
+the final scale/add loop to feed each 16-coefficient vector directly into the
+`DU = 10` compress/encode packer instead of storing the three `u` polynomials
+and reading them back during ciphertext packing. AVX2-only builds kept the
+existing path. It passed native and AVX2-only `make test`, but full encryption
+and KEM rows regressed.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=90000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX512 inverse-add3-to-d10-encode fusion A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 53.74 | 53.69 | 1.0010x | 1.0007x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 893.21 | 892.05 | 1.0013x | 1.0013x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1894.99 | 1942.46 | 0.9756x | 0.9892x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3674.94 | 3690.89 | 0.9957x | 0.9935x |
+| `mlkem_encaps` | 2115.86 | 2140.71 | 0.9884x | 0.9879x |
+| `mlkem_encaps_core` | 4908.92 | 4928.75 | 0.9960x | 0.9947x |
+| `mlkem_roundtrip_core` | 14715.50 | 14786.06 | 0.9952x | 0.9977x |
+
+Keep materializing the three `u` polynomials before ciphertext packing. The
+extra store/load pair is cheaper than coupling the final inverse-NTT scale/add
+loop with the dense d10 packer; the fused version likely increases register and
+port pressure in the already-heavy encryption path.
+
 ### Independent Core Optimization A/B (2026-07-01, e2/message fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
