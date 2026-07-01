@@ -1599,6 +1599,56 @@ Keep the simpler hash cache that owns its input copy. The duplicate 1184-byte
 copy in keygen is measurable in isolation, but avoiding it makes cache-hit
 validation more complex and does not produce stable KEM wins.
 
+
+A decapsulation re-encryption compare-folding experiment was rejected. The
+candidate added AVX2-only `compress_encode_poly_d10_cmp_avx2()` and
+`compress_encode_poly_d4_cmp_avx2()` helpers, refactored
+`kpke_encrypt_prepared_public()` behind an internal compare-capable helper, and
+used that path in `mlkem_decaps()` only for the fixed-size no-cache
+`public_prepared && clen == CT_BYTES` case. The intended direct effect was to
+avoid writing `cdash[1088]` and then calling `memcmp(c, cdash, clen)` during the
+Fujisaki-Okamoto re-encryption check; the encode path instead accumulated XOR
+differences against the input ciphertext.
+
+The candidate passed native `make test` and AVX2-only `make test`, but the KEM
+signal was not stable enough to justify the extra code and the write-path
+refactor. Native `mlkem_decaps_core` was only a `1.0007x` median speedup while
+`mlkem_roundtrip_core` regressed. AVX2-only confirmation was contradictory: one
+run showed a large decapsulation-core win, but the repeat regressed decapsulation
+and roundtrip core. The source change was reverted.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected decaps compare-folding highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps_core` native | 4422.66 | 4418.69 | 1.0009x | 1.0007x |
+| `mlkem_roundtrip_core` native | 14686.13 | 14673.36 | 1.0009x | 0.9985x |
+| `mlkem_decaps_core` AVX2-only run 1 | 8687.19 | 8224.53 | 1.0563x | 1.0852x |
+| `mlkem_roundtrip_core` AVX2-only run 1 | 26980.03 | 26570.11 | 1.0154x | 1.0174x |
+| `mlkem_decaps_core` AVX2-only run 2 | 8360.58 | 8570.16 | 0.9755x | 0.9843x |
+| `mlkem_roundtrip_core` AVX2-only run 2 | 26463.55 | 26788.76 | 0.9879x | 0.9621x |
+
+Keep the current `cdash[CT_BYTES]` plus `memcmp()` path. Avoiding the 1088-byte
+store does not produce a reproducible KEM win, and folding the comparison into
+AVX2 final encode adds enough codegen/layout risk that it should not be treated
+as a core optimization target unless a future design avoids perturbing the normal
+write path and proves stable across repeated KEM runs.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
