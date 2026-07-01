@@ -1160,6 +1160,41 @@ median speedup `0.999x`, `mlkem_core_stage_sample_matrix` median speedup
 `1.002x`), which is expected: the optimization targets the full KEM no-cache
 encapsulation sequence, not standalone `kpke_encrypt()`.
 
+A follow-up public-prepare scheduling experiment was rejected. The candidate
+kept the accepted no-cache encapsulation co-schedule, but reordered
+`kpke_prepare_public_no_cache()` from
+`byte_decode(pk) -> sample_matrix(rho) -> H(pk)+tail` to
+`byte_decode(pk) -> H(pk)+tail -> sample_matrix(rho)`. The intent was to keep
+the second read of the public-key bytes for `H(pk)` close to the d12 decode,
+instead of separating them with the expensive public-matrix sampler. This is a
+reasonable cache-locality/dataflow idea, but the native KEM confirmation was
+flat and did not justify changing the established public-prepare order.
+
+The candidate passed native `make test`, AVX2-only `make test`, and
+`git diff --check`. Because the native `encaps_core` row was effectively flat
+and `roundtrip_core` moved slightly negative, no AVX2-only A/B was run.
+
+Native KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected public-prepare reorder highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 4910.31 | 4906.60 | 1.0008x | 1.0001x |
+| `mlkem_roundtrip_core` | 14645.42 | 14680.65 | 0.9976x | 0.9993x |
+| `mlkem_decaps_core` | 4394.02 | 4425.76 | 0.9928x | 0.9991x |
+| `mlkem_encaps` | 2090.94 | 2088.58 | 1.0011x | 1.0008x |
+| `mlkem_decaps` | 2910.19 | 2912.77 | 0.9991x | 0.9998x |
+
+Keep `kpke_prepare_public_no_cache()` in decode, matrix-sample, then hash-tail
+order. The extra locality from adjacent decode/hash public-key reads is too
+small next to the sampler and K-PKE arithmetic costs.
+
 ### Independent Core Optimization A/B (2026-07-01, no-cache decaps public work co-scheduling)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
