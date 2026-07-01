@@ -2987,6 +2987,35 @@ direct `sample_ntt4_store_rate` median speedup regressed to `0.9948x` and
 `sample_ntt4_keccak_store3` median speedup regressed to `0.9985x`; keep the
 existing local `last[4]` store in `sample_ntt4_store_rate()`.
 
+A fixed-loop unroll of `sample_ntt4_store_rate()` was also rejected. The
+candidate replaced the `for (lane = 0; lane < 20; lane += 4)` loop with five
+explicit `sample_ntt4_store4x4()` calls at offsets 0, 32, 64, 96, and 128,
+leaving the final local `last[4]` store unchanged. Native and AVX2-only
+`make test` passed, but the AVX2-only stage A/B did not show a direct store or
+full-sampler win.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected store-rate unroll highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.62 | 7.64 | 0.9971x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 825.93 | 826.26 | 0.9996x | 1.0002x |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 124.98 | 126.23 | 0.9902x | 0.9979x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1543.85 | 1520.01 | 1.0157x | 0.9936x |
+| `mlkem_core_stage_sample_matrix` | 4819.57 | 4750.04 | 1.0146x | 1.0015x |
+
+Keep the compact loop in `sample_ntt4_store_rate()`. The compiler already
+handles the fixed five-iteration loop well enough, and source-level unrolling
+adds code size/layout pressure without improving the integrated x4 sampler.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 forward NTT tail l2)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
