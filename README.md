@@ -2095,6 +2095,27 @@ is intentionally described as small because this changes only one forward NTT
 tail stage; the useful outcome is a local 512-bit butterfly without relying on
 vendored external arithmetic code.
 
+A follow-up AVX512 l1 two-block experiment was rejected. The candidate added an
+`ntt_butterfly2x8_avx512()` helper for the final length-2 forward NTT tail
+stage, passed native `make test` plus short `bench-ntt-run` validation, but the
+direct NTT A/B regressed badly:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_tail_avx2_l1` | 38.50 | 47.84 | 0.805x | 0.804x |
+| `mlkem_ntt_tail_avx2` | 93.76 | 102.10 | 0.918x | 0.918x |
+| `mlkem_ntt_inplace` | 170.09 | 177.22 | 0.960x | 0.959x |
+| `mlkem_ntt_copy` | 172.33 | 178.93 | 0.963x | 0.963x |
+
+Keep l1 on the existing AVX2 helper. At length 2, the extra gather/pack/scatter
+work needed to fill 16 AVX512 lanes costs more than the wider multiply/reduce
+saves.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 sample_ntt8 static stream scratch)
 
 A native AVX512 follow-up that moved `sample_ntt8_matrix()`'s `uint8_t
