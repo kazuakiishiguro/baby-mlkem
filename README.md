@@ -697,6 +697,44 @@ clang vectorization hint as `ntt()`, pinned stage A/B regressed the target rows:
 `0.9895x`. Simple loop interleaving therefore is not enough; any future K=3 NTT
 work needs real cross-polynomial vector packing or a different data layout.
 
+A forward-NTT in-place wrapper split was also rejected. The candidate split the
+body of `ntt()` into `ntt_inplace(poly256 f)`, left `ntt(in, out)` as a copy plus
+`ntt_inplace(out)`, and routed the production hot-path `ntt(x, x)` calls plus the
+in-place NTT/stage benchmark rows through the explicit helper. The intended
+effect was to remove the alias check and copy-shape ambiguity from keygen,
+encapsulation, and decapsulation forward transforms without changing any
+butterfly arithmetic.
+
+Correctness passed for native `make test`, AVX2-only `make test`, and short
+native/AVX2-only `bench-ntt-run` validation, but A/B did not justify adoption.
+Native NTT/stage was effectively flat and AVX2-only regressed the direct
+encryption NTT stage. Because this is only a call-shape refactor, not a real
+multi-stage/data-layout improvement, the source change was reverted.
+
+A/B command shape:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected in-place wrapper split highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inplace` native | 171.08 | 172.19 | 0.9936x | 1.0004x |
+| `mlkem_core_stage_encrypt_noise_ntt` native | 695.31 | 689.31 | 1.0087x | 1.0051x |
+| `mlkem_core_stage_decrypt_u_ntt` native | 689.96 | 688.54 | 1.0021x | 1.0010x |
+| `mlkem_ntt_inplace` AVX2-only | 196.55 | 196.51 | 1.0002x | 1.0005x |
+| `mlkem_core_stage_encrypt_noise_ntt` AVX2-only | 776.84 | 789.50 | 0.9840x | 0.9824x |
+| `mlkem_core_stage_decrypt_u_ntt` AVX2-only | 789.13 | 789.20 | 0.9999x | 1.0006x |
+
+Keep the existing `ntt()` wrapper. Future forward-NTT work should change the data
+movement inside the transform, not merely expose the current in-place shape.
+
 Current scalar forward-level snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, `200000` iterations:
 
