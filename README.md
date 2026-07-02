@@ -1287,6 +1287,44 @@ format; it removes the avoidable stream materialization in the two-output ETA2
 path and keeps the optimized helper behind a call boundary so the larger keygen
 and KEM code layout remains stable.
 
+A follow-up AVX2 keygen PRF/CBD composition experiment was rejected. The
+candidate replaced the current keygen `x4(0,1,2,3) + x2(4,5)` split with
+`x3(0,1,2) + x3(3,4,5)`, reusing the already direct-state x3 helper for both
+batches. The goal was to remove the remaining two-output helper call and use a
+more uniform three-output decode/store shape without changing Keccak count,
+nonce order, CBD math, or output polynomials.
+
+Correctness passed the AVX2 gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 C_COMPILER=clang \
+  PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected x3+x3 composition highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 965.88 | 966.37 | 0.9995x | 0.9992x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1985.39 | 1988.06 | 0.9987x | 0.9987x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1588.93 | 1590.98 | 0.9987x | 0.9975x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1544.19 | 1555.48 | 0.9927x | 0.9968x |
+| `mlkem_core_stage_kpke_keygen_full` | 4812.81 | 4824.78 | 0.9975x | 1.0003x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4154.61 | 4180.03 | 0.9939x | 0.9953x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1174.40 | 1151.40 | 1.0200x | 1.0200x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2431.29 | 2419.58 | 1.0048x | 1.0054x |
+
+Keep keygen on the accepted `x4 + noinline x2` composition. The apparent
+positive movement in unrelated encryption rows is code-layout noise; the direct
+keygen noise rows are neutral-to-negative, so KEM confirmation was skipped.
+
 ### Independent Core Stage Microbench (2026-06-29)
 
 Use the stage microbench to decide where vendor-free core work should go next.
