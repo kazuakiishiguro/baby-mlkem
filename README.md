@@ -1262,7 +1262,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
 | `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three production Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
-| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional production `keccakf4_mem()` refill block plus stream stores, conditioned on groups that need refill |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional production register `keccakf4()` refill block plus stream stores, conditioned on groups that need refill |
 | `mlkem_core_stage_sample_ntt4_refill_step_once` | AVX2-only x4 sampler one additional refill step including Keccak/store and parsing only lanes still below 256 coefficients |
 | `mlkem_core_stage_sample_ntt4_one_full_raw` | AVX2-only one-lane x4 tail sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_one_keccak_store3` | AVX2-only one-lane x4 tail sampler initial three Keccak-f4 blocks plus lane-0 stream stores |
@@ -4851,6 +4851,80 @@ matrix generation, and KEM core rows regress. This confirms that future
 `keccakf4_mem()` work must be accepted on `sample_ntt4_full_raw`, x4 batch,
 `sample_matrix`, and KEM rows, not on isolated split rows that have a different
 caller context.
+
+
+### Latest Core Optimization A/B (2026-07-02, AVX2 sample_ntt4 refill register Keccak)
+
+The AVX2-only `sample_ntt4()` common first three SHAKE128 blocks still use the
+accepted memory-resident `keccakf4_mem()` path, but refill blocks now switch back
+to the register-resident `keccakf4()` path. The common path benefits from the
+memory-resident shape because three permutations sit next to stream storage and
+parsing in the full sampler. The refill path is different: it runs only after the
+initial 504-byte streams leave at least one lane short, so the smaller
+register-resident permutation wins enough in the rare-path continuation without
+changing PRF/CBD or direct Keccak users.
+
+The stage harness was aligned so `sample_ntt4_refill_keccak_store1` and
+`sample_ntt4_refill_step_once` now measure the same register-resident refill
+Keccak used by production. Initial x4 sampler split rows still measure
+`keccakf4_mem()` because the first three production blocks still use that shape.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 297.58 | 282.95 | 1.0517x | 1.0509x |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 317.36 | 308.63 | 1.0283x | 1.0285x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 971.67 | 966.83 | 1.0050x | 1.0060x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1158.49 | 1154.95 | 1.0031x | 1.0037x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1233.73 | 1225.01 | 1.0071x | 1.0069x |
+| `mlkem_core_stage_sample_matrix` | 2906.54 | 2881.47 | 1.0087x | 1.0073x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4249.94 | 4231.64 | 1.0043x | 1.0031x |
+| `mlkem_core_stage_kpke_keygen_full` | 4915.07 | 4927.61 | 0.9975x | 1.0041x |
+
+AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 7081.03 | 7023.34 | 1.0082x | 1.0025x |
+| `mlkem_keygen_core` | 7043.74 | 7002.41 | 1.0059x | 1.0019x |
+| `mlkem_encaps` | 2694.37 | 2686.61 | 1.0029x | 1.0026x |
+| `mlkem_encaps_core` | 7072.07 | 7117.90 | 0.9936x | 1.0015x |
+| `mlkem_decaps_core` | 6426.20 | 6518.19 | 0.9859x | 1.0023x |
+| `mlkem_roundtrip` | 13495.03 | 13445.29 | 1.0037x | 1.0023x |
+| `mlkem_roundtrip_core` | 20669.01 | 20761.17 | 0.9956x | 1.0026x |
+
+Decision: accept the refill-only register Keccak path. Do not revert the common
+three-block `sample_ntt4()` path back to register-resident Keccak; that was the
+pre-`keccakf4_mem()` shape and lost badly in the full sampler. The useful split
+is asymmetric: memory-resident Keccak for the dense common three-block sampler,
+register-resident Keccak for the occasional one-block refill continuation.
 
 
 No-cache encapsulation public-prepare diagnostic:

@@ -1103,7 +1103,7 @@ static uint64_t bench_sample_ntt4_refill_keccak_store1(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
-    keccakf4_mem(stage_tmp_sample_refill_st[lane]);
+    keccakf4(stage_tmp_sample_refill_st[lane]);
     sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
                            stage_tmp_sample_stream[lane][1],
                            stage_tmp_sample_stream[lane][2],
@@ -1128,7 +1128,7 @@ static uint64_t bench_sample_ntt4_refill_step_once(size_t iters) {
       count[j] = stage_tmp_sample_refill_count[lane][j];
     }
 
-    keccakf4_mem(stage_tmp_sample_refill_st[lane]);
+    keccakf4(stage_tmp_sample_refill_st[lane]);
     sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
                            stage_tmp_sample_stream[lane][1],
                            stage_tmp_sample_stream[lane][2],

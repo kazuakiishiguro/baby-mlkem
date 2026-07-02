@@ -3055,7 +3055,7 @@ static void sample_ntt4(const uint8_t *seed,
 
   while (need_more) {
     uint8_t extra[4][168];
-    keccakf4_mem(st);
+    keccakf4(st);
     sample_ntt4_store_rate(extra[0], extra[1], extra[2], extra[3], st);
     need_more = 0;
     for (int lane = 0; lane < 4; lane++) {
