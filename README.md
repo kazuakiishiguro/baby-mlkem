@@ -5413,6 +5413,49 @@ sampler change still needs to improve full `sample_matrix()`, public-prepare,
 keygen, and KEM medians.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sampler restrict qualifiers)
+
+A narrow alias-information experiment was rejected. The candidate changed only
+AVX2 sampler/parser/store signatures around `sample_ntt_parse_stream_avx2_ready()`,
+`sample_ntt4_store*()`, and `sample_ntt4()` to use C99 `restrict`-qualified
+stream and output pointers. The goal was to tell clang that the four output
+polynomials and stream rows are independent, without changing Keccak, rejection
+parsing, stream layout, or produced samples.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected restrict highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2808.13 | 2805.64 | 1.0009x | 0.9993x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 932.82 | 931.89 | 1.0010x | 0.9995x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 992.16 | 993.84 | 0.9983x | 0.9985x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 876.22 | 876.95 | 0.9992x | 0.9995x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4159.92 | 4154.12 | 1.0014x | 1.0006x |
+| `mlkem_core_stage_kpke_keygen_full` | 4820.14 | 4801.71 | 1.0038x | 1.0018x |
+
+Decision: keep the sampler signatures unchanged. The restrict-only source change
+does not move the direct sampler rows robustly, and the full `sample_matrix()`
+median is slightly negative. The small public-prepare/keygen movement is not a
+defensible production signal without a sampler median win. Future sampler work
+needs to change real state/dataflow, not only pointer alias annotations.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
 
 A bench-only AVX2 sampler diagnostic now measures the cost of replacing one
