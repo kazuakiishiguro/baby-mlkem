@@ -5210,6 +5210,51 @@ code layout or memory scheduling enough to erase any stack-frame benefit. Do not
 move this scratch to static storage unless a future broader `sample_ntt4()` layout
 change changes the surrounding store path.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` local scratch alignment)
+
+A narrower scratch-placement experiment was rejected. The candidate kept the
+accepted stack-local ping-pong scratch in `keccakf4_mem()`, but changed the local
+`__m256i e[25]` array to `__attribute__((aligned(32)))`. This tested whether
+explicit stack alignment could improve the memory-resident Keccak path without
+introducing a static object, changing the permutation schedule, or altering the
+stream/parser layout.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected local-alignment highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 825.63 | 826.01 | 0.9995x | 0.9999x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 875.19 | 875.03 | 1.0002x | 1.0007x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 995.27 | 993.48 | 1.0018x | 1.0022x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 930.59 | 931.87 | 0.9986x | 0.9995x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1112.52 | 1113.76 | 0.9989x | 0.9999x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1182.82 | 1186.78 | 0.9967x | 1.0002x |
+| `mlkem_core_stage_sample_matrix` | 2807.25 | 2803.83 | 1.0012x | 1.0016x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4150.94 | 4170.55 | 0.9953x | 0.9992x |
+| `mlkem_core_stage_kpke_keygen_full` | 4798.52 | 4807.93 | 0.9980x | 0.9989x |
+
+Decision: keep the plain local `__m256i e[25]` scratch in `keccakf4_mem()`. The
+explicit alignment hint does not improve the direct Keccak split and slightly
+weakens the full sampler/public-prepare/keygen rows. This confirms that the
+remaining sampler work must change the state dataflow itself; local scratch
+placement hints are too small after the accepted ping-pong copy elision.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `keccakf4_mem()` two-round schedule)
 
 A second follow-up after the accepted ping-pong copy elision was rejected. The
