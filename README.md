@@ -7965,6 +7965,51 @@ regression. The result also reinforces the current sampler direction: useful
 wins come from filling otherwise unused Keccak SIMD lanes with real independent
 work, not from cache reuse, parser bookkeeping, or rare-path scratch placement.
 
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 encrypt PRF/tail noinline)
+
+A follow-up AVX2-only call-boundary experiment on the same encrypt PRF/tail
+co-schedule was rejected. The candidate changed only
+`mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2()` from a normal `static` helper
+to `MLKEM_NOINLINE`, leaving the Keccak lane filling, lane-2 tail extraction,
+scalar tail continuation, parser, and output values unchanged. The hypothesis was
+that keeping this large mixed PRF/tail helper out of the `kpke_encrypt()` cache
+miss body might reduce caller code pressure, analogous to prior accepted and
+rejected boundary cleanups.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected encrypt PRF/tail noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1119.59 | 1121.28 | 0.9985x | 0.9998x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1172.57 | 1171.36 | 1.0010x | 1.0011x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4901.23 | 4889.08 | 1.0025x | 1.0002x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2417.06 | 2424.25 | 0.9970x | 0.9976x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4167.18 | 4167.72 | 0.9999x | 1.0004x |
+| `mlkem_core_stage_sample_matrix` | 2804.08 | 2802.15 | 1.0007x | 1.0003x |
+
+Decision: keep the encrypt PRF/tail co-schedule helper inlineable. The direct
+co-scheduled row does not improve, and the tiny uncached-encrypt median movement
+is not supported by a clear target-row win. No KEM confirmation was run because
+the stage gate failed. Future work at this boundary should add real lane-filled
+work or remove a Keccak/state extraction, not only move the function boundary.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
