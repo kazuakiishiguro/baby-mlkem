@@ -5575,6 +5575,61 @@ is not a reliable full-path improvement for the current prepared-noise encrypt
 shape.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 manual `ntt_mul_acc3()` lane vectorization)
+
+A manual AVX2 rewrite of `ntt_mul_acc3()` was rejected. The candidate processed
+8 base-multiplication pairs at a time by loading each adjacent coefficient pair
+as one 32-bit lane, splitting low/high 16-bit halves, multiplying in 32-bit
+lanes, and interleaving the final `c0,c1` outputs. Because production encrypt
+and decrypt feed lazy NTT multiply inputs in the `[0, 2Q)` range, the candidate
+first canonicalized each lane with a single subtract. It also had to reduce each
+individual 16-bit product before summing: the existing reciprocal reducer uses a
+32-bit `x * 315` product and is only safe for single-product ranges, not for
+three-product or six-product accumulated sums.
+
+Correctness checks:
+
+```bash
+# Temporary scalar-reference diagnostic over random [0, 2Q) inputs.
+clang -I. -D_GNU_SOURCE -O2 -Wall -Wextra -Wno-unused-function -std=c99 \
+  -mavx2 -mbmi2 -mpopcnt /tmp/check_acc3.c -o /tmp/check_acc3 && \
+  /tmp/check_acc3
+
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage+KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_u_only` | 442.36 | 794.88 | 0.5565x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1323.63 | 1802.24 | 0.7344x |
+| `mlkem_core_stage_decrypt_accum_only` | 267.77 | 393.87 | 0.6798x |
+| `mlkem_core_stage_decrypt_ntt_accum_only` | 860.24 | 991.14 | 0.8679x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2419.90 | 2917.36 | 0.8295x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 905.52 | 1025.25 | 0.8832x |
+| `mlkem_encaps` | 2685.15 | 3185.62 | 0.8429x |
+| `mlkem_decaps` | 3634.82 | 4218.68 | 0.8616x |
+| `mlkem_roundtrip_core` | 20092.34 | 21191.32 | 0.9481x |
+
+Decision: keep the compact scalar `ntt_mul_acc3()` source shape for AVX2. A
+local SIMD rewrite loses because correctness with lazy multiply inputs requires
+extra canonicalization and per-product modular reductions; those costs dominate
+the lane parallelism. A future SIMD accumulation attempt needs a broader packed
+representation where multiply inputs are already canonical and arranged for the
+accumulator, not a drop-in replacement around the current scalar helper.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
