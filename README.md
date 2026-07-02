@@ -4726,6 +4726,54 @@ change. This is another instance where `keccakf4()` itself benefits from boundar
 removal, but surrounding decode helpers should stay compiler-shaped unless the
 keygen rows move with the local stage.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 fixed matrix batches)
+
+An AVX2-only public-matrix sampler specialization was rejected. The candidate
+split `sample_ntt4()` into an internal helper taking a prebuilt `st[4]` Keccak
+lane and routed the two fixed public-matrix x4 batches through wrappers with
+constant lane values. The generic `sample_ntt4(row[], col[])` wrapper remained
+for diagnostics. The intent was to remove the fixed row/column loads and lane
+construction from the hottest `sample_matrix` batches without changing the
+parser, Keccak rounds, stream layout, or cached data.
+
+Correctness passed both gates before the candidate was reverted:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected fixed-batch highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1437.73 | 1635.21 | 0.8792x | 0.9174x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1531.94 | 1744.62 | 0.8781x | 0.9162x |
+| `mlkem_core_stage_sample_matrix` | 3466.53 | 3879.13 | 0.8936x | 0.9290x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1245.29 | 1444.09 | 0.8623x | 0.9049x |
+| `mlkem_core_stage_kpke_keygen_full` | 5570.33 | 5615.33 | 0.9920x | 0.9521x |
+| `mlkem_keygen_core` | 7593.00 | 8243.48 | 0.9211x | 0.9654x |
+| `mlkem_encaps_core` | 7600.88 | 7632.88 | 0.9958x | 0.9750x |
+| `mlkem_roundtrip_core` | 22115.38 | 23070.17 | 0.9586x | 0.9739x |
+
+Keep the existing generic `sample_ntt4()` call shape for AVX2-only public matrix
+batches. The fixed row/column lane construction is not a real bottleneck next to
+three `keccakf4()` permutations, stream transpose, and rejection parsing. This
+wrapper split also worsens code layout/inlining enough to regress the very rows
+it targets. A future fixed-batch attempt would need to remove larger work inside
+the sampler itself, not only precompute `st[4]`.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
