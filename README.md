@@ -4374,6 +4374,49 @@ moves work into the public-output add and changes code layout without producing 
 robust keygen median. Future keygen lazy-reduction work needs a broader
 accumulation/encoding redesign, not only moving `ehat`'s final reduction.
 
+A signed-ETA2 input NTT experiment was also rejected. This was the ML-KEM analogue
+of using a signed sparse representation: the candidate decoded AVX2-only keygen
+ETA2 PRF/CBD outputs as small signed coefficients in `{-2..2}`, then used a
+special `ntt_eta2_signed_avx2()` first forward-NTT stage that canonicalized back
+to `[0, Q)` before the existing later NTT stages. The goal was to avoid the CBD
+negative-lane canonicalization and make the first NTT multiplication consume tiny
+signed inputs instead of `Q-1`/`Q-2` encodings.
+
+Correctness passed, but the integrated keygen path regressed. The stage rows that
+use precomputed canonical inputs cannot show this representation-boundary change,
+so the acceptance signal was `kpke_keygen_full` plus KEM keygen medians.
+
+Correctness command:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=20000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected signed-ETA2 input NTT highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 5336.62 | 5374.08 | 0.9930x | 0.9982x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 976.15 | 972.47 | 1.0038x | 1.0006x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1986.64 | 1986.63 | 1.0000x | 1.0000x |
+| `mlkem_keygen_core` | 7627.55 | 7636.31 | 0.9989x | 0.9964x |
+| `mlkem_encaps_core` | 7523.47 | 7490.17 | 1.0044x | 0.9985x |
+| `mlkem_roundtrip_core` | 22536.77 | 21904.65 | 1.0289x | 1.0432x |
+
+Do not pursue NAF-like signed ETA2 decoding as a narrow keygen-only change. The
+canonicalization saved in CBD/first-stage arithmetic is too small, and the extra
+helper/code-shape cost hurts the keygen rows that the change is supposed to
+improve. A future signed-representation design would need to carry the form
+through accumulation/encoding more broadly, not stop after the first NTT stage.
+
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
