@@ -5240,6 +5240,69 @@ stage A/B with `RUNS=11` and `STAGE_ITERS=120000` showed
 `maskz_mov + add` shape; it is no slower in the integrated path and is easier to
 read as materializing the message polynomial.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 message final-fold)
+
+An AVX2-only follow-up to the accepted `e2`/message fusion was rejected. The
+candidate skipped the separate `mlkem_add_message_to_poly(m, e2)` pass and
+instead folded `message` directly into the AVX2 final inverse-NTT add for the
+`v` polynomial. Two forms were tested: first adding `scaled + e2 + message` with
+two 32-bit modular adds in the final pass, then a lower-pressure variant that
+formed `e2 + message` with the existing 16-bit modular-add shape before the
+final 32-bit add.
+
+Correctness passed both gates for both forms:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+Initial AVX2-only stage/KEM A/B for the direct 32-bit-add form:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct 32-bit-add highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2421.37 | 2438.99 | 0.9928x | 0.9937x |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 466.55 | 466.77 | 0.9995x | 0.9996x |
+| `mlkem_encaps` | 2681.46 | 2702.84 | 0.9921x | 0.9937x |
+| `mlkem_encaps_core` | 7624.07 | 7294.97 | 1.0451x | 1.0416x |
+| `mlkem_roundtrip_core` | 22256.21 | 21546.68 | 1.0329x | 1.0421x |
+
+Longer AVX2-only KEM confirmation rejected the direct form:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2692.60 | 2702.69 | 0.9963x | 0.9930x |
+| `mlkem_encaps_core` | 7614.12 | 7715.93 | 0.9868x | 0.9965x |
+| `mlkem_roundtrip_core` | 22326.80 | 22445.59 | 0.9947x | 0.9972x |
+
+The 16-bit `e2 + message` fold variant also failed the longer AVX2-only KEM
+gate:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps_core` | 6674.37 | 7032.19 | 0.9491x | 0.9343x |
+| `mlkem_encaps` | 2692.16 | 2712.17 | 0.9926x | 0.9944x |
+| `mlkem_encaps_core` | 7406.68 | 7612.26 | 0.9730x | 0.9957x |
+| `mlkem_roundtrip_core` | 21836.20 | 22184.83 | 0.9843x | 0.9949x |
+
+Keep the current AVX2 message pre-pass into `e2`. It costs an extra pass over
+`e2`, but it keeps message expansion out of the already dense inverse-final loop
+and gives better encapsulation behavior than either direct final-fold shape.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
