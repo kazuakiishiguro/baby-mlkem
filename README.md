@@ -6124,6 +6124,50 @@ was run because the stage gate failed on the rows the change was meant to help.
 Future sampler work should remove or restructure common three-rate Keccak/store
 work rather than split the already-small refill control path.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 rolling parse)
+
+A common-path `sample_ntt4()` dataflow experiment was rejected. The candidate kept
+`keccakf4_mem()`, `sample_ntt4_store_rate()`, the AVX2 rejection parser, and the
+refill path arithmetic unchanged, but changed the initial three SHAKE128 rates
+from a `stream[4][504]` accumulation followed by four 504-byte parses into a
+rolling `stream[4][168]` window parsed after each rate. This reduced the scratch
+lifetime and overwrote the same 168-byte window, but increased the number of
+short parser calls on the hot common path.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected rolling-parse highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_common3_step` | 996.49 | 1017.03 | 0.9798x | 0.9794x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 932.41 | 1015.42 | 0.9182x | 0.9338x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.39 | 1203.47 | 0.9252x | 0.9393x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.31 | 1255.41 | 0.9426x | 0.9420x |
+| `mlkem_core_stage_sample_matrix` | 2811.33 | 2982.23 | 0.9427x | 0.9514x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4159.44 | 4336.22 | 0.9592x | 0.9651x |
+| `mlkem_core_stage_kpke_keygen_full` | 4816.01 | 4972.46 | 0.9685x | 0.9770x |
+
+Decision: keep the current three-rate accumulation followed by one 504-byte parse
+per lane. The larger scratch object is static and not the bottleneck; rolling the
+window makes the hot path parser shorter and more frequent, which loses badly in
+the full sampler and public-matrix rows. Future common-path sampler work should
+reduce the Keccak/state transpose cost itself, not trade it for more parser entry
+and short-stream overhead.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 ntt_add unsigned-min reduction)
 
 An AVX2-only `ntt_add()` reduction-shape experiment was rejected. The final
