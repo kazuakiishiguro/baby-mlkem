@@ -5266,6 +5266,52 @@ clear the stage gate, so no KEM confirmation was run. Future NTT accumulation
 work should change the multiply/reduction schedule itself rather than just
 consolidating identical helper bodies.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `sample_ntt4_store_rate()` last-lane helper)
+
+A narrow x4 sampler store-path cleanup was rejected. The candidate changed only
+`sample_ntt4_store_rate()`'s final rate lane (`st[20]`) from a full
+`_mm256_storeu_si256()` into a local `uint64_t last[4]` followed by four 8-byte
+copies to the existing `sample_ntt4_store_last()` scalar-lane extraction helper.
+The hypothesis was that avoiding the temporary 32-byte local store could trim the
+168-byte rate transpose used by both the common three-block sampler path and
+refill blocks.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.74 | 7.72 | 1.0020x | 1.0026x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 877.22 | 875.44 | 1.0020x | 1.0010x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 996.58 | 994.26 | 1.0023x | 1.0015x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.44 | 940.53 | 0.9903x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 283.22 | 295.19 | 0.9595x | 0.9590x |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 309.14 | 312.04 | 0.9907x | 0.9905x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.56 | 1122.56 | 0.9920x | 1.0001x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1185.66 | 1193.70 | 0.9933x | 0.9989x |
+| `mlkem_core_stage_sample_matrix` | 2807.30 | 2825.56 | 0.9935x | 0.9995x |
+| `mlkem_core_stage_kpke_keygen_full` | 4801.11 | 4808.07 | 0.9986x | 0.9998x |
+
+Decision: keep the full-vector temporary store for the `st[20]` tail in
+`sample_ntt4_store_rate()`. The isolated store-rate row improved only by about
+0.26% median, while the refill store row regressed sharply and the integrated
+public-matrix rows did not keep a useful win. The scalar extraction helper is
+still useful for AVX512 lane splitting, but on AVX2-only x4 sampling the current
+single YMM store plus scalar copies is the more robust layout.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
