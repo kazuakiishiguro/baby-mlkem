@@ -4483,6 +4483,67 @@ each boundary and prove that `ntt_mul_acc3()`, `ntt_inv_add*_inplace()`, and
 compress/encode can consume those ranges without reintroducing the same
 normalization work one stage later.
 
+A first attempt to move the representation boundary past inverse-add and into
+ciphertext compression was rejected. The AVX2-only candidate added an
+encryption-only lazy final inverse-add helper that stored `u[0..2]` and `v` in
+the range `[0, 2Q)` after adding `e1`/`e2+message`, then used lazy d10/d4
+compressors that canonicalized each 16-bit lane once immediately before the
+existing compression formulas. The goal was to remove the final modular-add
+conditional subtract from inverse-add and pay a cheaper canonicalization at the
+compress boundary, where the polynomials are consumed and not reused.
+
+Correctness passed both AVX2-only and native gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+Short AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=20000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Short-run highlights were mixed and not sufficient for acceptance:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2415.67 | 2410.24 | 1.0023x | 1.0042x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1321.30 | 1318.85 | 1.0019x | 0.9996x |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.21 | 51.18 | 1.0006x | 1.0006x |
+| `mlkem_encaps_core` | 8390.96 | 7211.24 | 1.1636x | 1.1349x |
+| `mlkem_roundtrip_core` | 23240.15 | 21519.81 | 1.0799x | 1.0427x |
+
+Longer AVX2-only KEM confirmation rejected the change:
+
+```bash
+RUNS=17 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected lazy inverse-add/compress highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2687.27 | 2679.73 | 1.0028x | 1.0057x |
+| `mlkem_encaps_core` | 7445.94 | 7652.98 | 0.9729x | 0.9645x |
+| `mlkem_roundtrip` | 13943.30 | 13965.99 | 0.9984x | 1.0006x |
+| `mlkem_roundtrip_core` | 21999.85 | 22416.34 | 0.9814x | 0.9736x |
+
+Keep the current exact inverse-add output before ciphertext compression. Moving
+the final modular-add correction into d10/d4 compression is algebraically valid,
+but the extra compression-side canonicalization and changed code layout do not
+survive full KEM confirmation. Future broad representation work needs to remove
+or merge more than this final add correction; simply sliding the same
+normalization one stage later is not enough.
+
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
