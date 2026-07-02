@@ -3066,6 +3066,75 @@ Keep the hash-tail co-scheduling stream scratch on the stack. The accepted x4
 sampler static scratch result does not transfer cleanly to these public-prepare
 helpers; the core KEM rows are too sensitive to code/layout effects.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 decaps re-encrypt tail/noise co-scheduling)
+
+The AVX2-only no-cache `mlkem_decaps()` path now moves the final public-matrix
+`(2,2)` tail from the `sha3_512(mdash || h)` co-schedule into the re-encryption
+noise schedule. The previous no-cache decapsulation path sampled the tail while
+lane 0 computed `kdash || rdash`, then generated the re-encryption PRF/CBD noise
+separately. The new path computes `ghash` first, prepares the first eight public
+matrix entries with the existing two `sample_ntt4()` calls, and then uses the
+same AVX2 tail/noise co-schedule as the uncached encapsulation path with
+`rdash`. The first tail block rides with PRF nonces 4, 5, and 6; the remaining
+single-lane tail continuation uses scalar `keccakf()`.
+
+This is a core dataflow change inside one decapsulation. It does not add or rely
+on a cross-operation cache, and it is guarded to AVX2-only builds because native
+AVX512 keeps the existing public-work co-schedule.
+
+Correctness checks:
+
+```bash
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make test CC=clang AVX2_BACKEND=core
+```
+
+Initial AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Initial highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 3632.06 | 3624.16 | 1.0022x | 1.0016x |
+| `mlkem_decaps_core` | 6500.37 | 6145.00 | 1.0578x | 1.0498x |
+| `mlkem_encaps_core` | 7156.63 | 7273.09 | 0.9840x | 0.9885x |
+| `mlkem_roundtrip_core` | 20816.36 | 20529.65 | 1.0140x | 1.0077x |
+
+The first run showed the intended decapsulation-core win but an unrelated-looking
+`encaps_core` regression, so the change needed a longer confirmation before
+acceptance.
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 3642.09 | 3643.10 | 0.9997x | 1.0013x |
+| `mlkem_decaps_core` | 6549.03 | 6129.48 | 1.0684x | 1.0486x |
+| `mlkem_encaps` | 2699.57 | 2688.71 | 1.0040x | 1.0014x |
+| `mlkem_encaps_core` | 7077.99 | 7108.58 | 0.9957x | 0.9990x |
+| `mlkem_roundtrip` | 13483.20 | 13473.71 | 1.0007x | 1.0009x |
+| `mlkem_roundtrip_core` | 20772.83 | 20344.67 | 1.0210x | 1.0167x |
+
+Decision: accept the AVX2-only decapsulation re-encrypt tail/noise co-schedule.
+The direct no-cache decapsulation core path keeps about a 1.05x median win, and
+the longer confirmation carries that into `roundtrip_core` without a meaningful
+encapsulation median regression. This reinforces the current direction: use SIMD
+lanes for independent real work inside the same KEM operation, but switch back to
+scalar Keccak once only a single XOF stream remains.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 message recovery)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is

@@ -4939,9 +4939,45 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   /* ghash = sha3_512(mdash||h) => 64 => kdash||rdash */
   uint8_t ghash[64];
   int public_prepared = 0;
+#if defined(__AVX2__) && !defined(__AVX512F__)
+  static poly256 prepared_rhat[K];
+  static poly256 prepared_e1[K];
+  static poly256 prepared_e2;
+  int noise_prepared = 0;
+#endif
   if (!mlkem_internal_caches_enabled) {
+#if defined(__AVX2__) && !defined(__AVX512F__)
+    uint8_t inbuf[64];
+    memcpy(inbuf, mdash, 32);
+    memcpy(inbuf + 32, h, 32);
+    pq_sha3_512(ghash, inbuf, 64);
+
+    const uint8_t *rho = ek_pke + K * 384;
+    for (int i = 0; i < K; i++) {
+      byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+    }
+    const uint8_t r0[4] = {0, 0, 0, 1};
+    const uint8_t c0[4] = {0, 1, 2, 0};
+    const uint8_t r1[4] = {1, 1, 2, 2};
+    const uint8_t c1[4] = {1, 2, 0, 1};
+    sample_ntt4(rho, r0, c0, kpke_public_cache_ahat[0][0],
+                kpke_public_cache_ahat[0][1],
+                kpke_public_cache_ahat[0][2],
+                kpke_public_cache_ahat[1][0]);
+    sample_ntt4(rho, r1, c1, kpke_public_cache_ahat[1][1],
+                kpke_public_cache_ahat[1][2],
+                kpke_public_cache_ahat[2][0],
+                kpke_public_cache_ahat[2][1]);
+    mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+        ghash + 32, rho, kpke_public_cache_ahat[2][2], prepared_rhat[0],
+        prepared_rhat[1], prepared_rhat[2], prepared_e1[0], prepared_e1[1],
+        prepared_e1[2], prepared_e2);
+    public_prepared = 1;
+    noise_prepared = 1;
+#else
     kpke_prepare_public_ghash_no_cache(ek_pke, mdash, h, ghash);
     public_prepared = 1;
+#endif
   } else {
     uint8_t inbuf[64];
     memcpy(inbuf, mdash, 32);
@@ -4956,7 +4992,16 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   uint8_t cdash[CT_BYTES];
   size_t cdash_len = 0;
   if (public_prepared) {
-    kpke_encrypt_prepared_public(mdash, 32, rdash, 32, cdash, &cdash_len);
+#if defined(__AVX2__) && !defined(__AVX512F__)
+    if (noise_prepared) {
+      kpke_encrypt_prepared_public_with_noise_avx2(
+          mdash, 32, cdash, &cdash_len, prepared_rhat, prepared_e1,
+          prepared_e2);
+    } else
+#endif
+    {
+      kpke_encrypt_prepared_public(mdash, 32, rdash, 32, cdash, &cdash_len);
+    }
   } else {
     kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len, 0);
   }
