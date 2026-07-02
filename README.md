@@ -4417,6 +4417,49 @@ helper/code-shape cost hurts the keygen rows that the change is supposed to
 improve. A future signed-representation design would need to carry the form
 through accumulation/encoding more broadly, not stop after the first NTT stage.
 
+A narrower encrypt-side signed-`rhat` follow-up was also rejected. The candidate
+kept the shared canonical PRF/CBD helper unchanged for stage setup, added a
+production-only AVX2 helper that decoded only `rhat[0..2]` as signed ETA2
+coefficients while keeping `e1[0]` canonical, and ran those three polynomials
+through a signed first-stage `ntt_lazy_eta2_signed_avx2()` before the existing
+lazy-tail multiply-input path. This targeted encapsulation only, where `rhat` is
+consumed immediately by NTT-domain multiplication and does not need d12 encoding.
+
+Correctness and stage validation passed, but the KEM gate rejected the change:
+the mixed signed/canonical decode and extra branch/code shape did not improve
+`kpke_encrypt_cached`, and `mlkem_encaps_core` regressed clearly.
+
+Correctness commands:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-stages CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" && \
+  taskset -c 0 ./bench_core_stagesc 1000
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=20000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected encrypt signed-`rhat` highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1172.29 | 1149.77 | 1.0196x | 1.0191x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2421.17 | 2427.34 | 0.9975x | 1.0001x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 6339.12 | 6067.90 | 1.0447x | 0.9961x |
+| `mlkem_encaps_core` | 7491.60 | 7769.63 | 0.9642x | 0.9538x |
+| `mlkem_encaps` | 2684.39 | 2688.60 | 0.9984x | 0.9983x |
+| `mlkem_roundtrip_core` | 21728.41 | 21913.47 | 0.9916x | 1.0084x |
+
+Keep the existing canonical PRF/CBD output plus `ntt_lazy_mul_input_avx2()` for
+encapsulation. The local signed-representation idea does not survive the full
+KEM path unless a broader redesign removes the mixed decode and branch overhead.
+
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
