@@ -1500,6 +1500,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
+| `mlkem_core_stage_sample_ntt3_full_raw` | AVX2-only diagnostic: three-lane SHAKE128 matrix sampler for `(1,2)`, `(2,0)`, and `(2,1)`, using the existing parser and a lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
@@ -6421,6 +6422,53 @@ transpose/store and four-stream parser amortization. Do not build a production
 public-matrix regrouping around a standalone x2 sampler; future co-scheduling
 needs to fill all available lanes with useful work or avoid the byte-stream
 boundary entirely.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt3 lower bound)
+
+A follow-up bench-only three-lane SHAKE128 sampler diagnostic was also rejected.
+This checks the remaining one-empty-lane case: keygen PRF/tail co-scheduling has
+one unused AVX2 lane, so a hypothetical regrouping could put one extra matrix
+XOF into that lane and leave three matrix entries for a dedicated x3 sampler.
+That would only be useful if `sample_ntt4() + sample_ntt3()` beat the current
+`2 * sample_ntt4()` shape.
+
+The diagnostic adds `mlkem_core_stage_sample_ntt3_full_raw`; production
+`sample_matrix()` and the keygen PRF/tail helper are unchanged. The helper uses a
+three-live-lane `keccakf4()` state, stores three 504-byte streams, reuses the
+existing parser, validates `(1,2)`, `(2,0)`, and `(2,1)` against scalar
+`sample_ntt()`, and uses the same lightweight sink style as the x4 raw row.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in 1 2 3 4 5 6 7; do
+  taskset -c 0 ./bench_core_stagesc 10000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_ntt(2_full_raw|3_full_raw|4_full_raw|4_scalar4_raw|4_one_full_raw|4_keccak_store3|4_parse_504)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/ {
+        print run "\t" $1 "\t" $2
+      }'
+done
+```
+
+Three-lane sampler highlights, relative to the existing x4 raw sampler:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs x4 | Median speedup vs x4 |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 941.40 | 940.71 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_ntt3_full_raw` | 1016.82 | 1015.36 | 0.9258x | 0.9265x |
+| `mlkem_core_stage_sample_ntt2_full_raw` | 1612.96 | 1481.86 | 0.5836x | 0.6348x |
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | 892.58 | 893.76 | 1.0547x | 1.0525x |
+
+This rejects the one-empty-lane regrouping. The median lower bound for
+`sample_ntt4() + sample_ntt3()` is `940.71 + 1015.36 = 1956.07 ns`, while two
+existing x4 sampler calls are about `1881.42 ns`; the regrouping is only
+`0.9618x` as fast before paying any production integration cost. Keep the two
+full x4 public-matrix batches. Future co-scheduling work should require either
+full lane occupancy, reuse of already-needed permutations, or a larger redesign
+that avoids stream materialization and parser amortization loss.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
