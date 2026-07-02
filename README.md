@@ -1492,6 +1492,8 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_matrix_tail_choice_XX` | AVX2-only diagnostic: choose matrix entry `XX` as the scalar tail and place the other eight entries into two row-major x4 sampler batches |
+| `mlkem_core_stage_sample_matrix_x3x3x3` | AVX2-only diagnostic: generate the full 3x3 public matrix as three row-major three-lane sampler groups |
+| `mlkem_core_stage_sample_matrix_x4x3x2` | AVX2-only diagnostic: generate the full 3x3 public matrix as one x4 group, one x3 group, and one x2 group |
 | `mlkem_core_stage_keygen_matrix_noise_current` | AVX2-only bench of the production keygen matrix/noise order: x4 batch0, co-scheduled PRF/CBD plus `(2,2)` tail, x4 batch1 |
 | `mlkem_core_stage_keygen_matrix_noise_tail_first` | AVX2-only diagnostic order: co-scheduled PRF/CBD plus `(2,2)` tail before both public-matrix x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
@@ -5676,10 +5678,11 @@ selection, `keccakf4_mem()` scratch/call-boundary/source-shape tweaks,
 `sample_ntt4_store_rate()` reshaping, PRF/CBD x2/x3 composition, scalar-tail
 rotation, or drop-in AVX2 `ntt_mul_acc3()` vectorization without new evidence;
 those have direct rejection records. The follow-up direct `sample_ntt4()`
-Keccak-state-to-parser lower bound, final-inverse-to-d10 boundary fusion, and
-keygen lazy-`ehat` add boundary were also measured and rejected for production.
-The next implementation should therefore be either a true vector compaction path
-from Keccak state lanes, not scalar state parsing, or a broader representation
+Keccak-state-to-parser lower bound, final-inverse-to-d10 boundary fusion, keygen
+lazy-`ehat` add boundary, and partial-lane full-matrix regroupings (`x3x3x3` and
+`x4x3x2`) were also measured and rejected for production. The next
+implementation should therefore be either a true vector compaction path from
+Keccak state lanes, not scalar state parsing, or a broader representation
 prototype that carries lazy/signed ranges across CBD or sampler output, forward
 NTT, K=3 multiplication, inverse add/sub, and encode/compress boundaries
 together. Anything narrower is likely to reproduce the recent noise-level wins
@@ -6661,6 +6664,48 @@ existing x4 sampler calls are about `1881.42 ns`; the regrouping is only
 full x4 public-matrix batches. Future co-scheduling work should require either
 full lane occupancy, reuse of already-needed permutations, or a larger redesign
 that avoids stream materialization and parser amortization loss.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 partial-lane matrix grouping)
+
+A matrix-level follow-up tested the same partial-lane idea end to end across all
+nine public-matrix polynomials. The new bench-only rows compare the production
+`x4 + x4 + scalar` shape against `x3 + x3 + x3` and `x4 + x3 + x2`. This keeps
+production code unchanged and validates both regroupings against the scalar
+`sample_ntt()` matrix before timing.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_matrix(_x3x3x3|_x4x3x2|_tail_choice_(21|22))?_ns_per_op=|mlkem_core_stage_keygen_matrix_noise_(current|tail21)_ns_per_op=|mlkem_core_stage_kpke_keygen_full_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Matrix grouping highlights, relative to the current `sample_matrix` row:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs current | Median speedup vs current |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2796.57 | 2796.45 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2783.77 | 2786.08 | 1.0046x | 1.0037x |
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2800.72 | 2800.94 | 0.9985x | 0.9984x |
+| `mlkem_core_stage_sample_matrix_x3x3x3` | 3073.62 | 3072.52 | 0.9099x | 0.9101x |
+| `mlkem_core_stage_sample_matrix_x4x3x2` | 3660.43 | 3520.77 | 0.7640x | 0.7943x |
+
+Decision: reject partial-lane full-matrix regrouping. `x3x3x3` avoids the scalar
+tail but loses the accepted memory-resident `sample_ntt4()` store/dataflow and is
+about 9% slower at the median. `x4x3x2` is worse because the x2 helper keeps the
+four-lane Keccak cost while losing x4 parser/store amortization. The persistent
+`tail_choice_21` signal remains too small and suffix-fixture-dependent to justify
+rotating production co-scheduled tail helpers. The next sampler candidate must
+preserve the optimized x4 common path or remove the byte-stream parser boundary;
+changing lane counts alone is the wrong abstraction.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 block parse)

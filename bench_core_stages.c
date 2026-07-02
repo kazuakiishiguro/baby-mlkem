@@ -626,6 +626,27 @@ static void stage_sample_matrix_tail_choice_avx2(const uint8_t *seed,
   sample_ntt(seed, tail_idx / K, tail_idx % K,
              out[tail_idx / K][tail_idx % K]);
 }
+
+static void stage_sample_matrix_x3x3x3_avx2(const uint8_t *seed,
+                                            poly256 out[K][K]) {
+  stage_sample_ntt3_avx2(seed, 0, 0, 0, 1, 0, 2,
+                         out[0][0], out[0][1], out[0][2]);
+  stage_sample_ntt3_avx2(seed, 1, 0, 1, 1, 1, 2,
+                         out[1][0], out[1][1], out[1][2]);
+  stage_sample_ntt3_avx2(seed, 2, 0, 2, 1, 2, 2,
+                         out[2][0], out[2][1], out[2][2]);
+}
+
+static void stage_sample_matrix_x4x3x2_avx2(const uint8_t *seed,
+                                            poly256 out[K][K]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+
+  sample_ntt4(seed, r0, c0, out[0][0], out[0][1], out[0][2], out[1][0]);
+  stage_sample_ntt3_avx2(seed, 1, 1, 1, 2, 2, 0,
+                         out[1][1], out[1][2], out[2][0]);
+  stage_sample_ntt2_avx2(seed, 2, 1, 2, 2, out[2][1], out[2][2]);
+}
 #endif
 
 static void validate_sample_matrix_matches_scalar(void) {
@@ -679,6 +700,32 @@ static void validate_sample_matrix_matches_scalar(void) {
                   "sample_matrix tail choice mismatch at tail %d,%d entry "
                   "%d,%d\n",
                   tail_idx / K, tail_idx % K, row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  {
+    poly256 alt[K][K];
+    stage_sample_matrix_x3x3x3_avx2(stage_rho[0], alt);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_matrix x3x3x3 mismatch at %d,%d\n",
+                  row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  {
+    poly256 alt[K][K];
+    stage_sample_matrix_x4x3x2_avx2(stage_rho[0], alt);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_matrix x4x3x2 mismatch at %d,%d\n",
+                  row, col);
           exit(EXIT_FAILURE);
         }
       }
@@ -1211,6 +1258,34 @@ static void print_sample_matrix_tail_choice_metrics(size_t iters) {
     print_metric(name, bench_sample_matrix_tail_choice(iters, tail_idx),
                  iters);
   }
+}
+
+static uint64_t bench_sample_matrix_x3x3x3(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_x3x3x3_avx2(stage_rho[lane], stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_x4x3x2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_x4x3x2_avx2(stage_rho[lane], stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
 }
 #endif
 
@@ -4444,6 +4519,10 @@ int main(int argc, char **argv) {
                iters);
 #if defined(__AVX2__) && !(defined(__AVX512F__))
   print_sample_matrix_tail_choice_metrics(iters);
+  print_metric("mlkem_core_stage_sample_matrix_x3x3x3",
+               bench_sample_matrix_x3x3x3(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_x4x3x2",
+               bench_sample_matrix_x4x3x2(iters), iters);
 #endif
   print_metric("mlkem_core_stage_sample_matrix_x4_batch0",
                bench_sample_matrix_x4_batch0(iters), iters);
