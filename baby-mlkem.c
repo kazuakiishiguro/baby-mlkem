@@ -3054,14 +3054,13 @@ static void sample_ntt4(const uint8_t *seed,
   }
 
   while (need_more) {
-    uint8_t extra[4][168];
     keccakf4(st);
-    sample_ntt4_store_rate(extra[0], extra[1], extra[2], extra[3], st);
+    sample_ntt4_store_rate(stream[0], stream[1], stream[2], stream[3], st);
     need_more = 0;
     for (int lane = 0; lane < 4; lane++) {
       if (count[lane] < N) {
         count[lane] = sample_ntt_parse_stream_avx2_ready(
-            extra[lane], sizeof(extra[lane]), outs[lane], count[lane]);
+            stream[lane], 168, outs[lane], count[lane]);
         need_more |= count[lane] < N;
       }
     }

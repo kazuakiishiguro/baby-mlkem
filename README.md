@@ -5105,6 +5105,73 @@ is asymmetric: memory-resident Keccak for the dense common three-block sampler,
 register-resident Keccak for the occasional one-block refill continuation.
 
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 sample_ntt4 refill stream reuse)
+
+The AVX2-only `sample_ntt4()` refill path now reuses the existing static
+`stream[4][504]` scratch for refill blocks after the initial 504-byte parse has
+finished. Previously the rare refill continuation allocated a separate local
+`extra[4][168]` buffer, squeezed one more SHAKE128 rate into it, then parsed only
+lanes still below 256 coefficients. The initial stream is dead once all four
+lanes have completed the first parse, so the refill block can safely overwrite
+the first 168 bytes of each `stream[lane]`.
+
+This is not a cache or cross-operation reuse optimization: every public-matrix
+sample still performs the same Keccak squeezes and rejection parsing. The change
+only removes the separate refill scratch lifetime from the full sampler. It is
+also narrower than the earlier rejected static-refill-scratch experiment: no new
+static buffer is introduced, and the common initial stream storage remains the
+same object already used by production.
+
+Correctness checks:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 967.39 | 935.20 | 1.0344x | 1.0346x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1162.31 | 1123.41 | 1.0346x | 1.0278x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1224.14 | 1203.97 | 1.0167x | 1.0169x |
+| `mlkem_core_stage_sample_matrix` | 2881.97 | 2830.44 | 1.0182x | 1.0185x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4231.75 | 4179.73 | 1.0124x | 1.0119x |
+| `mlkem_core_stage_kpke_keygen_full` | 4920.21 | 4842.27 | 1.0161x | 1.0118x |
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 7020.26 | 6972.45 | 1.0069x | 1.0083x |
+| `mlkem_keygen_core` | 6996.51 | 6941.27 | 1.0080x | 1.0088x |
+| `mlkem_encaps_core` | 7234.28 | 7026.75 | 1.0295x | 1.0081x |
+| `mlkem_decaps_core` | 6129.31 | 6086.42 | 1.0070x | 1.0097x |
+| `mlkem_roundtrip` | 13429.01 | 13401.07 | 1.0021x | 1.0031x |
+| `mlkem_roundtrip_core` | 20467.27 | 20225.92 | 1.0119x | 1.0064x |
+
+Decision: accept refill stream reuse. The direct sampler and public-matrix rows
+move in the same direction, and the longer KEM confirmation keeps keygen and
+roundtrip positive. Keep the asymmetry from the previous optimization:
+`keccakf4_mem()` for the dense first three blocks, register-resident `keccakf4()`
+for rare refill blocks, and now the existing static stream scratch for those
+refill bytes.
+
 No-cache encapsulation public-prepare diagnostic:
 
 ```bash
