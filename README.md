@@ -1502,6 +1502,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
 | `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses Keccak state words directly with a scalar streaming parser instead of materializing 504-byte streams |
+| `mlkem_core_stage_sample_ntt4_state_mask3` | AVX2-only diagnostic lower bound: initial three `keccakf4_mem()` blocks plus direct SIMD validity masks from state words, without output compaction |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
@@ -5679,10 +5680,11 @@ selection, `keccakf4_mem()` scratch/call-boundary/source-shape tweaks,
 rotation, or drop-in AVX2 `ntt_mul_acc3()` vectorization without new evidence;
 those have direct rejection records. The follow-up direct `sample_ntt4()`
 Keccak-state-to-parser lower bound, final-inverse-to-d10 boundary fusion, keygen
-lazy-`ehat` add boundary, and partial-lane full-matrix regroupings (`x3x3x3` and
-`x4x3x2`) were also measured and rejected for production. The next
-implementation should therefore be either a true vector compaction path from
-Keccak state lanes, not scalar state parsing, or a broader representation
+lazy-`ehat` add boundary, partial-lane full-matrix regroupings (`x3x3x3` and
+`x4x3x2`), and direct state-lane validity-mask extraction were also measured and
+rejected for production. The next implementation should therefore be either a
+true vector compaction path from Keccak state lanes that avoids per-candidate
+mask/control overhead, not scalar state parsing, or a broader representation
 prototype that carries lazy/signed ranges across CBD or sampler output, forward
 NTT, K=3 multiplication, inverse add/sub, and encode/compress boundaries
 together. Anything narrower is likely to reproduce the recent noise-level wins
@@ -6800,6 +6802,57 @@ becomes about `1.56x` slower by median than the current x4 raw sampler. A future
 direct-state design would need to compact accepted candidates from state lanes in
 vector form, or make a larger Keccak/parser representation change, rather than
 only scalarizing the stream extraction.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 state-mask lower bound)
+
+A follow-up bench-only lower bound tested whether direct state-lane SIMD work is
+cheap enough before implementing a full accepted-coefficient compactor. The new
+row runs the same initial three `keccakf4_mem()` blocks as `sample_ntt4()`, then
+extracts the SHAKE128 24-bit candidates directly from the four-lane Keccak state
+and counts `d0 < q` / `d1 < q` with AVX2 masks. It deliberately does not write
+coefficients, so it is a lower bound for any direct-state parser that would still
+need to compact accepted values into four output polynomials.
+
+The validation checks that the capped per-lane accept counts match the existing
+`store 504-byte streams -> sample_ntt_parse_stream_avx2_ready()` path for both
+production x4 public-matrix tuples. Production code is unchanged.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_ntt4_(full_raw|state_mask3|state_parse_full_raw|keccak3_only|keccak_store3|parse_504|common3_step)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+State-mask highlights, relative to the current x4 raw sampler:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs current | Median speedup vs current |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 937.61 | 937.12 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_state_mask3` | 1240.31 | 1239.87 | 0.7559x | 0.7558x |
+| `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | 1463.52 | 1463.11 | 0.6407x | 0.6405x |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 823.35 | 822.42 | 1.1388x | 1.1395x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 870.68 | 870.98 | 1.0769x | 1.0759x |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 116.71 | 116.70 | 8.0337x | 8.0302x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 992.15 | 992.17 | 0.9450x | 0.9445x |
+| `mlkem_core_stage_sample_matrix` | 2805.71 | 2807.19 | n/a | n/a |
+
+Decision: reject this direct state-mask path. Even before writing accepted
+coefficients, the state-lane extraction and per-candidate mask/control work is
+about `1.323x` slower than the complete current x4 sampler. This means a viable
+state-parser redesign cannot simply bolt SIMD validity masks onto the current
+24-bit candidate schedule. It would need a substantially different representation
+that produces compacted coefficients without per-candidate scalar control, or it
+should leave the byte-stream parser boundary in place and target a different
+bottleneck.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)

@@ -1888,6 +1888,101 @@ static void validate_sample_ntt4_state_parse_avx2(void) {
   }
 }
 
+static inline void stage_sample_ntt4_count_good_mask(uint32_t mask,
+                                                     int count[4]) {
+  if ((mask & 0x01u) != 0 && count[0] < N) count[0]++;
+  if ((mask & 0x04u) != 0 && count[1] < N) count[1]++;
+  if ((mask & 0x10u) != 0 && count[2] < N) count[2]++;
+  if ((mask & 0x40u) != 0 && count[3] < N) count[3]++;
+}
+
+static inline void stage_sample_ntt4_count_chunk_vec_avx2(
+    __m256i chunk, const __m256i bound, const __m256i mask12,
+    int count[4]) {
+  __m256i d0 = _mm256_and_si256(chunk, mask12);
+  __m256i d1 = _mm256_and_si256(_mm256_srli_epi64(chunk, 12), mask12);
+  uint32_t good0 = (uint32_t)_mm256_movemask_ps(
+      _mm256_castsi256_ps(_mm256_cmpgt_epi32(bound, d0)));
+  uint32_t good1 = (uint32_t)_mm256_movemask_ps(
+      _mm256_castsi256_ps(_mm256_cmpgt_epi32(bound, d1)));
+  stage_sample_ntt4_count_good_mask(good0, count);
+  stage_sample_ntt4_count_good_mask(good1, count);
+}
+
+static void stage_sample_ntt4_count_state_rate_mask_avx2(
+    const __m256i st[25], int count[4]) {
+  const __m256i bound = _mm256_set1_epi32(Q);
+  const __m256i mask8 = _mm256_set1_epi64x(0x000000ffULL);
+  const __m256i mask12 = _mm256_set1_epi64x(0x00000fffULL);
+  const __m256i mask16 = _mm256_set1_epi64x(0x0000ffffULL);
+  const __m256i mask24 = _mm256_set1_epi64x(0x00ffffffULL);
+
+  for (int word_idx = 0; word_idx < 21; word_idx += 3) {
+    __m256i w0 = st[word_idx + 0];
+    __m256i w1 = st[word_idx + 1];
+    __m256i w2 = st[word_idx + 2];
+
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(w0, mask24), bound, mask12, count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(_mm256_srli_epi64(w0, 24), mask24), bound, mask12,
+        count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_or_si256(_mm256_srli_epi64(w0, 48),
+                        _mm256_slli_epi64(_mm256_and_si256(w1, mask8), 16)),
+        bound, mask12, count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(_mm256_srli_epi64(w1, 8), mask24), bound, mask12,
+        count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(_mm256_srli_epi64(w1, 32), mask24), bound, mask12,
+        count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_or_si256(_mm256_srli_epi64(w1, 56),
+                        _mm256_slli_epi64(_mm256_and_si256(w2, mask16), 8)),
+        bound, mask12, count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(_mm256_srli_epi64(w2, 16), mask24), bound, mask12,
+        count);
+    stage_sample_ntt4_count_chunk_vec_avx2(
+        _mm256_and_si256(_mm256_srli_epi64(w2, 40), mask24), bound, mask12,
+        count);
+  }
+}
+
+static void validate_sample_ntt4_state_mask_avx2(void) {
+  static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
+  static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 1}};
+
+  sample_ntt_parse_init_avx2();
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int batch = 0; batch < 2; batch++) {
+      __m256i st[25];
+      int count[4] = {0, 0, 0, 0};
+      int want[4];
+      stage_sample_ntt4_init(stage_rho[lane], rows[batch], cols[batch], st);
+      for (int block = 0; block < 3; block++) {
+        keccakf4_mem(st);
+        sample_ntt4_store_block(stage_tmp_sample_stream[lane],
+                                (size_t)block * 168, st);
+        stage_sample_ntt4_count_state_rate_mask_avx2(st, count);
+      }
+      for (int j = 0; j < 4; j++) {
+        want[j] = sample_ntt_parse_stream_avx2_ready(
+            stage_tmp_sample_stream[lane][j], 504,
+            stage_tmp_ahat[lane][j / K][j % K], 0);
+        if (count[j] != want[j]) {
+          fprintf(stderr,
+                  "sample_ntt4 state-mask count mismatch at %zu,%d,%d: "
+                  "%d != %d\n",
+                  lane, batch, j, count[j], want[j]);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static uint64_t bench_sample_ntt4_block_parse_full_raw(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -1930,6 +2025,28 @@ static uint64_t bench_sample_ntt4_state_parse_full_raw(size_t iters) {
       case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
       default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
     }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_state_mask3(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    int count[4] = {0, 0, 0, 0};
+    stage_sample_ntt4_init(stage_rho[lane], row, col, st);
+    for (int block = 0; block < 3; block++) {
+      keccakf4_mem(st);
+      stage_sample_ntt4_count_state_rate_mask_avx2(st, count);
+    }
+    acc ^= (uint64_t)(count[0] + 3 * count[1] + 5 * count[2] + 7 * count[3]);
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -4498,6 +4615,7 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__)
   validate_sample_ntt4_block_parse_avx2();
   validate_sample_ntt4_state_parse_avx2();
+  validate_sample_ntt4_state_mask_avx2();
 #endif
 
   printf("mlkem_core_stage_bench_iterations=%zu\n", iters);
@@ -4553,6 +4671,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_block_parse_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_state_parse_full_raw",
                bench_sample_ntt4_state_parse_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_state_mask3",
+               bench_sample_ntt4_state_mask3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_init_only",
                bench_sample_ntt4_init_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_scalar4_raw",
