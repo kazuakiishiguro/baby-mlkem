@@ -4799,32 +4799,48 @@ taskset -c 0 ./bench_core_stagesc 30000 | rg "ns_per_op" | \
   sort -t= -k2 -nr | head -n 50
 ```
 
-Current largest AVX2-only stage rows after the AVX2 encrypt public-tail/noise
-co-schedule:
+Current largest AVX2-only stage rows after the later sampler/NTT/Keccak
+micro-experiments and rejections:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 5424.88 |
-| `mlkem_core_stage_kpke_keygen_full` | 5368.46 |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4781.85 |
-| `mlkem_core_stage_sample_matrix` | 3303.93 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2445.64 |
-| `mlkem_core_stage_keygen_noise_ntt` | 1993.55 |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1589.38 |
-| `mlkem_core_stage_keygen_noise_ntt_only` | 1542.44 |
-| `mlkem_core_stage_sample_matrix_x4_batch1` | 1454.51 |
-| `mlkem_core_stage_encrypt_noise` | 1398.10 |
-| `mlkem_core_stage_sample_matrix_x4_batch0` | 1363.13 |
-| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1323.85 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1322.46 |
-| `mlkem_core_stage_sample_ntt4_full_raw` | 1171.66 |
-| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1170.75 |
-| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1114.93 |
-| `mlkem_core_stage_encrypt_accum_inv_u` | 1038.18 |
-| `mlkem_core_stage_sample_ntt4_common3_step` | 998.09 |
-| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.50 |
-| `mlkem_core_stage_sample_ntt4_keccak_store3` | 891.62 |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 118.36 |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4896.52 |
+| `mlkem_core_stage_kpke_keygen_full` | 4798.01 |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4154.39 |
+| `mlkem_core_stage_sample_matrix` | 2797.19 |
+| `mlkem_core_stage_sample_ntt4_scalar4_raw` | 2737.59 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2431.79 |
+| `mlkem_core_stage_keygen_noise_ntt` | 1994.89 |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1585.88 |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1543.86 |
+| `mlkem_core_stage_encrypt_noise` | 1401.14 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1330.60 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1322.89 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1180.13 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1174.51 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1116.76 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.14 |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1039.39 |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 991.95 |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.44 |
+| `mlkem_core_stage_keygen_noise_ntt_head_only` | 962.16 |
+| `mlkem_core_stage_keygen_noise_ntt_tail_only` | 957.27 |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 930.44 |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 874.28 |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 117.55 |
+
+Current AVX2-only forward-NTT micro split from the same HEAD:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_ntt_copy` | 196.69 |
+| `mlkem_ntt_inplace` | 190.31 |
+| `mlkem_ntt_head_l7_l4` | 97.61 |
+| `mlkem_ntt_tail_avx2` | 94.10 |
+| `mlkem_ntt_tail_avx2_l3` | 26.94 |
+| `mlkem_ntt_tail_avx2_l2` | 29.28 |
+| `mlkem_ntt_tail_avx2_l1` | 41.99 |
+| `mlkem_ntt_tail_avx2_l1_lazy` | 34.77 |
 
 Use this as the next design filter. H-NTT/polyphase-style work would need a
 full NTT and multiplication representation redesign before it can fairly
@@ -4833,9 +4849,12 @@ NAF-inspired signed/lazy representation should likewise span CBD, forward NTT,
 K=3 accumulation, inverse NTT, and encode/compress boundaries at once. The
 shorter-term implementation target remains the common `sample_ntt4()` three-rate
 Keccak/state layout: the latest snapshot puts `sample_ntt4_keccak_store3` at
-about 892 ns while `sample_ntt4_parse_504` is about 118 ns, so parser bookkeeping
-and narrow signed/lazy coefficient rewrites are not the next likely source of a
-robust KEM-level win.
+about 874 ns while `sample_ntt4_parse_504` is about 118 ns, so parser
+bookkeeping and narrow signed/lazy coefficient rewrites are not the next likely
+source of a robust KEM-level win. On the NTT side, head and tail are almost
+balanced; another local `l1`, inline-boundary, or table-width tweak is unlikely
+to move full KEM unless it is part of a representation change that carries
+through the multiply and encode/compress boundaries.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
