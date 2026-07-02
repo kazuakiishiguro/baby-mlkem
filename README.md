@@ -1067,6 +1067,62 @@ Keccak highlights:
 Keep the `keccakf4()` round loop in its current rolled form. Small fixed-factor
 unroll hints are not a reliable alternative to the already rejected full unroll.
 
+A later AVX2-only function-boundary experiment was accepted. The change marks
+`keccakf4()` as `always_inline` so hot callers can embed the permutation body,
+while keeping the internal 24-round loop rolled. This is different from the
+rejected round-loop unrolls: it targets the call boundary and repeated 25-lane
+state load/store traffic around x4 Keccak users, not the round schedule itself.
+The change remains vendor-free and does not call an external backend.
+
+AVX2-only direct Keccak A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak KECCAK_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct Keccak highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 502.18 | 287.59 | 1.7462x | 1.4142x |
+| `mlkem_prf_cbd_eta2x2_current` | 459.60 | 498.83 | 0.9214x | 0.9933x |
+| `mlkem_prf_cbd_eta2x3_current` | 464.14 | 489.02 | 0.9491x | 1.0466x |
+| `mlkem_sample_ntt_full` | 692.39 | 690.78 | 1.0023x | 0.9996x |
+
+The direct `keccakf4` row shows that the call boundary matters, but direct
+`sample_ntt_full` is too broad and scalar-heavy to prove the integrated effect.
+The deciding evidence is the AVX2-only stage/KEM run:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=20000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1654.92 | 1584.03 | 1.0447x | 1.1445x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1851.26 | 1777.01 | 1.0418x | 1.1237x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1977.98 | 1897.22 | 1.0426x | 1.1297x |
+| `mlkem_core_stage_sample_matrix` | 4315.83 | 4174.71 | 1.0338x | 1.0938x |
+| `mlkem_core_stage_kpke_keygen_full` | 6529.50 | 5947.58 | 1.0978x | 1.1514x |
+| `mlkem_keygen_core` | 8840.33 | 7795.06 | 1.1341x | 1.1086x |
+| `mlkem_encaps_core` | 9154.57 | 7508.75 | 1.2192x | 1.2380x |
+| `mlkem_roundtrip_core` | 26093.83 | 22234.18 | 1.1736x | 1.1926x |
+
+A longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+signal: `mlkem_keygen_core` median `1.1105x`, `mlkem_encaps_core` `1.1174x`,
+`mlkem_decaps_core` `1.2342x`, and `mlkem_roundtrip_core` `1.1876x`. Native
+KEM-only confirmation with the default `-march=native` build stayed neutral to
+slightly positive (`mlkem_roundtrip_core` median `1.0013x`), although some
+native AVX2-tail diagnostics such as `sample_ntt4_one_full_raw` moved slightly
+negative. Treat this as an AVX2-only core win with native KEM no-regression, not
+as a native sampler-tail optimization.
+
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 

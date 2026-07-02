@@ -31,8 +31,10 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define MLKEM_NOINLINE __attribute__((noinline))
+#define MLKEM_ALWAYS_INLINE inline __attribute__((always_inline))
 #else
 #define MLKEM_NOINLINE
+#define MLKEM_ALWAYS_INLINE inline
 #endif
 
 #if defined(USE_PQCLEAN_AVX2_BACKEND) || defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
@@ -440,7 +442,7 @@ static void keccakf(uint64_t state[25])
 }
 
 #if defined(__AVX2__)
-static void keccakf4(__m256i st[25]) {
+static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
   __m256i a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
   __m256i a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
   __m256i a10 = st[10], a11 = st[11], a12 = st[12], a13 = st[13];
