@@ -4324,6 +4324,57 @@ Keep keygen `shat[]` canonical unless a future design removes the d12
 canonicalization cost entirely or reworks the keygen accumulation/encoding order
 more broadly.
 
+A narrower keygen `ehat[]` lazy-NTT follow-up was rejected. The candidate kept
+`shat[]` canonical for secret-key d12 encoding and keygen accumulation, but ran
+AVX2-only `ehat[]` through `ntt_lazy_mul_input_avx2()`. The public output add
+then used a two-subtract AVX2 add helper to canonicalize
+`that_accum + lazy_ehat` before d12 public-key encoding. This targeted only the
+error-vector NTT canonicalization pass, avoiding the rejected `shat[]` lazy encode
+shape.
+
+The idea is another Harvey-style lazy-reduction variant: defer the final
+canonicalization until the next modular add that already has to scan the output.
+Correctness passed both AVX2-only and native builds, but the full-path A/B did
+not show a keygen win and introduced severe code-layout side effects in decaps
+core rows. The direct keygen median was neutral, so the source change was not
+kept.
+
+Correctness commands:
+
+```bash
+git diff --check
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected keygen `ehat` lazy-NTT highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 5390.13 | 5490.09 | 0.9818x | 0.9997x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1530.54 | 1530.69 | 0.9999x | 1.0000x |
+| `mlkem_core_stage_keygen_accum_encode` | 485.75 | 486.43 | 0.9986x | 0.9996x |
+| `mlkem_keygen_core` | 7576.80 | 7436.08 | 1.0189x | 0.9995x |
+| `mlkem_decaps_core` | 6473.44 | 7054.74 | 0.9176x | 0.9289x |
+| `mlkem_roundtrip` | 13980.55 | 13914.34 | 1.0048x | 0.9970x |
+
+Keep keygen `ehat[]` canonical. Deferring this single canonicalization pass
+moves work into the public-output add and changes code layout without producing a
+robust keygen median. Future keygen lazy-reduction work needs a broader
+accumulation/encoding redesign, not only moving `ehat`'s final reduction.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
