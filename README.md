@@ -5393,6 +5393,52 @@ round body in the loop and perturbs integrated KEM code layout enough to regress
 must preserve the direct sampler win without increasing the surrounding KEM code
 footprint this much.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` loop unroll hint)
+
+A narrower follow-up to the rejected explicit two-round schedule was also
+rejected. The candidate kept the current pointer-swap `keccakf4_mem()` loop,
+local scratch, round body, stream layout, parser, and refill path unchanged, but
+added a clang-only `#pragma clang loop unroll_count(2)` before the 24-round loop.
+This tested whether a compiler-guided two-round shape could keep the local
+sampler benefit without the larger code-layout cost of manually factoring and
+expanding the round body.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected unroll-hint highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 825.59 | 761.77 | 1.0838x | 1.0841x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 874.82 | 777.17 | 1.1256x | 1.1265x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 994.06 | 905.22 | 1.0981x | 1.0975x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.06 | 918.14 | 1.0141x | 1.0261x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.12 | 1103.14 | 1.0090x | 1.0197x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.94 | 1235.98 | 0.9579x | 0.9737x |
+| `mlkem_core_stage_sample_matrix` | 2814.08 | 2841.20 | 0.9905x | 0.9991x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4156.61 | 4189.89 | 0.9921x | 0.9977x |
+| `mlkem_core_stage_kpke_keygen_full` | 4815.91 | 4939.88 | 0.9749x | 0.9866x |
+
+Do not add a loop-unroll hint to `keccakf4_mem()`. The isolated sampler rows show
+that exposing two rounds can make the memory-resident permutation itself faster,
+but the full public-matrix and keygen rows do not keep the win. This is the same
+acceptance lesson as the manual two-round schedule: future sampler work must
+reduce the common Keccak/state dataflow without perturbing the larger keygen code
+layout, not just make the split Keccak rows faster.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `keccakf4_mem()` round-constant vector table)
 
 A third follow-up after the accepted ping-pong copy elision was rejected. The
