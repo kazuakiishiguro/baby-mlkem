@@ -5513,10 +5513,59 @@ local timing did not justify a production change. Pinned CPU 0, `clang`,
 | AVX2-only | `mlkem_prf_cbd_eta2x3_current` | 443.16 | 1.000x |
 | AVX2-only | `mlkem_prf_cbd_eta2x3_direct` | 449.66 | 0.986x |
 
-Keep the current x2/x3 stream-based helpers. The direct-state form avoids the
-small stream arrays but introduces a less favorable decode/store schedule; on
-AVX2-only, where these helpers matter, it is slower before reaching stage/KEM
-A/B.
+At that point, keep the x2/x3 stream-based helpers. The direct-state form
+avoided the small stream arrays but introduced a less favorable decode/store
+schedule before reaching stage/KEM A/B.
+
+After the later `keccakf4()` inline-boundary change, the direct-state cost model
+changed. A fresh AVX2-only direct Keccak snapshot before productionizing the
+change showed x2 and x3 direct decode both beating the old stream path locally:
+`mlkem_prf_cbd_eta2x2_current` `427.40` ns/op vs direct `292.90` ns/op, and
+`mlkem_prf_cbd_eta2x3_current` `417.98` ns/op vs direct `304.40` ns/op.
+However, productionizing both x2 and x3 direct-state helpers together regressed
+the keygen side and did not satisfy the full-path gate.
+
+AVX2-only x2+x3 direct-state rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 969.13 | 982.91 | 0.9860x | 0.9865x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1318.88 | 1167.72 | 1.1295x | 1.0852x |
+| `mlkem_keygen_core` | 7734.20 | 7892.43 | 0.9800x | 0.9984x |
+| `mlkem_roundtrip_core` | 22136.75 | 22196.27 | 0.9973x | 0.9981x |
+
+The accepted production change is narrower: keep x2 stream-based, but decode
+the AVX2-only x3 helper directly from the `keccakf4()` state. This targets the
+second encryption noise batch and avoids changing the keygen x4+x2 composition.
+The x3 direct path is guarded away from AVX512 builds, where the main PRF/CBD
+paths use x6/x7 helpers and a native KEM no-regression check is the relevant
+criterion.
+
+AVX2-only x3-only direct-state stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted x3-only highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 971.41 | 973.10 | 0.9983x | 1.0001x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1299.75 | 1170.32 | 1.1106x | 1.0858x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2620.87 | 2440.66 | 1.0738x | 1.0505x |
+| `mlkem_keygen_core` | 8054.26 | 7680.52 | 1.0487x | 1.0012x |
+| `mlkem_encaps_core` | 7609.75 | 7742.79 | 0.9828x | 0.9980x |
+| `mlkem_roundtrip_core` | 22709.08 | 22608.02 | 1.0045x | 1.0026x |
+
+A longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+full-path signal: `mlkem_keygen_core` median `1.0015x`, `mlkem_encaps_core`
+`1.0363x`, `mlkem_decaps_core` `1.0676x`, and `mlkem_roundtrip_core` `1.1029x`.
+A native `-march=native` KEM no-regression run with `RUNS=9`, `KEM_ITERS=30000`
+stayed neutral-to-positive on the core rows (`mlkem_roundtrip_core` median
+`1.0053x`).
 
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 

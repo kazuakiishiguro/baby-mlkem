@@ -2417,7 +2417,9 @@ static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
                                     poly256 out1,
                                     poly256 out2) {
   __m256i st[25];
+#if defined(__AVX512F__)
   uint8_t stream[3][128];
+#endif
 
   for (int i = 0; i < 25; i++) {
     st[i] = _mm256_setzero_si256();
@@ -2435,6 +2437,7 @@ static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
 
   keccakf4(st);
 
+#if defined(__AVX512F__)
   for (int lane = 0; lane < 16; lane++) {
     uint64_t words[4];
     _mm256_storeu_si256((__m256i *)words, st[lane]);
@@ -2446,6 +2449,14 @@ static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
   sample_poly_cbd_eta2_bytes(stream[0], out0);
   sample_poly_cbd_eta2_bytes(stream[1], out1);
   sample_poly_cbd_eta2_bytes(stream[2], out2);
+#else
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store1_avx2(_mm256_extracti128_si256(st[i], 1),
+                                     out2 + 16 * i);
+  }
+#endif
 }
 
 static void mlkem_keygen_prf_cbd_eta2_32(const uint8_t seed[32],
