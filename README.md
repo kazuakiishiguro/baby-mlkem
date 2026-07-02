@@ -4022,6 +4022,52 @@ conditional add/sub reductions from the final butterfly, pays one contiguous
 canonicalization pass, and keeps all external encoders and NTT-domain consumers
 on the existing canonical representation.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 inverse NTT lazy final add)
+
+A follow-up inverse-NTT lazy-final experiment was rejected. The bench-only
+candidate kept the existing inverse final butterfly and scale arithmetic, but
+stored the final `scaled + add` values in `[0, 2Q)` for `ntt_inv_add()` and in
+`[0, 3Q)` for `ntt_inv_add2()`, then canonicalized the full polynomial once or
+twice at the end. A matching `ntt_inv_sub_from()` diagnostic was also measured,
+but it was neutral.
+
+The direct NTT microbench looked attractive and `bench_ntt` validation checked
+all lazy-final outputs against the existing exact helpers:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000   C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"   ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct inverse NTT highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_add` | 199.80 | 197.43 | 1.0120x | 1.0115x |
+| `mlkem_ntt_inv_add2` | 210.96 | 205.26 | 1.0277x | 1.0273x |
+| `mlkem_ntt_inv_sub_from` | 200.02 | 199.92 | 1.0005x | 1.0008x |
+
+However, productionizing `ntt_inv_add()` and `ntt_inv_add2()` did not survive the
+full-path gate:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000   C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"   ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 794.64 | 780.26 | 1.0184x | 1.0185x |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 467.11 | 474.15 | 0.9852x | 0.9856x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2447.92 | 2444.21 | 1.0015x | 1.0016x |
+| `mlkem_keygen_core` | 7585.66 | 8004.18 | 0.9477x | 0.9995x |
+| `mlkem_roundtrip_core` | 22826.71 | 22735.35 | 1.0040x | 0.9818x |
+
+Keep inverse final add/sub paths exact for now. Unlike the accepted forward NTT
+final-l1 change, this inverse add rewrite perturbs integrated encryption and
+roundtrip behavior enough that the direct helper win is not a reliable core
+optimization.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column

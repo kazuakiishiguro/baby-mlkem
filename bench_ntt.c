@@ -541,6 +541,131 @@ static void ntt_lazy_l1_canon_avx2(const poly256 in, poly256 out) {
   ntt_tail_lazy_l1_canon_avx2(out);
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static inline void bench_reduce_poly_twice_avx2(poly256 f) {
+  ntt_reduce_once_avx2(f);
+  ntt_reduce_once_avx2(f);
+}
+
+static inline void bench_ntt_inv_add_fused_final_lazy_avx2(const poly256 add,
+                                                           poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i a0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add + j)));
+    __m256i a1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add + N / 2 + j)));
+    _mm_storeu_si128((__m128i *)(out + j),
+                     pack_i32x8_to_i16x8(_mm256_add_epi32(scaled0, a0)));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(_mm256_add_epi32(scaled1, a1)));
+  }
+  ntt_reduce_once_avx2(out);
+}
+
+static inline void bench_ntt_inv_add2_fused_final_lazy_avx2(
+    const poly256 add0, const poly256 add1, poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i a00 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add0 + j)));
+    __m256i a01 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add0 + N / 2 + j)));
+    __m256i a10 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add1 + j)));
+    __m256i a11 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(add1 + N / 2 + j)));
+    _mm_storeu_si128((__m128i *)(out + j),
+                     pack_i32x8_to_i16x8(_mm256_add_epi32(
+                         _mm256_add_epi32(scaled0, a00), a10)));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(_mm256_add_epi32(
+                         _mm256_add_epi32(scaled1, a01), a11)));
+  }
+  bench_reduce_poly_twice_avx2(out);
+}
+
+static inline void bench_ntt_inv_sub_from_fused_final_lazy_avx2(
+    const poly256 minuend, poly256 out) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  const __m256i q = _mm256_set1_epi32(Q);
+  for (int j = 0; j < N / 2; j += 8) {
+    __m256i a = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + j)));
+    __m256i b = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(out + N / 2 + j)));
+    __m256i sum = mod_q_add_i32x8(a, b);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i scaled0 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+    __m256i scaled1 =
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+    __m256i m0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(minuend + j)));
+    __m256i m1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(minuend + N / 2 + j)));
+    _mm_storeu_si128((__m128i *)(out + j),
+                     pack_i32x8_to_i16x8(_mm256_sub_epi32(
+                         _mm256_add_epi32(m0, q), scaled0)));
+    _mm_storeu_si128((__m128i *)(out + N / 2 + j),
+                     pack_i32x8_to_i16x8(_mm256_sub_epi32(
+                         _mm256_add_epi32(m1, q), scaled1)));
+  }
+  ntt_reduce_once_avx2(out);
+}
+
+static void bench_ntt_inv_add_lazy_final_eval(const poly256 f_in,
+                                         const poly256 add,
+                                         poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add_fused_final_lazy_avx2(add, out);
+}
+
+static void bench_ntt_inv_add2_lazy_final_eval(const poly256 f_in,
+                                          const poly256 add0,
+                                          const poly256 add1,
+                                          poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add2_fused_final_lazy_avx2(add0, add1, out);
+}
+
+static void bench_ntt_inv_sub_from_lazy_final_eval(const poly256 minuend,
+                                              const poly256 f_in,
+                                              poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_sub_from_fused_final_lazy_avx2(minuend, out);
+}
+#endif
+
 static void prepare_ntt_split_inputs(void) {
   poly256 cur;
 
@@ -684,15 +809,27 @@ static void validate_ntt_helpers(void) {
   ntt_inv(tmp, inv);
   poly256_add(inv, bench_add0[0], want);
   check_equal(got, want, "ntt_inv_add");
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  bench_ntt_inv_add_lazy_final_eval(tmp, bench_add0[0], got);
+  check_equal(got, want, "ntt_inv_add_lazy_final");
+#endif
 
   ntt_inv_add2(tmp, bench_add0[0], bench_add1[0], got);
   poly256_add(inv, bench_add0[0], want);
   poly256_add(want, bench_add1[0], want);
   check_equal(got, want, "ntt_inv_add2");
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  bench_ntt_inv_add2_lazy_final_eval(tmp, bench_add0[0], bench_add1[0], got);
+  check_equal(got, want, "ntt_inv_add2_lazy_final");
+#endif
 
   ntt_inv_sub_from(bench_add1[0], tmp, got);
   poly256_sub(bench_add1[0], inv, want);
   check_equal(got, want, "ntt_inv_sub_from");
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  bench_ntt_inv_sub_from_lazy_final_eval(bench_add1[0], tmp, got);
+  check_equal(got, want, "ntt_inv_sub_from_lazy_final");
+#endif
 
   memset(accum, 0, sizeof(accum));
   ntt_mul_add(bench_a0[0], bench_b0[0], accum);
@@ -1258,6 +1395,56 @@ static uint64_t bench_ntt_inv_sub_from(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_inv_add_lazy_final(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add_lazy_final_eval(bench_a0[lane], bench_add0[lane],
+                                      bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 37u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_add2_lazy_final(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add2_lazy_final_eval(bench_a0[lane], bench_add0[lane],
+                                       bench_add1[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 41u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_sub_from_lazy_final(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_sub_from_lazy_final_eval(bench_add1[lane], bench_a0[lane],
+                                           bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 43u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_ntt_mul_acc3(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1408,6 +1595,14 @@ int main(int argc, char **argv) {
   print_metric("mlkem_ntt_inv_add", bench_ntt_inv_add(iters), iters);
   print_metric("mlkem_ntt_inv_add2", bench_ntt_inv_add2(iters), iters);
   print_metric("mlkem_ntt_inv_sub_from", bench_ntt_inv_sub_from(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_inv_add_lazy_final",
+               bench_ntt_inv_add_lazy_final(iters), iters);
+  print_metric("mlkem_ntt_inv_add2_lazy_final",
+               bench_ntt_inv_add2_lazy_final(iters), iters);
+  print_metric("mlkem_ntt_inv_sub_from_lazy_final",
+               bench_ntt_inv_sub_from_lazy_final(iters), iters);
+#endif
   print_metric("mlkem_ntt_mul_acc3", bench_ntt_mul_acc3(iters), iters);
   print_metric("mlkem_ntt_mul_acc3_factored",
                bench_ntt_mul_acc3_factored(iters), iters);
