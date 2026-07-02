@@ -5712,6 +5712,62 @@ compiler already handles well. Do not pre-vectorize these round constants unless
 a future broader Keccak layout change removes the split-row regression and keeps
 the KEM core rows positive.
 
+A memory-resident theta source-shape follow-up was also rejected. The candidate
+changed only the five `keccakf4_mem()` theta column parity expressions from the
+nested XOR tree shape into sequential `_mm256_xor_si256()` assignments. This is
+narrower than the earlier register-resident `keccakf4()` source-shape experiment:
+all direct Keccak and PRF/CBD users stayed on the existing code, while the common
+`sample_ntt4()` public-matrix path tested whether the memory-resident loop would
+schedule better with shorter visible XOR trees.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 827.64 | 827.33 | 1.0004x | 1.0008x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 878.08 | 877.18 | 1.0010x | 1.0006x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 997.08 | 996.03 | 1.0011x | 1.0006x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 933.29 | 932.45 | 1.0009x | 1.0003x |
+| `mlkem_core_stage_sample_matrix` | 2811.73 | 2809.08 | 1.0009x | 1.0019x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4166.43 | 4165.76 | 1.0002x | 0.9999x |
+| `mlkem_core_stage_kpke_keygen_full` | 4836.56 | 4824.59 | 1.0025x | 1.0024x |
+
+AVX2-only KEM confirmation rejected keeping the source change:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6925.77 | 6925.76 | 1.0000x | 1.0004x |
+| `mlkem_encaps_core` | 6958.10 | 7059.54 | 0.9856x | 1.0091x |
+| `mlkem_decaps_core` | 6073.07 | 6061.84 | 1.0019x | 1.0014x |
+| `mlkem_roundtrip` | 13368.14 | 13392.30 | 0.9982x | 0.9991x |
+| `mlkem_roundtrip_core` | 20071.88 | 20206.27 | 0.9933x | 0.9991x |
+
+Decision: keep the nested XOR tree in `keccakf4_mem()`. The sampler split rows
+show only sub-0.2% median movement, and KEM roundtrip medians do not retain even
+that small signal. Future memory-resident Keccak work should remove real state
+movement or stores rather than alter equivalent theta source spelling.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 NTT acc3 helper consolidation)
 
 An NTT accumulation cleanup experiment was rejected. The candidate removed the
