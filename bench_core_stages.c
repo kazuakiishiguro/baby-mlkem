@@ -236,6 +236,7 @@ static void stage_ntt_inv_add_tail_final_after_head_avx2(const poly256 add,
 #if !(defined(__AVX512F__))
 static void validate_keygen_matrix_noise_schedule_avx2(void);
 #endif
+static void validate_keygen_matrix_noise_tail21_avx2(void);
 static void validate_keygen_noise_ntt_headtail_batch_avx2(void);
 #endif
 
@@ -909,6 +910,7 @@ static void validate_core_stage_helpers(void) {
   validate_encrypt_prf_cbd_tail_cosched_matches_separate();
 #if !(defined(__AVX512F__))
   validate_keygen_matrix_noise_schedule_avx2();
+  validate_keygen_matrix_noise_tail21_avx2();
 #endif
   validate_ntt_mul_acc3_canonical_avx2();
   validate_keygen_noise_ntt_headtail_batch_avx2();
@@ -1302,6 +1304,75 @@ static void stage_keygen_matrix_noise_tail_last_avx2(
       ehat[2]);
 }
 
+static void stage_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
+    poly256 s0, poly256 s1, poly256 s2, poly256 e0,
+    poly256 e1, poly256 e2) {
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  __m256i st[25];
+  uint64_t tail_state[25];
+
+  mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(sigma + 0),
+                            (long long)load64_le(sigma + 0));
+  st[1] = _mm256_set_epi64x(0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(sigma + 8),
+                            (long long)load64_le(sigma + 8));
+  st[2] = _mm256_set_epi64x(0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(sigma + 16),
+                            (long long)load64_le(sigma + 16));
+  st[3] = _mm256_set_epi64x(0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(sigma + 24),
+                            (long long)load64_le(sigma + 24));
+  st[4] = _mm256_set_epi64x(
+      0, 0x1f0102LL,
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)));
+  st[16] = _mm256_set_epi64x(0, 0,
+                             (long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56));
+  st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
+                                     e1 + 16 * lane, e2 + 16 * lane);
+  }
+  for (int lane = 0; lane < 25; lane++) {
+    tail_state[lane] = keccak_lane2_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)tail_state, 168, tail, 0);
+  while (count < N) {
+    keccakf(tail_state);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)tail_state, 168, tail, count);
+  }
+}
+
+static void stage_keygen_matrix_noise_tail21_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 ahat[K][K],
+    poly256 shat[K], poly256 ehat[K]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 2};
+
+  sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2], ahat[1][0]);
+  stage_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
+      sigma, rho, ahat[2][1], shat[0], shat[1], shat[2], ehat[0], ehat[1],
+      ehat[2]);
+  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0], ahat[2][2]);
+}
+
 static void validate_keygen_matrix_noise_schedule_avx2(void) {
   poly256 cur_ahat[K][K], first_ahat[K][K], last_ahat[K][K];
   poly256 cur_s[K], first_s[K], last_s[K];
@@ -1325,6 +1396,26 @@ static void validate_keygen_matrix_noise_schedule_avx2(void) {
         memcmp(cur_s, last_s, sizeof(cur_s)) != 0 ||
         memcmp(cur_e, last_e, sizeof(cur_e)) != 0) {
       fprintf(stderr, "keygen matrix/noise tail-last mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+
+static void validate_keygen_matrix_noise_tail21_avx2(void) {
+  poly256 cur_ahat[K][K], alt_ahat[K][K];
+  poly256 cur_s[K], alt_s[K];
+  poly256 cur_e[K], alt_e[K];
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    mlkem_keygen_matrix_noise_avx2(stage_sigma[lane], stage_rho[lane], cur_ahat,
+                                   cur_s, cur_e);
+    stage_keygen_matrix_noise_tail21_avx2(
+        stage_sigma[lane], stage_rho[lane], alt_ahat, alt_s, alt_e);
+    if (memcmp(cur_ahat, alt_ahat, sizeof(cur_ahat)) != 0 ||
+        memcmp(cur_s, alt_s, sizeof(cur_s)) != 0 ||
+        memcmp(cur_e, alt_e, sizeof(cur_e)) != 0) {
+      fprintf(stderr, "keygen matrix/noise tail21 mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
     }
   }
@@ -1378,6 +1469,22 @@ static uint64_t bench_keygen_matrix_noise_tail_last(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_keygen_matrix_noise_tail_last_avx2(
+        stage_sigma[lane], stage_rho[lane], stage_tmp_ahat[lane],
+        stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
+    acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_matrix_noise_tail21(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_matrix_noise_tail21_avx2(
         stage_sigma[lane], stage_rho[lane], stage_tmp_ahat[lane],
         stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
     acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
@@ -4029,6 +4136,8 @@ int main(int argc, char **argv) {
                bench_keygen_matrix_noise_tail_first(iters), iters);
   print_metric("mlkem_core_stage_keygen_matrix_noise_tail_last",
                bench_keygen_matrix_noise_tail_last(iters), iters);
+  print_metric("mlkem_core_stage_keygen_matrix_noise_tail21",
+               bench_keygen_matrix_noise_tail21(iters), iters);
 #endif
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",

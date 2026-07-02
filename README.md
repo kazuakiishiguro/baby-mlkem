@@ -1495,6 +1495,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_current` | AVX2-only bench of the production keygen matrix/noise order: x4 batch0, co-scheduled PRF/CBD plus `(2,2)` tail, x4 batch1 |
 | `mlkem_core_stage_keygen_matrix_noise_tail_first` | AVX2-only diagnostic order: co-scheduled PRF/CBD plus `(2,2)` tail before both public-matrix x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
+| `mlkem_core_stage_keygen_matrix_noise_tail21` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(2,1)` as the PRF/CBD tail lane and placing `(2,2)` in the second x4 matrix batch |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
@@ -7764,6 +7765,53 @@ example by carrying multiple polynomials through the whole transform schedule or
 by redesigning the representation across NTT, K=3 accumulation, and encoding.
 Another isolated l1/l2/tail tweak is unlikely to move the integrated keygen or
 KEM rows robustly.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen tail21 co-schedule)
+
+A bench-only follow-up tested whether the earlier public-matrix tail-choice signal
+survives the production-like keygen matrix/noise co-schedule. The current AVX2
+keygen path leaves `(2,2)` as the single matrix tail and samples it in the unused
+lane of the second keygen PRF/CBD `keccakf4()` call. The diagnostic instead uses
+`(2,1)` as that co-scheduled tail and puts `(2,2)` into the second x4 matrix
+batch, so the generated `A` matrix, `shat`, and `ehat` are identical but the XOF
+suffixes assigned to the x4 batches and tail lane change.
+
+The diagnostic adds `mlkem_core_stage_keygen_matrix_noise_tail21` and validates
+it against the production `mlkem_keygen_matrix_noise_avx2()` output before
+timing. Production code is unchanged.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_keygen_matrix_noise_(current|tail_first|tail_last|tail21)_ns_per_op=|mlkem_core_stage_sample_matrix_tail_choice_(21|22)_ns_per_op=|mlkem_core_stage_kpke_keygen_full_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Tail21 co-schedule highlights:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2826.76 | 2805.94 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2792.91 | 2791.56 | 1.0121x | 1.0052x |
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3044.39 | 3041.21 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_keygen_matrix_noise_tail21` | 3053.51 | 3035.17 | 0.9970x | 1.0020x |
+| `mlkem_core_stage_keygen_matrix_noise_tail_last` | 3051.17 | 3048.03 | 0.9978x | 0.9978x |
+
+Decision: reject production tail21 co-scheduling. The generic `sample_matrix`
+tail-choice row still shows a small `(2,1)` median advantage, but the keygen
+co-scheduled row is not robust: median movement is only about `1.0020x`, while
+average movement is negative due to layout/noise sensitivity. Keep the current
+`(2,2)` keygen tail lane. Future sampler work should change the common
+Keccak/store/parser work itself, not only reassign which matrix entry is the
+single co-scheduled tail.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen NTT head/tail batch schedule)
