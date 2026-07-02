@@ -2031,6 +2031,40 @@ RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=40000 \
 | `mlkem_roundtrip_core` | 26518.12 | 26586.20 | 0.9974x | 1.0035x |
 | `mlkem_decaps_core` | 8278.30 | 8279.06 | 0.9999x | 0.9876x |
 
+A follow-up AVX2 final zeta-scale global-vector precompute experiment was also
+rejected. The candidate initialized a global `__m256i` holding
+`mod_q_reduce_ntt_u32(ZETA[1] * 3303)` during `init_ntt_roots()`, changed
+`ntt_inv_before_final_avx2()` to return `void`, and loaded that vector in the
+three AVX2 final fused inverse-NTT helpers. This avoided the scalar per-call
+zeta-scale computation, but replaced it with a hot-loop-adjacent global YMM load.
+AVX2-only `make test` passed.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 C_COMPILER=clang \
+  PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Global-vector precompute rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 291.62 | 298.29 | 0.9776x | 0.9744x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | 254.04 | 260.81 | 0.9740x | 0.9728x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | 248.43 | 263.29 | 0.9436x | 0.9433x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 792.82 | 791.22 | 1.0020x | 1.0027x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1058.02 | 1041.35 | 1.0160x | 1.0030x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 382.60 | 381.73 | 1.0023x | 1.0025x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 889.40 | 896.72 | 0.9918x | 0.9983x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2437.53 | 2437.47 | 1.0000x | 0.9993x |
+
+Skip KEM confirmation for this shape. The full inverse-add rows show only small
+noise-level positives, while the direct final-scale split regresses sharply and
+cached encryption is not positive by median. Keep the current local zeta-scale
+setup until a representation-level inverse-NTT rewrite removes more work than a
+single scalar constant computation.
+
 An AVX2 negative-scale final reduction experiment was also rejected. The
 candidate used `3303 == -26 mod q` and replaced the `sum * 3303` product in the
 AVX2 final fused helpers with `(q - sum) * 26`, implemented as shifts and
