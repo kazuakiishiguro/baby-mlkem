@@ -8085,6 +8085,42 @@ Keep x2 stream-based. The x2 direct helper is attractive in the isolated
 microbench, but the keygen/KEM integration does not give enough full-path signal
 to justify another code-shape variant.
 
+A smaller AVX2-only x2 stream-extraction cleanup was also rejected. The
+candidate kept the accepted stream-based `mlkem_prf_cbd_eta2x2_32()` design, but
+replaced the per-lane `uint64_t words[4]` store plus two 8-byte `memcpy()` calls
+with two `_mm_storel_epi64()` stores from the low 128 bits of the `keccakf4()`
+state. This preserved the byte-stream CBD decoder and only tried to remove the
+extra stack round trip for the two live lanes.
+
+Correctness passed the AVX2-only core gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected x2 stream-extract highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 980.88 | 975.24 | 1.0058x | 1.0006x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1997.36 | 1994.53 | 1.0014x | 0.9998x |
+| `mlkem_core_stage_kpke_keygen_full` | 4918.28 | 4936.74 | 0.9963x | 0.9999x |
+| `mlkem_keygen_core` | 7045.77 | 7097.91 | 0.9927x | 0.9979x |
+| `mlkem_roundtrip` | 13513.88 | 13582.04 | 0.9950x | 0.9958x |
+| `mlkem_roundtrip_core` | 20468.87 | 20546.99 | 0.9962x | 1.0019x |
+
+Keep the current x2 stream extraction. The local PRF/CBD row improves only in
+average, not meaningfully in median, and the integrated keygen/KEM rows do not
+support carrying a separate extraction shape.
+
 A follow-up marking the accepted x3 direct helper `MLKEM_NOINLINE` was rejected.
 The short stage/KEM run showed a local encryption-noise improvement, but the
 longer AVX2-only KEM confirmation regressed the full path.
