@@ -5333,6 +5333,35 @@ balanced; another local `l1`, inline-boundary, or table-width tweak is unlikely
 to move full KEM unless it is part of a representation change that carries
 through the multiply and encode/compress boundaries.
 
+Research-source mapping update (2026-07-03): libsecp256k1 documents the ECC-side
+patterns that motivated the review--wNAF point multiplicands, a larger window
+and precomputed multiples for the generator, Shamir's trick, and secp256k1's
+endomorphism to split one public-key multiplicand
+(`https://github.com/bitcoin-core/secp256k1`). These are scalar-multiplication
+and group-addition optimizations, so they do not directly map onto ML-KEM's
+SHAKE/NTT/matrix-vector pipeline. The useful translation remains: fill SIMD
+lanes with independent work, avoid data-dependent secret control flow, and move
+normalization only when the next consumer's range contract proves it safe.
+
+For lattice-specific redesigns, OSKR/OKAI's H-NTT work
+(`https://arxiv.org/abs/2109.02893`) and KyberMat's NTT/polyphase decomposition
+(`https://arxiv.org/abs/2310.04618`) point at representation-level NTT and
+matrix-vector changes, not small local helper rewrites. Newer NTT accelerator
+work such as @NTT (`https://arxiv.org/abs/2601.17806`) is mainly a hardware
+constant/dataflow lesson: fixed parameters can justify design-time specialization,
+but in this C/AVX2 core the comparable software specialization has already been
+measured mostly around Keccak/store layout, NTT tail/head balance, and final
+range contracts. The next valid implementation experiment should therefore
+prototype a full boundary contract--for example CBD/sampler output range -> NTT
+range -> K=3 multiply range -> inverse/add range -> encode/compress range--or
+else stay in the measured Keccak lane-filling/co-scheduling space.
+
+Current HEAD spot-check after the tile2x3 accumulator diagnostic, AVX2-only,
+`./bench_core_stagesc 12000`, keeps the same priority order: `sample_matrix`
+about 2.7 us, `keygen_noise_ntt` about 1.94 us, `encrypt_noise` about 1.37 us,
+`encrypt_accum_inv` about 1.31 us, and ciphertext compression about 51 ns. That
+rules out d10/d4 packing and parser bookkeeping as primary next targets.
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy NTT boundary)
 
 A bench-only diagnostic now measures the existing production AVX2 lazy
