@@ -1451,6 +1451,50 @@ correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and
 and `mlkem_ntt_inv` to `0.9871x`. Keep the existing simple conditional form;
 clang's generated code is better for the scalar upper NTT stages on this target.
 
+A separate AVX2 vector NTT reduction correction-shape experiment was rejected.
+The candidate changed only `mod_q_reduce_ntt_u32x8()`'s final negative correction
+from `cmpgt_epi32(zero, r)` to `srai_epi32(r, 31)`, keeping the same Barrett-style
+`x - (((x * 315) >> 20) * Q)` estimate and the same value range. This tested a
+classic sign-mask idiom on the AVX2 butterfly reduction helper, not the scalar
+upper NTT add/sub path above.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only NTT/stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt,stage,kem NTT_ITERS=200000 \
+  STAGE_ITERS=60000 KEM_ITERS=20000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX2 vector-reduction correction highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_copy` | 197.15 | 197.02 | 1.0007x | 1.0001x |
+| `mlkem_ntt_inplace` | 191.81 | 191.75 | 1.0003x | 1.0002x |
+| `mlkem_ntt_inv_add` | 200.40 | 200.27 | 1.0006x | 1.0005x |
+| `mlkem_ntt_tail_avx2` | 94.17 | 94.11 | 1.0006x | 0.9999x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1326.71 | 1333.50 | 0.9949x | 0.9994x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1991.96 | 2000.13 | 0.9959x | 0.9993x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2427.09 | 2438.11 | 0.9955x | 0.9994x |
+| `mlkem_encaps_core` | 6986.98 | 7197.67 | 0.9707x | 1.0000x |
+| `mlkem_roundtrip_core` | 20065.33 | 20272.32 | 0.9898x | 1.0006x |
+
+Reject the sign-mask replacement. It is at best neutral in direct NTT medians
+and does not improve the integrated rows; several stage averages move negative.
+Keep the explicit compare correction in the AVX2 vector reducer. Future
+reduction work needs to remove broader correction/reduction passes, not swap the
+final mask instruction in the existing helper.
+
 The `sample_ntt4_*` breakdown metrics are diagnostic only and are not emitted on
 non-AVX2 builds. `sample_ntt4_full_raw` measures the x4 sampler with a
 lightweight sink, while the other breakdown metrics separate state
