@@ -2042,6 +2042,38 @@ RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
 | `mlkem_core_stage_encrypt_inv_add_u_only` | 796.30 | 799.46 | 0.9960x | 0.9959x |
 | `mlkem_core_stage_encrypt_accum_inv_u` | 1041.38 | 1045.69 | 0.9959x | 0.9967x |
 
+An AVX2 inverse-add final loop unroll hint experiment was also rejected. The
+candidate added `#pragma clang loop unroll_count(2)` to the final AVX2 fused
+loops in `ntt_inv_add_fused_final_avx2()`, `ntt_inv_add2_fused_final_avx2()`,
+and `ntt_inv_sub_from_fused_final_avx2()`. It changed only clang code generation
+hints, not arithmetic or data representation. AVX2-only `make test` passed, but
+stage A/B did not show a consistent direct win, so KEM confirmation was skipped
+and the source was reverted.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Final-loop unroll rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 290.91 | 291.10 | 0.9993x | 0.9990x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | 323.64 | 323.63 | 1.0000x | 0.9994x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 791.17 | 795.88 | 0.9941x | 0.9997x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1045.25 | 1043.82 | 1.0014x | 1.0003x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.50 | 381.62 | 0.9997x | 0.9998x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2438.48 | 2446.03 | 0.9969x | 1.0010x |
+
+Keep the final AVX2 loops in their current compact form. The final pass is still
+worth targeting, but simple loop-control reshaping is not enough; future work
+needs to remove shared load/extend/reduction work or change the representation
+boundary feeding compression.
+
 An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
 changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
 16-coefficient blocks, then `l2`, then `l3`) to one block-local pass that ran
