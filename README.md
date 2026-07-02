@@ -4803,6 +4803,56 @@ prevents future work from optimizing the old register-resident split rows while
 missing the real `sample_ntt4()` path.
 
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keccakf4_mem noinline boundary)
+
+A narrow `sample_ntt4()` Keccak boundary experiment was rejected. The candidate
+changed only `keccakf4_mem()` from `MLKEM_ALWAYS_INLINE` to `MLKEM_NOINLINE`,
+leaving the memory-resident round function, stream stores, parser, and all other
+Keccak callers unchanged. The hypothesis was that keeping the large ping-pong
+Keccak arrays inside a separate function might reduce `sample_ntt4()` caller
+register/stack pressure.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=20000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 1056.54 | 850.54 | 1.2422x | 1.2430x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 1016.35 | 872.62 | 1.1647x | 1.1654x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 1176.93 | 987.73 | 1.1916x | 1.1923x |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 317.61 | 307.12 | 1.0342x | 1.0386x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 971.39 | 979.64 | 0.9916x | 0.9915x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1159.03 | 1168.83 | 0.9916x | 0.9914x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1236.81 | 1244.48 | 0.9938x | 0.9967x |
+| `mlkem_core_stage_sample_matrix` | 2896.44 | 2914.62 | 0.9938x | 0.9939x |
+| `mlkem_core_stage_kpke_keygen_full` | 4921.46 | 4936.51 | 0.9970x | 0.9971x |
+| `mlkem_encaps_core` | 7013.38 | 7163.67 | 0.9790x | 0.9848x |
+| `mlkem_keygen_core` | 7032.88 | 7052.99 | 0.9971x | 0.9987x |
+| `mlkem_roundtrip_core` | 20722.53 | 20821.04 | 0.9953x | 0.9957x |
+
+Keep `keccakf4_mem()` inline in the production `sample_ntt4()` path. The
+standalone split rows improve with `noinline`, but the full sampler, public
+matrix generation, and KEM core rows regress. This confirms that future
+`keccakf4_mem()` work must be accepted on `sample_ntt4_full_raw`, x4 batch,
+`sample_matrix`, and KEM rows, not on isolated split rows that have a different
+caller context.
+
+
 No-cache encapsulation public-prepare diagnostic:
 
 ```bash
