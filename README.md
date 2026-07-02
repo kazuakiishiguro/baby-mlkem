@@ -1468,6 +1468,9 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
+| `mlkem_core_stage_keygen_secret_ntt_encode_only` | isolated keygen secret-vector forward NTT plus secret-key d12 encode for `shat[0..2]` |
+| `mlkem_core_stage_keygen_secret_ntt_only` | isolated keygen secret-vector three-polynomial forward NTT for `shat[0..2]`, excluding d12 encode |
+| `mlkem_core_stage_keygen_error_ntt_only` | isolated keygen error-vector three-polynomial forward NTT for `ehat[0..2]` |
 | `mlkem_core_stage_keygen_noise_ntt_head_only` | AVX2-only keygen six-polynomial forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_keygen_noise_ntt_tail_only` | AVX2-only keygen six-polynomial `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_keygen_secret_encode_only` | isolated keygen secret-key d12 encode for the already transformed `shat` vector |
@@ -1970,6 +1973,25 @@ The split confirms that the remaining `keygen_noise_ntt_encode` cost is the six
 forward NTTs. Another d12 secret-key encode rewrite is unlikely to move keygen;
 future work should target forward-NTT scheduling or reusable NTT-side arithmetic
 instead.
+
+A later keygen NTT split diagnostic added separate rows for the three secret
+polynomial NTTs, the three error polynomial NTTs, and the secret NTT+encode
+boundary. Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, `-mavx2 -mbmi2 -mpopcnt`,
+median of seven `50000`-iteration runs measured:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1593.16 |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1548.56 |
+| `mlkem_core_stage_keygen_secret_ntt_encode_only` | 816.04 |
+| `mlkem_core_stage_keygen_secret_ntt_only` | 784.59 |
+| `mlkem_core_stage_keygen_error_ntt_only` | 772.64 |
+| `mlkem_core_stage_keygen_secret_encode_only` | 36.45 |
+
+This rules out another secret-encode-adjacent tweak as a primary target. The
+secret and error halves are symmetric within measurement noise; the useful
+keygen target remains the full forward-NTT schedule or a broader representation
+that changes both halves, not `shat`-only or `ehat`-only handling.
 
 A follow-up AVX2-only ETA2 first-level NTT specialization was rejected. The
 candidate added an `ntt_eta2()` path for CBD-derived polynomials and replaced the
