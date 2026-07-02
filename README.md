@@ -5443,6 +5443,52 @@ the lazy NTT work: remove redundant normalization/masking only at sites where th
 producer already proves the value range, and keep broader or native paths exact
 when integrated measurements do not improve.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 direct d12 encode helper boundary)
+
+A d12 encode call-boundary cleanup was rejected. The candidate added a thin
+`byte_encode_d12()` helper and replaced the hot `byte_encode(12, ...)` calls in
+keygen and the stage harness with direct d12 helper calls. The d12 packing
+arithmetic, range assumptions, and AVX512BW guard from the accepted mask-elision
+change were unchanged; this only tested whether making the constant `d == 12`
+path explicit would improve keygen encode scheduling.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 \
+  KEM_ITERS=30000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected direct-helper highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 492.34 | 490.38 | 1.0040x | 1.0006x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1590.58 | 1589.97 | 1.0004x | 1.0004x |
+| `mlkem_core_stage_keygen_secret_encode_only` | 36.54 | 36.50 | 1.0010x | 1.0014x |
+| `mlkem_core_stage_keygen_public_encode_only` | 36.17 | 36.15 | 1.0006x | 1.0003x |
+| `mlkem_core_stage_kpke_keygen_full` | 4909.36 | 4960.82 | 0.9896x | 0.9982x |
+| `mlkem_keygen` | 7073.52 | 7050.41 | 1.0033x | 1.0000x |
+| `mlkem_keygen_core` | 7052.92 | 7035.33 | 1.0025x | 0.9998x |
+| `mlkem_roundtrip_core` | 20635.01 | 20831.50 | 0.9906x | 0.9998x |
+
+Keep the existing `byte_encode(12, ...)` call sites. The isolated d12 encode rows
+are only about 36 ns for three polynomials, and making the helper boundary
+explicit does not survive the full keygen/KEM path. This confirms that d12 pack
+call dispatch is no longer a meaningful bottleneck after mask elision; further
+keygen wins need to come from NTT/dataflow or sampler work, not d12 wrapper
+cleanup.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen add+encode fusion)
 
 A keygen public-output fusion experiment was rejected. The candidate added an
