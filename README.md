@@ -2593,6 +2593,56 @@ is neutral and the small pack-only movement does not translate into the full
 ciphertext compression row. Future d10 work should change compression or packing
 arithmetic, not only the helper boundary.
 
+A d10 pack-shift scheduling experiment was rejected. The current packer uses
+`_mm256_sllv_epi32()` with the count vector created by
+`_mm256_set1_epi64x(12)`. That is intentionally not a uniform 12-bit shift: it
+creates the per-dword pattern `{12, 0, 12, 0, ...}` so each 64-bit lane becomes
+`pair0 | (pair1 << 20)` after the following `_mm256_srli_epi64(..., 12)`. A
+plain `_mm256_slli_epi32(..., 12)` would be incorrect.
+
+The tested equivalent replaced the variable shift and count vector with an
+immediate 32-bit shift plus a dword blend:
+
+```c
+__m256i shifted = _mm256_slli_epi32(f, 12);
+f = _mm256_blend_epi32(shifted, f, 0xaa);
+f = _mm256_srli_epi64(f, 12);
+```
+
+The same change was applied to the pack-only stage helper so the split benchmark
+matched the production fused d10 packer.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected shift/blend highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.18 | 51.46 | 0.9945x | 1.0006x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 47.10 | 47.05 | 1.0010x | 1.0004x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_compress_only` | 23.63 | 23.60 | 1.0012x | 1.0004x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_pack_only` | 20.52 | 20.55 | 0.9987x | 1.0005x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2433.27 | 2444.21 | 0.9955x | 1.0008x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4921.43 | 4913.08 | 1.0017x | 0.9979x |
+
+Keep the existing `vpsllvd`-style variable dword shift. The equivalent
+shift-plus-blend shape removes the count vector but adds a blend, and the target
+pack/fused d10 rows are effectively neutral. This is not enough to justify a new
+packing schedule or KEM confirmation.
+
 
 A narrower d10 compression constant-construction experiment was rejected. The
 candidate changed the AVX2 d10 compression helpers from computing
