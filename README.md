@@ -7037,6 +7037,51 @@ Keep the current AVX2 message pre-pass into `e2`. It costs an extra pass over
 `e2`, but it keeps message expansion out of the already dense inverse-final loop
 and gives better encapsulation behavior than either direct final-fold shape.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 early e2/message fold)
+
+An AVX2-only follow-up tried moving the accepted `e2` message fold earlier in
+K-PKE encryption. The candidate added `mlkem_add_message_to_poly(m, e2)`
+immediately after PRF/CBD noise generation in `kpke_encrypt_prepared_public()`
+and at entry to `kpke_encrypt_prepared_public_with_noise_avx2()`, then removed
+the later fold before `ntt_inv_add_v_inplace(e2, v)`. Algebraically this is the
+same ciphertext equation: `e2` is not consumed until the final `v` inverse-add.
+The intended benefit was keeping `e2` hot instead of touching it again after the
+`rhat` NTTs and public-key dot products.
+
+Correctness passed both core gates:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv_v` | 467.02 | 468.85 | 0.9961x | 0.9994x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1329.88 | 1329.77 | 1.0001x | 0.9998x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2431.62 | 2440.67 | 0.9963x | 0.9965x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4989.69 | 4984.51 | 1.0010x | 0.9989x |
+| `mlkem_encaps` | 2690.92 | 2698.61 | 0.9971x | 0.9949x |
+| `mlkem_encaps_core` | 7026.37 | 7234.36 | 0.9712x | 1.0066x |
+| `mlkem_roundtrip_core` | 20231.37 | 20486.35 | 0.9876x | 0.9982x |
+
+Reject this move. The direct `v` target is neutral-to-negative, cached K-PKE
+encryption and encapsulation regress, and the positive `mlkem_encaps_core`
+median is not supported by the average or neighboring rows. The current later
+`e2` message pre-pass is less cache-local in theory, but it keeps the write
+closer to the final inverse-add/pack boundary and behaves better in the
+integrated AVX2-only path.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
