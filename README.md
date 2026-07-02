@@ -5044,6 +5044,49 @@ sampler by removing generic sponge bookkeeping. It is intentionally not applied
 to native/AVX512 until that target shows an integrated win.
 
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 scalar sample_ntt static stream scratch)
+
+An AVX2-only scalar sampler scratch-placement experiment was rejected. The
+candidate moved the AVX2-only `sample_ntt()` initial 504-byte `uint64_t
+stream[63]` buffer from stack storage to static storage, leaving Keccak, parser,
+and matrix scheduling unchanged. The target was the final one-lane `(2,2)`
+public-matrix tail used by AVX2-only `sample_matrix()` after the two x4 batches;
+native AVX512 and non-AVX2 builds were unaffected.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only Keccak/stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=keccak,stage KECCAK_ITERS=200000 \
+  STAGE_ITERS=50000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected static-scratch highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_sample_ntt_full` | 689.01 | 687.26 | 1.0025x | 1.0013x |
+| `mlkem_core_stage_sample_matrix_tail` | 868.67 | 869.28 | 0.9993x | 0.9997x |
+| `mlkem_core_stage_sample_matrix_tail_scalar` | 865.60 | 866.13 | 0.9994x | 1.0012x |
+| `mlkem_core_stage_sample_matrix_tail_scalar_raw` | 687.44 | 683.04 | 1.0064x | 1.0055x |
+| `mlkem_core_stage_sample_matrix` | 2902.14 | 2920.96 | 0.9936x | 0.9997x |
+| `mlkem_core_stage_kpke_keygen_full` | 4926.44 | 4962.25 | 0.9928x | 0.9982x |
+
+Keep the scalar `sample_ntt()` stream buffer on the stack. The raw one-lane tail
+row shows a small scratch-placement win, but the full tail, full matrix, and
+keygen stage rows do not preserve it. Moving this buffer to static storage would
+also weaken function isolation/thread-safety for no integrated core win, so no
+KEM confirmation was run.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 x4 PRF/CBD inline boundary)
 
 An AVX2 x4 PRF/CBD function-boundary experiment was rejected. The candidate
