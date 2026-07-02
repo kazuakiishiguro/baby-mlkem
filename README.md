@@ -636,6 +636,11 @@ helpers:
 | `mlkem_ntt3_tile2x3_inplace` | bench-only K=3 forward NTT over the contiguous K=3 x 2-coefficient tiled layout |
 | `mlkem_ntt3_pack_ntt_tile2x3` | diagnostic pack plus tiled K=3 x 2-coefficient forward NTT |
 | `mlkem_ntt3_pack_ntt_unpack_tile2x3` | diagnostic standalone tiled K=3 x 2-coefficient forward NTT including pack and unpack |
+| `mlkem_ntt4_inplace` | four consecutive in-place forward NTTs, used as the K=4 baseline for fully occupied AVX2 tile experiments |
+| `mlkem_ntt4_pack_tile2x4` | diagnostic pack into `[coeff pair][poly0 c0, poly1 c0, poly2 c0, poly3 c0, poly0 c1, poly1 c1, poly2 c1, poly3 c1]` |
+| `mlkem_ntt4_unpack_tile2x4` | diagnostic unpack from the K=4 x 2-coefficient tiled layout |
+| `mlkem_ntt4_tile2x4_inplace` | bench-only K=4 forward NTT over the contiguous K=4 x 2-coefficient tiled layout |
+| `mlkem_ntt4_pack_ntt_unpack_tile2x4` | diagnostic standalone tiled K=4 x 2-coefficient forward NTT including pack and unpack |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -788,6 +793,35 @@ most six useful 16-bit lanes out of eight. The next packed NTT attempt should
 not be another standalone K=3 layout; it would need to combine more independent
 polynomials or fuse surrounding work enough to pay for the 6/8 lane ceiling and
 conversion cost.
+
+A K=4 tile follow-up tested whether fully occupying the eight AVX2 16-bit lanes
+changes that conclusion. The bench-only `mlkem_ntt4_tile2x4_inplace` layout
+stores two adjacent coefficients from four polynomials in each vector, so every
+tile lane is useful. It validates against four independent `ntt()` calls and is
+still only a direction-finding diagnostic, not a production layout.
+
+Pinned CPU 0, `clang`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Speedup vs `mlkem_ntt4_inplace` |
+|---|---|---:|---:|
+| native | `mlkem_ntt4_inplace` | 693.21 | 1.000x |
+| native | `mlkem_ntt4_pack_tile2x4` | 15.23 | - |
+| native | `mlkem_ntt4_unpack_tile2x4` | 21.68 | - |
+| native | `mlkem_ntt4_tile2x4_inplace` | 777.15 | 0.892x |
+| native | `mlkem_ntt4_pack_ntt_unpack_tile2x4` | 798.02 | 0.869x |
+| AVX2-only | `mlkem_ntt4_inplace` | 757.77 | 1.000x |
+| AVX2-only | `mlkem_ntt4_pack_tile2x4` | 35.78 | - |
+| AVX2-only | `mlkem_ntt4_unpack_tile2x4` | 95.76 | - |
+| AVX2-only | `mlkem_ntt4_tile2x4_inplace` | 753.49 | 1.006x |
+| AVX2-only | `mlkem_ntt4_pack_ntt_unpack_tile2x4` | 882.54 | 0.859x |
+
+This rejects a standalone pack/NTT/unpack K=4 tiled implementation. The
+AVX2-only in-place row is close enough to four independent NTTs to show that
+full lane occupancy fixes the K=3 tile ceiling, but the conversion cost erases
+the win. The native row also loses before conversion. A production K=4 tile
+should only be reconsidered if neighboring producers and consumers can stay in
+this layout, for example by generating PRF/CBD output directly as tile2x4 and
+consuming the transformed values without an immediate unpack.
 
 A follow-up CBD-side diagnostic checks the input-generation part of that same
 layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,
