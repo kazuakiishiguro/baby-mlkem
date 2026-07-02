@@ -5567,6 +5567,27 @@ A native `-march=native` KEM no-regression run with `RUNS=9`, `KEM_ITERS=30000`
 stayed neutral-to-positive on the core rows (`mlkem_roundtrip_core` median
 `1.0053x`).
 
+A follow-up x2-only direct-state experiment was also rejected. The candidate kept
+AVX512/native on the original stream path, used direct state decode only on
+AVX2-only builds, and marked `mlkem_prf_cbd_eta2x2_32()` `MLKEM_NOINLINE` to
+avoid the keygen code-layout regression seen in the x2+x3 attempt. The local
+stage row improved, but full KEM averages moved the wrong way and medians were
+only neutral.
+
+Rejected x2 direct/noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 971.75 | 962.45 | 1.0097x | 1.0096x |
+| `mlkem_core_stage_kpke_keygen_full` | 5823.79 | 5815.90 | 1.0014x | 0.9990x |
+| `mlkem_keygen_core` | 7880.07 | 7927.45 | 0.9940x | 1.0001x |
+| `mlkem_encaps_core` | 7216.63 | 7476.38 | 0.9653x | 1.0009x |
+| `mlkem_roundtrip_core` | 21858.17 | 22257.79 | 0.9820x | 1.0006x |
+
+Keep x2 stream-based. The x2 direct helper is attractive in the isolated
+microbench, but the keygen/KEM integration does not give enough full-path signal
+to justify another code-shape variant.
+
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
