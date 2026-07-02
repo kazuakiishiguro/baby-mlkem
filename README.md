@@ -4226,6 +4226,53 @@ the lazy NTT work: remove redundant normalization/masking only at sites where th
 producer already proves the value range, and keep broader or native paths exact
 when integrated measurements do not improve.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen add+encode fusion)
+
+A keygen public-output fusion experiment was rejected. The candidate added an
+AVX2-only helper that combined `ntt_add(that_accum, ehat, that)` with the
+following d12 public-key byte encode. It still stored canonical `that[]` for the
+public cache, but packed the same vector values immediately to avoid reloading
+`that[]` in `byte_encode(12)`.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 484.01 | 481.53 | 1.0051x | 1.0057x |
+| `mlkem_core_stage_kpke_keygen_full` | 5894.18 | 5637.68 | 1.0455x | 1.0023x |
+| `mlkem_keygen` | 7777.30 | 8011.99 | 0.9707x | 1.0002x |
+| `mlkem_keygen_core` | 7753.75 | 7989.93 | 0.9704x | 0.9998x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` did not keep
+the keygen signal:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 7810.75 | 7722.55 | 1.0114x | 0.9994x |
+| `mlkem_keygen_core` | 7788.15 | 7700.91 | 1.0113x | 0.9988x |
+| `mlkem_roundtrip` | 14212.98 | 14153.04 | 1.0042x | 1.0000x |
+| `mlkem_roundtrip_core` | 22579.58 | 22397.66 | 1.0081x | 1.0031x |
+
+Keep `ntt_add()` and public-key d12 encoding separate for now. The fused helper
+wins the targeted stage by removing one read pass, but the larger integrated
+keygen path does not retain the improvement. A future attempt would need a
+broader keygen layout change, not only add+pack fusion.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
