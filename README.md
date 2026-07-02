@@ -5575,6 +5575,46 @@ roundtrip positive. Keep the asymmetry from the previous optimization:
 for rare refill blocks, and now the existing static stream scratch for those
 refill bytes.
 
+A follow-up AVX2-only refill cold-path split was rejected. The candidate moved
+only the rare `sample_ntt4()` refill loop into a separate `MLKEM_NOINLINE`
+`sample_ntt4_refill_avx2()` helper. The common first three-block path, Keccak
+choices, stream scratch, parser, and output values were unchanged; the hypothesis
+was that keeping the rare refill continuation out of the hot sampler body would
+reduce register pressure or improve code layout.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=60000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected refill cold-path highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 309.29 | 308.91 | 1.0012x | 1.0008x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 996.34 | 994.04 | 1.0023x | 1.0017x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 933.57 | 932.54 | 1.0011x | 0.9987x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1116.23 | 1113.53 | 1.0024x | 1.0002x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1184.22 | 1183.70 | 1.0004x | 0.9993x |
+| `mlkem_core_stage_sample_matrix` | 2807.12 | 2807.69 | 0.9998x | 0.9994x |
+| `mlkem_core_stage_kpke_keygen_full` | 4812.80 | 4819.01 | 0.9987x | 0.9965x |
+
+Decision: keep the refill loop inside `sample_ntt4()`. The rare-path helper gives
+only noise-sized refill/common-step movement, while the full sampler,
+public-matrix, and keygen rows do not preserve a median win. No KEM confirmation
+was run because the stage gate failed on the rows the change was meant to help.
+Future sampler work should remove or restructure common three-rate Keccak/store
+work rather than split the already-small refill control path.
+
 No-cache encapsulation public-prepare diagnostic:
 
 ```bash
