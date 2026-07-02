@@ -651,6 +651,7 @@ helpers:
 | `mlkem_ntt_inv_add2` | `ntt_inv_add2()` |
 | `mlkem_ntt_inv_sub_from` | `ntt_inv_sub_from()` |
 | `mlkem_ntt_mul_acc3` | `ntt_mul_acc3()` |
+| `mlkem_ntt_mul_acc3_tile2x3` | bench-only `ntt_mul_acc3()` equivalent that consumes already-packed K=3 x 2-coefficient tile2x3 inputs |
 | `mlkem_ntt_mul_acc3_factored` | `ntt_mul_acc3_factored_gamma()` |
 
 For optimization work, compare the same command before and after each small

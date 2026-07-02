@@ -34,6 +34,7 @@ static poly256 bench_ntt_tail_work[3][NTT_BENCH_LANES];
 #endif
 static int16_t bench_ntt3_aos4[NTT_BENCH_LANES][N][4];
 static int16_t bench_ntt3_tile2x3[NTT_BENCH_LANES][N / 2][8];
+static int16_t bench_ntt3_b_tile2x3[NTT_BENCH_LANES][N / 2][8];
 static int16_t bench_ntt4_tile2x4[NTT_BENCH_LANES][N / 2][8];
 
 static uint64_t now_ns(void) {
@@ -447,6 +448,26 @@ static void ntt3_tile2x3_inplace(int16_t f[N / 2][8]) {
     }
   }
 #endif
+}
+
+static void ntt_mul_acc3_tile2x3(const int16_t a[N / 2][8],
+                                 const int16_t b[N / 2][8], poly256 out) {
+  for (int i = 0; i < 128; i++) {
+    uint32_t x00 = (uint16_t)a[i][0], x10 = (uint16_t)a[i][1];
+    uint32_t x20 = (uint16_t)a[i][2], x01 = (uint16_t)a[i][3];
+    uint32_t x11 = (uint16_t)a[i][4], x21 = (uint16_t)a[i][5];
+    uint32_t y00 = (uint16_t)b[i][0], y10 = (uint16_t)b[i][1];
+    uint32_t y20 = (uint16_t)b[i][2], y01 = (uint16_t)b[i][3];
+    uint32_t y11 = (uint16_t)b[i][4], y21 = (uint16_t)b[i][5];
+    uint32_t g = GAMMA[i];
+    uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+    uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+    uint32_t c0 = c0_lo + (c0_hi % Q) * g;
+    uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
+                  x20 * y21 + x21 * y20;
+    out[2 * i] = (int16_t)(c0 % Q);
+    out[2 * i + 1] = (int16_t)(c1 % Q);
+  }
 }
 
 #if defined(__AVX2__)
@@ -947,6 +968,12 @@ static void validate_ntt_helpers(void) {
   ntt_mul_acc3(bench_a0[0], bench_b0[0], bench_a1[0], bench_b1[0],
                bench_a2[0], bench_b2[0], got);
   check_equal(got, accum, "ntt_mul_acc3");
+  ntt3_pack_tile2x3(bench_a0[0], bench_a1[0], bench_a2[0],
+                    bench_ntt3_tile2x3[0]);
+  ntt3_pack_tile2x3(bench_b0[0], bench_b1[0], bench_b2[0],
+                    bench_ntt3_b_tile2x3[0]);
+  ntt_mul_acc3_tile2x3(bench_ntt3_tile2x3[0], bench_ntt3_b_tile2x3[0], got);
+  check_equal(got, accum, "ntt_mul_acc3_tile2x3");
 
   ntt_mul_acc3_factored_gamma(bench_a0[0], bench_b0[0], bench_a1[0],
                               bench_b1[0], bench_a2[0], bench_b2[0], got);
@@ -1680,6 +1707,28 @@ static uint64_t bench_ntt_mul_acc3(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ntt_mul_acc3_tile2x3(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  for (size_t lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    ntt3_pack_tile2x3(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                      bench_ntt3_tile2x3[lane]);
+    ntt3_pack_tile2x3(bench_b0[lane], bench_b1[lane], bench_b2[lane],
+                      bench_ntt3_b_tile2x3[lane]);
+  }
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_mul_acc3_tile2x3(bench_ntt3_tile2x3[lane],
+                         bench_ntt3_b_tile2x3[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 53u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_ntt_mul_acc3_factored(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1831,6 +1880,8 @@ int main(int argc, char **argv) {
                bench_ntt_inv_sub_from_lazy_final(iters), iters);
 #endif
   print_metric("mlkem_ntt_mul_acc3", bench_ntt_mul_acc3(iters), iters);
+  print_metric("mlkem_ntt_mul_acc3_tile2x3",
+               bench_ntt_mul_acc3_tile2x3(iters), iters);
   print_metric("mlkem_ntt_mul_acc3_factored",
                bench_ntt_mul_acc3_factored(iters), iters);
   print_metric("mlkem_ntt_mul_acc3_mont_pre",
