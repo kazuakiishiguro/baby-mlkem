@@ -4022,6 +4022,33 @@ roundtrip core medians do not retain the benefit. Future d10 decode work should
 remove data movement or fuse with later decrypt work rather than only changing
 helper placement.
 
+A symmetric helper-boundary follow-up that forced
+`decompress_decode_poly_d10_ct_avx2()` to `static MLKEM_NOINLINE` was also
+rejected. Correctness passed the same AVX2-only gate, but the direct target row
+regressed enough that no KEM confirmation was warranted.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 30.99 | 31.56 | 0.9820x | 0.9828x |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 222.68 | 223.98 | 0.9942x | 0.9937x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 907.04 | 907.02 | 1.0000x | 0.9991x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 918.49 | 918.17 | 1.0003x | 1.0006x |
+
+Keep the compiler-selected call boundary: forcing either inline or noinline is
+not a stable core optimization. The next useful d10 decode work should attack
+unpack/decompress data movement or fusion with decrypt instead of function
+placement.
+
 A follow-up d10 unpack scheduling experiment was rejected. The candidate kept
 the accepted 16-bit `mulhrs` decompression identity, but changed the 10-bit
 byte unpack from three constant right shifts plus three `_mm256_blend_epi16()`
