@@ -3976,6 +3976,52 @@ Native guarded no-regression with `RUNS=9`, `KEM_ITERS=30000` stayed neutral:
 `mlkem_roundtrip_core` median `1.0013x`. Treat the direct d10 decode row as the
 primary attribution; the full KEM movement is small and layout-sensitive.
 
+A helper-boundary follow-up for the internal ciphertext decoder was rejected.
+The candidate changed only `decompress_decode_poly_d10_ct_avx2()` from a plain
+`static` helper to `static MLKEM_ALWAYS_INLINE`, leaving the generic exact-buffer
+safe decoder untouched. The unpack schedule, 16-bit `mulhrs` decompression
+identity, and ciphertext format were unchanged.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 31.15 | 30.92 | 1.0072x | 1.0052x |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 222.63 | 222.63 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 908.92 | 905.46 | 1.0038x | 1.0003x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 916.73 | 916.31 | 1.0005x | 1.0006x |
+
+AVX2-only KEM confirmation with `RUNS=13`, `KEM_ITERS=30000` rejected keeping the
+source change:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 3680.67 | 3642.85 | 1.0104x | 0.9994x |
+| `mlkem_decaps_core` | 6089.11 | 6095.53 | 0.9989x | 0.9962x |
+| `mlkem_roundtrip` | 13386.00 | 13382.67 | 1.0002x | 0.9986x |
+| `mlkem_roundtrip_core` | 20259.90 | 20264.40 | 0.9998x | 0.9996x |
+
+Keep `decompress_decode_poly_d10_ct_avx2()` on the compiler-selected call
+boundary. The direct d10 decode row improves, but the KEM decapsulation and
+roundtrip core medians do not retain the benefit. Future d10 decode work should
+remove data movement or fuse with later decrypt work rather than only changing
+helper placement.
+
 A follow-up d10 unpack scheduling experiment was rejected. The candidate kept
 the accepted 16-bit `mulhrs` decompression identity, but changed the 10-bit
 byte unpack from three constant right shifts plus three `_mm256_blend_epi16()`
