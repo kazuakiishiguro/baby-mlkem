@@ -3920,6 +3920,45 @@ modulo count is not useful if it promotes the hot `c0` path to a 64-bit modulo;
 future accumulation work needs a representation change, not a wider scalar
 reduction.
 
+### Independent Core Optimization Diagnostic (2026-07-02, Montgomery-domain NTT accumulation)
+
+A bench-only Montgomery-domain feasibility check for the K=3 NTT accumulation
+helper was rejected. The candidate preconverted the six input polynomials and
+`GAMMA` table to `R = 2^16 mod Q` Montgomery form, then measured only the core
+base multiplication/accumulation loop. This is the best-case version for a
+future full Montgomery/Harvey redesign because the timed path does not include
+input conversion. A second metric also converted the result back to the current
+canonical representation to bound the compatibility cost.
+
+The helper uses `qinv = -Q^-1 mod 2^16 = 3327` and `R^2 mod Q = 1353`, and the
+`bench_ntt` validation checks the converted result against the current
+`ntt_mul_acc3()` output before timing.
+
+AVX2-only direct diagnostic command:
+
+```bash
+make bench-ntt CC=clang AVX2_BACKEND=core   ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 13); do
+  taskset -c 0 ./bench_nttc 200000 |     rg "mlkem_ntt_mul_acc3(_factored|_mont_pre|_mont_pre_to_canon)?_ns_per_op"
+done
+```
+
+Rejected Montgomery-domain accumulation highlights:
+
+| Metric | Avg ns/op | Median ns/op | Avg speed vs current | Median speed vs current |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 87.85 | 87.21 | 1.0000x | 1.0000x |
+| `mlkem_ntt_mul_acc3_factored` | 88.14 | 87.35 | 0.9967x | 0.9984x |
+| `mlkem_ntt_mul_acc3_mont_pre` | 109.67 | 109.49 | 0.8010x | 0.7965x |
+| `mlkem_ntt_mul_acc3_mont_pre_to_canon` | 131.52 | 131.15 | 0.6680x | 0.6650x |
+
+Do not productionize this local Montgomery accumulation shape. Even with
+preconverted inputs and Montgomery output left in place, it needs too many
+Montgomery reductions on the hot pair loop and loses about 20% against clang's
+current constant-modulo lowering. A future Montgomery/Harvey attempt would need
+to redesign the surrounding NTT representation and butterfly schedule, not only
+swap the final K=3 base multiplication helper.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
