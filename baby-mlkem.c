@@ -549,11 +549,11 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
 /* sample_ntt4() benefits from a memory-resident permutation shape; direct
    PRF and Keccak callers keep the register-resident keccakf4() above. */
 static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
-  __m256i a[25];
   __m256i e[25];
-  for (int i = 0; i < 25; i++) a[i] = st[i];
 
-  __m256i *src = a;
+  /* The 24 Keccak rounds are even, so ping-ponging with st as one side leaves
+     the final state in st and avoids copy-in/copy-out around the permutation. */
+  __m256i *src = st;
   __m256i *dst = e;
   for (int round = 0; round < 24; round++) {
     __m256i c0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[0], src[5]), _mm256_xor_si256(src[10], src[15])), src[20]);
@@ -635,7 +635,6 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
     dst = tmp;
   }
 
-  for (int i = 0; i < 25; i++) st[i] = src[i];
 }
 
 #if defined(__AVX512F__)

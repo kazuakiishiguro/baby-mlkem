@@ -4975,6 +4975,86 @@ matrix sampler boundary, where stream storage and rejection parsing are adjacent
 to three x4 Keccak permutations.
 
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 `keccakf4_mem()` ping-pong copy elision)
+
+The AVX2-only memory-resident Keccak path used by the common `sample_ntt4()`
+public-matrix sampler now uses the caller's `st[25]` array as one side of the
+ping-pong state. `keccakf4_mem()` previously copied `st` into a local 25-lane
+array before the 24 Keccak rounds, ping-ponged between two local arrays, then
+copied the final 25 lanes back to `st`. Because Keccak-f[1600] has exactly 24
+rounds here, the ping-pong count is even: starting with `src = st` and
+`dst = scratch` leaves the final state in `st` after the last swap. This removes
+the copy-in/copy-out around each common sampler permutation without changing the
+Keccak round function, rejection parser, stream layout, or refill path.
+
+Correctness checks:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 1060.04 | 826.47 | 1.2826x | 1.2801x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 1063.43 | 876.23 | 1.2136x | 1.2128x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 1177.03 | 995.66 | 1.1822x | 1.1816x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 935.87 | 931.70 | 1.0045x | 1.0040x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1124.12 | 1113.65 | 1.0094x | 1.0086x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1206.27 | 1186.12 | 1.0170x | 1.0187x |
+| `mlkem_core_stage_sample_matrix` | 2836.56 | 2805.59 | 1.0110x | 1.0105x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4188.76 | 4157.02 | 1.0076x | 1.0065x |
+| `mlkem_core_stage_kpke_keygen_full` | 4827.51 | 4804.53 | 1.0048x | 1.0046x |
+
+Initial KEM highlights from the same run:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6950.57 | 6919.36 | 1.0045x | 1.0032x |
+| `mlkem_encaps_core` | 7107.59 | 6968.46 | 1.0200x | 1.0052x |
+| `mlkem_decaps_core` | 6148.63 | 6043.03 | 1.0175x | 1.0088x |
+| `mlkem_roundtrip_core` | 20306.18 | 20060.77 | 1.0122x | 1.0060x |
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 6968.04 | 6928.81 | 1.0057x | 1.0034x |
+| `mlkem_keygen_core` | 6932.57 | 6923.66 | 1.0013x | 1.0023x |
+| `mlkem_encaps` | 2690.87 | 2687.81 | 1.0011x | 1.0006x |
+| `mlkem_encaps_core` | 7112.77 | 7024.34 | 1.0126x | 0.9911x |
+| `mlkem_decaps_core` | 6106.02 | 6076.01 | 1.0049x | 1.0034x |
+| `mlkem_roundtrip` | 13393.93 | 13363.14 | 1.0023x | 1.0010x |
+| `mlkem_roundtrip_core` | 20270.22 | 20138.35 | 1.0065x | 1.0020x |
+
+Decision: accept the copy elision. The target rows are the production sampler
+rows, and they move consistently: the common Keccak/store split improves by about
+21% median, both x4 matrix batches improve, full `sample_matrix()` improves by
+about 1%, and no-cache public preparation plus keygen move in the same direction.
+The longer KEM confirmation has a split `encaps_core` median, but top-level
+encapsulation, keygen, decapsulation, and roundtrip medians stay positive. This
+is a core dataflow optimization rather than benchmark caching: every operation
+still computes fresh Keccak states and rejection samples; it only avoids copying
+the 25-lane in-memory state around an even-round ping-pong permutation.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
