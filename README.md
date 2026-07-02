@@ -5456,6 +5456,70 @@ defensible production signal without a sampler median win. Future sampler work
 needs to change real state/dataflow, not only pointer alias annotations.
 
 
+### Latest Core Optimization A/B (2026-07-03, AVX2 keygen matrix/noise scheduling)
+
+The AVX2-only keygen matrix/noise helper now schedules the co-scheduled PRF/CBD
+plus `(2,2)` public-matrix tail between the two `sample_ntt4()` public-matrix
+batches. The previous order was `x4 batch0 -> x4 batch1 -> PRF/CBD+tail`; the
+new order is `x4 batch0 -> PRF/CBD+tail -> x4 batch1`. This does not change
+Keccak inputs, rejection sampling, CBD decoding, NTT inputs, wire-visible keys,
+or any cache behavior. It only changes the local keygen production order inside
+`mlkem_keygen_matrix_noise_avx2()`.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4832.39 | 4816.52 | 1.0033x | 1.0005x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4176.92 | 4153.38 | 1.0057x | 1.0019x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 970.02 | 965.81 | 1.0044x | 1.0010x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1991.06 | 1984.15 | 1.0035x | 1.0004x |
+| `mlkem_core_stage_sample_matrix` | 2809.24 | 2800.23 | 1.0032x | 1.0007x |
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 6953.69 | 6931.56 | 1.0032x | 1.0008x |
+| `mlkem_keygen_core` | 6931.62 | 6906.02 | 1.0037x | 1.0008x |
+| `mlkem_encaps` | 2689.10 | 2687.01 | 1.0008x | 1.0000x |
+| `mlkem_decaps_core` | 6101.85 | 6072.95 | 1.0048x | 1.0001x |
+| `mlkem_roundtrip` | 13378.83 | 13364.93 | 1.0010x | 0.9996x |
+| `mlkem_roundtrip_core` | 20145.06 | 20128.71 | 1.0008x | 1.0022x |
+
+Decision: accept the keygen-only schedule change with a deliberately narrow
+claim. The direct keygen rows and longer KEM keygen rows are consistently
+positive, while top-level roundtrip median is effectively neutral. This is not a
+new sampler primitive and should not be generalized to `sample_matrix()` or
+encryption paths; earlier standalone tail/order experiments did not produce a
+robust public-matrix win. The useful effect here is limited to the combined
+keygen matrix/noise function's local code/data schedule.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`

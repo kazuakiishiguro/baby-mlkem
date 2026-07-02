@@ -5098,10 +5098,10 @@ static void mlkem_keygen_matrix_noise_avx2(
 
   sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2],
               ahat[1][0]);
-  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
-              ahat[2][1]);
   mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
       sigma, rho, ahat[2][2], shat[0], shat[1], shat[2],
       ehat[0], ehat[1], ehat[2]);
+  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
+              ahat[2][1]);
 }
 #endif
