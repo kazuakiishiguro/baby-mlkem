@@ -2822,6 +2822,31 @@ static int sample_ntt_parse_stream(const uint8_t *stream,
 
 /* sample_ntt => SHAKE128 rejection sampling for one A-hat polynomial. */
 static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
+#if defined(__AVX2__) && !defined(__AVX512F__)
+  uint64_t st[25] = {0};
+  uint64_t stream[SAMPLE_NTT_STREAM_CHUNK / 8];
+  st[0] = load64_le(seed + 0);
+  st[1] = load64_le(seed + 8);
+  st[2] = load64_le(seed + 16);
+  st[3] = load64_le(seed + 24);
+  st[4] = (uint64_t)(uint8_t)i | ((uint64_t)(uint8_t)j << 8) |
+          (0x1FULL << 16);
+  st[20] = 0x80ULL << 56;
+
+  for (int block = 0; block < 3; block++) {
+    keccakf(st);
+    memcpy(stream + (size_t)block * 21, st, 21 * sizeof(uint64_t));
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)(const void *)stream, sizeof(stream), out, 0);
+  while (count < N) {
+    keccakf(st);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)(const void *)st, 168, out, count);
+  }
+#else
   keccak_ctx ctx;
   keccak_init(&ctx, 168);
   keccak_absorb_32_suffix2(&ctx, seed, (uint8_t)i, (uint8_t)j);
@@ -2837,6 +2862,7 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
     count = sample_ntt_parse_stream(stream, chunk, out, count);
     first = 0;
   }
+#endif
 }
 
 #if defined(__AVX2__)

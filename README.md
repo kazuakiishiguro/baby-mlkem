@@ -4545,6 +4545,75 @@ or merge more than this final add correction; simply sliding the same
 normalization one stage later is not enough.
 
 
+
+### Latest Core Optimization A/B (2026-07-02, AVX2 fixed-input SHAKE128 sample_ntt)
+
+The AVX2-only scalar `sample_ntt()` fallback now builds the fixed
+`rho[32] || row || col || SHAKE128-domain` state directly instead of routing the
+same input through the generic `keccak_ctx` absorb/finalize/squeeze machinery.
+The first three SHAKE128 rate blocks are still parsed as one 504-byte stream, so
+this keeps the earlier parser shape and only removes generic context bookkeeping
+from the one-lane AVX2 path. Native AVX512 builds and non-AVX2 builds keep the
+previous `keccak_ctx` path; a wider unguarded change showed weak native KEM
+negative noise, while the AVX2-only target is the path that actually uses scalar
+`sample_ntt()` for the final public-matrix tail.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only Keccak/stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=keccak,stage KECCAK_ITERS=200000 \
+  STAGE_ITERS=50000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Target highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_sample_ntt_full` | 696.92 | 693.36 | 1.0051x | 1.0020x |
+| `mlkem_core_stage_sample_matrix_tail` | 884.92 | 871.57 | 1.0153x | 1.0138x |
+| `mlkem_core_stage_sample_matrix_tail_scalar` | 881.61 | 870.13 | 1.0132x | 1.0162x |
+| `mlkem_core_stage_sample_matrix` | 3547.80 | 3511.17 | 1.0104x | 1.0025x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 5869.01 | 6052.68 | 0.9697x | 1.0061x |
+| `mlkem_core_stage_kpke_keygen_full` | 5665.80 | 5878.28 | 0.9639x | 0.9975x |
+
+AVX2-only KEM confirmation:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 8144.75 | 7629.60 | 1.0675x | 1.0023x |
+| `mlkem_keygen_core` | 8123.05 | 7589.08 | 1.0704x | 1.0019x |
+| `mlkem_encaps_core` | 7282.83 | 7261.54 | 1.0029x | 0.9983x |
+| `mlkem_roundtrip` | 14531.14 | 14009.18 | 1.0373x | 1.0002x |
+| `mlkem_roundtrip_core` | 22184.56 | 22072.54 | 1.0051x | 1.0072x |
+
+Native `-march=native` on this machine defines both `__AVX2__` and
+`__AVX512F__`, so it keeps the previous `keccak_ctx` route. A guarded native KEM
+no-regression check with `RUNS=7`, `KEM_ITERS=30000` was neutral: median
+`mlkem_keygen_core` `1.0011x`, `mlkem_encaps_core` `1.0024x`,
+`mlkem_decaps_core` `1.0002x`, and `mlkem_roundtrip_core` `1.0007x`.
+
+This is a small but genuine core cleanup: it does not use the vendored backends
+or a cross-operation cache, and it speeds the remaining one-lane SHAKE128 matrix
+sampler by removing generic sponge bookkeeping. It is intentionally not applied
+to native/AVX512 until that target shows an integrated win.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
