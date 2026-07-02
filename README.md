@@ -4692,6 +4692,64 @@ layout around the much larger three-`keccakf4()` path. The remaining sampler
 optimization target is still the permutation/state dataflow itself.
 
 
+### Independent Core Optimization A/B (2026-07-02, AVX2 sample_ntt4 memory-resident Keccak)
+
+The accepted follow-up to the sampler state-init triage keeps the existing
+register-resident `keccakf4()` for direct Keccak, PRF/CBD, and one-lane tail
+users, but adds a memory-resident ping-pong variant for the common
+`sample_ntt4()` public-matrix path. The goal is not a different Keccak round
+function: it is to lower AVX2 register pressure around `sample_ntt4()`'s three
+permutations plus stream-store/parser work.
+
+A temporary assembly probe of the existing register-resident AVX2 permutation
+showed a 24-round dynamic shape of about 6357 instructions and 2408 `rsp`
+loads/stores per permutation. The memory-resident shape reduces the loop's stack
+traffic, but a full replacement regressed direct `mlkem_keccakf4` and PRF/CBD
+users. Therefore the production change is deliberately limited to the common
+x4 public-matrix sampler.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 \
+  KEM_ITERS=30000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1245.00 | 971.68 | 1.2813x | 1.2110x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 897.26 | 894.57 | 1.0030x | 1.0011x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1435.68 | 1158.70 | 1.2390x | 1.1803x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1533.04 | 1231.71 | 1.2446x | 1.1827x |
+| `mlkem_core_stage_sample_matrix` | 3469.58 | 2894.10 | 1.1988x | 1.1488x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4811.42 | 4242.71 | 1.1340x | 1.1010x |
+| `mlkem_core_stage_kpke_keygen_full` | 6029.14 | 4914.25 | 1.2269x | 1.0852x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1172.10 | 1172.32 | 0.9998x | 1.0001x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 975.00 | 977.58 | 0.9974x | 0.9971x |
+| `mlkem_keygen_core` | 7439.84 | 7026.09 | 1.0589x | 1.0568x |
+| `mlkem_encaps_core` | 7401.89 | 7060.27 | 1.0484x | 1.0431x |
+| `mlkem_decaps_core` | 6867.27 | 6624.92 | 1.0366x | 1.0632x |
+| `mlkem_roundtrip_core` | 21821.98 | 20840.77 | 1.0471x | 1.0513x |
+
+Decision: accept the `sample_ntt4()`-only memory-resident Keccak path. Do not
+replace every `keccakf4()` call with this shape: the all-use diagnostic regressed
+`mlkem_keccakf4` from 288.51 ns to 294.88 ns median and made the PRF/CBD noise
+stages worse. The useful part is the reduced register pressure at the public
+matrix sampler boundary, where stream storage and rejection parsing are adjacent
+to three x4 Keccak permutations.
+
+
 No-cache encapsulation public-prepare diagnostic:
 
 ```bash
