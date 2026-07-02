@@ -166,6 +166,37 @@ static inline void bench_store_tile2x4_i16x16_avx2(
   _mm256_storeu_si256((__m256i *)(base + 48),
                       _mm256_permute2x128_si256(q2, q3, 0x31));
 }
+
+static void sha3_256_public_key_lane0_keccakf4(const uint8_t *in,
+                                                uint8_t out[32]) {
+  __m256i st[25];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+
+  for (int block = 0; block < 8; block++) {
+    const uint8_t *p = in + (size_t)block * 136;
+    for (int lane = 0; lane < 16; lane++) {
+      st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(p + 8 * lane));
+    }
+    st[16] = keccak_xor_lane0_u64(st[16], load64_le(p + 128));
+    keccakf4(st);
+  }
+
+  const uint8_t *tail = in + 8 * 136;
+  for (int lane = 0; lane < 12; lane++) {
+    st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(tail + 8 * lane));
+  }
+  st[12] = keccak_xor_lane0_u64(st[12], 0x06u);
+  st[16] = keccak_xor_lane0_u64(st[16], 0x8000000000000000ULL);
+  keccakf4(st);
+
+  for (int lane = 0; lane < 4; lane++) {
+    uint64_t word = keccak_lane0_u64(st[lane]);
+    memcpy(out + 8 * lane, &word, sizeof(word));
+  }
+}
 #endif
 
 static inline int16_t bench_cbd_eta2_scalar_value(uint32_t d, int j) {
@@ -513,6 +544,12 @@ static void validate_keccak_helpers(void) {
 #if defined(__AVX2__)
   validate_keccakf4_matches_scalar();
   validate_prf_cbd_direct_matches_current();
+  sha3_256(bench_pk[0], sizeof(bench_pk[0]), out0);
+  sha3_256_public_key_lane0_keccakf4(bench_pk[0], out1);
+  if (memcmp(out0, out1, 32) != 0) {
+    fprintf(stderr, "sha3_256 lane0 keccakf4 public-key mismatch\n");
+    exit(EXIT_FAILURE);
+  }
 #endif
   validate_cbd3_aos4_matches_pack();
   validate_cbd4_tile2x4_matches_pack();
@@ -618,6 +655,23 @@ static uint64_t bench_sha3_256_public_key(size_t iters) {
   bench_keccak_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__)
+static uint64_t bench_sha3_256_public_key_lane0_keccakf4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sha3_256_public_key_lane0_keccakf4(bench_pk[lane], bench_prfout[lane]);
+    acc ^= bench_prfout[lane][(i * 41u) & 31u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_sha3_512_32(size_t iters) {
   uint64_t acc = 0;
@@ -1000,6 +1054,10 @@ int main(int argc, char **argv) {
   print_metric("mlkem_sha3_256_32", bench_sha3_256_32(iters), iters);
   print_metric("mlkem_sha3_256_public_key",
                bench_sha3_256_public_key(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_sha3_256_public_key_lane0_keccakf4",
+               bench_sha3_256_public_key_lane0_keccakf4(iters), iters);
+#endif
   print_metric("mlkem_sha3_512_32", bench_sha3_512_32(iters), iters);
   print_metric("mlkem_sha3_512_64", bench_sha3_512_64(iters), iters);
   print_metric("mlkem_prf_eta2", bench_mlkem_prf_eta2(iters), iters);

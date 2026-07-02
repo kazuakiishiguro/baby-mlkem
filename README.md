@@ -4594,6 +4594,42 @@ shorter-term implementation target remains the common `sample_ntt4()` three-rate
 Keccak/state layout, because the current sampler breakdown shows Keccak dominates
 over stream stores and parser bookkeeping.
 
+
+A bench-only one-lane `keccakf4()` diagnostic rejects another tempting Keccak
+state-layout shortcut. The idea was to continue the public-key SHA3-256 hash in
+lane 0 of the existing x4 state after the matrix-tail co-schedule, instead of
+switching the remaining public-key hash blocks back to scalar `keccakf()`. The
+new diagnostic hashes the fixed 1184-byte ML-KEM public key with only lane 0 of
+`keccakf4()` and validates the output against the existing scalar `sha3_256()`.
+
+Command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-keccak CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_keccakc 100000 | \
+    rg "mlkem_keccakf4?_ns_per_op|mlkem_sha3_256_public_key(_lane0_keccakf4)?_ns_per_op"
+done
+```
+
+Median results from the 7-run AVX2-only diagnostic:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_keccakf` | 217.49 |
+| `mlkem_keccakf4` | 287.21 |
+| `mlkem_sha3_256_public_key` | 1974.23 |
+| `mlkem_sha3_256_public_key_lane0_keccakf4` | 3728.44 |
+
+Decision: reject productionizing one-live-lane `keccakf4()` for the public-key
+hash continuation. It is about 1.89x slower than the scalar public-key SHA3 path
+for this fixed-length input, even though it reuses the same AVX2 permutation
+primitive. The x4 Keccak path should only be used when it can carry independent
+SHAKE/SHA3 work in multiple lanes; otherwise the current scalar continuation is
+the right code shape.
+
 A first attempt to move the representation boundary past inverse-add and into
 ciphertext compression was rejected. The AVX2-only candidate added an
 encryption-only lazy final inverse-add helper that stored `u[0..2]` and `v` in
