@@ -2004,7 +2004,11 @@ static uint64_t bench_ciphertext_decode_decompress(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     const uint8_t *p = stage_ct[lane];
     for (int j = 0; j < K; j++) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+      decompress_decode_poly_d10_ct_avx2(p, stage_tmp_vec0[lane][j]);
+#else
       decompress_decode_poly(DU, p, stage_tmp_vec0[lane][j]);
+#endif
       p += (N * DU) / 8;
     }
     decompress_decode_poly(DV, p, stage_tmp_poly[lane]);
@@ -2023,7 +2027,11 @@ static uint64_t bench_ciphertext_decode_decompress_d10(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     const uint8_t *p = stage_ct[lane];
     for (int j = 0; j < K; j++) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+      decompress_decode_poly_d10_ct_avx2(p, stage_tmp_vec0[lane][j]);
+#else
       decompress_decode_poly(DU, p, stage_tmp_vec0[lane][j]);
+#endif
       p += (N * DU) / 8;
     }
     acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][i & 255u];

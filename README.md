@@ -3437,6 +3437,60 @@ KEM A/B highlights:
 Unlike the rejected widened 16-lane helper above, this change is useful because
 it removes the expensive 32-bit arithmetic rather than merely repacking it.
 
+### Independent Core Optimization A/B (2026-07-02, AVX2-only d10 ciphertext tail load)
+
+A narrow follow-up specializes the `DU = 10` decode/decompress tail only for the
+internal `kpke_decrypt()` ciphertext path on AVX2-only builds. The generic
+`decompress_decode_poly_d10_avx2()` remains exact-buffer-safe. The new internal
+`decompress_decode_poly_d10_ct_avx2()` is used only after `kpke_decrypt()` has
+checked the full ciphertext length, so the final d10 vector load may legally read
+into the following `DV = 4` ciphertext bytes. This removes the special final
+8-byte-plus-2-byte construction from the decrypt ciphertext path without changing
+non-AVX2 or native AVX512 paths.
+
+Native AVX512 was deliberately left on the existing safe decoder: an unguarded
+variant slightly weakened native decapsulation/roundtrip rows, while the
+AVX2-only gate kept native KEM neutral.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted AVX2-only stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_decode_decompress_d10` | 27.76 | 27.60 | 1.0060x | 1.0065x |
+| `mlkem_core_stage_ciphertext_decode_decompress` | 221.13 | 221.47 | 0.9985x | 0.9994x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 925.84 | 925.07 | 1.0008x | 1.0001x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 882.35 | 882.83 | 0.9995x | 0.9996x |
+
+Longer AVX2-only KEM confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM confirmation highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 3678.16 | 3665.17 | 1.0035x | 1.0008x |
+| `mlkem_decaps_core` | 6906.96 | 6730.08 | 1.0263x | 1.0726x |
+| `mlkem_roundtrip` | 14453.69 | 14487.00 | 0.9977x | 1.0023x |
+| `mlkem_roundtrip_core` | 22545.07 | 22155.21 | 1.0176x | 1.0011x |
+
+Native guarded no-regression with `RUNS=9`, `KEM_ITERS=30000` stayed neutral:
+`mlkem_decaps` median `1.0022x`, `mlkem_decaps_core` median `0.9995x`, and
+`mlkem_roundtrip_core` median `1.0013x`. Treat the direct d10 decode row as the
+primary attribution; the full KEM movement is small and layout-sensitive.
+
 A follow-up d10 unpack scheduling experiment was rejected. The candidate kept
 the accepted 16-bit `mulhrs` decompression identity, but changed the 10-bit
 byte unpack from three constant right shifts plus three `_mm256_blend_epi16()`

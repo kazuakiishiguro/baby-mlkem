@@ -3698,6 +3698,36 @@ static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
   }
 }
 
+/* Internal ciphertext decoder: kpke_decrypt() has already checked the full
+ * ciphertext length, so the final d10 block may read into the following c2
+ * bytes. Keep decompress_decode_poly_d10_avx2() as the exact-buffer-safe form. */
+static void decompress_decode_poly_d10_ct_avx2(const uint8_t *in,
+                                                poly256 out) {
+  const __m256i shuf = _mm256_setr_epi8(
+      0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9,
+      0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9);
+  const __m256i mask = _mm256_set1_epi16(0x03ff);
+
+  for (int i = 0; i < N; i += 16) {
+    const uint8_t *p = in + (size_t)(i / 4) * 5;
+    __m256i bytes = _mm256_castsi128_si256(
+        _mm_loadu_si128((const __m128i *)(const void *)p));
+    bytes = _mm256_inserti128_si256(
+        bytes, _mm_loadu_si128((const __m128i *)(const void *)(p + 10)), 1);
+
+    __m256i v = _mm256_shuffle_epi8(bytes, shuf);
+    __m256i v2 = _mm256_srli_epi16(v, 2);
+    __m256i v4 = _mm256_srli_epi16(v, 4);
+    __m256i v6 = _mm256_srli_epi16(v, 6);
+    v = _mm256_blend_epi16(v, v2, 0x22);
+    v = _mm256_blend_epi16(v, v4, 0x44);
+    v = _mm256_blend_epi16(v, v6, 0x88);
+    v = _mm256_and_si256(v, mask);
+
+    _mm256_storeu_si256((__m256i *)(out + i), decompress_d10_vec_avx2(v));
+  }
+}
+
 static inline __m256i decompress_d4_vec_avx2(__m256i v) {
   const __m256i q = _mm256_set1_epi16(Q);
   const __m256i half = _mm256_set1_epi16(8);
@@ -4283,7 +4313,11 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   static poly256 u[K], v;
   const uint8_t *p = c;
   for (int i = 0; i < K; i++) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    decompress_decode_poly_d10_ct_avx2(p, u[i]);
+#else
     decompress_decode_poly(DU, p, u[i]);
+#endif
     p += (N * DU) / 8;
   }
   {
