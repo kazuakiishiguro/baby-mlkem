@@ -5456,6 +5456,53 @@ defensible production signal without a sampler median win. Future sampler work
 needs to change real state/dataflow, not only pointer alias annotations.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 final-L1 fused multiply)
+
+A production AVX2-only final-NTT fusion experiment was rejected. The candidate
+ported the AVX512-style idea of stopping the three multiply inputs before the
+final forward-NTT L1 stage, then computing those final L1 pair values inside a
+fused K=3 multiply loop. Encryption used a K=4 fused loop for `u[0..2]` and `v`;
+decryption used a K=3 fused loop for `w`. The goal was to avoid materializing
+fully transformed `rhat`/`u` values and reading them repeatedly across the
+matrix-vector multiply rows.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX2 final-L1 fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2423.07 | 2692.53 | 0.8999x | 0.8989x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4910.92 | 5187.25 | 0.9467x | 0.9477x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 906.57 | 967.27 | 0.9372x | 0.9438x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 918.03 | 971.84 | 0.9446x | 0.9452x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1328.59 | 1332.54 | 0.9970x | 1.0004x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 895.21 | 888.38 | 1.0077x | 1.0019x |
+
+Decision: keep the existing AVX2 production structure: lazy multiply-input NTT
+followed by the separate `ntt_mul_acc3()` loops. On AVX2, this final-L1 fusion
+adds scalar pair bookkeeping and loses the current tail/multiply scheduling
+advantages; the small isolated accumulator rows do not represent the full
+production encrypt/decrypt path. Future multiply/NTT redesign should not just
+port the AVX512 final-stage fusion shape to AVX2. It needs a genuinely AVX2-wide
+packed multiply representation or a broader dataflow change that preserves lane
+occupancy across the whole matrix-vector multiply.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_matrix tail interleave)
 
 A production-order experiment was rejected. The candidate kept the same generated
