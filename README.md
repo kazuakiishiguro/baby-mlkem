@@ -6057,6 +6057,69 @@ This follows the same target-specific lesson as the earlier AVX2 scalar-tail
 switch: wide SIMD is profitable while lanes are full, but a single remaining XOF
 stream should fall back to scalar once the useful co-scheduled lanes are gone.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 keygen matrix/noise inline boundary)
+
+The AVX2-only `mlkem_keygen_matrix_noise_avx2()` helper is no longer forced
+`MLKEM_NOINLINE`. This helper is used only by `kpke_keygen()` and wraps the two
+public-matrix `sample_ntt4()` batches plus the accepted keygen PRF/tail
+co-schedule. Removing the forced call boundary lets clang choose the local shape
+for the whole keygen matrix/noise block after the recent `sample_ntt4()` refill
+stream reuse change.
+
+This is a code-layout/call-boundary cleanup, not a cache optimization and not an
+external backend. It does not change the Keccak schedule, sampling, NTTs, or
+encoded key format.
+
+Correctness checks:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4909.46 | 4840.52 | 1.0142x | 1.0113x |
+| `mlkem_core_stage_sample_matrix` | 2830.52 | 2835.64 | 0.9982x | 0.9991x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.65 | 975.31 | 0.9993x | 0.9996x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1993.91 | 1993.73 | 1.0001x | 1.0000x |
+| `mlkem_keygen` | 6999.39 | 6952.18 | 1.0068x | 1.0024x |
+| `mlkem_keygen_core` | 6977.46 | 6929.68 | 1.0069x | 1.0022x |
+| `mlkem_roundtrip_core` | 20209.39 | 20227.47 | 0.9991x | 1.0004x |
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 7018.53 | 6957.95 | 1.0087x | 1.0006x |
+| `mlkem_keygen_core` | 7007.21 | 6931.50 | 1.0109x | 1.0010x |
+| `mlkem_encaps_core` | 7120.51 | 7071.88 | 1.0069x | 1.0019x |
+| `mlkem_decaps_core` | 6086.37 | 6068.30 | 1.0030x | 1.0002x |
+| `mlkem_roundtrip` | 13463.14 | 13404.22 | 1.0044x | 1.0013x |
+| `mlkem_roundtrip_core` | 20302.99 | 20194.42 | 1.0054x | 1.0012x |
+
+Decision: accept the inline-boundary cleanup with a narrow keygen claim. The
+full keygen stage keeps the clearest signal, while the longer KEM confirmation
+is only small but non-negative on the core rows. Do not generalize this to other
+large sampler helpers: `sample_ntt4()` and x4 PRF/CBD function-boundary changes
+were already rejected when their integrated rows did not hold up.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen tail lane2x4 extraction)
 
 A follow-up to the accepted AVX2 keygen tail scalar continuation was rejected.

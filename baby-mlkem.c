@@ -4145,7 +4145,7 @@ static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
 }
 
 #if defined(__AVX2__)
-static MLKEM_NOINLINE void mlkem_keygen_matrix_noise_avx2(
+static void mlkem_keygen_matrix_noise_avx2(
     const uint8_t sigma[32], const uint8_t rho[32],
     poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]);
 #endif
@@ -5095,7 +5095,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
   }
 }
 
-static MLKEM_NOINLINE void mlkem_keygen_matrix_noise_avx2(
+static void mlkem_keygen_matrix_noise_avx2(
     const uint8_t sigma[32], const uint8_t rho[32],
     poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]) {
   const uint8_t r0[4] = {0, 0, 0, 1};
