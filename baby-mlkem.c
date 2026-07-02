@@ -2556,12 +2556,11 @@ static void mlkem_prf_cbd_eta2x4_32(const uint8_t seed[32],
 }
 
 
-static void mlkem_prf_cbd_eta2x2_32(const uint8_t seed[32],
+static MLKEM_NOINLINE void mlkem_prf_cbd_eta2x2_32(const uint8_t seed[32],
                                     const uint8_t nonce[4],
                                     poly256 out0,
                                     poly256 out1) {
   __m256i st[25];
-  uint8_t stream[2][128];
 
   for (int i = 0; i < 25; i++) {
     st[i] = _mm256_setzero_si256();
@@ -2579,15 +2578,10 @@ static void mlkem_prf_cbd_eta2x2_32(const uint8_t seed[32],
 
   keccakf4(st);
 
-  for (int lane = 0; lane < 16; lane++) {
-    uint64_t words[4];
-    _mm256_storeu_si256((__m256i *)words, st[lane]);
-    memcpy(stream[0] + (size_t)lane * 8, &words[0], 8);
-    memcpy(stream[1] + (size_t)lane * 8, &words[1], 8);
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
   }
-
-  sample_poly_cbd_eta2_bytes(stream[0], out0);
-  sample_poly_cbd_eta2_bytes(stream[1], out1);
 }
 
 static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],

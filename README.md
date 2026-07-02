@@ -1220,6 +1220,73 @@ x8 sampler or PRF path directly.
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 
+### Independent Core Optimization A/B (2026-07-03, AVX2 eta2x2 direct PRF/CBD)
+
+An AVX2-only PRF/CBD cleanup was accepted. The second keygen noise batch uses
+`mlkem_prf_cbd_eta2x2_32()` for nonces `4,5`; the old helper permuted the low two
+Keccak-f4 lanes through a stack `uint8_t stream[2][128]` and then called
+`sample_poly_cbd_eta2_bytes()` twice. The new helper decodes directly from each
+Keccak state word with `sample_poly_cbd_eta2_store2_avx2()`, matching the already
+used x3/x4 direct-state shape. The helper is marked `MLKEM_NOINLINE`: the inline
+variant made the x2 microbench fast, but regressed the integrated keygen noise
+rows, so the call boundary is kept to contain code-size/register-pressure effects.
+
+Correctness passed the AVX2 gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+The rejected inline diagnostic used `RUNS=13`, `WARMUP_RUNS=3`,
+`SUITES=keccak,stage`; it improved `mlkem_prf_cbd_eta2x2_current` to median
+`1.4663x`, but regressed `mlkem_core_stage_keygen_noise_prf_cbd` to `0.9875x`,
+`mlkem_core_stage_keygen_noise_ntt` to `0.9935x`, and KEM `mlkem_keygen` to
+`0.9989x`. Keep the direct decode, but not as an inline expansion into the
+keygen-noise wrapper.
+
+Accepted noinline AVX2-only keccak/stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=keccak,stage KECCAK_ITERS=200000 \
+  STAGE_ITERS=70000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted noinline keccak/stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_prf_cbd_eta2x2_current` | 511.92 | 293.82 | 1.7423x | 1.4654x |
+| `mlkem_prf_cbd_eta2x2_direct` | 294.61 | 295.50 | 0.9970x | 0.9979x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.43 | 965.72 | 1.0090x | 1.0093x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1994.16 | 1985.15 | 1.0045x | 1.0044x |
+| `mlkem_core_stage_kpke_keygen_full` | 4809.44 | 4809.26 | 1.0000x | 0.9989x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2434.83 | 2422.20 | 1.0052x | 1.0050x |
+
+Accepted noinline AVX2-only KEM confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=40000 C_COMPILER=clang \
+  PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM confirmation highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 6944.58 | 6936.66 | 1.0011x | 1.0010x |
+| `mlkem_keygen_core` | 6919.44 | 6916.95 | 1.0004x | 1.0002x |
+| `mlkem_decaps_core` | 6084.53 | 6045.60 | 1.0064x | 1.0019x |
+| `mlkem_encaps_core` | 6995.59 | 7011.75 | 0.9977x | 1.0109x |
+| `mlkem_roundtrip` | 13379.63 | 13363.60 | 1.0012x | 1.0006x |
+| `mlkem_roundtrip_core` | 20123.65 | 20096.68 | 1.0013x | 1.0035x |
+
+This is a small vendor-free core win. It does not change the CBD math or wire
+format; it removes the avoidable stream materialization in the two-output ETA2
+path and keeps the optimized helper behind a call boundary so the larger keygen
+and KEM code layout remains stable.
+
 ### Independent Core Stage Microbench (2026-06-29)
 
 Use the stage microbench to decide where vendor-free core work should go next.
@@ -9590,9 +9657,11 @@ AVX2-only x2+x3 direct-state rejection highlights:
 | `mlkem_keygen_core` | 7734.20 | 7892.43 | 0.9800x | 0.9984x |
 | `mlkem_roundtrip_core` | 22136.75 | 22196.27 | 0.9973x | 0.9981x |
 
-The accepted production change is narrower: keep x2 stream-based, but decode
-the AVX2-only x3 helper directly from the `keccakf4()` state. This targets the
-second encryption noise batch and avoids changing the keygen x4+x2 composition.
+The accepted production change at that point was narrower: keep x2 stream-based,
+but decode the AVX2-only x3 helper directly from the `keccakf4()` state. This
+targeted the second encryption noise batch and avoided changing the keygen x4+x2
+composition. The later 2026-07-03 eta2x2 direct PRF/CBD change supersedes the x2
+part of this older decision on the current AVX2-only baseline.
 The x3 direct path is guarded away from AVX512 builds, where the main PRF/CBD
 paths use x6/x7 helpers and a native KEM no-regression check is the relevant
 criterion.
@@ -9623,12 +9692,15 @@ A native `-march=native` KEM no-regression run with `RUNS=9`, `KEM_ITERS=30000`
 stayed neutral-to-positive on the core rows (`mlkem_roundtrip_core` median
 `1.0053x`).
 
-A follow-up x2-only direct-state experiment was also rejected. The candidate kept
-AVX512/native on the original stream path, used direct state decode only on
-AVX2-only builds, and marked `mlkem_prf_cbd_eta2x2_32()` `MLKEM_NOINLINE` to
-avoid the keygen code-layout regression seen in the x2+x3 attempt. The local
-stage row improved, but full KEM averages moved the wrong way and medians were
-only neutral.
+A follow-up x2-only direct-state experiment was rejected on that older baseline.
+The candidate kept AVX512/native on the original stream path, used direct state
+decode only on AVX2-only builds, and marked `mlkem_prf_cbd_eta2x2_32()`
+`MLKEM_NOINLINE` to avoid the keygen code-layout regression seen in the x2+x3
+attempt. The local stage row improved, but full KEM averages moved the wrong way
+and medians were only neutral. This historical rejection is superseded by the
+2026-07-03 AVX2 eta2x2 direct PRF/CBD A/B above, which remeasured the same
+noinline direct-state shape on the current baseline and accepted it after longer
+KEM confirmation.
 
 Rejected x2 direct/noinline highlights:
 
@@ -9640,12 +9712,14 @@ Rejected x2 direct/noinline highlights:
 | `mlkem_encaps_core` | 7216.63 | 7476.38 | 0.9653x | 1.0009x |
 | `mlkem_roundtrip_core` | 21858.17 | 22257.79 | 0.9820x | 1.0006x |
 
-Keep x2 stream-based. The x2 direct helper is attractive in the isolated
-microbench, but the keygen/KEM integration does not give enough full-path signal
-to justify another code-shape variant.
+At that point, x2 stayed stream-based because the keygen/KEM integration did not
+give enough full-path signal to justify another code-shape variant. The current
+production code now uses the later accepted noinline direct-state x2 helper; keep
+this older table only as evidence that the x2 direct shape is baseline-sensitive
+and must be checked at KEM level.
 
 A smaller AVX2-only x2 stream-extraction cleanup was also rejected. The
-candidate kept the accepted stream-based `mlkem_prf_cbd_eta2x2_32()` design, but
+candidate kept the then-accepted stream-based `mlkem_prf_cbd_eta2x2_32()` design, but
 replaced the per-lane `uint64_t words[4]` store plus two 8-byte `memcpy()` calls
 with two `_mm_storel_epi64()` stores from the low 128 bits of the `keccakf4()`
 state. This preserved the byte-stream CBD decoder and only tried to remove the
