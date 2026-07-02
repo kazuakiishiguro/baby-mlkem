@@ -5896,6 +5896,48 @@ by about half a percent, but the full sampler and public-matrix rows move
 negative and keygen weakens. The current compiler-selected helper boundary is
 better for the larger sampler path.
 
+A store-order follow-up for `sample_ntt4_store4x4()` was rejected. The candidate
+kept the same transpose values, parser, stream layout, Keccak schedule, and helper
+boundaries, but changed the four 32-byte stores from `s0, s2, s1, s3` to
+`s0, s1, s2, s3` so the write order matches the later lane parse order. This only
+tested store-buffer/cache ordering around the Keccak/store boundary; it did not
+remove any stores or loads.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected store-order highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.73 | 7.74 | 0.9981x | 0.9961x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 876.94 | 876.38 | 1.0006x | 1.0005x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 995.91 | 998.76 | 0.9972x | 1.0001x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 935.54 | 932.25 | 1.0035x | 0.9999x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1117.40 | 1113.79 | 1.0032x | 1.0000x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1189.12 | 1180.40 | 1.0074x | 1.0023x |
+| `mlkem_core_stage_sample_matrix` | 2824.31 | 2817.49 | 1.0024x | 1.0029x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4172.22 | 4154.92 | 1.0042x | 0.9995x |
+| `mlkem_core_stage_kpke_keygen_full` | 4805.65 | 4826.45 | 0.9957x | 1.0001x |
+
+Decision: keep the existing `s0, s2, s1, s3` store order. The direct store-rate
+row regressed and the full x4 sampler row stayed neutral, so the small
+`sample_matrix` median movement is not a safe acceptance signal. Future work at
+this boundary must actually remove a store/load or change the parser
+representation, not only reorder equivalent stores.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
