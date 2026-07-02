@@ -5456,6 +5456,51 @@ defensible production signal without a sampler median win. Future sampler work
 needs to change real state/dataflow, not only pointer alias annotations.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_matrix tail interleave)
+
+A production-order experiment was rejected. The candidate kept the same generated
+public matrix entries but changed the AVX2-only `sample_matrix()` call order from
+`x4 batch0 -> x4 batch1 -> scalar tail` to
+`x4 batch0 -> scalar tail -> x4 batch1`. The goal was to see whether placing the
+single-lane `(2,2)` tail between the two four-lane batches reduced front-end or
+state-pressure effects in the full public matrix sampler without changing
+Keccak output, rejection sampling, or wire-visible values.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected tail-interleave highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2804.50 | 2802.09 | 1.0009x | 1.0002x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1123.82 | 1113.26 | 1.0095x | 1.0009x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.85 | 1180.74 | 1.0026x | 1.0006x |
+| `mlkem_core_stage_sample_matrix_tail` | 865.00 | 864.57 | 1.0005x | 1.0000x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4208.58 | 4153.61 | 1.0132x | 0.9999x |
+| `mlkem_core_stage_kpke_keygen_full` | 4835.34 | 4810.75 | 1.0051x | 1.0004x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4893.71 | 4906.89 | 0.9973x | 1.0001x |
+
+Decision: keep the original production order. The direct `sample_matrix()` median
+movement is only 1.0002x, the scalar tail row is neutral, and public-prepare does
+not improve at the median. This confirms that local call ordering around the
+single-lane tail is not a robust sampler optimization; future work should change
+the sampler state/dataflow itself, not only the order of existing calls.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
 
 A bench-only AVX2 sampler diagnostic now measures the cost of replacing one
