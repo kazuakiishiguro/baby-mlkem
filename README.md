@@ -5159,6 +5159,71 @@ round body in the loop and perturbs integrated KEM code layout enough to regress
 must preserve the direct sampler win without increasing the surrounding KEM code
 footprint this much.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `keccakf4_mem()` round-constant vector table)
+
+A third follow-up after the accepted ping-pong copy elision was rejected. The
+candidate changed only the memory-resident Keccak iota step from a per-round
+`_mm256_set1_epi64x((long long)rc[round])` broadcast to a 32-byte-aligned
+`keccak_rc_x4[24][4]` table load. The hypothesis was that pre-vectorizing the
+round constants could remove a broadcast from each of the 24 rounds without
+changing the Keccak dataflow, stream layout, parser, or refill path.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 826.40 | 832.69 | 0.9924x | 0.9924x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 877.30 | 898.67 | 0.9762x | 0.9740x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 996.54 | 1015.46 | 0.9814x | 0.9795x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.56 | 922.81 | 1.0095x | 1.0097x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.21 | 1105.69 | 1.0068x | 1.0070x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.73 | 1173.03 | 1.0091x | 1.0073x |
+| `mlkem_core_stage_sample_matrix` | 2808.84 | 2785.27 | 1.0085x | 1.0079x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4166.23 | 4138.33 | 1.0067x | 1.0041x |
+| `mlkem_core_stage_kpke_keygen_full` | 4822.27 | 4794.72 | 1.0057x | 1.0025x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6917.41 | 6915.39 | 1.0003x | 0.9997x |
+| `mlkem_encaps_core` | 7020.63 | 7144.38 | 0.9827x | 0.9927x |
+| `mlkem_decaps_core` | 6063.97 | 6086.37 | 0.9963x | 1.0028x |
+| `mlkem_roundtrip` | 13371.95 | 13359.83 | 1.0009x | 1.0002x |
+| `mlkem_roundtrip_core` | 20103.86 | 20241.09 | 0.9932x | 0.9982x |
+
+Decision: keep the scalar `rc[round]` broadcast in `keccakf4_mem()`. The full
+public-matrix sampler rows moved positive, but the direct Keccak split rows
+covering the modified iota path regressed sharply, and the integrated KEM
+confirmation did not preserve the apparent sampler win: `encaps_core` regressed
+and `roundtrip_core` was below baseline. A 768-byte vector table also adds a
+read-only data dependency and layout perturbation to avoid a broadcast that the
+compiler already handles well. Do not pre-vectorize these round constants unless
+a future broader Keccak layout change removes the split-row regression and keeps
+the KEM core rows positive.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
