@@ -4614,6 +4614,54 @@ or a cross-operation cache, and it speeds the remaining one-lane SHAKE128 matrix
 sampler by removing generic sponge bookkeeping. It is intentionally not applied
 to native/AVX512 until that target shows an integrated win.
 
+
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 x4 PRF/CBD inline boundary)
+
+An AVX2 x4 PRF/CBD function-boundary experiment was rejected. The candidate
+marked `sample_poly_cbd_eta2x4_state_avx2()` and `mlkem_prf_cbd_eta2x4_32()` as
+`MLKEM_ALWAYS_INLINE`, leaving x2/x3 helpers and all arithmetic unchanged. The
+hypothesis was that, after the accepted `keccakf4()` inline-boundary win, the
+thin x4 PRF/CBD wrapper might similarly avoid call/alias overhead in the keygen
+and encryption noise batches.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1170.54 | 1159.09 | 1.0099x | 1.0139x |
+| `mlkem_core_stage_encrypt_noise` | 1394.45 | 1379.52 | 1.0108x | 1.0109x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 981.61 | 985.29 | 0.9963x | 0.9869x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1993.95 | 1998.06 | 0.9979x | 0.9936x |
+| `mlkem_keygen_core` | 7930.61 | 8160.08 | 0.9719x | 0.9965x |
+| `mlkem_encaps_core` | 7511.51 | 7299.73 | 1.0290x | 1.0022x |
+| `mlkem_roundtrip` | 14374.66 | 14590.94 | 0.9852x | 0.9973x |
+| `mlkem_roundtrip_core` | 22687.98 | 22314.49 | 1.0167x | 1.0406x |
+
+Keep the current x4 PRF/CBD helper boundaries. The inline attribute helps the
+encryption noise stage, but it perturbs the keygen x4+x2 composition and top-level
+roundtrip enough that the broader KEM path does not justify the code-size/layout
+change. This is another instance where `keccakf4()` itself benefits from boundary
+removal, but surrounding decode helpers should stay compiler-shaped unless the
+keygen rows move with the local stage.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
