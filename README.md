@@ -7381,6 +7381,48 @@ Keep the runtime-generated shuffle-index table. After the earlier accepted init
 hoist, the remaining ready branch/table setup is not a meaningful full-path
 bottleneck, and moving the table to `.rodata` perturbs the integrated KEM path.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 parser idx8 static load)
+
+A smaller parser shuffle cleanup was rejected. The candidate kept the runtime
+`sample_ntt_parse_idx_avx2[256][8]` compaction table, but replaced the local
+`_mm256_set_epi8()` construction of the fixed 32-byte `idx8` extraction mask in
+`sample_ntt_parse_stream_avx2_ready()` with an aligned static
+`sample_ntt_parse_shuf_avx2[32]` object and `_mm256_load_si256()`. The goal was
+to reduce immediate construction pressure in the common 56-byte parser loop.
+
+Correctness passed the AVX2 gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 C_COMPILER=clang \
+  PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.35 | 118.37 | 0.9998x | 1.0028x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 996.11 | 994.71 | 1.0014x | 1.0022x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 939.66 | 933.86 | 1.0062x | 1.0012x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1114.50 | 1124.39 | 0.9912x | 0.9991x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.28 | 1183.94 | 0.9994x | 0.9985x |
+| `mlkem_core_stage_sample_matrix` | 2825.03 | 2814.79 | 1.0036x | 1.0020x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4175.30 | 4162.50 | 1.0031x | 0.9992x |
+| `mlkem_core_stage_kpke_keygen_full` | 4810.50 | 4815.49 | 0.9990x | 0.9994x |
+
+Keep the local `_mm256_set_epi8()` form. The direct parser rows are only
+neutral-to-slightly positive, while both x4 matrix batches and integrated keygen
+rows are neutral or slightly negative by median. The static load also adds a
+`.rodata` dependency to a hot loop without a full-path win, so this is not a
+core improvement.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen tail parser init skip)
 
 A follow-up parser-init cleanup was rejected. The candidate removed the
