@@ -1291,6 +1291,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_public_decode_only` | isolated d12 decode for the three public-key polynomials, with lightweight sink |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
@@ -5021,6 +5023,85 @@ rows regress substantially. This reinforces the earlier sampler diagnosis: the
 next useful work must reduce or restructure the common three-rate Keccak/state
 path, not adjust rare-path scratch placement. No KEM confirmation was run because
 the direct sampler target rows already failed.
+
+### Latest Core Optimization A/B (2026-07-02, AVX2 encrypt public-tail/noise co-scheduling)
+
+The AVX2-only `kpke_encrypt()` public-cache-miss path now co-schedules the final
+public-matrix tail entry with encryption noise generation when `rlen == 32`. The
+first two public-matrix x4 batches still use `sample_ntt4()`. The final `(2,2)`
+tail uses lane 2 of the second encryption PRF/CBD `keccakf4()` call, while lanes
+0, 1, and 3 carry nonces 4, 5, and 6 for `e1[1]`, `e1[2]`, and `e2`. The
+remaining tail SHAKE128 blocks continue with scalar `keccakf()`, matching the
+accepted keygen tail scalar-continuation design.
+
+This change is intentionally narrow. It does not change the cached public-key
+path, the existing `kpke_encrypt_prepared_public()` source shape, AVX512/native
+paths, or the no-cache encapsulation `H(ek)` public-prepare co-schedule. It only
+applies when `kpke_encrypt()` has to prepare the public matrix and generate
+32-byte encryption noise in the same operation.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+Bench-only tail/noise diagnostic, seven repeated `30000`-iteration runs,
+pinned CPU 0, `clang`, AVX2-only:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1331.97 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1116.96 |
+
+The diagnostic uses a lightweight sink and is only meant to compare those two
+rows directly. It shows that putting the first tail block into the otherwise
+underfilled nonce 4/5/6 PRF `keccakf4()` call removes about 215 ns from the
+combined tail-plus-noise work before integrating it into `kpke_encrypt()`.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 5995.94 | 5407.33 | 1.1089x | 1.0457x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2441.67 | 2440.32 | 1.0006x | 0.9983x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1172.42 | 1174.38 | 0.9983x | 0.9993x |
+| `mlkem_encaps` | 2703.40 | 2687.03 | 1.0061x | 1.0012x |
+| `mlkem_encaps_core` | 7538.03 | 7313.11 | 1.0308x | 0.9995x |
+| `mlkem_roundtrip_core` | 22521.54 | 21962.59 | 1.0254x | 1.0309x |
+
+Longer AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2693.98 | 2711.01 | 0.9937x | 1.0011x |
+| `mlkem_encaps_core` | 7802.90 | 7581.30 | 1.0292x | 1.0011x |
+| `mlkem_keygen_core` | 7655.38 | 7777.19 | 0.9843x | 1.0012x |
+| `mlkem_roundtrip_core` | 22534.40 | 22289.25 | 1.0110x | 1.0122x |
+
+Keep the co-schedule. The direct target, `kpke_encrypt_uncached`, keeps a clear
+median win, while the longer KEM confirmation does not show a full-path median
+regression. The result also reinforces the current sampler direction: useful
+wins come from filling otherwise unused Keccak SIMD lanes with real independent
+work, not from cache reuse, parser bookkeeping, or rare-path scratch placement.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 

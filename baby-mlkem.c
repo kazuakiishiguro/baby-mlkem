@@ -4254,6 +4254,69 @@ static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
 #endif
 }
 
+#if defined(__AVX2__) && !defined(__AVX512F__)
+static void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+    const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
+    poly256 r0, poly256 r1, poly256 r2, poly256 e10,
+    poly256 e11, poly256 e12, poly256 e2) {
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  __m256i st[25];
+  uint64_t tail_state[25];
+
+  mlkem_prf_cbd_eta2x4_32(seed, n0, r0, r1, r2, e10);
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x((long long)load64_le(seed + 0),
+                            (long long)load64_le(rho + 0),
+                            (long long)load64_le(seed + 0),
+                            (long long)load64_le(seed + 0));
+  st[1] = _mm256_set_epi64x((long long)load64_le(seed + 8),
+                            (long long)load64_le(rho + 8),
+                            (long long)load64_le(seed + 8),
+                            (long long)load64_le(seed + 8));
+  st[2] = _mm256_set_epi64x((long long)load64_le(seed + 16),
+                            (long long)load64_le(rho + 16),
+                            (long long)load64_le(seed + 16),
+                            (long long)load64_le(seed + 16));
+  st[3] = _mm256_set_epi64x((long long)load64_le(seed + 24),
+                            (long long)load64_le(rho + 24),
+                            (long long)load64_le(seed + 24),
+                            (long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)6 | (0x1FULL << 8)), 0x1f0202LL,
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)));
+  st[16] = _mm256_set_epi64x((long long)(0x80ULL << 56), 0,
+                             (long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56));
+  st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    __m128i hi = _mm256_extracti128_si256(st[lane], 1);
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
+                                     e11 + 16 * lane, e12 + 16 * lane);
+    sample_poly_cbd_eta2_store1_avx2(_mm_srli_si128(hi, 8),
+                                     e2 + 16 * lane);
+  }
+  for (int lane = 0; lane < 25; lane++) {
+    tail_state[lane] = keccak_lane2_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)tail_state, 168, tail, 0);
+  while (count < N) {
+    keccakf(tail_state);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)tail_state, 168, tail, count);
+  }
+}
+#endif
+
 static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
                                          const uint8_t *r, size_t rlen,
                                          uint8_t *out_c,
@@ -4353,6 +4416,44 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   *out_clen = (size_t)(p - out_c);
 }
 
+#if defined(__AVX2__) && !defined(__AVX512F__)
+static inline void kpke_encrypt_prepared_public_with_noise_avx2(
+    const uint8_t *m, size_t mlen, uint8_t *out_c, size_t *out_clen,
+    poly256 rhat[K], poly256 e1[K], poly256 e2) {
+  ensure_ntt_roots();
+  static poly256 u[K];
+  static poly256 v;
+
+  for (int i = 0; i < K; i++) {
+    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
+  }
+  for (int i = 0; i < K; i++) {
+    ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
+                 kpke_public_cache_ahat[i][1], rhat[1],
+                 kpke_public_cache_ahat[i][2], rhat[2], u[i]);
+    ntt_inv_add_inplace(e1[i], u[i]);
+  }
+  ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
+               kpke_public_cache_that[1], rhat[1],
+               kpke_public_cache_that[2], rhat[2], v);
+
+  if (mlen == 32) {
+    mlkem_add_message_to_poly(m, e2);
+  }
+  ntt_inv_add_v_inplace(e2, v);
+
+  uint8_t *p = out_c;
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(u[i], p);
+    p += (N * DU) / 8;
+  }
+  compress_encode_poly_d4_avx2(v, p);
+  p += (N * DV) / 8;
+  *out_clen = (size_t)(p - out_c);
+}
+#endif
+
+
 static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          const uint8_t *r, size_t rlen, uint8_t *out_c,
                          size_t *out_clen, int ek_cache_verified) {
@@ -4362,6 +4463,13 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          kpke_public_cache_generation != 0 &&
                          kpke_public_cache_generation ==
                              mlkem_ek_hash_cache_generation;
+#if defined(__AVX2__) && !defined(__AVX512F__)
+  static poly256 prepared_rhat[K];
+  static poly256 prepared_e1[K];
+  static poly256 prepared_e2;
+  int noise_prepared = 0;
+#endif
+
   if (!public_cache_hit) {
     if (!kpke_public_cache_valid ||
         memcmp(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek)) != 0) {
@@ -4369,7 +4477,30 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
       for (int i = 0; i < K; i++) {
         byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
       }
-      sample_matrix(rho, kpke_public_cache_ahat);
+#if defined(__AVX2__) && !defined(__AVX512F__)
+      if (rlen == 32) {
+        const uint8_t r0[4] = {0, 0, 0, 1};
+        const uint8_t c0[4] = {0, 1, 2, 0};
+        const uint8_t r1[4] = {1, 1, 2, 2};
+        const uint8_t c1[4] = {1, 2, 0, 1};
+        sample_ntt4(rho, r0, c0, kpke_public_cache_ahat[0][0],
+                    kpke_public_cache_ahat[0][1],
+                    kpke_public_cache_ahat[0][2],
+                    kpke_public_cache_ahat[1][0]);
+        sample_ntt4(rho, r1, c1, kpke_public_cache_ahat[1][1],
+                    kpke_public_cache_ahat[1][2],
+                    kpke_public_cache_ahat[2][0],
+                    kpke_public_cache_ahat[2][1]);
+        mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+            r, rho, kpke_public_cache_ahat[2][2], prepared_rhat[0],
+            prepared_rhat[1], prepared_rhat[2], prepared_e1[0],
+            prepared_e1[1], prepared_e1[2], prepared_e2);
+        noise_prepared = 1;
+      } else
+#endif
+      {
+        sample_matrix(rho, kpke_public_cache_ahat);
+      }
       kpke_public_cache_store(ek_pke, kpke_public_cache_that,
                               kpke_public_cache_ahat,
                               ek_cache_verified
@@ -4380,6 +4511,14 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
     }
   }
 
+#if defined(__AVX2__) && !defined(__AVX512F__)
+  if (noise_prepared) {
+    kpke_encrypt_prepared_public_with_noise_avx2(m, mlen, out_c, out_clen,
+                                                 prepared_rhat, prepared_e1,
+                                                 prepared_e2);
+    return;
+  }
+#endif
   kpke_encrypt_prepared_public(m, mlen, r, rlen, out_c, out_clen);
 }
 
