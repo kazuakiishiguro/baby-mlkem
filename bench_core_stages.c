@@ -1282,6 +1282,22 @@ static uint64_t bench_keygen_secret_encode_only(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_keygen_secret_decode_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      byte_decode(12, stage_dk[lane] + j * 384, stage_tmp_vec0[lane][j]);
+    }
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_keygen_accum_encode(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1381,6 +1397,22 @@ static uint64_t bench_keygen_public_encode_only(size_t iters) {
       byte_encode(12, stage_that[lane][col], stage_tmp_pk[lane] + col * 384);
     }
     acc ^= stage_tmp_pk[lane][(i * 29u) % STAGE_PK_BYTES];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_public_decode_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int col = 0; col < K; col++) {
+      byte_decode(12, stage_ek[lane] + col * 384, stage_tmp_vec0[lane][col]);
+    }
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][i & 255u];
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -2700,6 +2732,8 @@ int main(int argc, char **argv) {
                bench_keygen_noise_ntt_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_secret_encode_only",
                bench_keygen_secret_encode_only(iters), iters);
+  print_metric("mlkem_core_stage_keygen_secret_decode_only",
+               bench_keygen_secret_decode_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_accum_encode",
                bench_keygen_accum_encode(iters), iters);
   print_metric("mlkem_core_stage_keygen_accum_add_only",
@@ -2710,6 +2744,8 @@ int main(int argc, char **argv) {
                bench_keygen_add_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_public_encode_only",
                bench_keygen_public_encode_only(iters), iters);
+  print_metric("mlkem_core_stage_keygen_public_decode_only",
+               bench_keygen_public_decode_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise", bench_encrypt_noise(iters),
                iters);
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd",

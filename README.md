@@ -1214,11 +1214,13 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
 | `mlkem_core_stage_keygen_secret_encode_only` | isolated keygen secret-key d12 encode for the already transformed `shat` vector |
+| `mlkem_core_stage_keygen_secret_decode_only` | isolated d12 decode for the three secret-key polynomials, with lightweight sink |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
 | `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
 | `mlkem_core_stage_keygen_accum_only` | isolated keygen public-vector `A^T*s` NTT-domain multiply-add, excluding error add and public-key encode |
 | `mlkem_core_stage_keygen_add_only` | isolated keygen public-vector error add, using precomputed `A^T*s` and `ehat` |
 | `mlkem_core_stage_keygen_public_encode_only` | isolated keygen public-key d12 encode for the already accumulated `that` vector |
+| `mlkem_core_stage_keygen_public_decode_only` | isolated d12 decode for the three public-key polynomials, with lightweight sink |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
@@ -4710,6 +4712,31 @@ win: `kpke_decrypt_uncached` median speedup was `0.9996x`,
 `kpke_decrypt_cached` was `1.0003x`, and the large `kpke_encrypt_uncached`
 movement was dominated by sample-matrix noise. Keep the existing maskload tail
 until a direct d12-decode microbench proves otherwise.
+
+A later direct d12-decode split added `keygen_secret_decode_only` and
+`keygen_public_decode_only` stage metrics so this path can be ranked without
+using noisy full uncached encrypt/decrypt rows. The rows decode the three 384-byte
+d12 polynomials from the prepared secret/public key fixtures and use lightweight
+coefficient sinks, matching the existing encode-only diagnostics.
+
+Pinned CPU 0 snapshots with `BENCH_STAGES_ITERS=80000` measured:
+
+| Build | Metric | ns/op |
+|---|---|---:|
+| native | `mlkem_core_stage_keygen_secret_encode_only` | 36.38 |
+| native | `mlkem_core_stage_keygen_secret_decode_only` | 9.55 |
+| native | `mlkem_core_stage_keygen_public_encode_only` | 36.12 |
+| native | `mlkem_core_stage_keygen_public_decode_only` | 9.61 |
+| AVX2-only | `mlkem_core_stage_keygen_secret_encode_only` | 36.70 |
+| AVX2-only | `mlkem_core_stage_keygen_secret_decode_only` | 18.24 |
+| AVX2-only | `mlkem_core_stage_keygen_public_encode_only` | 36.09 |
+| AVX2-only | `mlkem_core_stage_keygen_public_decode_only` | 18.22 |
+
+This makes d12 decode a poor next optimization target. Even if the tail load were
+free, the whole three-polynomial decode row is much smaller than public-matrix
+sampling, forward NTT, inverse NTT, or K=3 accumulation. Future d12 work should
+only be revisited if a broader cold-cache public/secret key preparation redesign
+needs it; narrow `byte_decode_d12_avx2()` reshaping is unlikely to move KEM.
 
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample_ntt4 static stream scratch)
 
