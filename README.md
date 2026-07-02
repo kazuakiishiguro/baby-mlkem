@@ -1123,6 +1123,36 @@ native AVX2-tail diagnostics such as `sample_ntt4_one_full_raw` moved slightly
 negative. Treat this as an AVX2-only core win with native KEM no-regression, not
 as a native sampler-tail optimization.
 
+A native AVX512 follow-up applying the same `always_inline` boundary removal to
+`keccakf8()` was rejected. The candidate changed only the `keccakf8()` function
+attribute and kept the 24-round loop rolled. It passed native `make test`, but
+native stage/KEM A/B showed only a weak local signal and the longer KEM
+confirmation was neutral-to-negative.
+
+Native stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected `keccakf8()` inline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 1898.67 | 1893.47 | 1.0027x | 1.0018x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 691.77 | 692.72 | 0.9986x | 0.9988x |
+| `mlkem_core_stage_kpke_keygen_full` | 3420.80 | 3419.39 | 1.0004x | 0.9994x |
+| `mlkem_keygen_core` | 5256.00 | 5253.30 | 1.0005x | 1.0008x |
+| `mlkem_roundtrip_core` | 14587.56 | 14525.46 | 1.0043x | 1.0033x |
+
+The longer native KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` did not
+hold the full-path signal: `mlkem_keygen_core` median `1.0005x` and
+`mlkem_encaps_core` `1.0014x` were neutral, while `mlkem_roundtrip_core` median
+regressed to `0.9997x`. Keep only the AVX2 `keccakf4()` inline boundary change;
+`keccakf8()` should remain a normal helper unless a future rewrite improves the
+x8 sampler or PRF path directly.
+
 These numbers show that further sampling work should target Keccak/SHAKE128 and
 full `sample_ntt()` first; standalone CBD is already much smaller.
 
