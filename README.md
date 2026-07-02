@@ -4413,6 +4413,44 @@ Keep the runtime-generated shuffle-index table. After the earlier accepted init
 hoist, the remaining ready branch/table setup is not a meaningful full-path
 bottleneck, and moving the table to `.rodata` perturbs the integrated KEM path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen tail parser init skip)
+
+A follow-up parser-init cleanup was rejected. The candidate removed the
+`sample_ntt_parse_init_avx2()` call from the AVX2 keygen tail helper because the
+current caller runs two `sample_ntt4()` batches first, and those batches already
+initialize the parser table. This made the helper rely on the current keygen call
+graph instead of being self-initializing.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_tail` | 879.15 | 881.80 | 0.9970x | 0.9984x |
+| `mlkem_core_stage_sample_matrix_tail_scalar` | 881.00 | 879.22 | 1.0020x | 1.0002x |
+| `mlkem_core_stage_kpke_keygen_full` | 5342.04 | 5602.88 | 0.9534x | 1.0000x |
+| `mlkem_keygen` | 7594.28 | 7440.60 | 1.0207x | 0.9994x |
+| `mlkem_keygen_core` | 7573.84 | 7429.04 | 1.0195x | 0.9999x |
+| `mlkem_roundtrip_core` | 22035.16 | 22103.87 | 0.9969x | 0.9982x |
+
+Keep the keygen tail helper self-initializing. The call-graph assumption is true
+today, but the removed branch/table-ready check did not produce an integrated
+keygen win, and it weakens the helper boundary for no measurable benefit.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
