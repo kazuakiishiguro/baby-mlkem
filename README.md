@@ -4366,6 +4366,53 @@ Keep the simpler per-word `keccak_lane2_u64()` extraction. The 4-word vector
 extract form is mechanically tidy, but the extra shuffles do not improve the
 integrated keygen path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 parser const shuffle table)
+
+A parser-table cleanup experiment was rejected. The candidate replaced the
+runtime-generated `uint8_t sample_ntt_parse_idx_avx2[256][8]` shuffle-index
+matrix with a compile-time `uint64_t[256]` table and made
+`sample_ntt_parse_init_avx2()` an empty inline. The parser compaction algorithm
+and table contents were unchanged; the goal was to remove the remaining ready
+branch and first-use table generation.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 116.56 | 124.53 | 0.9360x | 0.9991x |
+| `mlkem_core_stage_sample_matrix_tail` | 877.12 | 873.01 | 1.0047x | 1.0049x |
+| `mlkem_core_stage_kpke_keygen_full` | 5344.71 | 5682.63 | 0.9405x | 1.0033x |
+| `mlkem_keygen_core` | 7389.04 | 7390.62 | 0.9998x | 1.0001x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` rejected the
+change:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps_core` | 7478.25 | 7508.82 | 0.9959x | 0.9890x |
+| `mlkem_keygen` | 7932.79 | 7531.36 | 1.0533x | 0.9982x |
+| `mlkem_keygen_core` | 7908.64 | 7509.47 | 1.0532x | 0.9984x |
+| `mlkem_roundtrip` | 14311.96 | 13915.51 | 1.0285x | 0.9984x |
+
+Keep the runtime-generated shuffle-index table. After the earlier accepted init
+hoist, the remaining ready branch/table setup is not a meaningful full-path
+bottleneck, and moving the table to `.rodata` perturbs the integrated KEM path.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
