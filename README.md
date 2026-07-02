@@ -3959,6 +3959,69 @@ current constant-modulo lowering. A future Montgomery/Harvey attempt would need
 to redesign the surrounding NTT representation and butterfly schedule, not only
 swap the final K=3 base multiplication helper.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 forward NTT lazy final l1)
+
+The AVX2-only forward NTT tail now uses a Harvey-style lazy final l1 butterfly:
+for the final length-2 stage it stores `a + t` and `a + Q - t` in `[0, 2Q)` and
+then canonicalizes the full polynomial once at the end. The public `ntt()`
+contract stays unchanged because the output is still reduced to `[0, Q)` before
+returning. Native AVX512BW builds are guarded back to the previous exact l1
+butterfly after no-regression testing showed the AVX2-only path was the useful
+target.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000   C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"   ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct NTT highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_tail_avx2` | 97.70 | 93.85 | 1.0410x | 1.0405x |
+| `mlkem_ntt_copy` | 201.94 | 196.68 | 1.0267x | 1.0291x |
+| `mlkem_ntt_inplace` | 194.86 | 191.15 | 1.0194x | 1.0196x |
+| `mlkem_ntt3_inplace` | 584.76 | 574.47 | 1.0179x | 1.0184x |
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000   C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"   ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1996.19 | 1981.42 | 1.0075x | 1.0095x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 785.54 | 777.49 | 1.0104x | 1.0074x |
+| `mlkem_core_stage_decrypt_u_ntt` | 787.32 | 778.23 | 1.0117x | 1.0127x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 881.85 | 873.55 | 1.0095x | 1.0090x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 922.73 | 914.30 | 1.0092x | 1.0093x |
+| `mlkem_keygen_core` | 7713.48 | 7732.95 | 0.9975x | 1.0014x |
+| `mlkem_roundtrip_core` | 22163.79 | 22397.41 | 0.9896x | 1.0028x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+full-path median signal: `mlkem_keygen_core` `1.0034x`, `mlkem_encaps_core`
+`1.0090x`, `mlkem_decaps_core` `0.9988x`, and `mlkem_roundtrip_core` `1.0115x`.
+After guarding native AVX512BW back to the previous l1 butterfly, native KEM
+no-regression with `RUNS=9`, `KEM_ITERS=30000` was positive on all core medians:
+`mlkem_keygen_core` `1.0027x`, `mlkem_encaps_core` `1.0024x`,
+`mlkem_decaps_core` `1.0034x`, and `mlkem_roundtrip_core` `1.0027x`.
+
+This is a small but real classical NTT optimization: it removes per-vector
+conditional add/sub reductions from the final butterfly, pays one contiguous
+canonicalization pass, and keeps all external encoders and NTT-domain consumers
+on the existing canonical representation.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
