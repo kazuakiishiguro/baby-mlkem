@@ -4163,6 +4163,45 @@ hot scalar accumulation loop is already effectively alias-insensitive here, and
 the direct `A^T*s` metric did not move. Future work needs to change the
 arithmetic schedule or representation, not just pointer qualifiers.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen accumulation noinline boundary)
+
+A call-boundary experiment for the keygen public accumulation helper was
+rejected. The candidate changed only `ntt_mul_acc3_factored_gamma()` from a
+plain `static` helper to `static MLKEM_NOINLINE`, keeping the arithmetic,
+reductions, stores, and public-key encode schedule unchanged. The goal was to
+see whether isolating the scalar accumulation loop reduced code-layout or
+register-pressure interference around `kpke_keygen()`.
+
+Correctness check:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_only` | 440.89 | 444.37 | 0.9922x | 0.9929x |
+| `mlkem_core_stage_keygen_accum_add_only` | 457.62 | 462.88 | 0.9886x | 0.9887x |
+| `mlkem_core_stage_keygen_accum_encode` | 490.30 | 496.99 | 0.9866x | 0.9873x |
+| `mlkem_core_stage_kpke_keygen_full` | 4814.89 | 4817.13 | 0.9995x | 0.9993x |
+
+Do not force a call boundary on `ntt_mul_acc3_factored_gamma()`. The local
+accumulation rows get slower and the full keygen row is neutral, so the current
+compiler-selected boundary is better. The next useful keygen accumulation work
+still needs to change the scalar arithmetic schedule or introduce a vectorized
+path, not only adjust helper placement.
+
 Native stage A/B command:
 
 ```bash
