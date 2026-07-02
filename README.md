@@ -5646,6 +5646,49 @@ change. This is another instance where `keccakf4()` itself benefits from boundar
 removal, but surrounding decode helpers should stay compiler-shaped unless the
 keygen rows move with the local stage.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 fixed-nonce PRF/CBD state setup)
+
+An AVX2-only fixed-nonce PRF/CBD setup experiment was rejected. The candidate
+kept the existing generic `mlkem_prf_cbd_eta2x2_32()`, `x3`, and `x4` helpers for
+bench diagnostics, but routed production fixed nonce groups through dedicated
+helpers that built Keccak `st[4]` from immediate vectors instead of local
+`uint8_t nonce[]` arrays. This targeted the keygen `{0,1,2,3}` plus `{4,5}`
+noise groups, the encryption `{0,1,2,3}` plus `{4,5,6}` groups, and the existing
+public-tail/noise co-scheduled paths.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected fixed-nonce highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.95 | 985.52 | 0.9893x | 0.9934x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1174.45 | 1180.08 | 0.9952x | 0.9952x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1118.43 | 1116.59 | 1.0017x | 1.0014x |
+| `mlkem_core_stage_kpke_keygen_full` | 4835.86 | 4876.11 | 0.9917x | 0.9974x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4935.68 | 4975.02 | 0.9921x | 0.9966x |
+| `mlkem_keygen_core` | 6933.33 | 7082.15 | 0.9790x | 0.9980x |
+| `mlkem_encaps_core` | 6980.42 | 7072.49 | 0.9870x | 1.0044x |
+| `mlkem_roundtrip_core` | 20118.80 | 20343.88 | 0.9889x | 0.9998x |
+
+Decision: keep the current nonce-array helper shape. Fixed immediates save only
+a few setup instructions before a full Keccak permutation, while the extra helper
+bodies and changed code layout make the main keygen/encryption PRF/CBD stages
+slower. The tiny tail co-scheduled row improvement is not enough to accept a
+change that regresses the common noise paths.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 fixed matrix batches)
 
 An AVX2-only public-matrix sampler specialization was rejected. The candidate
