@@ -5606,6 +5606,38 @@ The longer `RUNS=17`, `KEM_ITERS=50000` confirmation rejected the attribute:
 `0.9635x`. Keep the accepted x3 helper inlineable; forcing a call boundary
 hurts the broader AVX2-only KEM layout.
 
+A follow-up folding the accepted x3 direct-state loop from
+`sample_poly_cbd_eta2_store2_avx2()` plus `sample_poly_cbd_eta2_store1_avx2()`
+into a new `sample_poly_cbd_eta2_store3_avx2()` helper was rejected. The
+candidate only changed the AVX2-only x3 direct-state path and tried to share the
+ETA2 decode LUT/mask setup across the three live output streams for each
+`keccakf4()` state word. Correctness passed in both native and AVX2-only test
+builds, but the measured helper win was effectively neutral and did not hold in
+the longer KEM gate.
+
+Focused AVX2-only Keccak/PRF-CBD A/B (`RUNS=13`, `KECCAK_ITERS=200000`) showed
+only a tiny local signal:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_prf_cbd_eta2x3_current` | 306.96 | 306.16 | 1.0026x | 1.0008x |
+| `mlkem_cbd_eta2x3` | 29.96 | 29.74 | 1.0076x | 1.0037x |
+
+Rejected x3 store3-helper highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1170.15 | 1170.53 | 0.9997x | 1.0003x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2444.42 | 2445.34 | 0.9996x | 1.0010x |
+| `mlkem_encaps_core` | 7480.93 | 7387.04 | 1.0127x | 1.0015x |
+| `mlkem_roundtrip_core` | 22858.43 | 22333.67 | 1.0235x | 1.0072x |
+
+The longer AVX2-only `RUNS=17`, `KEM_ITERS=50000` confirmation rejected the
+change: `mlkem_encaps_core` median `0.9997x` and `mlkem_roundtrip_core` median
+`0.9998x`. Keep the simpler `store2` plus `store1` composition; after the
+accepted `keccakf4()` inline and x3 direct-state changes, this decode scheduling
+is no longer a useful bottleneck.
+
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
