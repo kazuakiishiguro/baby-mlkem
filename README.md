@@ -1326,6 +1326,64 @@ Keep keygen on the accepted `x4 + noinline x2` composition. The apparent
 positive movement in unrelated encryption rows is code-layout noise; the direct
 keygen noise rows are neutral-to-negative, so KEM confirmation was skipped.
 
+A follow-up AVX2 encrypt PRF/CBD composition experiment was rejected. The
+candidate changed the encryption noise split from `x4(0,1,2,3) + x3(4,5,6)` to
+`x3(0,1,2) + x4(3,4,5,6)`. This keeps two Keccak-f4 permutations and the same
+nonce/output mapping, but groups all `rhat[0..2]` outputs in the first helper and
+all `e1[0..2]` plus `e2` outputs in the second helper. The intent was to align
+the PRF/CBD boundary with the later NTT-only `rhat` consumer and the later
+non-NTT error consumers.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected encrypt composition stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1178.72 | 1168.46 | 1.0088x | 1.0031x |
+| `mlkem_core_stage_encrypt_noise` | 1403.41 | 1400.45 | 1.0021x | 1.0018x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2425.57 | 2423.50 | 1.0009x | 1.0025x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4887.14 | 4893.61 | 0.9987x | 0.9996x |
+
+AVX2-only KEM confirmation command:
+
+```bash
+RUNS=11 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected encrypt composition KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2691.65 | 2688.48 | 1.0012x | 1.0007x |
+| `mlkem_encaps_core` | 7069.39 | 6946.90 | 1.0176x | 0.9949x |
+| `mlkem_decaps_core` | 6064.34 | 6079.20 | 0.9976x | 0.9992x |
+| `mlkem_roundtrip` | 13364.09 | 13351.13 | 1.0010x | 1.0012x |
+| `mlkem_roundtrip_core` | 20191.67 | 20075.75 | 1.0058x | 0.9971x |
+
+Decision: keep the current encryption `x4(0,1,2,3) + x3(4,5,6)` composition.
+The local PRF/CBD row improves slightly, but the no-cache encrypt row is not
+positive and the KEM core medians for encapsulation and roundtrip move negative.
+The top-level positive movement is too small to justify a core code-shape change.
+Future PRF/CBD work should fill otherwise unused lanes with independent useful
+work, as in the accepted tail co-schedules, not merely repartition the same seven
+noise outputs.
+
 ### Independent Core Stage Microbench (2026-06-29)
 
 Use the stage microbench to decide where vendor-free core work should go next.
