@@ -142,6 +142,75 @@ static uint64_t checksum_poly(const poly256 p) {
 }
 
 #if defined(__AVX2__)
+static void stage_ntt_mul_acc3_canonical_avx2(
+    const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
+    const poly256 a2, const poly256 b2, poly256 out) {
+  const __m256i mask16 = _mm256_set1_epi32(0xffff);
+  for (int i = 0; i < 128; i += 8) {
+    __m256i va0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(a0 + 2 * i));
+    __m256i vb0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b0 + 2 * i));
+    __m256i va1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(a1 + 2 * i));
+    __m256i vb1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b1 + 2 * i));
+    __m256i va2 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(a2 + 2 * i));
+    __m256i vb2 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b2 + 2 * i));
+
+    __m256i x00 = _mm256_and_si256(va0, mask16);
+    __m256i x01 = _mm256_srli_epi32(va0, 16);
+    __m256i y00 = _mm256_and_si256(vb0, mask16);
+    __m256i y01 = _mm256_srli_epi32(vb0, 16);
+    __m256i x10 = _mm256_and_si256(va1, mask16);
+    __m256i x11 = _mm256_srli_epi32(va1, 16);
+    __m256i y10 = _mm256_and_si256(vb1, mask16);
+    __m256i y11 = _mm256_srli_epi32(vb1, 16);
+    __m256i x20 = _mm256_and_si256(va2, mask16);
+    __m256i x21 = _mm256_srli_epi32(va2, 16);
+    __m256i y20 = _mm256_and_si256(vb2, mask16);
+    __m256i y21 = _mm256_srli_epi32(vb2, 16);
+
+    __m256i c0_lo = mod_q_add_i32x8(
+        mod_q_add_i32x8(
+            mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x00, y00)),
+            mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x10, y10))),
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x20, y20)));
+    __m256i c0_hi = mod_q_add_i32x8(
+        mod_q_add_i32x8(
+            mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x01, y01)),
+            mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x11, y11))),
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x21, y21)));
+    __m256i gamma = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(const void *)(GAMMA + i)));
+    __m256i c0 = mod_q_reduce_ntt_u32x8(
+        _mm256_add_epi32(c0_lo, _mm256_mullo_epi32(c0_hi, gamma)));
+
+    __m256i c1 = mod_q_add_i32x8(
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x00, y01)),
+        mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x01, y00)));
+    c1 = mod_q_add_i32x8(
+        c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x10, y11)));
+    c1 = mod_q_add_i32x8(
+        c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x11, y10)));
+    c1 = mod_q_add_i32x8(
+        c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x20, y21)));
+    c1 = mod_q_add_i32x8(
+        c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x21, y20)));
+
+    __m128i c0_16 = pack_i32x8_to_i16x8(c0);
+    __m128i c1_16 = pack_i32x8_to_i16x8(c1);
+    _mm_storeu_si128((__m128i *)(void *)(out + 2 * i),
+                     _mm_unpacklo_epi16(c0_16, c1_16));
+    _mm_storeu_si128((__m128i *)(void *)(out + 2 * i + 8),
+                     _mm_unpackhi_epi16(c0_16, c1_16));
+  }
+}
+#endif
+
+#if defined(__AVX2__)
 static void stage_ntt_head_avx2(poly256 f);
 static void stage_ntt_inv_head_l1_avx2(poly256 f);
 static void stage_ntt_inv_head_l2_avx2(poly256 f);
@@ -356,6 +425,26 @@ static void validate_sample_matrix_matches_scalar(void) {
 }
 
 #if defined(__AVX2__)
+static void validate_ntt_mul_acc3_canonical_avx2(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int row = 0; row < K; row++) {
+      poly256 scalar, avx2;
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2], scalar);
+      stage_ntt_mul_acc3_canonical_avx2(
+          stage_ahat[lane][row][0], stage_rhat[lane][0],
+          stage_ahat[lane][row][1], stage_rhat[lane][1],
+          stage_ahat[lane][row][2], stage_rhat[lane][2], avx2);
+      if (memcmp(scalar, avx2, sizeof(poly256)) != 0) {
+        fprintf(stderr, "canonical acc3 avx2 mismatch at %zu,%d\n", lane,
+                row);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
 static void stage_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
     poly256 r0, poly256 r1, poly256 r2, poly256 e10,
@@ -501,6 +590,7 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX2__)
   validate_prf_cbd_eta2x4_matches_scalar();
   validate_encrypt_prf_cbd_tail_cosched_matches_separate();
+  validate_ntt_mul_acc3_canonical_avx2();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int row = 0; row < K; row++) {
       poly256 fused, split;
@@ -1924,6 +2014,44 @@ static uint64_t bench_encrypt_accum_u_only(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__)
+static uint64_t bench_ntt_mul_acc3_canonical_scalar(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int row = (int)(i % K);
+    ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                 stage_ahat[lane][row][1], stage_rhat[lane][1],
+                 stage_ahat[lane][row][2], stage_rhat[lane][2],
+                 stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_mul_acc3_canonical_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int row = (int)(i % K);
+    stage_ntt_mul_acc3_canonical_avx2(
+        stage_ahat[lane][row][0], stage_rhat[lane][0],
+        stage_ahat[lane][row][1], stage_rhat[lane][1],
+        stage_ahat[lane][row][2], stage_rhat[lane][2], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_inv_add_u_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -3125,6 +3253,12 @@ int main(int argc, char **argv) {
                bench_encrypt_accum_inv_u(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum_u_only",
                bench_encrypt_accum_u_only(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_core_stage_ntt_mul_acc3_canonical_scalar",
+               bench_ntt_mul_acc3_canonical_scalar(iters), iters);
+  print_metric("mlkem_core_stage_ntt_mul_acc3_canonical_avx2",
+               bench_ntt_mul_acc3_canonical_avx2(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_inv_add_u_only",
                bench_encrypt_inv_add_u_only(iters), iters);
 #if defined(__AVX2__)
