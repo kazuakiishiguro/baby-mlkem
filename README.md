@@ -4554,12 +4554,13 @@ compress/encode can consume those ranges without reintroducing the same
 normalization work one stage later.
 
 Follow-up target triage after the endomorphism/NAF review: the useful ideas from
-secp256k1-style GLV/NAF and lattice papers such as H-NTT (arXiv:2109.02893) or polyphase
-decomposition (KyberMat, arXiv:2310.04618) are representation-level ideas, not local helper substitutions.
-On the current AVX2-only core, the largest measured stage costs still come from
-SHAKE-based public-matrix generation and whole forward/inverse NTT pipelines.
-This makes another local signed-digit, gamma-table, or parser-bookkeeping change
-the wrong abstraction level.
+secp256k1-style GLV/NAF and lattice papers such as H-NTT (arXiv:2109.02893) or
+polyphase decomposition (KyberMat, arXiv:2310.04618) are representation-level
+ideas, not local helper substitutions. On the current AVX2-only core, the
+largest measured stage costs still come from SHAKE-based public-matrix
+generation and whole forward/inverse NTT pipelines. This makes another local
+signed-digit, gamma-table, or parser-bookkeeping change the wrong abstraction
+level.
 
 AVX2-only current-stage snapshot command:
 
@@ -4571,25 +4572,32 @@ taskset -c 0 ./bench_core_stagesc 30000 | rg "ns_per_op" | \
   sort -t= -k2 -nr | head -n 50
 ```
 
-Current largest AVX2-only stage rows:
+Current largest AVX2-only stage rows after the AVX2 encrypt public-tail/noise
+co-schedule:
 
 | Metric | ns/op |
 |---|---:|
-| `mlkem_core_stage_kpke_keygen_full` | 5649.70 |
-| `mlkem_core_stage_kpke_encrypt_uncached` | 5583.49 |
-| `mlkem_core_stage_sample_matrix` | 3304.57 |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2404.69 |
-| `mlkem_core_stage_keygen_noise_ntt` | 1985.67 |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1571.47 |
-| `mlkem_core_stage_sample_matrix_x4_batch1` | 1447.27 |
-| `mlkem_core_stage_encrypt_noise` | 1389.73 |
-| `mlkem_core_stage_sample_matrix_x4_batch0` | 1365.87 |
-| `mlkem_core_stage_encrypt_accum_inv` | 1314.85 |
-| `mlkem_core_stage_sample_ntt4_full_raw` | 1169.63 |
-| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1168.50 |
-| `mlkem_core_stage_encrypt_accum_inv_u` | 1034.22 |
-| `mlkem_core_stage_sample_ntt4_common3_step` | 994.83 |
-| `mlkem_core_stage_keygen_noise_prf_cbd` | 971.98 |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 5424.88 |
+| `mlkem_core_stage_kpke_keygen_full` | 5368.46 |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4781.85 |
+| `mlkem_core_stage_sample_matrix` | 3303.93 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2445.64 |
+| `mlkem_core_stage_keygen_noise_ntt` | 1993.55 |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1589.38 |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1542.44 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1454.51 |
+| `mlkem_core_stage_encrypt_noise` | 1398.10 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1363.13 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1323.85 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1322.46 |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1171.66 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1170.75 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1114.93 |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1038.18 |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 998.09 |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 974.50 |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 891.62 |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.36 |
 
 Use this as the next design filter. H-NTT/polyphase-style work would need a
 full NTT and multiplication representation redesign before it can fairly
@@ -4597,8 +4605,10 @@ compete with the current scalar K=3 accumulation and AVX2 tail schedule. A
 NAF-inspired signed/lazy representation should likewise span CBD, forward NTT,
 K=3 accumulation, inverse NTT, and encode/compress boundaries at once. The
 shorter-term implementation target remains the common `sample_ntt4()` three-rate
-Keccak/state layout, because the current sampler breakdown shows Keccak dominates
-over stream stores and parser bookkeeping.
+Keccak/state layout: the latest snapshot puts `sample_ntt4_keccak_store3` at
+about 892 ns while `sample_ntt4_parse_504` is about 118 ns, so parser bookkeeping
+and narrow signed/lazy coefficient rewrites are not the next likely source of a
+robust KEM-level win.
 
 
 No-cache encapsulation public-prepare diagnostic:
