@@ -4273,6 +4273,62 @@ wins the targeted stage by removing one read pass, but the larger integrated
 keygen path does not retain the improvement. A future attempt would need a
 broader keygen layout change, not only add+pack fusion.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 keygen tail scalar continuation)
+
+The AVX2-only keygen matrix/noise co-schedule now keeps the first `(2,2)` public
+matrix tail block in the existing PRF/tail `keccakf4()` call, then extracts the
+tail lane into a scalar Keccak state and continues the remaining SHAKE128 tail
+blocks with scalar `keccakf()`. This avoids running a four-lane AVX2 Keccak
+permutation for the typical remaining one-lane tail squeezes while preserving the
+accepted PRF/tail co-schedule for the first block.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 5485.12 | 5482.06 | 1.0006x | 1.0331x |
+| `mlkem_keygen` | 7597.16 | 7949.37 | 0.9557x | 1.0221x |
+| `mlkem_keygen_core` | 7566.68 | 7906.35 | 0.9570x | 1.0228x |
+| `mlkem_roundtrip_core` | 22000.92 | 21706.62 | 1.0136x | 1.0084x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+keygen and roundtrip median signal:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 7878.49 | 7546.66 | 1.0440x | 1.0219x |
+| `mlkem_keygen_core` | 7873.10 | 7526.46 | 1.0461x | 1.0230x |
+| `mlkem_roundtrip` | 14283.37 | 13919.72 | 1.0261x | 1.0140x |
+| `mlkem_roundtrip_core` | 22294.61 | 21654.57 | 1.0296x | 1.0120x |
+
+A second AVX2-only KEM confirmation with `RUNS=13`, `KEM_ITERS=40000` also kept
+the signal and showed no unrelated full-path regression: `mlkem_keygen_core`
+median `1.0241x`, `mlkem_keygen` `1.0234x`, `mlkem_encaps_core` `1.0009x`,
+`mlkem_decaps_core` `1.0545x`, and `mlkem_roundtrip_core` `1.0072x`.
+
+Native `-march=native` KEM no-regression with `RUNS=9`, `KEM_ITERS=30000` was
+neutral: `mlkem_keygen_core` median `1.0005x`, `mlkem_encaps_core` `1.0025x`,
+`mlkem_decaps_core` `0.9980x`, and `mlkem_roundtrip_core` `0.9994x`.
+
+This follows the same target-specific lesson as the earlier AVX2 scalar-tail
+switch: wide SIMD is profitable while lanes are full, but a single remaining XOF
+stream should fall back to scalar once the useful co-scheduled lanes are gone.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column

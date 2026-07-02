@@ -4743,7 +4743,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
     poly256 e0, poly256 e1, poly256 e2) {
   const uint8_t n0[4] = {0, 1, 2, 3};
   __m256i st[25];
-  uint64_t stream[21];
+  uint64_t tail_state[25];
 
   mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
 
@@ -4777,21 +4777,17 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
     sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
                                      e1 + 16 * lane, e2 + 16 * lane);
   }
-  for (int lane = 0; lane < 21; lane++) {
-    stream[lane] = keccak_lane2_u64(st[lane]);
+  for (int lane = 0; lane < 25; lane++) {
+    tail_state[lane] = keccak_lane2_u64(st[lane]);
   }
 
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
-      (const uint8_t *)stream, sizeof(stream), tail, 0);
+      (const uint8_t *)tail_state, 168, tail, 0);
   while (count < N) {
-    uint64_t extra[21];
-    keccakf4(st);
-    for (int lane = 0; lane < 21; lane++) {
-      extra[lane] = keccak_lane2_u64(st[lane]);
-    }
+    keccakf(tail_state);
     count = sample_ntt_parse_stream_avx2_ready(
-        (const uint8_t *)extra, sizeof(extra), tail, count);
+        (const uint8_t *)tail_state, 168, tail, count);
   }
 }
 
