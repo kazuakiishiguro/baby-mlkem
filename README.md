@@ -1499,6 +1499,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
+| `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
@@ -6370,6 +6371,56 @@ co-scheduled helpers too, and the existing logs already show that simple
 sampler grouping/order changes do not survive integrated matrix/keygen checks.
 Keep `(2,2)` as the production tail. Future sampler work should change the
 state/dataflow itself, not only rotate which matrix entry is scalar.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt2 lower bound)
+
+A bench-only two-lane SHAKE128 sampler diagnostic was rejected as a building block
+for public-matrix/hash co-scheduling. The motivation was to test whether the
+unused lanes in hash/tail or keygen PRF/tail helpers could carry two additional
+public-matrix XOFs, leaving the remaining two entries to a dedicated x2 sampler.
+If that lower bound were competitive, a larger production rewrite could replace
+`2 * sample_ntt4()` with `sample_ntt4() + sample_ntt2()` plus two co-scheduled
+entries.
+
+The diagnostic only adds `mlkem_core_stage_sample_ntt2_full_raw`; production
+`sample_matrix()` and all co-scheduled helpers are unchanged. The x2 helper uses
+the same AVX2 `keccakf4()` state shape and existing rejection parser, validates
+against scalar `sample_ntt()` for `(2,0)` and `(2,1)`, and uses a lightweight
+sink like the existing x4 raw rows.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in 1 2 3 4 5 6 7; do
+  taskset -c 0 ./bench_core_stagesc 10000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_ntt(2_full_raw|4_full_raw|4_scalar4_raw|4_one_full_raw|4_keccak_store3|4_parse_504)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/ {
+        print run "\t" $1 "\t" $2
+      }'
+done
+```
+
+Two-lane sampler highlights, relative to the existing x4 raw sampler:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs x4 | Median speedup vs x4 |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 938.15 | 939.04 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_ntt2_full_raw` | 1693.13 | 1472.07 | 0.5541x | 0.6379x |
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | 893.62 | 892.37 | 1.0498x | 1.0523x |
+| `mlkem_core_stage_sample_ntt4_scalar4_raw` | 2769.61 | 2760.44 | 0.3387x | 0.3402x |
+
+This rejects the x2 complement idea. Even if two public-matrix entries were
+co-scheduled into otherwise unused hash/PRF lanes, the remaining `sample_ntt4() +
+sample_ntt2()` lower bound would be about `939.04 + 1472.07 = 2411.11 ns`, well
+above two existing x4 sampler calls at about `1878.08 ns`. The likely cause is
+that x2 keeps the full four-lane Keccak cost while losing the efficient x4
+transpose/store and four-stream parser amortization. Do not build a production
+public-matrix regrouping around a standalone x2 sampler; future co-scheduling
+needs to fill all available lanes with useful work or avoid the byte-stream
+boundary entirely.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
