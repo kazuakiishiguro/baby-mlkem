@@ -625,7 +625,12 @@ helpers:
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
 | `mlkem_ntt_copy_lazy_mul_input` | AVX2-only: production `ntt_lazy_mul_input_avx2(in, out)` including its initial copy, matching the out-of-place stage diagnostic shape |
 | `mlkem_ntt_inplace_lazy_mul_input` | AVX2-only: production lazy multiply-input NTT in-place body; scratch inputs are restored outside the timed window so each transform starts from canonical input |
+| `mlkem_ntt_copy_fused_tail` | AVX2-only diagnostic full forward NTT using a fused `l3 -> l2 -> lazy l1` tail block order plus canonicalization |
+| `mlkem_ntt_inplace_fused_tail` | AVX2-only diagnostic in-place full forward NTT using the fused tail block order |
+| `mlkem_ntt_copy_lazy_mul_input_fused_tail` | AVX2-only diagnostic lazy multiply-input NTT using the fused tail block order, including the input copy |
+| `mlkem_ntt_inplace_lazy_mul_input_fused_tail` | AVX2-only diagnostic in-place lazy multiply-input NTT using the fused tail block order |
 | `mlkem_ntt3_inplace` | three consecutive in-place forward NTTs, matching the K=3 batch shape in keygen/encrypt/decrypt |
+| `mlkem_ntt3_inplace_fused_tail` | AVX2-only diagnostic K=3 forward NTT batch using the fused tail block order |
 | `mlkem_ntt3_pack_aos4` | diagnostic pack of three polynomials into `[coefficient][poly0, poly1, poly2, pad]` layout |
 | `mlkem_ntt3_unpack_aos4` | diagnostic unpack from the padded K=3 AoS4 layout back to three polynomials |
 | `mlkem_ntt3_pack_unpack_aos4` | diagnostic round-trip pack plus unpack cost for a future packed K=3 NTT representation |
@@ -644,10 +649,12 @@ helpers:
 | `mlkem_ntt4_tile2x4_inplace` | bench-only K=4 forward NTT over the contiguous K=4 x 2-coefficient tiled layout |
 | `mlkem_ntt4_pack_ntt_unpack_tile2x4` | diagnostic standalone tiled K=4 x 2-coefficient forward NTT including pack and unpack |
 | `mlkem_ntt6_inplace` | six consecutive in-place forward NTTs, matching the keygen secret/error NTT count |
+| `mlkem_ntt6_inplace_fused_tail` | AVX2-only diagnostic six-polynomial forward NTT batch using the fused tail block order |
 | `mlkem_ntt6_tile2x4_plus2_inplace` | diagnostic lower bound: first four polynomials already in tile2x4 layout plus two normal in-place NTTs, excluding tile pack/unpack |
 | `mlkem_ntt6_pack_ntt_unpack_tile2x4_plus2` | diagnostic K=6 composition with tile2x4 pack/NTT/unpack for four polynomials plus two normal in-place NTTs |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
+| `mlkem_ntt_tail_avx2_fused_l3_l1` | AVX2-only diagnostic lower tail using one loop that completes `l3`, `l2`, and lazy `l1` per 16-coefficient block |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
 | `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared scalar forward-NTT level, from length 128 down to length 2 |
 | `mlkem_ntt_inv` | `ntt_inv()` |
@@ -690,6 +697,29 @@ and the AVX2 lower tail. Within the tail, `l1` is the largest single prepared
 stage, but the earlier isolated `l4` replacement regressed KEM throughput; the
 next implementation attempt should therefore fuse multiple stages or change data
 layout instead of swapping one stage in isolation.
+
+A follow-up tested the direct multi-stage fusion idea by changing only the AVX2
+lower-tail schedule in the bench harness: instead of three full-array passes for
+`l3`, `l2`, and lazy `l1`, the diagnostic completes `l3 -> l2 -> lazy l1` inside
+each 16-coefficient block and then runs the same canonicalization pass as the
+current tail. Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, `-mavx2 -mbmi2
+-mpopcnt`, median of seven `200000`-iteration runs measured:
+
+| Metric pair | Current median ns/op | Fused-tail median ns/op | Fused/current speed |
+|---|---:|---:|---:|
+| `mlkem_ntt_tail_avx2` | 94.36 | 147.60 | 0.6393x |
+| `mlkem_ntt_inplace` | 191.84 | 246.41 | 0.7785x |
+| `mlkem_ntt_copy_lazy_mul_input` | 191.58 | 243.89 | 0.7855x |
+| `mlkem_ntt_inplace_lazy_mul_input` | 188.45 | 242.25 | 0.7779x |
+| `mlkem_ntt3_inplace` | 575.32 | 740.39 | 0.7770x |
+| `mlkem_ntt6_inplace` | 1152.56 | 1482.61 | 0.7774x |
+
+This rejects per-block `l3/l2/l1` tail fusion. The transform has less array
+sweeping, but it also serializes three dependent stages inside a larger loop body
+and loses the simple stage-by-stage instruction stream that clang handles well.
+Future forward-NTT work should not fuse only the existing tail loops; it needs a
+different representation or a producer/consumer fusion that removes work outside
+this tail body.
 
 Current AVX2 lazy multiply-input snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, `-mavx2 -mbmi2 -mpopcnt`, median of seven
