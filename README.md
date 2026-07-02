@@ -2003,6 +2003,39 @@ Rejected inverse-head block-local ordering highlights:
 | `mlkem_core_stage_decrypt_inv_sub_from` | 381.80 | 430.51 | 0.8869x | 0.8865x |
 | `mlkem_core_stage_kpke_encrypt_cached` | 2782.73 | 3120.62 | 0.8917x | 0.9188x |
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 inverse-sub final i16 subtract)
+
+An AVX2 inverse-sub final subtract experiment was rejected. The candidate packed
+the final scaled inverse outputs to 16-bit first, then computed the final
+`minuend - scaled` step with a 16-bit modular subtract helper inside
+`ntt_inv_sub_from_fused_final_avx2()`. The intended win was to avoid widening the
+`minuend` vectors to 32-bit for the final subtract. Native and AVX2-only
+correctness gates passed, but the direct target and nearby stage/KEM-path
+proxies were flat to slightly slower.
+
+Keep the existing 32-bit final subtract. The saved `vpmovzxwd` work did not pay
+for the added pack-before-sub plus 16-bit compare/correction sequence, and the
+direct `mlkem_ntt_inv_sub_from` target regressed. KEM confirmation was skipped
+because the local target did not clear the adoption threshold.
+
+AVX2-only NTT/stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage NTT_ITERS=200000 STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected inverse-sub final i16 subtract highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_inv_sub_from` | 200.14 | 200.43 | 0.9985x | 0.9987x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.90 | 385.26 | 0.9913x | 0.9996x |
+| `mlkem_core_stage_decrypt_inv_scale_sub_from` | 217.27 | 217.36 | 0.9996x | 1.0000x |
+| `mlkem_core_stage_decrypt_accum_inv` | 463.44 | 462.99 | 1.0010x | 0.9992x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 905.98 | 906.18 | 0.9998x | 0.9997x |
+
 Ciphertext compression/decode split metrics were added later to separate the
 three `DU = 10` `u` polynomials from the single `DV = 4` `v` polynomial. These
 split rows use lightweight sinks, so they are diagnostic and should not be added
