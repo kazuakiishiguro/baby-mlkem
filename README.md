@@ -1497,6 +1497,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
+| `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
@@ -6469,6 +6470,53 @@ existing x4 sampler calls are about `1881.42 ns`; the regrouping is only
 full x4 public-matrix batches. Future co-scheduling work should require either
 full lane occupancy, reuse of already-needed permutations, or a larger redesign
 that avoids stream materialization and parser amortization loss.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 block parse)
+
+A bench-only sampler diagnostic tested whether the x4 public-matrix sampler should
+parse each 168-byte SHAKE128 rate block immediately instead of first
+materializing the current three-block 504-byte streams. This is the remaining
+local `sample_ntt4()` dataflow question after the store-order, inline/noinline,
+refill scratch, and partial-lane x2/x3 experiments: it keeps the same four
+Keccak lanes, same parser, same refill path, and same outputs, but changes the
+initial common path from `keccak/store * 3 -> parse 504` to
+`(keccak/store -> parse 168) * 3`.
+
+The diagnostic adds `mlkem_core_stage_sample_ntt4_block_parse_full_raw` and
+validates both production x4 public-matrix batch tuples against scalar
+`sample_ntt()`. Production `sample_ntt4()` is unchanged.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_ntt4_(full_raw|block_parse_full_raw|common3_step|parse_504|keccak_store3)_ns_per_op=|mlkem_core_stage_sample_matrix_x4_batch0_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Block-parse highlights, relative to the current x4 raw sampler:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs current | Median speedup vs current |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 938.25 | 935.97 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | 996.73 | 997.42 | 0.9413x | 0.9384x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 988.69 | 988.76 | 0.9490x | 0.9466x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1112.17 | 1110.36 | n/a | n/a |
+| `mlkem_core_stage_sample_matrix` | 2808.54 | 2800.57 | n/a | n/a |
+
+Decision: reject block-by-block parsing for production. The current 504-byte
+stream materialization lets the parser amortize setup and vector compaction over
+a larger contiguous stream; parsing three smaller 168-byte chunks pays the parser
+front-end and scalar tail costs repeatedly. The median block-parse row is about
+`1.0657x` slower than the current x4 raw row, so future sampler work must remove
+or reorganize Keccak/store/parse work rather than only moving the parse boundary.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
