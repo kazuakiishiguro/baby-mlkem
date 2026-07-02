@@ -1499,6 +1499,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
+| `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses Keccak state words directly with a scalar streaming parser instead of materializing 504-byte streams |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
@@ -6584,6 +6585,53 @@ a larger contiguous stream; parsing three smaller 168-byte chunks pays the parse
 front-end and scalar tail costs repeatedly. The median block-parse row is about
 `1.0657x` slower than the current x4 raw row, so future sampler work must remove
 or reorganize Keccak/store/parse work rather than only moving the parse boundary.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 state parse)
+
+A second bench-only sampler diagnostic tested whether `sample_ntt4()` should
+avoid the four 504-byte stream buffers entirely and parse the AVX2 Keccak state
+words directly. The candidate keeps the same production x4 lane tuple, same
+initial three `keccakf4_mem()` blocks, same refill `keccakf4()` path, and same
+scalar rejection predicate, but replaces `store state -> parse contiguous stream`
+with a direct scalar 24-bit parser over the 21 SHAKE128 rate words in each state.
+
+The diagnostic adds `mlkem_core_stage_sample_ntt4_state_parse_full_raw` and
+validates both production x4 public-matrix batch tuples against scalar
+`sample_ntt()`. Production `sample_ntt4()` is unchanged.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_ntt4_(full_raw|block_parse_full_raw|state_parse_full_raw|keccak_store3|parse_504)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+State-parse highlights, relative to the current x4 raw sampler:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs current | Median speedup vs current |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 934.46 | 934.44 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | 996.48 | 996.99 | 0.9378x | 0.9373x |
+| `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | 1517.74 | 1461.60 | 0.6157x | 0.6393x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 870.81 | 870.64 | n/a | n/a |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 116.79 | 116.57 | n/a | n/a |
+| `mlkem_core_stage_sample_matrix` | 2797.73 | 2797.86 | n/a | n/a |
+
+Decision: reject direct scalar state parsing for production. Removing the
+`stream[4][504]` materialization boundary is not enough by itself; the direct
+state parser loses the existing parser's contiguous-stream vector compaction and
+becomes about `1.56x` slower by median than the current x4 raw sampler. A future
+direct-state design would need to compact accepted candidates from state lanes in
+vector form, or make a larger Keccak/parser representation change, rather than
+only scalarizing the stream extraction.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)

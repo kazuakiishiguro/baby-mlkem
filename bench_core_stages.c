@@ -1658,6 +1658,110 @@ static void validate_sample_ntt4_block_parse_avx2(void) {
   }
 }
 
+static inline void stage_sample_ntt4_accept_u24(uint32_t chunk,
+                                                int16_t *out, int *count) {
+  uint32_t d0 = chunk & 0x0fffu;
+  uint32_t d1 = (chunk >> 12) & 0x0fffu;
+  if (d0 < Q && *count < N) out[(*count)++] = (int16_t)d0;
+  if (d1 < Q && *count < N) out[(*count)++] = (int16_t)d1;
+}
+
+static void stage_sample_ntt4_parse_state_rate_direct_avx2(
+    const __m256i st[25], int16_t *outs[4], int count[4]) {
+  uint32_t carry[4] = {0, 0, 0, 0};
+
+  for (int word_idx = 0; word_idx < 21; word_idx++) {
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)(void *)words, st[word_idx]);
+
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] >= N) continue;
+
+      uint64_t w = words[lane];
+      switch (word_idx % 3) {
+        case 0:
+          stage_sample_ntt4_accept_u24((uint32_t)(w & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          stage_sample_ntt4_accept_u24((uint32_t)((w >> 24) & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          carry[lane] = (uint32_t)((w >> 48) & 0x0000ffffu);
+          break;
+        case 1:
+          stage_sample_ntt4_accept_u24(
+              carry[lane] | (uint32_t)((w & 0x000000ffu) << 16),
+              outs[lane], &count[lane]);
+          stage_sample_ntt4_accept_u24((uint32_t)((w >> 8) & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          stage_sample_ntt4_accept_u24((uint32_t)((w >> 32) & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          carry[lane] = (uint32_t)((w >> 56) & 0x000000ffu);
+          break;
+        default:
+          stage_sample_ntt4_accept_u24(
+              carry[lane] | (uint32_t)((w & 0x0000ffffu) << 8),
+              outs[lane], &count[lane]);
+          stage_sample_ntt4_accept_u24((uint32_t)((w >> 16) & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          stage_sample_ntt4_accept_u24((uint32_t)((w >> 40) & 0x00ffffffu),
+                                       outs[lane], &count[lane]);
+          carry[lane] = 0;
+          break;
+      }
+    }
+  }
+}
+
+static void stage_sample_ntt4_state_parse_avx2(const uint8_t *seed,
+                                               const uint8_t row[4],
+                                               const uint8_t col[4],
+                                               poly256 out0,
+                                               poly256 out1,
+                                               poly256 out2,
+                                               poly256 out3) {
+  __m256i st[25];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+  int count[4] = {0, 0, 0, 0};
+  int need_more = 0;
+
+  stage_sample_ntt4_init(seed, row, col, st);
+
+  for (int block = 0; block < 3; block++) {
+    keccakf4_mem(st);
+    stage_sample_ntt4_parse_state_rate_direct_avx2(st, outs, count);
+  }
+
+  for (int lane = 0; lane < 4; lane++) need_more |= count[lane] < N;
+  while (need_more) {
+    keccakf4(st);
+    stage_sample_ntt4_parse_state_rate_direct_avx2(st, outs, count);
+    need_more = 0;
+    for (int lane = 0; lane < 4; lane++) need_more |= count[lane] < N;
+  }
+}
+
+static void validate_sample_ntt4_state_parse_avx2(void) {
+  static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
+  static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 1}};
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int batch = 0; batch < 2; batch++) {
+      poly256 got[4];
+      poly256 want[4];
+      stage_sample_ntt4_state_parse_avx2(stage_rho[lane], rows[batch],
+                                         cols[batch], got[0], got[1],
+                                         got[2], got[3]);
+      for (int j = 0; j < 4; j++) {
+        sample_ntt(stage_rho[lane], rows[batch][j], cols[batch][j], want[j]);
+        if (memcmp(got[j], want[j], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_ntt4 state-parse mismatch at %zu,%d,%d\n",
+                  lane, batch, j);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static uint64_t bench_sample_ntt4_block_parse_full_raw(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -1670,6 +1774,30 @@ static uint64_t bench_sample_ntt4_block_parse_full_raw(size_t iters) {
         stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
         stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
         stage_tmp_ahat[lane][1][0], stage_tmp_sample_stream[lane]);
+    switch (i & 3u) {
+      case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
+      case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
+      case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
+      default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_state_parse_full_raw(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_ntt4_state_parse_avx2(
+        stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0]);
     switch (i & 3u) {
       case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
       case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
@@ -4097,6 +4225,7 @@ int main(int argc, char **argv) {
   validate_core_stage_helpers();
 #if defined(__AVX2__)
   validate_sample_ntt4_block_parse_avx2();
+  validate_sample_ntt4_state_parse_avx2();
 #endif
 
   printf("mlkem_core_stage_bench_iterations=%zu\n", iters);
@@ -4146,6 +4275,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_full_raw_batch1(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_block_parse_full_raw",
                bench_sample_ntt4_block_parse_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_state_parse_full_raw",
+               bench_sample_ntt4_state_parse_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_init_only",
                bench_sample_ntt4_init_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_scalar4_raw",
