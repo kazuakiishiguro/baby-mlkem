@@ -1258,11 +1258,11 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
-| `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three Keccak-f4 blocks, excluding stream stores |
-| `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks, excluding stream stores |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
-| `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
-| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional refill Keccak-f4 block plus stream stores, conditioned on groups that need refill |
+| `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three production Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional production `keccakf4_mem()` refill block plus stream stores, conditioned on groups that need refill |
 | `mlkem_core_stage_sample_ntt4_refill_step_once` | AVX2-only x4 sampler one additional refill step including Keccak/store and parsing only lanes still below 256 coefficients |
 | `mlkem_core_stage_sample_ntt4_one_full_raw` | AVX2-only one-lane x4 tail sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_one_keccak_store3` | AVX2-only one-lane x4 tail sampler initial three Keccak-f4 blocks plus lane-0 stream stores |
@@ -4748,6 +4748,59 @@ replace every `keccakf4()` call with this shape: the all-use diagnostic regresse
 stages worse. The useful part is the reduced register pressure at the public
 matrix sampler boundary, where stream storage and rejection parsing are adjacent
 to three x4 Keccak permutations.
+
+
+### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
+
+The AVX2-only `sample_ntt4()` stage split rows now use the same production
+`keccakf4_mem()` path as `sample_ntt4()` itself. The earlier split helpers still
+called the register-resident `keccakf4()` even after production moved the common
+x4 public-matrix sampler to the memory-resident Keccak shape. This made
+`sample_ntt4_keccak3_only`, `sample_ntt4_keccak_store3`, the common three-rate
+step, and refill rows useful for old-register-shape diagnostics but not for the
+current production bottleneck.
+
+This is a benchmark-harness alignment change only; `baby-mlkem.c` and KEM runtime
+code are unchanged.
+
+Correctness/build checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command comparing the old split-row shape against the aligned
+benchmark harness:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Benchmark alignment highlights:
+
+| Metric | Old row ns/op | Aligned row ns/op | Avg ratio | Median ratio |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 888.92 | 1057.81 | 0.8403x | 0.8399x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 897.60 | 1016.71 | 0.8828x | 0.8806x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 1001.74 | 1177.74 | 0.8506x | 0.8505x |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 283.55 | 298.42 | 0.9502x | 0.9518x |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 308.89 | 318.01 | 0.9713x | 0.9702x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 971.67 | 974.04 | 0.9976x | 0.9985x |
+| `mlkem_core_stage_sample_matrix` | 2895.73 | 2907.81 | 0.9958x | 0.9989x |
+
+The aligned split rows are intentionally not additive with `sample_ntt4_full_raw`:
+the standalone split harness gives `keccakf4_mem()` a different local stack and
+inlining context than the full sampler. Use `sample_ntt4_full_raw`, x4 batch rows,
+and `sample_matrix` as the production acceptance metrics; use the split rows only
+to compare future changes against the current production Keccak shape. This
+prevents future work from optimizing the old register-resident split rows while
+missing the real `sample_ntt4()` path.
 
 
 No-cache encapsulation public-prepare diagnostic:

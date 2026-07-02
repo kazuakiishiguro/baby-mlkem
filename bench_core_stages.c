@@ -836,7 +836,7 @@ static void stage_prepare_sample_ntt4_streams(void) {
     __m256i st[25];
     stage_sample_ntt4_init(stage_rho[lane], row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
       sample_ntt4_store_block(stage_tmp_sample_stream[lane],
                               (size_t)block * 168, st);
     }
@@ -916,7 +916,7 @@ static uint64_t bench_sample_ntt4_store_rate(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
   stage_sample_ntt4_init(stage_rho[0], row, col, st);
-  keccakf4(st);
+  keccakf4_mem(st);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
@@ -942,7 +942,7 @@ static uint64_t bench_sample_ntt4_keccak3_only(size_t iters) {
     __m256i st[25];
     stage_sample_ntt4_init(stage_rho[lane], row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
     }
     uint64_t words[4];
     _mm256_storeu_si256((__m256i *)words, st[(i * 7u) % 25u]);
@@ -964,7 +964,7 @@ static uint64_t bench_sample_ntt4_keccak_store3(size_t iters) {
     __m256i st[25];
     stage_sample_ntt4_init(stage_rho[lane], row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
       sample_ntt4_store_block(stage_tmp_sample_stream[lane],
                               (size_t)block * 168, st);
     }
@@ -1022,7 +1022,7 @@ static uint64_t bench_sample_ntt4_common3_step(size_t iters) {
 
     stage_sample_ntt4_init(stage_rho[lane], row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
       sample_ntt4_store_block(stage_tmp_sample_stream[lane],
                               (size_t)block * 168, st);
     }
@@ -1056,7 +1056,7 @@ static void stage_prepare_sample_ntt4_refill_cases(void) {
     fill_bytes(seed, sizeof(seed), 0xC4C40000u + i);
     stage_sample_ntt4_init(seed, row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
       sample_ntt4_store_block(stage_tmp_sample_stream[found],
                               (size_t)block * 168, st);
     }
@@ -1103,7 +1103,7 @@ static uint64_t bench_sample_ntt4_refill_keccak_store1(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
-    keccakf4(stage_tmp_sample_refill_st[lane]);
+    keccakf4_mem(stage_tmp_sample_refill_st[lane]);
     sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
                            stage_tmp_sample_stream[lane][1],
                            stage_tmp_sample_stream[lane][2],
@@ -1128,7 +1128,7 @@ static uint64_t bench_sample_ntt4_refill_step_once(size_t iters) {
       count[j] = stage_tmp_sample_refill_count[lane][j];
     }
 
-    keccakf4(stage_tmp_sample_refill_st[lane]);
+    keccakf4_mem(stage_tmp_sample_refill_st[lane]);
     sample_ntt4_store_rate(stage_tmp_sample_stream[lane][0],
                            stage_tmp_sample_stream[lane][1],
                            stage_tmp_sample_stream[lane][2],
@@ -1164,7 +1164,7 @@ static void print_sample_ntt4_initial_accept_stats(size_t iters) {
     fill_bytes(seed, sizeof(seed), 0xA5A50000u + i);
     stage_sample_ntt4_init(seed, row, col, st);
     for (int block = 0; block < 3; block++) {
-      keccakf4(st);
+      keccakf4_mem(st);
       sample_ntt4_store_block(stage_tmp_sample_stream[0],
                               (size_t)block * 168, st);
     }
