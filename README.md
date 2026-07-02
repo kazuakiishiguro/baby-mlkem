@@ -5253,6 +5253,49 @@ sampler by removing generic sponge bookkeeping. It is intentionally not applied
 to native/AVX512 until that target shows an integrated win.
 
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 fixed `(2,2)` sample_ntt tail)
+
+A narrower AVX2-only scalar tail specialization was rejected. The candidate added
+a dedicated `sample_ntt_tail_22_avx2()` helper for the final public-matrix
+`(2,2)` entry and routed the AVX2-only `sample_matrix()` tail through it. The
+helper only replaced the runtime `row/col/domain` suffix construction with the
+constant `0x1f0202`; Keccak, the initial 504-byte stream, parser, and refill path
+were unchanged. The stage harness `sample_matrix_tail` row was aligned to the
+production helper, while `sample_matrix_tail_scalar` kept the generic
+`sample_ntt()` route for comparison.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only Keccak/stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=keccak,stage KECCAK_ITERS=200000 \
+  STAGE_ITERS=70000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected fixed-tail highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_sample_ntt_full` | 692.19 | 688.73 | 1.0050x | 1.0047x |
+| `mlkem_core_stage_sample_matrix_tail` | 866.19 | 866.84 | 0.9993x | 1.0020x |
+| `mlkem_core_stage_sample_matrix_tail_scalar` | 863.91 | 864.81 | 0.9990x | 1.0016x |
+| `mlkem_core_stage_sample_matrix_tail_scalar_raw` | 685.99 | 684.44 | 1.0023x | 1.0039x |
+| `mlkem_core_stage_sample_matrix` | 2880.26 | 2896.52 | 0.9944x | 0.9998x |
+| `mlkem_core_stage_kpke_keygen_full` | 4927.15 | 4928.48 | 0.9997x | 0.9997x |
+
+Keep the generic AVX2-only `sample_ntt()` call for the public-matrix scalar tail.
+The accepted fixed-input cleanup removed meaningful sponge context overhead, but
+specializing the already-fixed `(2,2)` suffix saves only a few integer operations
+and does not survive the full `sample_matrix()` or keygen stage. KEM confirmation
+was skipped because the production matrix/keygen rows did not improve.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 scalar sample_ntt static stream scratch)
 
 An AVX2-only scalar sampler scratch-placement experiment was rejected. The
