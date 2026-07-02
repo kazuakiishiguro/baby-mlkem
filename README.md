@@ -5847,6 +5847,50 @@ This rules out deferred scalar `c0` reduction as a viable way to reduce
 reduction strategy, not wider scalar modulo.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, K=3 tile2x3 packed acc3 input)
+
+A packed-input follow-up for `ntt_mul_acc3()` was rejected. The diagnostic added
+a benchmark-only helper that consumes already-packed K=3 x 2-coefficient
+`tile2x3` inputs:
+
+```c
+[poly0 c0, poly1 c0, poly2 c0, poly0 c1, poly1 c1, poly2 c1, pad, pad]
+```
+
+Both A and B inputs are packed before the timed loop, so the measurement excludes
+pack cost and isolates whether this memory layout helps the accumulator itself.
+The helper is validated against the scalar `ntt_mul_acc3()` output.
+
+Correctness and benchmark checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-ntt CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_nttc 1000 | \
+  rg 'mlkem_ntt_mul_acc3(_tile2x3)?_ns_per_op|mlkem_ntt_bench_iterations|mlkem_ntt_bench_sink'
+
+for i in $(seq 1 5); do \
+  taskset -c 0 ./bench_nttc 200000 | \
+    rg 'mlkem_ntt_mul_acc3(_tile2x3)?_ns_per_op'; \
+done
+```
+
+Rejected highlights:
+
+| Metric | Avg ns/op | Median ns/op | Relative to scalar median |
+|---|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 89.35 | 88.10 | 1.0000x |
+| `mlkem_ntt_mul_acc3_tile2x3` | 263.33 | 263.84 | 0.3339x |
+
+Decision: reject this packed-input `acc3` shape. Simply moving scalar
+`ntt_mul_acc3()` to a K=3 x 2-coefficient tile layout is much slower even when
+pack cost is excluded. The array-of-tiles indexing prevents the compiler from
+keeping the compact scalar reduction shape. Future packed-representation work
+must keep the multiply/reduction in registers or change the arithmetic/vector
+reduction strategy, not merely consume `tile2x3` memory.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
