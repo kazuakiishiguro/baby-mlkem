@@ -5792,6 +5792,60 @@ not a robust keygen improvement; future keygen NTT work needs to change the NTT
 representation or arithmetic, not only reorder independent `s` and `e` calls.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, scalar `ntt_mul_acc3()` deferred `c0` reduction)
+
+A deferred-`c0` reduction follow-up was rejected. The temporary benchmark-only
+candidate kept `ntt_mul_acc3()` scalar, but changed the `c0` half from two
+32-bit constant-modulo reductions:
+
+```c
+c0 = c0_lo + (c0_hi % Q) * gamma;
+out0 = c0 % Q;
+```
+
+to one final 64-bit constant-modulo reduction:
+
+```c
+c0 = (uint64_t)c0_lo + (uint64_t)c0_hi * gamma;
+out0 = c0 % Q;
+```
+
+The intent was to test whether removing one reduction from the `c0` path could
+beat the cost of a wider modulo. The diagnostic validated the helper against the
+existing implementation on both canonical NTT inputs and AVX2 lazy multiply
+inputs.
+
+Correctness and benchmark checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_core_stagesc 1000 | \
+  rg 'ntt_mul_acc3_(defer_c0|canonical_scalar|canonical_avx2)|bench_iterations|bench_sink'
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+
+for i in $(seq 1 5); do \
+  taskset -c 0 ./bench_core_stagesc 70000 | \
+    rg 'mlkem_core_stage_ntt_mul_acc3_(defer_c0|canonical_scalar)_ns_per_op'; \
+done
+```
+
+Rejected highlights:
+
+| Metric | Avg ns/op | Median ns/op | Relative to scalar median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | 271.88 | 271.15 | 1.0000x |
+| temporary `mlkem_core_stage_ntt_mul_acc3_defer_c0` | 682.08 | 682.16 | 0.3975x |
+
+Decision: keep the existing two-step 32-bit reduction shape for `c0`. A single
+64-bit `% Q` is much slower than the extra 32-bit constant-modulo operation.
+This rules out deferred scalar `c0` reduction as a viable way to reduce
+`ntt_mul_acc3()` cost; future work needs a different representation or vector
+reduction strategy, not wider scalar modulo.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
