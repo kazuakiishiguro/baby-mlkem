@@ -424,6 +424,47 @@ static void validate_sample_matrix_matches_scalar(void) {
   }
 }
 
+static inline void stage_ntt_mul_acc3_pair_from_y(
+    const poly256 a0, const poly256 a1, const poly256 a2, uint32_t y00,
+    uint32_t y01, uint32_t y10, uint32_t y11, uint32_t y20, uint32_t y21,
+    uint32_t gamma, int pair_idx, poly256 out) {
+  int idx0 = 2 * pair_idx, idx1 = idx0 + 1;
+  uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
+  uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
+  uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
+  uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+  uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+  uint32_t c0 = c0_lo + (c0_hi % Q) * gamma;
+  uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
+                x20 * y21 + x21 * y20;
+  out[idx0] = (int16_t)(c0 % Q);
+  out[idx1] = (int16_t)(c1 % Q);
+}
+
+static void stage_ntt_mul_acc3_encrypt4_scalar(
+    const poly256 a00, const poly256 a01, const poly256 a02,
+    const poly256 a10, const poly256 a11, const poly256 a12,
+    const poly256 a20, const poly256 a21, const poly256 a22,
+    const poly256 tv0, const poly256 tv1, const poly256 tv2,
+    const poly256 b0, const poly256 b1, const poly256 b2,
+    poly256 out0, poly256 out1, poly256 out2, poly256 outv) {
+  for (int i = 0; i < 128; i++) {
+    int idx0 = 2 * i, idx1 = idx0 + 1;
+    uint32_t y00 = (uint16_t)b0[idx0], y01 = (uint16_t)b0[idx1];
+    uint32_t y10 = (uint16_t)b1[idx0], y11 = (uint16_t)b1[idx1];
+    uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
+    uint32_t gamma = GAMMA[i];
+    stage_ntt_mul_acc3_pair_from_y(a00, a01, a02, y00, y01, y10, y11,
+                                   y20, y21, gamma, i, out0);
+    stage_ntt_mul_acc3_pair_from_y(a10, a11, a12, y00, y01, y10, y11,
+                                   y20, y21, gamma, i, out1);
+    stage_ntt_mul_acc3_pair_from_y(a20, a21, a22, y00, y01, y10, y11,
+                                   y20, y21, gamma, i, out2);
+    stage_ntt_mul_acc3_pair_from_y(tv0, tv1, tv2, y00, y01, y10, y11,
+                                   y20, y21, gamma, i, outv);
+  }
+}
+
 #if defined(__AVX2__)
 static void validate_ntt_mul_acc3_canonical_avx2(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -553,6 +594,40 @@ static void validate_prf_cbd_eta2x4_matches_scalar(void) {
 }
 #endif
 
+static void validate_ntt_mul_acc3_encrypt4_scalar(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 scalar0, scalar1, scalar2, scalarv;
+    poly256 got0, got1, got2, gotv;
+    ntt_mul_acc3(stage_ahat[lane][0][0], stage_rhat[lane][0],
+                 stage_ahat[lane][0][1], stage_rhat[lane][1],
+                 stage_ahat[lane][0][2], stage_rhat[lane][2], scalar0);
+    ntt_mul_acc3(stage_ahat[lane][1][0], stage_rhat[lane][0],
+                 stage_ahat[lane][1][1], stage_rhat[lane][1],
+                 stage_ahat[lane][1][2], stage_rhat[lane][2], scalar1);
+    ntt_mul_acc3(stage_ahat[lane][2][0], stage_rhat[lane][0],
+                 stage_ahat[lane][2][1], stage_rhat[lane][1],
+                 stage_ahat[lane][2][2], stage_rhat[lane][2], scalar2);
+    ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0],
+                 stage_that[lane][1], stage_rhat[lane][1],
+                 stage_that[lane][2], stage_rhat[lane][2], scalarv);
+    stage_ntt_mul_acc3_encrypt4_scalar(
+        stage_ahat[lane][0][0], stage_ahat[lane][0][1],
+        stage_ahat[lane][0][2], stage_ahat[lane][1][0],
+        stage_ahat[lane][1][1], stage_ahat[lane][1][2],
+        stage_ahat[lane][2][0], stage_ahat[lane][2][1],
+        stage_ahat[lane][2][2], stage_that[lane][0], stage_that[lane][1],
+        stage_that[lane][2], stage_rhat[lane][0], stage_rhat[lane][1],
+        stage_rhat[lane][2], got0, got1, got2, gotv);
+    if (memcmp(scalar0, got0, sizeof(poly256)) != 0 ||
+        memcmp(scalar1, got1, sizeof(poly256)) != 0 ||
+        memcmp(scalar2, got2, sizeof(poly256)) != 0 ||
+        memcmp(scalarv, gotv, sizeof(poly256)) != 0) {
+      fprintf(stderr, "encrypt4 acc3 scalar mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
 static void prepare_inputs(void) {
   ensure_ntt_roots();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -587,6 +662,7 @@ static void validate_core_stage_helpers(void) {
 
   prepare_inputs();
   validate_sample_matrix_matches_scalar();
+  validate_ntt_mul_acc3_encrypt4_scalar();
 #if defined(__AVX2__)
   validate_prf_cbd_eta2x4_matches_scalar();
   validate_encrypt_prf_cbd_tail_cosched_matches_separate();
@@ -2014,6 +2090,53 @@ static uint64_t bench_encrypt_accum_u_only(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_encrypt_accum4_separate_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+    }
+    ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0],
+                 stage_that[lane][1], stage_rhat[lane][1],
+                 stage_that[lane][2], stage_rhat[lane][2],
+                 stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_accum4_combined_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_ntt_mul_acc3_encrypt4_scalar(
+        stage_ahat[lane][0][0], stage_ahat[lane][0][1],
+        stage_ahat[lane][0][2], stage_ahat[lane][1][0],
+        stage_ahat[lane][1][1], stage_ahat[lane][1][2],
+        stage_ahat[lane][2][0], stage_ahat[lane][2][1],
+        stage_ahat[lane][2][2], stage_that[lane][0], stage_that[lane][1],
+        stage_that[lane][2], stage_rhat[lane][0], stage_rhat[lane][1],
+        stage_rhat[lane][2], stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 #if defined(__AVX2__)
 static uint64_t bench_ntt_mul_acc3_canonical_scalar(size_t iters) {
   uint64_t acc = 0;
@@ -3253,6 +3376,10 @@ int main(int argc, char **argv) {
                bench_encrypt_accum_inv_u(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum_u_only",
                bench_encrypt_accum_u_only(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum4_separate_only",
+               bench_encrypt_accum4_separate_only(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum4_combined_only",
+               bench_encrypt_accum4_combined_only(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_ntt_mul_acc3_canonical_scalar",
                bench_ntt_mul_acc3_canonical_scalar(iters), iters);

@@ -1487,6 +1487,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
 | `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add |
+| `mlkem_core_stage_encrypt_accum4_separate_only` | diagnostic: three `u` accumulations plus the `v` accumulation as four separate `ntt_mul_acc3()` calls, excluding inverse NTT |
+| `mlkem_core_stage_encrypt_accum4_combined_only` | diagnostic: one scalar loop computes the same four encryption accumulations while reusing `rhat[0..2]` and `GAMMA` loads |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
@@ -9697,6 +9699,45 @@ already the right local representation for values consumed by `ntt_mul_acc3()`,
 but the remaining direct NTT-local headroom is only a few ns/op. The next
 optimization should target a larger K=3 dataflow, such as SIMD accumulation fed
 by the NTT layout, rather than another isolated lazy NTT helper tweak.
+
+### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
+
+A bench-only encryption accumulation diagnostic tested the natural follow-up to
+the K=3 accumulation bottleneck: compute all four encryption NTT-domain outputs
+`u[0]`, `u[1]`, `u[2]`, and `v` in one scalar loop. The candidate reuses each
+`rhat[0..2]` base pair and `GAMMA[i]` value once, then emits four outputs, instead
+of calling `ntt_mul_acc3()` separately for the three public-matrix rows and the
+`that` row. This is the AVX2/core analogue of the AVX512 encryption-side boundary
+idea, but without changing the arithmetic representation or adding SIMD.
+
+The helper is validated by comparing all four outputs against four independent
+`ntt_mul_acc3()` calls before timing.
+
+Command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 70000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_accum_(u_only|inv)_ns_per_op=|mlkem_core_stage_encrypt_accum4_(separate|combined)_only_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op | Relative to separate median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum4_separate_only` | 723.62 | 708.51 | 1.0000x |
+| `mlkem_core_stage_encrypt_accum4_combined_only` | 751.50 | 709.90 | 0.9980x |
+
+Decision: reject scalar four-output coalescing for production. Reusing `rhat` and
+`GAMMA` loads is not enough to offset the larger loop body and register pressure;
+the median is neutral-to-negative and the average is clearly worse. This rules
+out a simple scalar AVX2/core port of the AVX512 encryption boundary idea. A
+future attempt needs a genuinely different SIMD/reduction representation, not
+just coalescing four scalar `ntt_mul_acc3()` calls.
 
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
