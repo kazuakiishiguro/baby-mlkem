@@ -5681,6 +5681,55 @@ accumulation/reduction strategy, rather than vectorizing the current scalar
 helper one-for-one.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, scalar `ntt_mul_acc3()` explicit reciprocal reduction)
+
+An explicit scalar reduction follow-up was rejected. The temporary candidate kept
+`ntt_mul_acc3()` scalar, but replaced the three `% Q` reductions with a helper
+for accumulated 32-bit sums:
+
+```c
+qhat = ((uint64_t)x * 1290167) >> 32;
+r = x - qhat * Q;
+if (r >= Q) r -= Q;
+if (r >= Q) r -= Q;
+```
+
+The helper was validated against the existing `% Q` implementation on both
+canonical NTT inputs and AVX2 lazy multiply inputs. This tested whether the
+compiler's constant-modulo lowering was leaving an easy scalar reduction win in
+the hot accumulator.
+
+Correctness and benchmark commands:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_core_stagesc 1000 | \
+  rg 'ntt_mul_acc3_(reduce32|canonical_scalar)|bench_iterations|bench_sink'
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+
+for i in $(seq 1 9); do \
+  taskset -c 0 ./bench_core_stagesc 70000 | \
+    rg 'mlkem_core_stage_ntt_mul_acc3_(reduce32|canonical_scalar)_ns_per_op'; \
+done
+```
+
+Rejected highlights:
+
+| Metric | Avg ns/op | Median ns/op | Relative to scalar median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | 272.07 | 271.26 | 1.0000x |
+| temporary `mlkem_core_stage_ntt_mul_acc3_reduce32` | 286.13 | 285.74 | 0.9493x |
+
+Decision: keep the existing `% Q` source shape in `ntt_mul_acc3()`. Clang's
+constant-modulo lowering is already better than the explicit reciprocal helper
+for this accumulator. The remaining accumulation problem is not a missed scalar
+modulo idiom; it requires a representation or algorithm change that reduces the
+number of modular reductions or changes where they occur.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
