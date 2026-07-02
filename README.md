@@ -7738,6 +7738,52 @@ median is not supported by the average or neighboring rows. The current later
 closer to the final inverse-add/pack boundary and behaves better in the
 integrated AVX2-only path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 message-add unsigned-min reduction)
+
+An AVX2-only follow-up tried replacing the correction step inside
+`mlkem_add_message_to_poly_vec_avx2()`. The current helper computes
+`x = e2 + message`, then conditionally subtracts `Q` with
+`cmpgt_epi16 + and + sub`. The candidate used the unsigned-min idiom instead:
+`x = min_epu16(x, x - Q)`.
+
+This is safe for this helper only: `e2` comes from ETA2 CBD output in canonical
+`[0, Q)`, and `message` contributes either `0` or `(Q + 1) / 2`, so one
+subtraction is sufficient and the sum stays below the signed 16-bit overflow
+boundary. The generic polynomial add helpers and NTT add path were intentionally
+left unchanged because they have broader input-range contracts.
+
+Correctness passed the AVX2-only core gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv_v` | 467.19 | 473.40 | 0.9869x | 0.9990x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1323.08 | 1325.63 | 0.9981x | 0.9984x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1041.34 | 1040.19 | 1.0011x | 0.9986x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2434.79 | 2430.88 | 1.0016x | 1.0000x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4908.76 | 4906.58 | 1.0004x | 0.9992x |
+| `mlkem_core_stage_kpke_keygen_full` | 4808.50 | 4837.13 | 0.9941x | 0.9962x |
+
+Reject this substitution. The direct `v` target regressed on average, the full
+encrypt rows were effectively neutral, and neighboring keygen rows were noisy
+negative. No longer KEM confirmation was run because the focused stage gate did
+not clear. Future message-fold work should not be another one-pass correction
+idiom swap; it needs to change the inverse-add/compress boundary or surrounding
+dataflow to matter.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
