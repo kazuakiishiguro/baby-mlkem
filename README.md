@@ -4975,6 +4975,53 @@ flat, and the positive average/core side rows are not enough to accept a pure
 code-layout boundary change. Future public-matrix sampler work should remove or
 restructure actual Keccak/parse work rather than only changing inlining.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 refill scratch)
+
+An AVX2 x4 public-matrix sampler scratch experiment was rejected. The candidate
+moved the `sample_ntt4()` refill `extra[4][168]` buffer from the stack to static
+storage, matching the already-static common `stream[4][504]` scratch. This did
+not add a new reentrancy limitation because the function already uses static
+stream scratch; the intent was only to reduce stack-frame pressure around the
+rare refill path without changing Keccak rounds, parsing, or output data.
+
+Correctness passed both gates before the candidate was reverted:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected refill-scratch highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1437.30 | 1641.58 | 0.8756x | 0.9169x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1531.37 | 1757.61 | 0.8713x | 0.9077x |
+| `mlkem_core_stage_sample_matrix` | 3462.86 | 3895.26 | 0.8890x | 0.9246x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1249.15 | 1449.88 | 0.8616x | 0.9050x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4816.79 | 5245.96 | 0.9182x | 0.9464x |
+| `mlkem_core_stage_kpke_keygen_full` | 5620.38 | 5884.81 | 0.9551x | 0.9529x |
+| `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | 283.55 | 283.78 | 0.9992x | 1.0000x |
+| `mlkem_core_stage_sample_ntt4_refill_step_once` | 308.87 | 309.38 | 0.9983x | 1.0008x |
+
+Do not move the x4 refill scratch to static storage. The direct refill probes are
+neutral because refills are rare, while the full x4 sampler and public-matrix
+rows regress substantially. This reinforces the earlier sampler diagnosis: the
+next useful work must reduce or restructure the common three-rate Keccak/state
+path, not adjust rare-path scratch placement. No KEM confirmation was run because
+the direct sampler target rows already failed.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
