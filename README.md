@@ -5224,6 +5224,48 @@ compiler already handles well. Do not pre-vectorize these round constants unless
 a future broader Keccak layout change removes the split-row regression and keeps
 the KEM core rows positive.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 NTT acc3 helper consolidation)
+
+An NTT accumulation cleanup experiment was rejected. The candidate removed the
+historical keygen-only `ntt_mul_acc3_factored_gamma()` helper and retargeted the
+keygen path plus the matching stage harness rows to `ntt_mul_acc3()`. The two
+helpers now have the same 32-bit factored-`GAMMA` arithmetic shape, so this was a
+code-layout and call-target consolidation only; it did not change the NTT-domain
+multiplication formula or any modular reductions.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_only` | 441.78 | 440.79 | 1.0023x | 0.9992x |
+| `mlkem_core_stage_keygen_accum_add_only` | 460.12 | 457.22 | 1.0063x | 0.9998x |
+| `mlkem_core_stage_keygen_accum_encode` | 494.10 | 490.53 | 1.0073x | 1.0004x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1995.42 | 1994.20 | 1.0006x | 1.0003x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4156.07 | 4157.95 | 0.9995x | 1.0000x |
+| `mlkem_core_stage_kpke_keygen_full` | 4801.07 | 4829.37 | 0.9941x | 0.9991x |
+
+Decision: keep the keygen-specific `ntt_mul_acc3_factored_gamma()` call target.
+Although the helper body is currently equivalent to `ntt_mul_acc3()`, removing it
+only produced noise-sized local accumulation medians and weakened full keygen.
+This is not a core arithmetic improvement, and the broader keygen row did not
+clear the stage gate, so no KEM confirmation was run. Future NTT accumulation
+work should change the multiply/reduction schedule itself rather than just
+consolidating identical helper bodies.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
