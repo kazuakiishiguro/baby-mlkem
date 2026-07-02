@@ -7512,6 +7512,52 @@ extra store/load pair is cheaper than coupling the final inverse-NTT scale/add
 loop with the dense d10 packer; the fused version likely increases register and
 port pressure in the already-heavy encryption path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 early u compression)
+
+An AVX2-only follow-up tried the same boundary idea at the existing
+`ntt_inv_add_inplace()` granularity instead of inside the AVX512 final scale/add
+loop. The candidate compressed and packed each `u[i]` into the ciphertext buffer
+immediately after `ntt_mul_acc3(...)` and `ntt_inv_add_inplace(e1[i], u[i])`,
+then computed `v` and packed the final d4 component. This removed the later
+readback of the three materialized `u` polynomials on AVX2-only builds while
+leaving the native AVX512 path on the existing materialized schedule.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=24000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX2 early-`u` compression highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2430.60 | 2446.94 | 0.9933x | 0.9931x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4910.79 | 4911.96 | 0.9998x | 0.9982x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1323.81 | 1329.85 | 0.9955x | 0.9987x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1038.65 | 1044.08 | 0.9948x | 0.9991x |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.08 | 51.12 | 0.9991x | 1.0022x |
+| `mlkem_encaps` | 2687.20 | 2689.77 | 0.9990x | 0.9980x |
+| `mlkem_encaps_core` | 7096.11 | 7183.34 | 0.9879x | 0.9949x |
+| `mlkem_roundtrip_core` | 20160.63 | 20271.88 | 0.9945x | 0.9970x |
+
+Reject this AVX2-only early-pack schedule. The isolated ciphertext compression
+row is neutral, while cached K-PKE encryption and KEM core rows regress. The
+extra store/load pair for `u[0..2]` is cheaper than interleaving the dense d10
+packer into the accumulation/inverse-add schedule. Keep materializing `u` until
+a broader representation change can combine more than this final readback.
+
 ### Independent Core Optimization A/B (2026-07-01, e2/message fusion)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
