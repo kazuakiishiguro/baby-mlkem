@@ -5098,6 +5098,67 @@ code layout or memory scheduling enough to erase any stack-frame benefit. Do not
 move this scratch to static storage unless a future broader `sample_ntt4()` layout
 change changes the surrounding store path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `keccakf4_mem()` two-round schedule)
+
+A second follow-up after the accepted ping-pong copy elision was rejected. The
+candidate factored one memory-resident Keccak round into an always-inline helper
+and changed `keccakf4_mem()` from a 24-iteration `src`/`dst` pointer-swap loop to
+an explicit 12-iteration `st -> scratch` then `scratch -> st` schedule. This kept
+the same round function and the same local scratch, but removed the runtime
+pointer swap and made the even-round final-state placement explicit.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct sampler highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 827.00 | 774.95 | 1.0672x | 1.0671x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 876.97 | 797.72 | 1.0993x | 1.1000x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 995.97 | 900.91 | 1.1055x | 1.1056x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 932.80 | 904.03 | 1.0318x | 1.0320x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1114.03 | 1088.40 | 1.0235x | 1.0233x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1185.39 | 1204.17 | 0.9844x | 0.9817x |
+| `mlkem_core_stage_sample_matrix` | 2809.68 | 2795.53 | 1.0051x | 1.0049x |
+| `mlkem_core_stage_kpke_keygen_full` | 4814.74 | 4815.18 | 0.9999x | 0.9988x |
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6926.39 | 7076.71 | 0.9788x | 1.0046x |
+| `mlkem_encaps_core` | 7062.66 | 7003.34 | 1.0085x | 1.0107x |
+| `mlkem_decaps_core` | 6047.58 | 6371.91 | 0.9491x | 0.9519x |
+| `mlkem_roundtrip` | 13377.03 | 13502.26 | 0.9907x | 1.0018x |
+| `mlkem_roundtrip_core` | 20182.83 | 20637.53 | 0.9780x | 0.9695x |
+
+Decision: keep the compact pointer-swap loop. The explicit two-round schedule is
+attractive in the isolated `sample_ntt4()` split rows, but it duplicates the large
+round body in the loop and perturbs integrated KEM code layout enough to regress
+`decaps_core` and `roundtrip_core` substantially. Future `keccakf4_mem()` work
+must preserve the direct sampler win without increasing the surrounding KEM code
+footprint this much.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
