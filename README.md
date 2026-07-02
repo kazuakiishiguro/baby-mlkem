@@ -2555,6 +2555,44 @@ Treat this as a minor accepted cleanup. The reliable claim is removal of a
 scalar-looking 4-byte copy in the d10 compress/encode hot path; the larger KEM
 speedups in the AVX2-only run are too noisy to attribute solely to this change.
 
+A helper-boundary follow-up was rejected. The candidate changed only
+`compress_encode_poly_d10_avx2()` from a plain `static` helper to
+`static MLKEM_ALWAYS_INLINE`, keeping the d10 compression identity, bit-packing
+schedule, and ciphertext format unchanged. The goal was to see whether forcing
+this fused d10 helper into the two encryption call sites would preserve the
+accepted small store cleanup and reduce call-boundary/layout overhead.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=90000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected d10 always-inline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.14 | 51.27 | 0.9973x | 0.9990x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 47.11 | 47.12 | 0.9998x | 1.0000x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_compress_only` | 23.60 | 23.64 | 0.9986x | 0.9983x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_pack_only` | 20.54 | 20.48 | 1.0027x | 1.0020x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2440.46 | 2432.22 | 1.0034x | 1.0008x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4917.16 | 4916.54 | 1.0001x | 0.9996x |
+
+Do not force-inline `compress_encode_poly_d10_avx2()`. The direct d10 fused row
+is neutral and the small pack-only movement does not translate into the full
+ciphertext compression row. Future d10 work should change compression or packing
+arithmetic, not only the helper boundary.
+
 
 A narrower d10 compression constant-construction experiment was rejected. The
 candidate changed the AVX2 d10 compression helpers from computing
