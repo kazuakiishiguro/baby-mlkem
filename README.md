@@ -5456,6 +5456,56 @@ defensible production signal without a sampler median win. Future sampler work
 needs to change real state/dataflow, not only pointer alias annotations.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
+
+A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
+experiments was rejected. The candidate kept the common `sample_ntt4()` path on a
+memory-resident Keccak permutation, but split one round into an always-inline
+`keccakf4_mem_round()` helper and changed `keccakf4_mem()` itself into a
+`MLKEM_NOINLINE` loop over `round += 2`:
+`st -> scratch` for one round, then `scratch -> st` for the next. The intent was
+to keep the isolated two-round scheduling win while avoiding the large inlined
+code-layout perturbation seen in the earlier manual two-round attempt.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected two-round-noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 826.77 | 805.80 | 1.0260x | 1.0261x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 876.64 | 825.58 | 1.0618x | 1.0618x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 992.88 | 943.90 | 1.0519x | 1.0543x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 936.50 | 938.60 | 0.9978x | 0.9961x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1114.36 | 1125.25 | 0.9903x | 0.9923x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1182.58 | 1195.07 | 0.9895x | 0.9896x |
+| `mlkem_core_stage_sample_matrix` | 2805.24 | 2825.39 | 0.9929x | 0.9942x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4161.05 | 4176.91 | 0.9962x | 0.9963x |
+| `mlkem_core_stage_kpke_keygen_full` | 4819.55 | 4909.18 | 0.9817x | 0.9999x |
+
+Decision: keep the compact inlined pointer-swap `keccakf4_mem()` loop. The
+hybrid preserves part of the split-row Keccak/store improvement, but it still
+does not survive the full `sample_ntt4()` and public-matrix rows. This closes the
+obvious combinations of two-round scheduling, unroll hints, and noinline
+boundaries for the current memory-resident sampler shape. Future sampler work
+needs to remove state movement or change the stream/parser representation, not
+just reschedule the same Keccak round body.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 final-L1 fused multiply)
 
 A production AVX2-only final-NTT fusion experiment was rejected. The candidate
