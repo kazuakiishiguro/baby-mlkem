@@ -5730,6 +5730,68 @@ modulo idiom; it requires a representation or algorithm change that reduces the
 number of modular reductions or changes where they occur.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen `s`/`e` NTT split scheduling)
+
+A keygen-only NTT/encode scheduling follow-up was rejected. The candidate changed
+only the AVX2 branch of `kpke_keygen()` after `mlkem_keygen_matrix_noise_avx2()`:
+instead of running `ntt(shat[i]) -> encode(shat[i]) -> ntt(ehat[i])` for each
+`i`, it first transformed and encoded all three `shat` polynomials, then ran the
+three `ehat` NTTs. This did not change PRF/CBD output, public-matrix generation,
+NTT inputs, encodings, public keys, or secret keys; it only changed the local
+order of six independent keygen NTT/encode operations.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Initial AVX2-only stage+KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Initial highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4802.05 | 4795.77 | 1.0013x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1589.62 | 1589.20 | 1.0003x |
+| `mlkem_keygen` | 6934.37 | 6922.32 | 1.0017x |
+| `mlkem_keygen_core` | 6909.09 | 6905.35 | 1.0005x |
+| `mlkem_roundtrip_core` | 20072.50 | 19979.69 | 1.0046x |
+
+Longer AVX2-only KEM confirmation command:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Longer confirmation rejected the candidate:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 6922.09 | 6928.45 | 0.9991x |
+| `mlkem_keygen_core` | 6904.21 | 6909.57 | 0.9992x |
+| `mlkem_encaps` | 2684.48 | 2691.32 | 0.9975x |
+| `mlkem_decaps_core` | 6032.55 | 6046.56 | 0.9977x |
+| `mlkem_roundtrip` | 13335.78 | 13344.42 | 0.9994x |
+| `mlkem_roundtrip_core` | 20084.86 | 20055.02 | 1.0015x |
+
+Decision: keep the existing per-index `s_i` NTT/encode followed by `e_i` NTT
+order. The first A/B showed small positive medians, but the longer KEM
+confirmation moved the targeted keygen rows negative. This scheduling change is
+not a robust keygen improvement; future keygen NTT work needs to change the NTT
+representation or arithmetic, not only reorder independent `s` and `e` calls.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
