@@ -7154,6 +7154,54 @@ was run because the stage gate failed on the rows the change was meant to help.
 Future sampler work should remove or restructure common three-rate Keccak/store
 work rather than split the already-small refill control path.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 scalar refill)
+
+A rare-path sampler follow-up was rejected. The candidate kept the common
+`sample_ntt4()` first three SHAKE128 blocks on the accepted `keccakf4_mem()`
+path and changed only the refill branch after the 504-byte parse: instead of
+continuing all four lanes with one `keccakf4()` when any lane was short, it
+extracted each incomplete lane's 25-word state and continued that lane with
+scalar `keccakf()`. The intent was to avoid three unused refill lanes, since the
+initial refill diagnostic shows only about 0.86% of lanes need an extra block.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected scalar-refill highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.98 | 940.09 | 0.9914x | 0.9904x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1114.33 | 1128.12 | 0.9878x | 0.9931x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1182.69 | 1184.48 | 0.9985x | 1.0029x |
+| `mlkem_core_stage_sample_matrix` | 2808.38 | 2808.57 | 0.9999x | 1.0005x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4169.79 | 4170.50 | 0.9998x | 0.9999x |
+| `mlkem_core_stage_kpke_keygen_full` | 4821.30 | 4794.02 | 1.0057x | 1.0006x |
+
+Decision: keep the existing x4 refill continuation. The scalar-lane refill idea
+reduces theoretical wasted Keccak work only on a rare path, but it adds lane
+extraction and changes the full sampler code shape enough that
+`sample_ntt4_full_raw` and the first x4 matrix batch regress. The positive
+`kpke_keygen_full` movement is not a defensible acceptance signal because the
+direct sampler rows do not support it. No KEM confirmation was run after the
+stage gate failed. Future sampler work should target the common three-rate
+Keccak/store path or a real parser/state representation change, not another
+rare-refill specialization.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 rolling parse)
 
 A common-path `sample_ntt4()` dataflow experiment was rejected. The candidate kept
