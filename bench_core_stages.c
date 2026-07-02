@@ -1172,9 +1172,9 @@ static uint64_t bench_sample_ntt4_refill_step_once(size_t iters) {
   return t1 - t0;
 }
 
-static void print_sample_ntt4_initial_accept_stats(size_t iters) {
-  const uint8_t row[4] = {0, 0, 0, 1};
-  const uint8_t col[4] = {0, 1, 2, 0};
+static void print_sample_ntt4_initial_accept_stats_for_tuple(
+    const char *prefix, const uint8_t row[4], const uint8_t col[4],
+    size_t iters) {
   uint64_t total_accepts = 0;
   uint64_t extra_groups = 0;
   uint64_t extra_lanes = 0;
@@ -1216,17 +1216,31 @@ static void print_sample_ntt4_initial_accept_stats(size_t iters) {
 
   double groups = (double)iters;
   double lanes = (double)(iters * 4u);
-  printf("mlkem_core_stage_sample_ntt4_initial_extra_groups=%llu\n",
+  printf("%s_extra_groups=%llu\n", prefix,
          (unsigned long long)extra_groups);
-  printf("mlkem_core_stage_sample_ntt4_initial_extra_group_pct=%.6f\n",
+  printf("%s_extra_group_pct=%.6f\n", prefix,
          groups > 0.0 ? (100.0 * (double)extra_groups / groups) : 0.0);
-  printf("mlkem_core_stage_sample_ntt4_initial_extra_lanes=%llu\n",
+  printf("%s_extra_lanes=%llu\n", prefix,
          (unsigned long long)extra_lanes);
-  printf("mlkem_core_stage_sample_ntt4_initial_extra_lane_pct=%.6f\n",
+  printf("%s_extra_lane_pct=%.6f\n", prefix,
          lanes > 0.0 ? (100.0 * (double)extra_lanes / lanes) : 0.0);
-  printf("mlkem_core_stage_sample_ntt4_initial_avg_accepts=%.6f\n",
+  printf("%s_avg_accepts=%.6f\n", prefix,
          lanes > 0.0 ? (double)total_accepts / lanes : 0.0);
-  printf("mlkem_core_stage_sample_ntt4_initial_min_accepts=%d\n", min_accepts);
+  printf("%s_min_accepts=%d\n", prefix, min_accepts);
+}
+
+static void print_sample_ntt4_initial_accept_stats(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  print_sample_ntt4_initial_accept_stats_for_tuple(
+      "mlkem_core_stage_sample_ntt4_initial", row, col, iters);
+}
+
+static void print_sample_ntt4_batch1_initial_accept_stats(size_t iters) {
+  const uint8_t row[4] = {1, 1, 2, 2};
+  const uint8_t col[4] = {1, 2, 0, 1};
+  print_sample_ntt4_initial_accept_stats_for_tuple(
+      "mlkem_core_stage_sample_ntt4_batch1_initial", row, col, iters);
 }
 
 static void stage_sample_ntt4_one_init(const uint8_t *seed, uint8_t row,
@@ -3050,6 +3064,7 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_sample_ntt4_refill_step_once",
                bench_sample_ntt4_refill_step_once(iters), iters);
   print_sample_ntt4_initial_accept_stats(iters);
+  print_sample_ntt4_batch1_initial_accept_stats(iters);
   print_metric("mlkem_core_stage_sample_ntt4_one_full_raw",
                bench_sample_ntt4_one_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_one_keccak_store3",

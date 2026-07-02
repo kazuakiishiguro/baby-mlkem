@@ -1379,6 +1379,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_initial_extra_lane_pct` | percent of x4 sampler lanes that need a refill after the first 504 bytes |
 | `mlkem_core_stage_sample_ntt4_initial_avg_accepts` | average accepted coefficients after the first 504-byte parse |
 | `mlkem_core_stage_sample_ntt4_initial_min_accepts` | minimum accepted coefficients observed after the first 504-byte parse |
+| `mlkem_core_stage_sample_ntt4_batch1_initial_*` | same initial refill/acceptance counters for the second AVX2 public-matrix x4 batch tuple |
 | `mlkem_core_stage_sample_ntt4_one_initial_extra_lanes` | AVX2-only one-lane x4 tail sampler lanes that need a refill after the first 504 bytes |
 | `mlkem_core_stage_sample_ntt4_one_initial_extra_lane_pct` | percent of one-lane x4 tail sampler lanes that need a refill after the first 504 bytes |
 | `mlkem_core_stage_sample_ntt4_one_initial_avg_accepts` | average accepted coefficients after the one-lane x4 tail sampler first 504-byte parse |
@@ -5387,9 +5388,26 @@ taskset -c 0 ./bench_core_stagesc 30000 | \
 | `mlkem_core_stage_sample_ntt4_full_raw` | 926.47 |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | 1000.50 |
 
+A follow-up distribution check used the same generated-seed sequence for the
+first and second x4 batch tuples and compared how often the initial three-rate
+504-byte parse needed a refill:
+
+```bash
+taskset -c 0 ./bench_core_stagesc 30000 | \
+  rg "mlkem_core_stage_sample_ntt4(_batch1)?_initial_(extra_group_pct|extra_lane_pct|avg_accepts|min_accepts)"
+```
+
+| Metric | Batch0 | Batch1 |
+|---|---:|---:|
+| extra group pct | 3.296667 | 3.420000 |
+| extra lane pct | 0.833333 | 0.863333 |
+| average accepts | 255.974792 | 255.974333 |
+| minimum accepts | 238 | 239 |
+
 Decision: use this only as a target-selection diagnostic. The batch1 raw gap is
-real in the fixed four-lane stage harness, but production `rho` is seed-derived
-and the rejection distribution should not be optimized around one fixed benchmark
+real in the fixed four-lane stage harness, but the refill/acceptance distribution
+is effectively the same across generated seeds. Production `rho` is seed-derived,
+so the rejection distribution should not be optimized around one fixed benchmark
 input set. Do not change x4 batch order or grouping solely from this row; a real
 sampler change still needs to improve full `sample_matrix()`, public-prepare,
 keygen, and KEM medians.
