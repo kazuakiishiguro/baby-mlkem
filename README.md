@@ -4068,6 +4068,53 @@ final-l1 change, this inverse add rewrite perturbs integrated encryption and
 roundtrip behavior enough that the direct helper win is not a reliable core
 optimization.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 internal lazy NTT multiply inputs)
+
+The AVX2-only encryption and decryption paths now use an internal forward NTT
+variant for values that immediately feed `ntt_mul_acc3()`: encryption `rhat[]`
+and decryption `u[]`. The helper leaves the final l1 butterfly in `[0, 2Q)` and
+skips the public `ntt()` canonicalization pass. This is safe only for these
+NTT-domain multiplication inputs because `ntt_mul_acc3()` reduces products
+modulo `Q`; public `ntt()` output, secret-key encoding, public-key encoding, and
+add-then-encode paths still use canonical `[0, Q)` coefficients.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000   C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"   ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2448.57 | 2417.18 | 1.0130x | 1.0091x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 917.03 | 902.49 | 1.0161x | 1.0150x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 878.39 | 873.50 | 1.0056x | 1.0019x |
+| `mlkem_encaps` | 2716.10 | 2683.13 | 1.0123x | 1.0091x |
+| `mlkem_decaps` | 3663.61 | 3631.23 | 1.0089x | 1.0070x |
+| `mlkem_roundtrip_core` | 22369.07 | 22345.19 | 1.0011x | 1.0041x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+full-path signal: `mlkem_encaps` median `1.0082x`, `mlkem_decaps` `1.0088x`,
+`mlkem_encaps_core` `1.0008x`, `mlkem_decaps_core` `1.0007x`, and
+`mlkem_roundtrip_core` `1.0387x`. Native `-march=native` KEM no-regression with
+`RUNS=9`, `KEM_ITERS=30000` was also positive on all core medians:
+`mlkem_keygen_core` `1.0009x`, `mlkem_encaps_core` `1.0006x`,
+`mlkem_decaps_core` `1.0010x`, and `mlkem_roundtrip_core` `1.0034x`.
+
+This extends the accepted forward-l1 lazy reduction in a restricted way: keep
+external NTT results canonical, but skip the final canonicalization pass when
+the next operation is a modular NTT-domain multiplication that already tolerates
+representatives congruent modulo `Q`.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column

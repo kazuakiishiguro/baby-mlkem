@@ -1467,6 +1467,26 @@ static void ntt_tail_avx2(poly256 f) {
 #endif
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void ntt_tail_lazy_mul_input_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly8_avx2(f + start, f + start + 8, ZETA_NTT_TAIL_L3[i]);
+  }
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly4x2_avx2(f + start, f + start + 4,
+                          f + start + 8, f + start + 12,
+                          ZETA_NTT_TAIL_L2[i]);
+  }
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    ntt_butterfly2x4_lazy_avx2(f + start, f + start + 2,
+                               f + start + 4, f + start + 6,
+                               f + start + 8, f + start + 10,
+                               f + start + 12, f + start + 14,
+                               ZETA_NTT_TAIL_L1[i]);
+  }
+}
+#endif
+
 static inline void ntt_inv_butterfly8_avx2(int16_t *a_ptr, int16_t *b_ptr,
                                            __m256i zeta) {
   __m128i a16 = _mm_loadu_si128((const __m128i *)a_ptr);
@@ -1713,6 +1733,33 @@ static void ntt(const poly256 f_in, poly256 f_out) {
   ntt_tail_avx2(f_out);
 #endif
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void ntt_lazy_mul_input_avx2(const poly256 f_in, poly256 f_out) {
+  if (f_in != f_out) {
+    memcpy(f_out, f_in, sizeof(poly256));
+  }
+  int k = 1;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k++];
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
+        int16_t t = mod_q_reduce_ntt_u32(prod);
+        int16_t a = f_out[idx];
+        f_out[idx + length] = mod_q_sub_i16(a, t);
+        f_out[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+  ntt_tail_lazy_mul_input_avx2(f_out);
+}
+#endif
 
 /* NTT^-1 */
 static inline void ntt_inv_butterflies_inplace(poly256 out) {
@@ -4223,7 +4270,11 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   ntt_inv_add3_inplace(e1[0], e1[1], e1[2], u[0], u[1], u[2]);
 #else
   for (int i = 0; i < K; i++) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
+#else
     ntt(rhat[i], rhat[i]);
+#endif
   }
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
@@ -4386,7 +4437,11 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
       kpke_secret_cache_shat[2], u[2], w);
 #else
   for (int i = 0; i < K; i++) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    ntt_lazy_mul_input_avx2(u[i], u[i]);
+#else
     ntt(u[i], u[i]);
+#endif
   }
   ntt_mul_acc3(kpke_secret_cache_shat[0], u[0],
                kpke_secret_cache_shat[1], u[1],
