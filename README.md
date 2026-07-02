@@ -2343,6 +2343,40 @@ cached encryption is not positive by median. Keep the current local zeta-scale
 setup until a representation-level inverse-NTT rewrite removes more work than a
 single scalar constant computation.
 
+A narrower AVX2 final zeta fixed-index experiment was also rejected. The
+candidate kept the scalar per-call zeta-scale computation, but changed
+`ntt_inv_before_final_avx2()` to return `void` and used `ZETA[1]` directly in
+`ntt_inv_add_fused_final_avx2()`, `ntt_inv_add2_fused_final_avx2()`, and
+`ntt_inv_sub_from_fused_final_avx2()`. This is algebraically valid because the
+pre-final inverse helper always reaches the final `log2len = 7` zeta, but the
+extra information did not become a stable whole-core win. AVX2-only core
+`make test` passed.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=25000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Fixed-index zeta rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 788.99 | 788.11 | 1.0011x | 1.0016x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 291.06 | 290.21 | 1.0029x | 1.0022x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.53 | 381.26 | 1.0007x | 1.0008x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 894.76 | 894.30 | 1.0005x | 0.9993x |
+| `mlkem_encaps_core` | 7063.75 | 6975.74 | 1.0126x | 0.9991x |
+| `mlkem_decaps_core` | 6254.09 | 6038.71 | 1.0357x | 1.0013x |
+| `mlkem_roundtrip_core` | 20215.28 | 20116.48 | 1.0049x | 0.9993x |
+
+Reject the fixed-index rewrite. The direct target rows moved only around
+0.1-0.3%, and KEM medians were neutral or mixed. Keep returning the local zeta
+from `ntt_inv_before_final_avx2()`; the remaining opportunity is not the scalar
+`ZETA[1]` selection, but a larger representation-level inverse-final rewrite.
+
 An AVX2 negative-scale final reduction experiment was also rejected. The
 candidate used `3303 == -26 mod q` and replaced the `sum * 3303` product in the
 AVX2 final fused helpers with `(q - sum) * 26`, implemented as shifts and
