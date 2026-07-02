@@ -1243,6 +1243,8 @@ stage metrics.
 |---|---|
 | `mlkem_core_stage_kpke_keygen_full` | full `kpke_keygen()` |
 | `mlkem_core_stage_kpke_encrypt_uncached` | full `kpke_encrypt()` with internal caches disabled |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | no-cache `mlkem_encaps()` public preparation: public-key d12 decode, public-matrix sampling, and `H(ek)` with the AVX2 hash/tail co-schedule |
+| `mlkem_core_stage_public_key_decode_d12` | public-key d12 decode only for the three encoded public-key polynomials |
 | `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
 | `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key, for repeated-key context only |
 | `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key, for repeated-key context only |
@@ -4596,6 +4598,44 @@ shorter-term implementation target remains the common `sample_ntt4()` three-rate
 Keccak/state layout, because the current sampler breakdown shows Keccak dominates
 over stream stores and parser bookkeeping.
 
+
+No-cache encapsulation public-prepare diagnostic:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    rg "mlkem_core_stage_kpke_encrypt_(uncached|cached)_ns_per_op|mlkem_core_stage_kpke_prepare_public_no_cache_ns_per_op|mlkem_core_stage_public_key_decode_d12_ns_per_op|mlkem_core_stage_sample_matrix_ns_per_op"
+done
+```
+
+AVX2-only median rows from the seven repeated runs:
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 5637.01 |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4686.57 |
+| `mlkem_core_stage_public_key_decode_d12` | 20.25 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2436.02 |
+| `mlkem_core_stage_sample_matrix` | 3325.69 |
+
+`kpke_encrypt_uncached` and `kpke_prepare_public_no_cache` are deliberately not
+nested measurements. The former is standalone K-PKE encryption with caches
+disabled; it decodes the public key and samples the public matrix, but does not
+compute `H(ek)`. The latter is the no-cache `mlkem_encaps()` preparation path;
+it decodes the public key, samples the matrix, and computes `H(ek)` using the
+accepted AVX2 public-key hash/tail co-schedule.
+
+This rules out public-key d12 decode as a meaningful target: it is only about
+20 ns. The direct K-PKE uncached-vs-cached gap is roughly 3.2 us, which matches
+the standalone public-matrix sampler. The no-cache encapsulation preparation
+still has about 1.36 us beyond standalone `sample_matrix`, but the one-live-lane
+`keccakf4()` SHA3 continuation diagnostic was already rejected. The next useful
+work should therefore reduce `sample_matrix()` itself or find a real multi-state
+co-scheduling opportunity; cache-local public-key decode/hash ordering and
+single-lane Keccak tricks are not large enough.
 
 A follow-up AVX2-only keygen forward-NTT split diagnostic adds two bench-only
 rows for the six keygen secret/error NTTs: `head_only` for the scalar/vectorized

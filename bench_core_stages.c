@@ -536,6 +536,43 @@ static uint64_t bench_kpke_encrypt_uncached(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_kpke_prepare_public_no_cache(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  uint8_t h[32];
+
+  mlkem_set_internal_caches_enabled(0);
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    kpke_prepare_public_no_cache(stage_ek[lane], h);
+    acc ^= h[(i * 17u) & 31u];
+    acc ^= (uint16_t)kpke_public_cache_that[i % K][i & 255u];
+    acc ^= (uint16_t)kpke_public_cache_ahat[(i / K) % K][i % K][0];
+  }
+  t1 = now_ns();
+  mlkem_set_internal_caches_enabled(1);
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_public_key_decode_d12(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      byte_decode(12, stage_ek[lane] + j * 384, stage_tmp_vec0[lane][j]);
+    }
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_kpke_decrypt_uncached(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2726,6 +2763,10 @@ int main(int argc, char **argv) {
                bench_kpke_keygen_full(iters), iters);
   print_metric("mlkem_core_stage_kpke_encrypt_uncached",
                bench_kpke_encrypt_uncached(iters), iters);
+  print_metric("mlkem_core_stage_kpke_prepare_public_no_cache",
+               bench_kpke_prepare_public_no_cache(iters), iters);
+  print_metric("mlkem_core_stage_public_key_decode_d12",
+               bench_public_key_decode_d12(iters), iters);
   print_metric("mlkem_core_stage_kpke_decrypt_uncached",
                bench_kpke_decrypt_uncached(iters), iters);
   print_metric("mlkem_core_stage_kpke_encrypt_cached",
