@@ -3548,6 +3548,53 @@ regresses by about 4.3% on median. The `sample_ntt4()` memory-resident win does
 not transfer to these mixed helpers: public-key hash absorb, lane extraction, and
 hash continuation change the register-pressure/layout tradeoff.
 
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 hash-tail lane1 extraction)
+
+A narrower AVX2 hash-tail state-extraction experiment was rejected. The
+candidate kept the accepted hash/tail co-schedule and register-resident
+`keccakf4()` permutations, but replaced the scalar `keccak_lane1_u64()` loop used
+for the `(2,2)` tail stream with a four-word vector helper:
+`unpackhi_epi64` extracts lane 1 from four Keccak state vectors, then one
+`storeu_si256` writes four stream words. This changed only the lane-1 extraction
+used by `sha3_256_sample_ntt_tail_avx2()` and
+`sha3_512_sample_ntt_tail_avx2()` for the initial three tail blocks and rare
+refill block; Keccak counts, parser, hash continuation, and outputs were
+unchanged.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected hash-tail lane1 extraction highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4178.76 | 4183.56 | 0.9989x | 0.9989x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4920.11 | 4889.37 | 1.0063x | 1.0057x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2422.70 | 2428.68 | 0.9975x | 0.9999x |
+| `mlkem_core_stage_sample_matrix_tail` | 870.19 | 865.75 | 1.0051x | 1.0077x |
+| `mlkem_core_stage_sample_matrix` | 2809.82 | 2803.00 | 1.0024x | 1.0005x |
+
+Decision: keep the simple scalar `keccak_lane1_u64()` extraction in the
+hash-tail helpers. The vector extract form is mechanically tidy, but it adds
+shuffles and does not improve the direct public-prepare row that uses these
+helpers. No KEM confirmation was run because the stage gate failed. Future
+state-extraction work needs to remove an extraction boundary entirely or fill
+more Keccak lanes with real work; batching the same lane extract is too small.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 message recovery)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
