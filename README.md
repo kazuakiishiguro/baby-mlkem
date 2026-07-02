@@ -1491,6 +1491,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_sample_matrix_tail_choice_XX` | AVX2-only diagnostic: choose matrix entry `XX` as the scalar tail and place the other eight entries into two row-major x4 sampler batches |
 | `mlkem_core_stage_keygen_matrix_noise_current` | AVX2-only bench of the production keygen matrix/noise order: x4 batch0, co-scheduled PRF/CBD plus `(2,2)` tail, x4 batch1 |
 | `mlkem_core_stage_keygen_matrix_noise_tail_first` | AVX2-only diagnostic order: co-scheduled PRF/CBD plus `(2,2)` tail before both public-matrix x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
@@ -6319,6 +6320,56 @@ movement is only 1.0002x, the scalar tail row is neutral, and public-prepare doe
 not improve at the median. This confirms that local call ordering around the
 single-lane tail is not a robust sampler optimization; future work should change
 the sampler state/dataflow itself, not only the order of existing calls.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_matrix tail choice)
+
+A bench-only public-matrix grouping diagnostic compares which of the nine
+`A[row][col]` entries should be left as the scalar tail while the other eight
+entries are packed into two row-major `sample_ntt4()` batches. This does not
+change production `sample_matrix()`; it only validates that each tail choice
+produces the same matrix and measures the choices under one common generic
+helper.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in 1 2 3 4 5 6 7; do
+  taskset -c 0 ./bench_core_stagesc 10000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_sample_matrix(_tail_choice_[0-2][0-2])?_ns_per_op=|mlkem_core_stage_kpke_keygen_full_ns_per_op=/ {
+        print run "\t" $1 "\t" $2
+      }'
+done
+```
+
+Tail-choice highlights, relative to the current `(2,2)` tail under the same
+generic diagnostic helper:
+
+| Tail choice | Avg ns/op | Median ns/op | Avg speedup vs `22` | Median speedup vs `22` |
+|---|---:|---:|---:|---:|
+| `00` | 2811.53 | 2809.67 | 1.0020x | 1.0034x |
+| `01` | 2811.26 | 2810.72 | 1.0021x | 1.0030x |
+| `02` | 2812.00 | 2810.59 | 1.0018x | 1.0030x |
+| `10` | 2816.11 | 2815.99 | 1.0003x | 1.0011x |
+| `11` | 2816.26 | 2814.87 | 1.0003x | 1.0015x |
+| `12` | 2816.10 | 2817.26 | 1.0003x | 1.0007x |
+| `20` | 2815.19 | 2812.82 | 1.0007x | 1.0023x |
+| `21` | 2799.10 | 2796.06 | 1.0064x | 1.0083x |
+| `22` | 2817.05 | 2819.15 | 1.0000x | 1.0000x |
+
+The fixed stage fixture makes `(2,1)` look best, but this is not a production
+change. The difference comes from which fixed SHAKE128 suffixes happen to need
+refills together; there is no ML-KEM structural reason to expect `(2,1)` to be
+better than `(2,2)` over random `rho`. More importantly, current production
+co-schedules the `(2,2)` tail with keygen PRF/CBD and public-hash preparation in
+hardcoded tail helpers. Rotating the scalar tail would require redesigning those
+co-scheduled helpers too, and the existing logs already show that simple
+sampler grouping/order changes do not survive integrated matrix/keygen checks.
+Keep `(2,2)` as the production tail. Future sampler work should change the
+state/dataflow itself, not only rotate which matrix entry is scalar.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)

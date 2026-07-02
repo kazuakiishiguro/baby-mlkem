@@ -416,6 +416,31 @@ static void derive_encrypt_lane(size_t lane) {
   stage_inv_sub_from_scale_only(stage_v[lane], stage_w[lane]);
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+static void stage_sample_matrix_tail_choice_avx2(const uint8_t *seed,
+                                                 int tail_idx,
+                                                 poly256 out[K][K]) {
+  uint8_t row[8];
+  uint8_t col[8];
+  int n = 0;
+
+  for (int idx = 0; idx < K * K; idx++) {
+    if (idx == tail_idx) continue;
+    row[n] = (uint8_t)(idx / K);
+    col[n] = (uint8_t)(idx % K);
+    n++;
+  }
+
+  sample_ntt4(seed, row, col, out[row[0]][col[0]], out[row[1]][col[1]],
+              out[row[2]][col[2]], out[row[3]][col[3]]);
+  sample_ntt4(seed, row + 4, col + 4, out[row[4]][col[4]],
+              out[row[5]][col[5]], out[row[6]][col[6]],
+              out[row[7]][col[7]]);
+  sample_ntt(seed, tail_idx / K, tail_idx % K,
+             out[tail_idx / K][tail_idx % K]);
+}
+#endif
+
 static void validate_sample_matrix_matches_scalar(void) {
   poly256 matrix[K][K];
   poly256 want;
@@ -430,6 +455,24 @@ static void validate_sample_matrix_matches_scalar(void) {
       }
     }
   }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+  for (int tail_idx = 0; tail_idx < K * K; tail_idx++) {
+    poly256 alt[K][K];
+    stage_sample_matrix_tail_choice_avx2(stage_rho[0], tail_idx, alt);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr,
+                  "sample_matrix tail choice mismatch at tail %d,%d entry "
+                  "%d,%d\n",
+                  tail_idx / K, tail_idx % K, row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+#endif
 }
 
 static inline void stage_ntt_mul_acc3_pair_from_y(
@@ -896,6 +939,36 @@ static uint64_t bench_sample_matrix(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+static uint64_t bench_sample_matrix_tail_choice(size_t iters, int tail_idx) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_tail_choice_avx2(stage_rho[lane], tail_idx,
+                                         stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static void print_sample_matrix_tail_choice_metrics(size_t iters) {
+  static const char suffix[9][3] = {"00", "01", "02", "10", "11",
+                                    "12", "20", "21", "22"};
+  char name[96];
+  for (int tail_idx = 0; tail_idx < K * K; tail_idx++) {
+    snprintf(name, sizeof(name),
+             "mlkem_core_stage_sample_matrix_tail_choice_%s",
+             suffix[tail_idx]);
+    print_metric(name, bench_sample_matrix_tail_choice(iters, tail_idx),
+                 iters);
+  }
+}
+#endif
 
 static uint64_t bench_sample_matrix_x4_batch0(size_t iters) {
   uint64_t acc = 0;
@@ -3540,6 +3613,9 @@ int main(int argc, char **argv) {
                bench_kpke_decrypt_cached(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix", bench_sample_matrix(iters),
                iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+  print_sample_matrix_tail_choice_metrics(iters);
+#endif
   print_metric("mlkem_core_stage_sample_matrix_x4_batch0",
                bench_sample_matrix_x4_batch0(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_x4_batch1",
