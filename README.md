@@ -4565,6 +4565,55 @@ external NTT results canonical, but skip the final canonicalization pass when
 the next operation is a modular NTT-domain multiplication that already tolerates
 representatives congruent modulo `Q`.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 rhat NTT noise-helper schedule)
+
+An AVX2-only schedule follow-up to the accepted internal lazy NTT multiply-input
+path was rejected. The candidate moved the three `rhat[]`
+`ntt_lazy_mul_input_avx2()` calls out of
+`kpke_encrypt_prepared_public_with_noise_avx2()` and into
+`mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2()` after the tail continuation
+was parsed. Both production call sites of the prepared-noise encrypt path use
+that helper, so correctness was preserved; the intended gain was to keep the
+noise-generation boundary more self-contained and remove the later rhat NTT loop
+from the prepared encrypt body.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=24000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected rhat-schedule highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2434.96 | 2437.19 | 0.9991x | 1.0007x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4907.65 | 4926.88 | 0.9961x | 0.9969x |
+| `mlkem_core_stage_encrypt_noise` | 1402.25 | 1401.23 | 1.0007x | 1.0001x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1119.34 | 1123.55 | 0.9962x | 0.9991x |
+| `mlkem_decaps` | 3620.21 | 3641.32 | 0.9942x | 0.9943x |
+| `mlkem_decaps_core` | 6032.77 | 6083.19 | 0.9917x | 0.9935x |
+| `mlkem_encaps_core` | 7256.80 | 6957.85 | 1.0430x | 1.0002x |
+| `mlkem_roundtrip_core` | 20322.68 | 20037.11 | 1.0143x | 1.0011x |
+
+Reject this schedule move. The candidate did not improve the direct no-cache
+encrypt row, regressed decapsulation core, and the positive `encaps_core` /
+`roundtrip_core` averages were not supported by meaningful medians. Keep the
+accepted lazy rhat NTT inside the prepared encrypt body; moving it into the
+noise/tail helper changes code layout and benchmark semantics without a robust
+full-path win.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 lazy keygen shat encode)
 
 A keygen-only follow-up to the accepted internal lazy NTT multiply-input work was
