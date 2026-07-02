@@ -258,6 +258,25 @@ static void stage_inv_sub_from_scale_only(const poly256 minuend,
 #endif
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_add_lazy_ehat_avx2(const poly256 accum,
+                                         const poly256 lazy_ehat,
+                                         poly256 out) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  for (int i = 0; i < N; i += 16) {
+    __m256i a = _mm256_loadu_si256((const __m256i *)(accum + i));
+    __m256i e = _mm256_loadu_si256((const __m256i *)(lazy_ehat + i));
+    __m256i e_ge_q = _mm256_cmpgt_epi16(e, q_minus_1);
+    e = _mm256_sub_epi16(e, _mm256_and_si256(e_ge_q, q));
+    __m256i sum = _mm256_add_epi16(a, e);
+    __m256i sum_ge_q = _mm256_cmpgt_epi16(sum, q_minus_1);
+    sum = _mm256_sub_epi16(sum, _mm256_and_si256(sum_ge_q, q));
+    _mm256_storeu_si256((__m256i *)(out + i), sum);
+  }
+}
+#endif
+
 static void derive_keygen_lane(size_t lane) {
   uint8_t ghash[64];
 
@@ -916,6 +935,21 @@ static void validate_core_stage_helpers(void) {
 #endif
   validate_ntt_mul_acc3_canonical_avx2();
   validate_keygen_noise_ntt_headtail_batch_avx2();
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int col = 0; col < K; col++) {
+      poly256 canonical, lazy, got, want;
+      ntt(stage_e_raw[lane][col], canonical);
+      ntt_lazy_mul_input_avx2(stage_e_raw[lane][col], lazy);
+      ntt_add(stage_that_accum[lane][col], canonical, want);
+      stage_ntt_add_lazy_ehat_avx2(stage_that_accum[lane][col], lazy, got);
+      if (memcmp(got, want, sizeof(poly256)) != 0) {
+        fprintf(stderr, "lazy ehat add mismatch at %zu,%d\n", lane, col);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+#endif
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int row = 0; row < K; row++) {
       poly256 fused, split;
@@ -2727,6 +2761,46 @@ static uint64_t bench_keygen_add_only(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_keygen_error_ntt_add_canonical_ehat(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int col = 0; col < K; col++) {
+      ntt(stage_e_raw[lane][col], stage_tmp_vec1[lane][col]);
+      ntt_add(stage_that_accum[lane][col], stage_tmp_vec1[lane][col],
+              stage_tmp_vec0[lane][col]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_error_ntt_add_lazy_ehat(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int col = 0; col < K; col++) {
+      ntt_lazy_mul_input_avx2(stage_e_raw[lane][col],
+                              stage_tmp_vec1[lane][col]);
+      stage_ntt_add_lazy_ehat_avx2(stage_that_accum[lane][col],
+                                   stage_tmp_vec1[lane][col],
+                                   stage_tmp_vec0[lane][col]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_keygen_public_encode_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4472,6 +4546,12 @@ int main(int argc, char **argv) {
                bench_keygen_accum_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_add_only",
                bench_keygen_add_only(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_keygen_error_ntt_add_canonical_ehat",
+               bench_keygen_error_ntt_add_canonical_ehat(iters), iters);
+  print_metric("mlkem_core_stage_keygen_error_ntt_add_lazy_ehat",
+               bench_keygen_error_ntt_add_lazy_ehat(iters), iters);
+#endif
   print_metric("mlkem_core_stage_keygen_public_encode_only",
                bench_keygen_public_encode_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_public_decode_only",

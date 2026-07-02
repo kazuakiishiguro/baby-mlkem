@@ -1542,6 +1542,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
 | `mlkem_core_stage_keygen_accum_only` | isolated keygen public-vector `A^T*s` NTT-domain multiply-add, excluding error add and public-key encode |
 | `mlkem_core_stage_keygen_add_only` | isolated keygen public-vector error add, using precomputed `A^T*s` and `ehat` |
+| `mlkem_core_stage_keygen_error_ntt_add_canonical_ehat` | AVX2-only diagnostic: canonical forward NTT for the three keygen error polynomials followed by add into precomputed `A^T*s` |
+| `mlkem_core_stage_keygen_error_ntt_add_lazy_ehat` | AVX2-only diagnostic: lazy multiply-input forward NTT for the three keygen error polynomials followed by an add that reduces only the lazy `ehat` input |
 | `mlkem_core_stage_keygen_public_encode_only` | isolated keygen public-key d12 encode for the already accumulated `that` vector |
 | `mlkem_core_stage_keygen_public_decode_only` | isolated d12 decode for the three public-key polynomials, with lightweight sink |
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
@@ -5635,10 +5637,15 @@ work such as @NTT (`https://arxiv.org/abs/2601.17806`) is mainly a hardware
 constant/dataflow lesson: fixed parameters can justify design-time specialization,
 but in this C/AVX2 core the comparable software specialization has already been
 measured mostly around Keccak/store layout, NTT tail/head balance, and final
-range contracts. The next valid implementation experiment should therefore
-prototype a full boundary contract--for example CBD/sampler output range -> NTT
-range -> K=3 multiply range -> inverse/add range -> encode/compress range--or
-else stay in the measured Keccak lane-filling/co-scheduling space.
+range contracts. A latest-source check also found redundant-arithmetic NTT
+accelerator work (`https://arxiv.org/abs/2607.00621`) and ZKP NTT/MSM layout
+work such as MORPH (`https://arxiv.org/abs/2604.17808`); both reinforce the same
+software rule here: lazy/redundant representations must remove work across a
+whole dataflow and must not pay the win back as layout or boundary conversion.
+The next valid implementation experiment should therefore prototype a full
+boundary contract--for example CBD/sampler output range -> NTT range -> K=3
+multiply range -> inverse/add range -> encode/compress range--or else stay in
+the measured Keccak lane-filling/co-scheduling space.
 
 Current HEAD spot-check after the tile2x3 accumulator diagnostic, AVX2-only,
 `./bench_core_stagesc 12000`, keeps the same priority order: `sample_matrix`
@@ -5669,13 +5676,14 @@ selection, `keccakf4_mem()` scratch/call-boundary/source-shape tweaks,
 `sample_ntt4_store_rate()` reshaping, PRF/CBD x2/x3 composition, scalar-tail
 rotation, or drop-in AVX2 `ntt_mul_acc3()` vectorization without new evidence;
 those have direct rejection records. The follow-up direct `sample_ntt4()`
-Keccak-state-to-parser lower bound and final-inverse-to-d10 boundary fusion were
-also measured and rejected. The next implementation should therefore be either a
-true vector compaction path from Keccak state lanes, not scalar state parsing, or
-a broader representation prototype that carries lazy/signed ranges across CBD or
-sampler output, forward NTT, K=3 multiplication, inverse add/sub, and
-encode/compress boundaries together. Anything narrower is likely to reproduce the
-recent noise-level wins and KEM regressions.
+Keccak-state-to-parser lower bound, final-inverse-to-d10 boundary fusion, and
+keygen lazy-`ehat` add boundary were also measured and rejected for production.
+The next implementation should therefore be either a true vector compaction path
+from Keccak state lanes, not scalar state parsing, or a broader representation
+prototype that carries lazy/signed ranges across CBD or sampler output, forward
+NTT, K=3 multiplication, inverse add/sub, and encode/compress boundaries
+together. Anything narrower is likely to reproduce the recent noise-level wins
+and KEM regressions.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy NTT boundary)
 
@@ -5707,6 +5715,72 @@ flow directly into `ntt_mul_acc3()`. Do not generalize this into another local
 signed/lazy helper at encode or compress boundaries; those boundaries still need
 a broader representation redesign to avoid reintroducing the same
 canonicalization work one stage later.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy ehat add boundary)
+
+A bench-only keygen diagnostic tested the `ehat` side of the lazy/signed range
+contract. The candidate computes the three keygen error-polynomial NTTs with
+`ntt_lazy_mul_input_avx2()` and then adds them into precomputed `A^T*s` using an
+add helper that reduces only the lazy `ehat` input before the normal add. This
+keeps the public-key output canonical and validates byte-for-byte against the
+existing `ntt(ehat) -> ntt_add()` path.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_keygen_(error_ntt_add_canonical_ehat|error_ntt_add_lazy_ehat|error_ntt_only|add_only|noise_ntt_only|noise_ntt|accum_encode)_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Boundary highlights, relative to the canonical `ehat` NTT plus add path:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs canonical | Median speedup vs canonical |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_error_ntt_add_canonical_ehat` | 805.74 | 805.76 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_keygen_error_ntt_add_lazy_ehat` | 802.32 | 802.32 | 1.0043x | 1.0043x |
+| `mlkem_core_stage_keygen_error_ntt_only` | 783.66 | 783.78 | n/a | n/a |
+| `mlkem_core_stage_keygen_add_only` | 204.31 | 204.40 | n/a | n/a |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1561.34 | 1561.54 | n/a | n/a |
+| `mlkem_core_stage_keygen_noise_ntt` | 1997.25 | 1998.06 | n/a | n/a |
+
+The direct boundary row was positive, so a temporary production candidate routed
+only AVX2 keygen `ehat[]` through `ntt_lazy_mul_input_avx2()` and used the lazy
+`ehat` add for `that = A^T*s + ehat`. Correctness passed, but integrated A/B
+rejected the change.
+
+Production A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1560.91 | 1557.18 | 1.0024x | 1.0028x |
+| `mlkem_core_stage_keygen_accum_encode` | 491.31 | 488.72 | 1.0053x | 1.0066x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1991.10 | 1989.98 | 1.0006x | 1.0004x |
+| `mlkem_core_stage_kpke_keygen_full` | 4803.14 | 4800.04 | 1.0006x | 1.0001x |
+| `mlkem_keygen` | 6939.22 | 6933.14 | 1.0009x | 0.9971x |
+| `mlkem_keygen_core` | 6901.94 | 6914.37 | 0.9982x | 0.9969x |
+| `mlkem_roundtrip_core` | 20190.04 | 20210.51 | 0.9990x | 0.9963x |
+
+Decision: reject the production lazy-`ehat` add boundary. The isolated boundary
+saves only about 3.4 ns, and that does not survive the full keygen/KEM medians.
+Keep canonical `ehat` in production. A future `ehat` range change would need to
+span `ehat` generation, accumulation, public-key encoding, and cache effects
+together rather than only moving the final NTT reduction into the add helper.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 inverse-final d10 fusion)
