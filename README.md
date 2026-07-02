@@ -4425,6 +4425,53 @@ conditional add/sub reductions from the final butterfly, pays one contiguous
 canonicalization pass, and keeps all external encoders and NTT-domain consumers
 on the existing canonical representation.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 NTT tail inline boundary)
+
+A small AVX2-only function-boundary experiment was rejected. The candidate changed
+only `ntt_tail_avx2()` and `ntt_tail_lazy_mul_input_avx2()` from plain `static`
+functions to `MLKEM_ALWAYS_INLINE`. This mirrors the successful keygen
+matrix/noise boundary experiment, but here it expands the already-large forward
+NTT tail into more call sites and risks I-cache pressure.
+
+Correctness passed before benchmarking:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt,stage,kem NTT_ITERS=200000 STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Direct NTT highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_tail_avx2` | 94.12 | 93.79 | 1.0035x | 1.0035x |
+| `mlkem_ntt_inplace` | 191.87 | 191.99 | 0.9994x | 0.9995x |
+| `mlkem_ntt3_inplace` | 576.01 | 575.62 | 1.0007x | 1.0008x |
+| `mlkem_ntt_copy_lazy_l1_canon` | 199.95 | 197.16 | 1.0141x | 1.0143x |
+
+Integrated stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1993.87 | 1993.17 | 1.0004x | 1.0004x |
+| `mlkem_core_stage_decrypt_u_ntt` | 787.10 | 792.48 | 0.9932x | 1.0004x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2439.66 | 2424.71 | 1.0062x | 1.0054x |
+| `mlkem_keygen_core` | 6931.99 | 6934.96 | 0.9996x | 0.9998x |
+| `mlkem_encaps_core` | 6959.81 | 7047.07 | 0.9876x | 0.9886x |
+| `mlkem_roundtrip_core` | 20135.87 | 20181.52 | 0.9977x | 0.9997x |
+
+Decision: keep the AVX2 forward NTT tail out-of-line. The direct tail row gains
+only about 0.35%, while full encapsulation loses about 1.1% median. This suggests
+that the next useful NTT work needs a real arithmetic or layout change, not only
+forcing inline expansion of the current tail loops.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 inverse NTT lazy final add)
 
 A follow-up inverse-NTT lazy-final experiment was rejected. The bench-only
