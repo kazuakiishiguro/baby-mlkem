@@ -1491,6 +1491,9 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_keygen_matrix_noise_current` | AVX2-only bench of the production keygen matrix/noise order: x4 batch0, co-scheduled PRF/CBD plus `(2,2)` tail, x4 batch1 |
+| `mlkem_core_stage_keygen_matrix_noise_tail_first` | AVX2-only diagnostic order: co-scheduled PRF/CBD plus `(2,2)` tail before both public-matrix x4 batches |
+| `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
@@ -5752,6 +5755,25 @@ new sampler primitive and should not be generalized to `sample_matrix()` or
 encryption paths; earlier standalone tail/order experiments did not produce a
 robust public-matrix win. The useful effect here is limited to the combined
 keygen matrix/noise function's local code/data schedule.
+
+A bench-only follow-up compared the accepted middle placement against the two
+remaining orders that preserve the same co-scheduled PRF/CBD plus `(2,2)` tail
+primitive. The three helpers validate identical `ahat`, `shat`, and `ehat`
+outputs; the timed rows use the same lightweight coefficient sink. Pinned CPU 0,
+`clang`, `AVX2_BACKEND=core`, `-mavx2 -mbmi2 -mpopcnt`, median of seven
+`10000`-iteration full stage-bench runs measured:
+
+| Metric | Avg ns/op | Median ns/op | Speed vs current median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3038.75 | 3038.54 | 1.0000x |
+| `mlkem_core_stage_keygen_matrix_noise_tail_first` | 3059.16 | 3057.78 | 0.9937x |
+| `mlkem_core_stage_keygen_matrix_noise_tail_last` | 3054.65 | 3054.52 | 0.9948x |
+
+This rejects both untested edge placements. Running the PRF/CBD+tail block first
+or last loses about 0.5-0.6% in the direct matrix/noise diagnostic, so keep the
+current `sample_ntt4` batch0 -> PRF/CBD+tail -> `sample_ntt4` batch1 order and
+do not reopen this schedule unless the surrounding sampler or PRF/CBD primitive
+changes.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 prepared-noise encrypt helper noinline)

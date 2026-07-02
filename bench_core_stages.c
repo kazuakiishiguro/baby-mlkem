@@ -228,6 +228,9 @@ static void stage_ntt_inv_add_final_after_l6_avx2(const poly256 add,
                                                   poly256 out);
 static void stage_ntt_inv_add_tail_final_after_head_avx2(const poly256 add,
                                                          poly256 out);
+#if !(defined(__AVX512F__))
+static void validate_keygen_matrix_noise_schedule_avx2(void);
+#endif
 #endif
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
@@ -666,6 +669,9 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX2__)
   validate_prf_cbd_eta2x4_matches_scalar();
   validate_encrypt_prf_cbd_tail_cosched_matches_separate();
+#if !(defined(__AVX512F__))
+  validate_keygen_matrix_noise_schedule_avx2();
+#endif
   validate_ntt_mul_acc3_canonical_avx2();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int row = 0; row < K; row++) {
@@ -974,6 +980,123 @@ static uint64_t bench_sample_matrix_tail_scalar_raw(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+static void stage_keygen_matrix_noise_tail_first_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 ahat[K][K],
+    poly256 shat[K], poly256 ehat[K]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+
+  mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
+      sigma, rho, ahat[2][2], shat[0], shat[1], shat[2], ehat[0], ehat[1],
+      ehat[2]);
+  sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2], ahat[1][0]);
+  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0], ahat[2][1]);
+}
+
+static void stage_keygen_matrix_noise_tail_last_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 ahat[K][K],
+    poly256 shat[K], poly256 ehat[K]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+
+  sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2], ahat[1][0]);
+  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0], ahat[2][1]);
+  mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
+      sigma, rho, ahat[2][2], shat[0], shat[1], shat[2], ehat[0], ehat[1],
+      ehat[2]);
+}
+
+static void validate_keygen_matrix_noise_schedule_avx2(void) {
+  poly256 cur_ahat[K][K], first_ahat[K][K], last_ahat[K][K];
+  poly256 cur_s[K], first_s[K], last_s[K];
+  poly256 cur_e[K], first_e[K], last_e[K];
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    mlkem_keygen_matrix_noise_avx2(stage_sigma[lane], stage_rho[lane], cur_ahat,
+                                   cur_s, cur_e);
+    stage_keygen_matrix_noise_tail_first_avx2(
+        stage_sigma[lane], stage_rho[lane], first_ahat, first_s, first_e);
+    stage_keygen_matrix_noise_tail_last_avx2(
+        stage_sigma[lane], stage_rho[lane], last_ahat, last_s, last_e);
+
+    if (memcmp(cur_ahat, first_ahat, sizeof(cur_ahat)) != 0 ||
+        memcmp(cur_s, first_s, sizeof(cur_s)) != 0 ||
+        memcmp(cur_e, first_e, sizeof(cur_e)) != 0) {
+      fprintf(stderr, "keygen matrix/noise tail-first mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+    if (memcmp(cur_ahat, last_ahat, sizeof(cur_ahat)) != 0 ||
+        memcmp(cur_s, last_s, sizeof(cur_s)) != 0 ||
+        memcmp(cur_e, last_e, sizeof(cur_e)) != 0) {
+      fprintf(stderr, "keygen matrix/noise tail-last mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+static inline uint64_t stage_keygen_matrix_noise_schedule_sink(size_t i,
+                                                               size_t lane) {
+  size_t row = (i / K) % K;
+  size_t col = i % K;
+  return (uint16_t)stage_tmp_ahat[lane][row][col][i & 255u] ^
+         (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u] ^
+         (uint16_t)stage_tmp_vec1[lane][(i + 1u) % K][(i * 5u) & 255u];
+}
+
+static uint64_t bench_keygen_matrix_noise_current(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    mlkem_keygen_matrix_noise_avx2(stage_sigma[lane], stage_rho[lane],
+                                   stage_tmp_ahat[lane], stage_tmp_vec0[lane],
+                                   stage_tmp_vec1[lane]);
+    acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_matrix_noise_tail_first(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_matrix_noise_tail_first_avx2(
+        stage_sigma[lane], stage_rho[lane], stage_tmp_ahat[lane],
+        stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
+    acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_matrix_noise_tail_last(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_matrix_noise_tail_last_avx2(
+        stage_sigma[lane], stage_rho[lane], stage_tmp_ahat[lane],
+        stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
+    acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 #if defined(__AVX2__)
 static void stage_sample_ntt4_init(const uint8_t *seed,
@@ -3341,6 +3464,14 @@ int main(int argc, char **argv) {
                bench_sample_matrix_tail_scalar(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_tail_scalar_raw",
                bench_sample_matrix_tail_scalar_raw(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__))
+  print_metric("mlkem_core_stage_keygen_matrix_noise_current",
+               bench_keygen_matrix_noise_current(iters), iters);
+  print_metric("mlkem_core_stage_keygen_matrix_noise_tail_first",
+               bench_keygen_matrix_noise_tail_first(iters), iters);
+  print_metric("mlkem_core_stage_keygen_matrix_noise_tail_last",
+               bench_keygen_matrix_noise_tail_last(iters), iters);
+#endif
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",
                bench_sample_ntt4_full_raw(iters), iters);
