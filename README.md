@@ -7651,6 +7651,47 @@ median speedup to `0.9988x`, `encaps_core` average speedup to `0.9866x`, and
 `roundtrip_core` average speedup to `0.9941x`. Keep the final fused arithmetic in
 32-bit lanes after the reduction.
 
+A narrower AVX2-only encryption schedule experiment was also rejected. The
+candidate moved only the `v = sum_i(that[i] * rhat[i])` dot product before the
+three `u[i]` accumulation/inverse-add pairs, while keeping the accepted per-row
+`u` order and avoiding the previously rejected AVX2 `ntt_inv_add3()` batching.
+The intent was to consume `rhat[0..2]` for all four public-key dot products
+before the `u` inverse-add work evicts those inputs.
+
+Correctness passed the AVX2-only core gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected v-first schedule highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_accum_inv` | 1327.23 | 1331.37 | 0.9969x | 1.0005x |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1046.72 | 1045.56 | 1.0011x | 0.9981x |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 468.44 | 468.52 | 0.9998x | 1.0013x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2438.31 | 2439.52 | 0.9995x | 1.0003x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4940.50 | 4943.53 | 0.9994x | 0.9972x |
+| `mlkem_encaps` | 2693.52 | 2692.61 | 1.0003x | 0.9990x |
+| `mlkem_encaps_core` | 7083.94 | 6951.51 | 1.0190x | 1.0121x |
+| `mlkem_roundtrip_core` | 20235.53 | 20128.65 | 1.0053x | 1.0003x |
+
+Reject the schedule change. The positive `encaps_core` median is not supported
+by the direct encryption rows: cached K-PKE is neutral, uncached K-PKE regresses,
+and the `u` accumulation/inverse-add target weakens on median. Keep computing
+and inverse-adding each `u` row before the `v` dot product on AVX2-only builds;
+this matches the earlier conclusion that the `u` side is sensitive to ordering
+and does not benefit robustly from batching around `rhat`.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX2 decrypt inverse final fusion)
 
 Baseline is commit `8402ce5` before fusing the decrypt inverse-NTT final stage;
