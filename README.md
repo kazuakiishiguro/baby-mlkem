@@ -5588,6 +5588,24 @@ Keep x2 stream-based. The x2 direct helper is attractive in the isolated
 microbench, but the keygen/KEM integration does not give enough full-path signal
 to justify another code-shape variant.
 
+A follow-up marking the accepted x3 direct helper `MLKEM_NOINLINE` was rejected.
+The short stage/KEM run showed a local encryption-noise improvement, but the
+longer AVX2-only KEM confirmation regressed the full path.
+
+Rejected x3 noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1169.54 | 1146.37 | 1.0202x | 1.0192x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2452.12 | 2425.39 | 1.0110x | 1.0082x |
+| `mlkem_encaps_core` | 7596.27 | 7442.44 | 1.0207x | 1.0040x |
+| `mlkem_roundtrip_core` | 22101.47 | 22196.47 | 0.9957x | 1.0038x |
+
+The longer `RUNS=17`, `KEM_ITERS=50000` confirmation rejected the attribute:
+`mlkem_decaps_core` median `0.9417x` and `mlkem_roundtrip_core` median
+`0.9635x`. Keep the accepted x3 helper inlineable; forcing a call boundary
+hurts the broader AVX2-only KEM layout.
+
 ### Independent Core Optimization A/B (2026-06-30, ETA2 CBD AVX2 decode)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline
