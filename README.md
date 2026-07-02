@@ -1255,6 +1255,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three Keccak-f4 blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three Keccak-f4 blocks plus stream stores |
@@ -4609,6 +4610,45 @@ Keccak/state layout: the latest snapshot puts `sample_ntt4_keccak_store3` at
 about 892 ns while `sample_ntt4_parse_504` is about 118 ns, so parser bookkeeping
 and narrow signed/lazy coefficient rewrites are not the next likely source of a
 robust KEM-level win.
+
+
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
+
+A bench-only AVX2 sampler diagnostic now measures the cost of replacing one
+four-lane `sample_ntt4()` public-matrix batch with four scalar `sample_ntt()`
+calls for the same `(row, col)` entries. The metric uses the same lightweight
+sink as `sample_ntt4_full_raw`, so it is meant to compare only these two rows.
+It does not change production code.
+
+Command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    rg "mlkem_core_stage_sample_ntt4_(full_raw|scalar4_raw|keccak_store3|parse_504)_ns_per_op|mlkem_core_stage_sample_matrix_ns_per_op"
+done
+```
+
+Median AVX2-only results from the seven repeated runs:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1174.66 |
+| `mlkem_core_stage_sample_ntt4_scalar4_raw` | 2742.65 |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 892.08 |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.59 |
+| `mlkem_core_stage_sample_matrix` | 3329.12 |
+
+Decision: do not replace the common x4 public-matrix sampler batches with scalar
+`sample_ntt()` calls. Even though the current `keccakf4()` path dominates the x4
+sampler, four scalar streams are about 2.33x slower than one `sample_ntt4()`
+batch. The next sampler work must preserve x4 lane occupancy and reduce the
+Keccak/state work inside that layout; scalar fallback is only appropriate for
+single-lane tails or co-scheduled tail continuation, where the accepted keygen
+and encrypt changes already use it.
 
 
 No-cache encapsulation public-prepare diagnostic:
