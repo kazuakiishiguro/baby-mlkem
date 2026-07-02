@@ -1360,6 +1360,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_init_only` | AVX2-only diagnostic: x4 sampler Keccak-state initialization for the same lane tuple as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_scalar4_raw` | AVX2-only diagnostic: four scalar `sample_ntt()` calls for the same entries as `sample_ntt4_full_raw`, with the same lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
@@ -5358,6 +5359,40 @@ flow directly into `ntt_mul_acc3()`. Do not generalize this into another local
 signed/lazy helper at encode or compress boundaries; those boundaries still need
 a broader representation redesign to avoid reintroducing the same
 canonicalization work one stage later.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 batch1 raw split)
+
+A bench-only sampler diagnostic now measures the second AVX2 public-matrix x4
+batch with the same lightweight sink as `sample_ntt4_full_raw`. The previous
+`sample_matrix_x4_batch1` row includes full-polynomial checksums and different
+output positions, so it could not isolate whether batch1 was slower in the x4
+sampler itself or only in the diagnostic sink.
+
+AVX2-only command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+taskset -c 0 ./bench_core_stagesc 30000 | \
+  rg "mlkem_core_stage_sample_(matrix_x4_batch[01]|ntt4_full_raw(_batch1)?)_ns_per_op|mlkem_core_stage_sample_matrix_ns_per_op"
+```
+
+| Metric | ns/op |
+|---|---:|
+| `mlkem_core_stage_sample_matrix` | 2796.33 |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1111.11 |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1180.18 |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 926.47 |
+| `mlkem_core_stage_sample_ntt4_full_raw_batch1` | 1000.50 |
+
+Decision: use this only as a target-selection diagnostic. The batch1 raw gap is
+real in the fixed four-lane stage harness, but production `rho` is seed-derived
+and the rejection distribution should not be optimized around one fixed benchmark
+input set. Do not change x4 batch order or grouping solely from this row; a real
+sampler change still needs to improve full `sample_matrix()`, public-prepare,
+keygen, and KEM medians.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
