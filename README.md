@@ -1567,6 +1567,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final3_only` | AVX2-only diagnostic: the same final inverse butterfly plus scale/add for the three `u` accumulations, but grouped into one shared `j` loop |
+| `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode` | AVX2-only diagnostic: existing final inverse butterfly plus scale/add followed by DU=10 compression/encoding for the three `u` polynomials, from precomputed l6 outputs |
+| `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode_fused` | AVX2-only diagnostic: fused final inverse butterfly plus scale/add directly into DU=10 compression/encoding, byte-validated against the existing split path |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | AVX2 builds only: final inverse butterfly plus inverse-NTT scale after precomputed l6 outputs, excluding the `e1` add |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | AVX2 builds only: low-half `sum * 3303` scale/reduction portion of the final inverse pass |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | AVX2 builds only: high-half `diff * zeta_scale` scale/reduction portion of the final inverse pass |
@@ -5666,13 +5668,14 @@ This refresh closes several tempting short loops. Do not reopen scalar final-zet
 selection, `keccakf4_mem()` scratch/call-boundary/source-shape tweaks,
 `sample_ntt4_store_rate()` reshaping, PRF/CBD x2/x3 composition, scalar-tail
 rotation, or drop-in AVX2 `ntt_mul_acc3()` vectorization without new evidence;
-those have direct rejection records. The next implementation should be either a
-bench-only lower bound for direct `sample_ntt4()` Keccak-state-to-parser dataflow
-that avoids the 504-byte stream boundary without paying the rejected block-parse
-cost, or a broader representation prototype carrying lazy/signed ranges across
-CBD/sampler output, forward NTT, K=3 multiplication, inverse add/sub, and
-encode/compress boundaries. Anything narrower is likely to reproduce the recent
-noise-level wins and KEM regressions.
+those have direct rejection records. The follow-up direct `sample_ntt4()`
+Keccak-state-to-parser lower bound and final-inverse-to-d10 boundary fusion were
+also measured and rejected. The next implementation should therefore be either a
+true vector compaction path from Keccak state lanes, not scalar state parsing, or
+a broader representation prototype that carries lazy/signed ranges across CBD or
+sampler output, forward NTT, K=3 multiplication, inverse add/sub, and
+encode/compress boundaries together. Anything narrower is likely to reproduce the
+recent noise-level wins and KEM regressions.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy NTT boundary)
 
@@ -5704,6 +5707,52 @@ flow directly into `ntt_mul_acc3()`. Do not generalize this into another local
 signed/lazy helper at encode or compress boundaries; those boundaries still need
 a broader representation redesign to avoid reintroducing the same
 canonicalization work one stage later.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 inverse-final d10 fusion)
+
+A bench-only boundary diagnostic tested the NAF/signed-lazy analogue at the
+encryption output boundary: carry the pre-final inverse-NTT representation from
+`stage_u_inv_l6` directly into DU=10 compression/encoding instead of materializing
+the canonical `u` polynomial and then reading it again. The fused candidate keeps
+the same final inverse butterfly, scale, `e1` add, and DU=10 packing semantics,
+and validates its ciphertext bytes against the existing split
+`stage_ntt_inv_add_final_after_l6_avx2() -> compress_encode_poly_d10_avx2()`
+path. Production code is unchanged.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_encrypt_inv_add_u_final(_only|3_only|_d10_encode|_d10_encode_fused)_ns_per_op=|mlkem_core_stage_ciphertext_compress_encode_d10_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_only_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Final-inverse-to-d10 highlights, relative to the existing split final+compress
+boundary:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup vs split | Median speedup vs split |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode` | 193.94 | 193.08 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode_fused` | 206.71 | 205.63 | 0.9382x | 0.9390x |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | 322.58 | 322.06 | n/a | n/a |
+| `mlkem_core_stage_encrypt_inv_add_u_final3_only` | 334.44 | 334.31 | n/a | n/a |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 46.71 | 46.73 | n/a | n/a |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 789.65 | 789.48 | n/a | n/a |
+
+Decision: reject this final-only DU=10 fusion for production. Avoiding the
+canonical `u` store/load boundary does not pay for the fused loop's extra
+register pressure and less favorable packing shape; the median fused row is
+about `1.0649x` slower than the existing split final+compress row. Future
+range-contract work must span a larger boundary, or change the representation
+earlier than the final inverse pass, rather than only fusing the last inverse
+step into d10 packing.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4 batch1 raw split)
