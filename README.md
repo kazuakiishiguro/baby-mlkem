@@ -5055,6 +5055,49 @@ is a core dataflow optimization rather than benchmark caching: every operation
 still computes fresh Keccak states and rejection samples; it only avoids copying
 the 25-lane in-memory state around an even-round ping-pong permutation.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 `keccakf4_mem()` static scratch)
+
+A follow-up scratch-placement experiment after the accepted ping-pong copy
+elision was rejected. The candidate changed only the remaining `keccakf4_mem()`
+ping-pong scratch from a local `__m256i e[25]` array to a static array. The
+hypothesis was that, because the AVX2 `sample_ntt4()` path already uses static
+stream scratch, moving the 25-lane Keccak scratch out of the stack frame might
+reduce stack pressure around the common public-matrix sampler.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected static-scratch highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 826.87 | 827.82 | 0.9989x | 0.9997x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 876.96 | 877.31 | 0.9996x | 1.0002x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 995.60 | 997.76 | 0.9978x | 0.9983x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 932.56 | 937.08 | 0.9952x | 0.9971x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1114.81 | 1117.13 | 0.9979x | 0.9975x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1183.54 | 1193.48 | 0.9917x | 0.9957x |
+| `mlkem_core_stage_sample_matrix` | 2812.02 | 2822.45 | 0.9963x | 0.9966x |
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.78 | 10.91 | 0.7129x | 0.7076x |
+
+Decision: keep the ping-pong scratch local. The isolated Keccak/store split is
+flat, but the full sampler and both x4 matrix batches regress. The direct
+`sample_ntt4_store_rate` regression indicates the static object perturbs nearby
+code layout or memory scheduling enough to erase any stack-frame benefit. Do not
+move this scratch to static storage unless a future broader `sample_ntt4()` layout
+change changes the surrounding store path.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
