@@ -3599,14 +3599,15 @@ static inline void compress_poly_d10_avx2(const poly256 x, uint16_t *out) {
   const __m256i off = _mm256_set1_epi16(15);
   const __m256i shift = _mm256_set1_epi16(1 << 12);
   const __m256i mask = _mm256_set1_epi16(1023);
+  const __m256i sign = _mm256_set1_epi16((int16_t)-32768);
   for (int i = 0; i < N; i += 16) {
     __m256i f0 = _mm256_loadu_si256((const __m256i *)(x + i));
     __m256i f1 = _mm256_mullo_epi16(f0, v8);
     __m256i f2 = _mm256_add_epi16(f0, off);
     f0 = _mm256_slli_epi16(f0, 3);
     f0 = _mm256_mulhi_epi16(f0, v);
-    f2 = _mm256_sub_epi16(f1, f2);
-    f1 = _mm256_andnot_si256(f1, f2);
+    f1 = _mm256_cmpgt_epi16(_mm256_xor_si256(f2, sign),
+                            _mm256_xor_si256(f1, sign));
     f1 = _mm256_srli_epi16(f1, 15);
     f0 = _mm256_sub_epi16(f0, f1);
     f0 = _mm256_mulhrs_epi16(f0, shift);
@@ -3634,12 +3635,13 @@ static inline __m256i compress_poly_d10_vec_avx2(__m256i f0) {
   const __m256i off = _mm256_set1_epi16(15);
   const __m256i shift = _mm256_set1_epi16(1 << 12);
   const __m256i mask = _mm256_set1_epi16(1023);
+  const __m256i sign = _mm256_set1_epi16((int16_t)-32768);
   __m256i f1 = _mm256_mullo_epi16(f0, v8);
   __m256i f2 = _mm256_add_epi16(f0, off);
   f0 = _mm256_slli_epi16(f0, 3);
   f0 = _mm256_mulhi_epi16(f0, v);
-  f2 = _mm256_sub_epi16(f1, f2);
-  f1 = _mm256_andnot_si256(f1, f2);
+  f1 = _mm256_cmpgt_epi16(_mm256_xor_si256(f2, sign),
+                          _mm256_xor_si256(f1, sign));
   f1 = _mm256_srli_epi16(f1, 15);
   f0 = _mm256_sub_epi16(f0, f1);
   f0 = _mm256_mulhrs_epi16(f0, shift);

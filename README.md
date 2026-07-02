@@ -2552,6 +2552,74 @@ Keep the existing d10 encode loop after the explicit tail-store cleanup. The
 pointer form is clearer in isolation, but it does not produce a robust KEM win.
 
 
+A d10 compression correction-compare rewrite was accepted. The change keeps the
+same exact `DU = 10` compression identity, but replaces the correction-bit
+bit-hack in `compress_poly_d10_avx2()` and the fused
+`compress_poly_d10_vec_avx2()` helper with an explicit unsigned 16-bit compare:
+flip the sign bit on both operands and use the AVX2 signed compare. This removes
+the dependent `sub` plus `andnot` sequence from the d10 coefficient compressor.
+
+The equivalence condition was checked exhaustively for all canonical ML-KEM
+coefficients `0..3328`: the old correction bit is exactly
+`(x * 30200 & 0xffff) < x + 15`, which is the unsigned comparison implemented by
+the new AVX2 sequence. The change is a vendor-free core arithmetic optimization;
+it does not rely on cache effects or external library code.
+
+Correctness commands:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage STAGE_ITERS=120000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+AVX2-only KEM A/B command:
+
+```bash
+RUNS=17 WARMUP_RUNS=3 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Native stage+KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Accepted d10 correction-compare highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_ciphertext_compress_encode_d10_compress_only` AVX2-only | 27.33 | 23.51 | 1.1624x | 1.1638x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` AVX2-only | 51.88 | 46.75 | 1.1097x | 1.1101x |
+| `mlkem_core_stage_ciphertext_compress_encode` AVX2-only | 56.64 | 51.83 | 1.0927x | 1.0945x |
+| `mlkem_encaps` AVX2-only | 2700.54 | 2690.26 | 1.0038x | 1.0025x |
+| `mlkem_encaps_core` AVX2-only | 7508.10 | 7446.27 | 1.0083x | 1.0012x |
+| `mlkem_roundtrip_core` AVX2-only | 22300.60 | 22172.49 | 1.0058x | 1.0010x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10_compress_only` native | 26.74 | 23.19 | 1.1529x | 1.1407x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` native | 48.94 | 44.29 | 1.1050x | 1.0919x |
+| `mlkem_core_stage_ciphertext_compress_encode` native | 53.58 | 48.76 | 1.0988x | 1.0869x |
+| `mlkem_encaps` native | 2074.17 | 2064.41 | 1.0047x | 1.0051x |
+| `mlkem_roundtrip_core` native | 14667.93 | 14630.12 | 1.0026x | 1.0025x |
+
+Accept this as a real d10 arithmetic win. The local compressor row moves by
+roughly 14-16%, the fused ciphertext compression row moves by roughly 9-10%, and
+full encapsulation stays neutral to slightly positive on both AVX2-only and
+native builds.
+
+
 A narrow keygen public-key hash/copy cleanup was accepted. The change updates
 `sha3_256_copy_1184()`, used by top-level ML-KEM keygen for copying `ek_pke`
 into the secret key while computing `H(ek_pke)`, so each full 136-byte SHA3-256
