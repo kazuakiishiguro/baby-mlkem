@@ -1558,6 +1558,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_final3_only` | AVX2-only diagnostic: the same final inverse butterfly plus scale/add for the three `u` accumulations, but grouped into one shared `j` loop |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | AVX2 builds only: final inverse butterfly plus inverse-NTT scale after precomputed l6 outputs, excluding the `e1` add |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | AVX2 builds only: low-half `sum * 3303` scale/reduction portion of the final inverse pass |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | AVX2 builds only: high-half `diff * zeta_scale` scale/reduction portion of the final inverse pass |
@@ -2421,6 +2422,40 @@ Keep the final AVX2 loops in their current compact form. The final pass is still
 worth targeting, but simple loop-control reshaping is not enough; future work
 needs to remove shared load/extend/reduction work or change the representation
 boundary feeding compression.
+
+A narrower AVX2 final-pass grouping diagnostic was also rejected. The candidate
+left the arithmetic and reductions unchanged, but processed the three `u`
+polynomial final butterfly/scale/add passes inside one shared `j` loop
+(`mlkem_core_stage_encrypt_inv_add_u_final3_only`) instead of calling the
+one-polynomial final helper three times. The helper is benchmark-only and is
+validated against the existing separate final pass for all stage lanes.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in 1 2 3 4 5 6 7; do
+  taskset -c 0 ./bench_core_stagesc 10000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_encrypt_inv_add_u_(final_only|final3_only|final_scale_only|final_noise_add_only|tail_final_only)_ns_per_op=|mlkem_core_stage_encrypt_accum_inv_u_ns_per_op=/ {
+        print run "\t" $1 "\t" $2
+      }'
+done
+```
+
+Final3 grouping diagnostic highlights:
+
+| Metric | Current avg ns/op | Candidate avg ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` vs `mlkem_core_stage_encrypt_inv_add_u_final3_only` | 330.97 | 339.89 | 0.9738x | 0.9645x |
+
+The grouped loop loses despite removing the outer three-row loop. This points to
+register pressure and reduced scheduling freedom dominating any loop-control
+savings: each `u` still needs independent load/extend, butterfly, multiply,
+reduction, add, and store work. Do not productionize this shape. A useful next
+final-pass optimization needs to reduce data movement/reductions or change the
+representation boundary, not merely group the three polynomials.
 
 An AVX2 inverse-head block-local ordering experiment was rejected. The candidate
 changed `ntt_inv_head_avx2()` from three level-wise passes (`l1` over all
