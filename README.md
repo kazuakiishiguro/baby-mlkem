@@ -4023,6 +4023,56 @@ modulo count is not useful if it promotes the hot `c0` path to a 64-bit modulo;
 future accumulation work needs a representation change, not a wider scalar
 reduction.
 
+### Independent Core Optimization A/B (2026-07-02, NTT accumulation AVX2 product-vectorization)
+
+An AVX2 product-vectorization experiment for K=3 NTT accumulation was rejected.
+The first candidate replaced both `ntt_mul_acc3()` and
+`ntt_mul_acc3_factored_gamma()` with an 8-base-pair AVX2 helper that loaded each
+coefficient pair as one 32-bit lane, split low/high 16-bit coefficients, reduced
+each individual product with the existing `Q^2`-range NTT reducer, then combined
+terms with vector modular adds. This failed AVX2-only correctness because the
+regular `ntt_mul_acc3()` path can consume lazy forward-NTT outputs during
+encryption, while the per-product vector reducer is only safe when each input
+coefficient is canonical.
+
+The narrower correctness-safe candidate kept regular `ntt_mul_acc3()` scalar and
+used the AVX2 helper only for `ntt_mul_acc3_factored_gamma()`, which is used by
+keygen public accumulation after canonical forward NTTs. AVX2-only `make test`
+passed, but direct NTT A/B showed the helper was much slower: SIMD parallelism
+did not offset doing many more modular reductions than the scalar schedule.
+
+AVX2-only correctness command for the narrowed candidate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected AVX2 product-vectorization highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3_factored` | 91.09 | 175.20 | 0.5199x | 0.4975x |
+| `mlkem_ntt_mul_acc3` | 90.87 | 94.71 | 0.9595x | 0.9708x |
+| `mlkem_ntt_inplace` | 191.70 | 191.64 | 1.0003x | 1.0003x |
+| `mlkem_ntt_inv` | 197.41 | 197.26 | 1.0008x | 1.0002x |
+
+Keep the scalar K=3 accumulation schedule. The current scalar code wins because
+it postpones reduction of product sums and lets clang lower constant `% Q`
+efficiently. A future vector accumulation attempt must either operate in a
+representation with cheap lane-wise reduction, or preserve a lazy/reduced range
+that avoids per-product modular reduction.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-02, Montgomery-domain NTT accumulation)
 
 A bench-only Montgomery-domain feasibility check for the K=3 NTT accumulation
