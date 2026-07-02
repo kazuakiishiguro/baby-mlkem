@@ -5520,6 +5520,61 @@ robust public-matrix win. The useful effect here is limited to the combined
 keygen matrix/noise function's local code/data schedule.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 prepared-noise encrypt helper noinline)
+
+A prepared-noise encrypt boundary follow-up was rejected. The candidate changed
+only `kpke_encrypt_prepared_public_with_noise_avx2()` from `static inline` to
+`static MLKEM_NOINLINE`. The intent was to reduce caller code pressure for the
+prepared-noise paths used by uncached encrypt and decaps re-encrypt. It did not
+change arithmetic, dataflow, Keccak inputs, NTT inputs, or cache behavior.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage+KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected stage highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2418.59 | 2421.94 | 0.9986x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4889.47 | 4891.36 | 0.9996x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 905.24 | 905.20 | 1.0000x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 916.92 | 916.87 | 1.0001x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1115.99 | 1118.14 | 0.9981x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 887.70 | 886.17 | 1.0017x |
+
+Rejected KEM highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_decaps` | 3625.67 | 3610.33 | 1.0042x |
+| `mlkem_decaps_core` | 6033.33 | 6043.99 | 0.9982x |
+| `mlkem_encaps` | 2687.31 | 2685.16 | 1.0008x |
+| `mlkem_encaps_core` | 6984.97 | 6988.17 | 0.9995x |
+| `mlkem_keygen` | 6924.26 | 6925.49 | 0.9998x |
+| `mlkem_keygen_core` | 6904.56 | 6905.98 | 0.9998x |
+| `mlkem_roundtrip` | 13351.28 | 13356.79 | 0.9996x |
+| `mlkem_roundtrip_core` | 20064.75 | 20086.30 | 0.9989x |
+
+Decision: keep the compiler-selected inline boundary. The top-level
+`mlkem_decaps` median moved positive, but the targeted core rows and
+roundtrip-core regressed. The helper is dense enough that adding a call boundary
+is not a reliable full-path improvement for the current prepared-noise encrypt
+shape.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
