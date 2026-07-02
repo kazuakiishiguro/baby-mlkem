@@ -236,6 +236,7 @@ static void stage_ntt_inv_add_tail_final_after_head_avx2(const poly256 add,
 #if !(defined(__AVX512F__))
 static void validate_keygen_matrix_noise_schedule_avx2(void);
 #endif
+static void validate_keygen_noise_ntt_headtail_batch_avx2(void);
 #endif
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
@@ -910,6 +911,7 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_matrix_noise_schedule_avx2();
 #endif
   validate_ntt_mul_acc3_canonical_avx2();
+  validate_keygen_noise_ntt_headtail_batch_avx2();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int row = 0; row < K; row++) {
       poly256 fused, split;
@@ -2274,6 +2276,77 @@ static uint64_t bench_keygen_noise_ntt_tail_only(size_t iters) {
     }
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
     acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static void stage_keygen_noise_ntt_headtail_batch_avx2(
+    const poly256 s_raw[K], const poly256 e_raw[K], poly256 shat[K],
+    poly256 ehat[K]) {
+  for (int j = 0; j < K; j++) {
+    memcpy(shat[j], s_raw[j], sizeof(poly256));
+    memcpy(ehat[j], e_raw[j], sizeof(poly256));
+  }
+  for (int j = 0; j < K; j++) {
+    stage_ntt_head_avx2(shat[j]);
+    stage_ntt_head_avx2(ehat[j]);
+  }
+  for (int j = 0; j < K; j++) {
+    ntt_tail_avx2(shat[j]);
+    ntt_tail_avx2(ehat[j]);
+  }
+}
+
+static void validate_keygen_noise_ntt_headtail_batch_avx2(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 shat[K], ehat[K];
+    stage_keygen_noise_ntt_headtail_batch_avx2(
+        stage_s_raw[lane], stage_e_raw[lane], shat, ehat);
+    for (int j = 0; j < K; j++) {
+      if (memcmp(shat[j], stage_shat[lane][j], sizeof(poly256)) != 0 ||
+          memcmp(ehat[j], stage_ehat[lane][j], sizeof(poly256)) != 0) {
+        fprintf(stderr, "keygen head/tail batch NTT mismatch at %zu,%d\n",
+                lane, j);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
+static uint64_t bench_keygen_noise_ntt_headtail_batch(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_noise_ntt_headtail_batch_avx2(
+        stage_s_raw[lane], stage_e_raw[lane], stage_tmp_vec0[lane],
+        stage_tmp_vec1[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_noise_ntt_encode_headtail_batch(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_noise_ntt_headtail_batch_avx2(
+        stage_s_raw[lane], stage_e_raw[lane], stage_tmp_vec0[lane],
+        stage_tmp_vec1[lane]);
+    for (int j = 0; j < K; j++) {
+      byte_encode(12, stage_tmp_vec0[lane][j], stage_tmp_dk[lane] + j * 384);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+    acc ^= stage_tmp_dk[lane][(i * 31u) % STAGE_DK_PKE_BYTES];
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -4006,6 +4079,12 @@ int main(int argc, char **argv) {
                bench_keygen_noise_ntt_encode(iters), iters);
   print_metric("mlkem_core_stage_keygen_noise_ntt_only",
                bench_keygen_noise_ntt_only(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_core_stage_keygen_noise_ntt_headtail_batch",
+               bench_keygen_noise_ntt_headtail_batch(iters), iters);
+  print_metric("mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch",
+               bench_keygen_noise_ntt_encode_headtail_batch(iters), iters);
+#endif
   print_metric("mlkem_core_stage_keygen_secret_ntt_encode_only",
                bench_keygen_secret_ntt_encode_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_secret_ntt_only",

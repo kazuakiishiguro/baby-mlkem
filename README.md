@@ -1527,6 +1527,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
+| `mlkem_core_stage_keygen_noise_ntt_headtail_batch` | AVX2-only diagnostic: run the upper forward-NTT levels for all six keygen secret/error polynomials before running all six AVX2 tails |
+| `mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch` | AVX2-only diagnostic: the same six-polynomial head/tail batch schedule plus d12 secret-key encode for `shat[0..2]` |
 | `mlkem_core_stage_keygen_secret_ntt_encode_only` | isolated keygen secret-vector forward NTT plus secret-key d12 encode for `shat[0..2]` |
 | `mlkem_core_stage_keygen_secret_ntt_only` | isolated keygen secret-vector three-polynomial forward NTT for `shat[0..2]`, excluding d12 encode |
 | `mlkem_core_stage_keygen_error_ntt_only` | isolated keygen error-vector three-polynomial forward NTT for `ehat[0..2]` |
@@ -7762,6 +7764,74 @@ example by carrying multiple polynomials through the whole transform schedule or
 by redesigning the representation across NTT, K=3 accumulation, and encoding.
 Another isolated l1/l2/tail tweak is unlikely to move the integrated keygen or
 KEM rows robustly.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen NTT head/tail batch schedule)
+
+A bench-only follow-up tested the broader forward-NTT scheduling idea suggested by
+the keygen head/tail split. Instead of transforming each CBD-derived polynomial
+all the way through `ntt()` independently, the diagnostic copies all six keygen
+secret/error polynomials, runs the upper forward-NTT levels for all six, and only
+then runs `ntt_tail_avx2()` for all six. This is a level-schedule/dataflow test,
+not a new arithmetic representation: the NTT butterflies, reductions, tail
+helper, and d12 secret-key encoding are unchanged.
+
+The diagnostic adds `mlkem_core_stage_keygen_noise_ntt_headtail_batch` and
+`mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch`. The helper is validated
+against the existing `ntt()` outputs for both `shat[0..2]` and `ehat[0..2]` before
+timing.
+
+Initial AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '
+      /mlkem_core_stage_keygen_noise_ntt(_encode|_only|_headtail_batch|_encode_headtail_batch)_ns_per_op=|mlkem_core_stage_kpke_keygen_full_ns_per_op=/ {
+        print run, $1, $2
+      }'
+done
+```
+
+Isolated batch-schedule highlights:
+
+| Metric | Avg ns/op | Median ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1562.42 | 1561.66 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_keygen_noise_ntt_headtail_batch` | 1556.91 | 1556.51 | 1.0035x | 1.0033x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1600.21 | 1599.45 | 1.0000x | 1.0000x |
+| `mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch` | 1596.29 | 1594.36 | 1.0025x | 1.0032x |
+
+A production candidate then moved AVX2 keygen to the same head-then-tail batch
+schedule after `mlkem_keygen_matrix_noise_avx2()`. Correctness passed, but the
+KEM confirmation rejected the change.
+
+Production-candidate A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=25000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production-candidate rejection highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4819.87 | 4811.37 | 1.0018x | 0.9981x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1600.97 | 1600.89 | 1.0001x | 0.9996x |
+| `mlkem_keygen` | 6923.29 | 6994.59 | 0.9898x | 0.9960x |
+| `mlkem_keygen_core` | 6901.88 | 6942.65 | 0.9941x | 0.9970x |
+| `mlkem_roundtrip_core` | 20139.32 | 20119.21 | 1.0010x | 0.9979x |
+
+Decision: reject production head/tail batching. The isolated rows show that the
+coarse six-polynomial schedule can save a few ns, but the improvement is too
+small to survive full keygen/KEM code-shape effects. Keep the existing per-index
+`ntt(shat[i]) -> encode(shat[i]) -> ntt(ehat[i])` order. Future keygen NTT work
+needs a larger representation or arithmetic change across the whole transform,
+not only a head/tail phase reorder.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen ehat lazy NTT add)
