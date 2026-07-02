@@ -4829,6 +4829,54 @@ Another isolated l1/l2/tail tweak is unlikely to move the integrated keygen or
 KEM rows robustly.
 
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen ehat lazy NTT add)
+
+An AVX2-only keygen representation experiment was rejected. The candidate kept
+`shat` on the public `ntt()` path because it is encoded into the secret key and
+used by NTT-domain multiplication, but routed `ehat` through the internal lazy
+forward-NTT variant and fused its final canonicalization into `that += ehat`.
+The fused add used two conditional subtracts so the public-key `byte_encode(12)`
+still received canonical coefficients.
+
+This is the same representation idea that works for encryption `rhat[]` and
+decryption `u[]` multiplication inputs, but keygen is different: `ehat[]` feeds a
+public-key add-and-encode boundary immediately after the NTT, so the saved
+canonicalization pass is mostly paid back by the wider add-side reduction.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 \
+  KEM_ITERS=30000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1992.53 | 1992.81 | 0.9999x | 0.9997x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1544.94 | 1544.70 | 1.0002x | 0.9993x |
+| `mlkem_core_stage_kpke_keygen_full` | 4921.60 | 4951.49 | 0.9940x | 0.9967x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 789.58 | 790.63 | 0.9987x | 0.9988x |
+| `mlkem_keygen_core` | 7022.91 | 7052.69 | 0.9958x | 0.9962x |
+| `mlkem_roundtrip_core` | 20874.68 | 20771.12 | 1.0050x | 0.9979x |
+
+Decision: keep keygen `ehat[]` on the canonical public `ntt()` path. The lazy
+representation is still useful for values consumed directly by `ntt_mul_acc3()`,
+but not for this add-and-encode boundary. Future keygen NTT work should avoid
+this narrow ehat-only fusion and instead change a larger representation boundary
+that covers NTT, accumulation, and public-key encoding together.
+
+
 A bench-only one-lane `keccakf4()` diagnostic rejects another tempting Keccak
 state-layout shortcut. The idea was to continue the public-key SHA3-256 hash in
 lane 0 of the existing x4 state after the matrix-tail co-schedule, instead of
