@@ -5643,6 +5643,36 @@ about 2.7 us, `keygen_noise_ntt` about 1.94 us, `encrypt_noise` about 1.37 us,
 `encrypt_accum_inv` about 1.31 us, and ciphertext compression about 51 ns. That
 rules out d10/d4 packing and parser bookkeeping as primary next targets.
 
+Current HEAD refresh after the inverse fixed-zeta rejection, AVX2-only,
+`taskset -c 0 ./bench_core_stagesc 30000`, keeps the same design direction but
+updates the local priority order:
+
+| Metric | ns/op | Readout |
+|---|---:|---|
+| `mlkem_core_stage_sample_matrix` | 2787.58 | largest vendor-free public-work target |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2403.52 | integrated encryption target after public-key cache |
+| `mlkem_core_stage_keygen_noise_ntt` | 1996.16 | six CBD-derived forward NTTs still dominate keygen noise |
+| `mlkem_core_stage_encrypt_noise` | 1404.98 | PRF/CBD plus `r` forward NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1324.06 | K=3 accumulation plus inverse-add, mostly already fused |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 934.32 | x4 sampler raw lower-level row |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 869.42 | three common sampler Keccak/store blocks dominate parser work |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 893.85 | decrypt NTT/accum/inverse/recover bundle |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 788.11 | inverse-add target after many final-loop rejections |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.31 | parser bookkeeping is not the primary sampler target |
+| `mlkem_core_stage_ciphertext_compress_encode` | 50.58 | d10/d4 packing is too small for the next target |
+
+This refresh closes several tempting short loops. Do not reopen scalar final-zeta
+selection, `keccakf4_mem()` scratch/call-boundary/source-shape tweaks,
+`sample_ntt4_store_rate()` reshaping, PRF/CBD x2/x3 composition, scalar-tail
+rotation, or drop-in AVX2 `ntt_mul_acc3()` vectorization without new evidence;
+those have direct rejection records. The next implementation should be either a
+bench-only lower bound for direct `sample_ntt4()` Keccak-state-to-parser dataflow
+that avoids the 504-byte stream boundary without paying the rejected block-parse
+cost, or a broader representation prototype carrying lazy/signed ranges across
+CBD/sampler output, forward NTT, K=3 multiplication, inverse add/sub, and
+encode/compress boundaries. Anything narrower is likely to reproduce the recent
+noise-level wins and KEM regressions.
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy NTT boundary)
 
 A bench-only diagnostic now measures the existing production AVX2 lazy
