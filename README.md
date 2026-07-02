@@ -4115,6 +4115,62 @@ external NTT results canonical, but skip the final canonicalization pass when
 the next operation is a modular NTT-domain multiplication that already tolerates
 representatives congruent modulo `Q`.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 lazy keygen shat encode)
+
+A keygen-only follow-up to the accepted internal lazy NTT multiply-input work was
+rejected. The candidate left `shat[]` in the AVX2 lazy forward-NTT output range
+for the subsequent `ntt_mul_acc3()` keygen accumulation, while a dedicated
+`byte_encode_d12_reduce_avx2()` canonicalized only the secret-key d12 encoding.
+`ehat[]` stayed canonical because it is added into `that[]` before public-key
+encoding.
+
+This differs from the earlier rejected forward-NTT/d12 pack fusion: it did not
+pack inside the NTT tail and instead tried to reuse lazy `shat[]` for the core
+multiply path. Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights after removing the unnecessary d12 post-reduce mask:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1981.50 | 1973.19 | 1.0042x | 1.0042x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1571.08 | 1563.61 | 1.0048x | 1.0048x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1528.69 | 1514.64 | 1.0093x | 1.0094x |
+| `mlkem_core_stage_kpke_keygen_full` | 5508.69 | 5724.87 | 0.9622x | 1.0003x |
+| `mlkem_keygen_core` | 7772.27 | 8054.87 | 0.9649x | 0.9987x |
+
+Longer AVX2-only KEM confirmation made the rejection clearer:
+
+```bash
+RUNS=17 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 8053.02 | 8379.29 | 0.9611x | 0.9934x |
+| `mlkem_keygen_core` | 8041.51 | 8341.33 | 0.9641x | 0.9955x |
+| `mlkem_roundtrip` | 14474.74 | 14811.83 | 0.9772x | 0.9921x |
+
+The local NTT work was measurably faster, but the secret-key encode-time
+conditional subtract and integrated keygen/code-layout effects erased the win.
+Keep keygen `shat[]` canonical unless a future design removes the d12
+canonicalization cost entirely or reworks the keygen accumulation/encoding order
+more broadly.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
