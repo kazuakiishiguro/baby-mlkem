@@ -5105,6 +5105,53 @@ construction code: the removed work is too small, while the wrapper perturbs cod
 layout around the much larger three-`keccakf4()` path. The remaining sampler
 optimization target is still the permutation/state dataflow itself.
 
+A follow-up source-level initialization rewrite was rejected. The candidate
+changed only the common AVX2 `sample_ntt4()` state zeroing, plus the matching
+stage split helper, from a 25-lane `_mm256_setzero_si256()` loop to `memset()`.
+This tested whether letting clang lower the zeroing as a bulk memory operation
+could keep the tiny `init_only` win without perturbing the larger sampler path.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.60 | 6.53 | 1.0099x | 1.0154x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.07 | 940.69 | 0.9898x | 0.9997x |
+| `mlkem_core_stage_sample_matrix` | 2807.86 | 2816.86 | 0.9968x | 1.0027x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4155.66 | 4176.36 | 0.9950x | 0.9997x |
+| `mlkem_core_stage_kpke_keygen_full` | 4814.99 | 4839.26 | 0.9950x | 1.0043x |
+
+AVX2-only KEM confirmation with `RUNS=13`, `KEM_ITERS=30000` did not provide a
+clean full-path win:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6905.56 | 6902.67 | 1.0004x | 1.0010x |
+| `mlkem_encaps_core` | 7316.00 | 7043.29 | 1.0387x | 1.0040x |
+| `mlkem_decaps_core` | 6053.65 | 6099.05 | 0.9926x | 0.9996x |
+| `mlkem_roundtrip_core` | 20373.04 | 20177.10 | 1.0097x | 0.9976x |
+
+Keep the explicit vector zeroing loop in `sample_ntt4()`. The isolated init row
+improves, but the full sampler is neutral-to-negative and the KEM roundtrip core
+median regresses. This confirms the earlier triage: state initialization is too
+small to be worth source-level reshaping unless it is part of a broader sampler
+state/dataflow redesign.
+
 
 ### Independent Core Optimization A/B (2026-07-02, AVX2 sample_ntt4 memory-resident Keccak)
 
