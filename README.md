@@ -4202,6 +4202,44 @@ compiler-selected boundary is better. The next useful keygen accumulation work
 still needs to change the scalar arithmetic schedule or introduce a vectorized
 path, not only adjust helper placement.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 keygen accumulation loop unroll)
+
+A loop-scheduling experiment for `ntt_mul_acc3_factored_gamma()` was rejected.
+The candidate added a clang-only `#pragma clang loop unroll_count(2)` immediately
+before the 128-pair scalar accumulation loop. This was intended to expose more
+independent products per iteration without changing arithmetic, reductions,
+stores, or any public API.
+
+Correctness check:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt NTT_ITERS=250000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected unroll highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3_factored` | 98.59 | 211.80 | 0.4655x | 0.4215x |
+| `mlkem_ntt_mul_acc3` | 98.31 | 101.29 | 0.9706x | 0.9992x |
+| `mlkem_ntt_copy` | 197.51 | 197.37 | 1.0007x | 1.0010x |
+| `mlkem_ntt_inplace` | 191.89 | 192.04 | 0.9992x | 1.0001x |
+
+Do not manually unroll the factored K=3 accumulation loop. The forced unroll
+bloats the hot scalar helper enough to more than double the direct factored
+median, while unrelated NTT rows stay neutral. Clang's current rolled loop is
+the right local shape unless the representation or reduction schedule changes.
+
+
 Native stage A/B command:
 
 ```bash
