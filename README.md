@@ -4774,6 +4774,41 @@ wrapper split also worsens code layout/inlining enough to regress the very rows
 it targets. A future fixed-batch attempt would need to remove larger work inside
 the sampler itself, not only precompute `st[4]`.
 
+A related `sample_ntt4()` function-boundary experiment was also rejected. The
+candidate marked the generic AVX2 x4 public-matrix sampler `MLKEM_NOINLINE` to
+test whether keeping the large sampler body out of callers improves instruction
+cache pressure or code layout after the fixed-batch split regressed badly. The
+parser, Keccak rounds, stream layout, and call sites were otherwise unchanged.
+Correctness passed both AVX2-only and native tests, but the target medians did
+not move and KEM medians were neutral to slightly negative, so the source change
+was reverted.
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected noinline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1618.91 | 1509.43 | 1.0725x | 0.9988x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1729.18 | 1608.32 | 1.0752x | 1.0023x |
+| `mlkem_core_stage_sample_matrix` | 3843.10 | 3610.02 | 1.0646x | 1.0009x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1430.75 | 1321.59 | 1.0826x | 0.9998x |
+| `mlkem_core_stage_kpke_keygen_full` | 5642.84 | 5320.46 | 1.0606x | 1.0002x |
+| `mlkem_keygen_core` | 7554.70 | 7796.67 | 0.9690x | 0.9991x |
+| `mlkem_encaps_core` | 7590.92 | 7246.47 | 1.0475x | 1.0379x |
+| `mlkem_roundtrip_core` | 22389.62 | 21948.73 | 1.0201x | 0.9994x |
+
+Keep `sample_ntt4()` compiler-shaped. The direct sampler and matrix medians are
+flat, and the positive average/core side rows are not enough to accept a pure
+code-layout boundary change. Future public-matrix sampler work should remove or
+restructure actual Keccak/parse work rather than only changing inlining.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
