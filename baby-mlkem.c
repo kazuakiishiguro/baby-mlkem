@@ -3362,15 +3362,21 @@ static inline void store_i8x12(uint8_t *out, __m128i v) {
 }
 
 static void byte_encode_d12_avx2(const poly256 f, uint8_t *out) {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
   const __m256i mask = _mm256_set1_epi16(0x0fff);
+#endif
   const __m256i pack = _mm256_set1_epi32((4096 << 16) | 1);
   const __m256i shuf = _mm256_setr_epi8(
       0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1,
       0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1);
 
   for (int i = 0; i < N; i += 16) {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
     __m256i v = _mm256_and_si256(
         _mm256_loadu_si256((const __m256i *)(const void *)(f + i)), mask);
+#else
+    __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
+#endif
     __m256i words = _mm256_madd_epi16(v, pack);
     __m256i bytes = _mm256_shuffle_epi8(words, shuf);
     uint8_t *p = out + (size_t)(i / 16) * 24;

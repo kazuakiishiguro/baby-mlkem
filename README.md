@@ -4171,6 +4171,61 @@ Keep keygen `shat[]` canonical unless a future design removes the d12
 canonicalization cost entirely or reworks the keygen accumulation/encoding order
 more broadly.
 
+### Latest Core Optimization A/B (2026-07-02, AVX2 d12 encode mask elision)
+
+The AVX2-only d12 byte encoder now skips the pack-time `& 0x0fff` when AVX512BW
+is not enabled. Production d12 encodes in this implementation receive canonical
+ML-KEM coefficients in `[0, Q)`, and the existing d12 test inputs are already
+12-bit values, so the mask is redundant for the valid inputs this helper packs.
+Native AVX512BW builds keep the previous masked sequence because an unguarded
+mask removal regressed native KEM measurements.
+
+Correctness checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage/KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_accum_encode` | 484.99 | 483.02 | 1.0041x | 1.0032x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1567.16 | 1564.47 | 1.0017x | 1.0017x |
+| `mlkem_core_stage_keygen_secret_encode_only` | 36.50 | 36.44 | 1.0017x | 1.0036x |
+| `mlkem_core_stage_keygen_public_encode_only` | 36.28 | 36.27 | 1.0002x | 1.0006x |
+| `mlkem_keygen_core` | 7889.42 | 7774.11 | 1.0148x | 1.0012x |
+
+Longer AVX2-only KEM confirmation with `RUNS=17`, `KEM_ITERS=50000` kept the
+full-path median signal:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 2691.84 | 2678.20 | 1.0051x | 1.0018x |
+| `mlkem_keygen` | 7723.42 | 7707.67 | 1.0020x | 1.0016x |
+| `mlkem_keygen_core` | 7698.86 | 7691.45 | 1.0010x | 1.0016x |
+| `mlkem_roundtrip` | 14144.77 | 14103.08 | 1.0030x | 1.0021x |
+| `mlkem_roundtrip_core` | 22404.09 | 22456.05 | 0.9977x | 1.0015x |
+
+Native `-march=native` KEM no-regression with `RUNS=9`, `KEM_ITERS=30000` was
+neutral after guarding AVX512BW back to the previous masked sequence:
+`mlkem_keygen_core` median `0.9998x`, `mlkem_encaps_core` `0.9996x`,
+`mlkem_decaps_core` `1.0006x`, and `mlkem_roundtrip_core` `1.0006x`.
+
+This is a very small encode-side cleanup, but it fits the same core strategy as
+the lazy NTT work: remove redundant normalization/masking only at sites where the
+producer already proves the value range, and keep broader or native paths exact
+when integrated measurements do not improve.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
