@@ -5615,6 +5615,46 @@ was run because the stage gate failed on the rows the change was meant to help.
 Future sampler work should remove or restructure common three-rate Keccak/store
 work rather than split the already-small refill control path.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 ntt_add unsigned-min reduction)
+
+An AVX2-only `ntt_add()` reduction-shape experiment was rejected. The final
+candidate kept generic `poly256_add()` unchanged because that helper preserves the
+older signed/negative test semantics, then specialized only the canonical
+NTT-domain `ntt_add()` call site. The AVX2 body replaced the existing
+`cmpgt + and + sub` correction with `sum = min_epu16(sum, sum - Q)`, which is
+valid for canonical inputs in `[0, Q)`.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=80000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected unsigned-min `ntt_add()` highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_add_only` | 202.93 | 200.89 | 1.0101x | 1.0097x |
+| `mlkem_core_stage_keygen_accum_add_only` | 456.79 | 455.00 | 1.0039x | 1.0042x |
+| `mlkem_core_stage_keygen_accum_encode` | 490.31 | 489.11 | 1.0025x | 1.0021x |
+| `mlkem_core_stage_kpke_keygen_full` | 4798.90 | 4838.55 | 0.9918x | 0.9987x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4167.06 | 4172.98 | 0.9986x | 0.9986x |
+
+Decision: keep `ntt_add()` on the existing shared `poly256_add()` implementation.
+The unsigned-min form improves the isolated add rows, but the full keygen stage
+does not preserve the win and the public-prepare row also moves slightly negative.
+No KEM confirmation was run for the final narrowed candidate because the stage gate
+failed. Future add-side work should be part of a larger accumulation/output layout
+change, not another one-pass modular-add instruction substitution.
+
 No-cache encapsulation public-prepare diagnostic:
 
 ```bash
