@@ -5600,6 +5600,54 @@ Keep the explicit XOR trees in the Keccak Theta step. `vpternlog` remains useful
 for Chi (`x ^ (~y & z)`), where the implementation already uses it when
 available, but replacing parity XORs with ternary logic loses on this target.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 Keccak theta XOR source shape)
+
+An AVX2-only Keccak source-shape experiment was rejected. The candidate rewrote
+only the five `keccakf4()` Theta column parity expressions from nested XOR trees
+into sequential `_mm256_xor_si256()` assignments. This kept the same operation
+count and avoided AVX512-only `vpternlog`; the intent was only to see whether
+clang would choose a better AVX2 schedule or register allocation for the common
+x4 permutation.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only Keccak/stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak,stage,kem KECCAK_ITERS=200000 \
+  STAGE_ITERS=70000 KEM_ITERS=30000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 288.14 | 296.59 | 0.9715x | 0.9995x |
+| `mlkem_prf_eta2` | 221.74 | 221.03 | 1.0032x | 1.0027x |
+| `mlkem_sample_ntt_full` | 693.10 | 694.10 | 0.9986x | 0.9965x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 894.40 | 893.94 | 1.0005x | 0.9998x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1313.89 | 1243.37 | 1.0567x | 0.9998x |
+| `mlkem_core_stage_sample_matrix` | 3604.94 | 3463.48 | 1.0408x | 0.9980x |
+| `mlkem_encaps_core` | 7712.63 | 7363.44 | 1.0474x | 1.0163x |
+| `mlkem_decaps_core` | 6850.09 | 6563.91 | 1.0436x | 1.0688x |
+| `mlkem_roundtrip_core` | 22349.29 | 21929.61 | 1.0191x | 0.9997x |
+
+Decision: keep the existing nested XOR tree source in `keccakf4()`. The direct
+permutation average regressed and the relevant sampler median rows were neutral
+or slightly negative. The apparent KEM-core median wins are not accepted as
+causal evidence because this source-shape change also moved unrelated decaps
+rows and did not improve the direct sampler/roundtrip median gate. Future Theta
+work should require an assembly-level reduction in dependency depth or register
+spills, not just a different C expression spelling.
+
+
 An AVX512 rotate-intrinsic follow-up was rejected as neutral. The candidate
 changed `rotl64x4()` and `rotl64x8()` to use `_mm256_rol_epi64()` /
 `_mm512_rol_epi64()` when AVX512 rotate instructions are available, leaving
