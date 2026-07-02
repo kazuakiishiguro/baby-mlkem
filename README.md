@@ -3835,6 +3835,37 @@ already schedules the current scalar loop well. A useful accumulation rewrite
 still needs a different representation or reduction schedule, not this local
 cross-term transform.
 
+### Independent Core Optimization A/B (2026-07-02, NTT accumulation wide c0 reduction)
+
+A reduction-scheduling follow-up for AVX2-only `ntt_mul_acc3()` and
+`ntt_mul_acc3_factored_gamma()` was rejected. The candidate replaced the current
+`c0_lo + (c0_hi % Q) * gamma` followed by a 32-bit `% Q` with a single wide
+`uint64_t c0 = c0_lo + c0_hi * gamma` and one final `% Q`. This is algebraically
+equivalent and passed native plus AVX2-only `make test`, but it puts a 64-bit
+constant modulo directly on the scalar accumulation critical path.
+
+AVX2-only NTT A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=ntt NTT_ITERS=200000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected wide-c0 highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_mul_acc3` | 88.42 | 500.19 | 0.1768x | 0.1754x |
+| `mlkem_ntt_mul_acc3_factored` | 88.71 | 497.79 | 0.1782x | 0.1766x |
+| `mlkem_ntt_copy` | 202.37 | 201.09 | 1.0064x | 1.0066x |
+| `mlkem_ntt_inplace` | 194.78 | 194.19 | 1.0030x | 1.0018x |
+
+Keep the existing two-step 32-bit reduction schedule. Reducing the apparent
+modulo count is not useful if it promotes the hot `c0` path to a 64-bit modulo;
+future accumulation work needs a representation change, not a wider scalar
+reduction.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
