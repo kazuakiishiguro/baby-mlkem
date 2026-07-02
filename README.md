@@ -7488,6 +7488,49 @@ native AVX512 path, but it badly destabilizes AVX2-only end-to-end KEM rows.
 This is another case where an address-layout microbench win does not survive the
 full keygen/encapsulation dataflow.
 
+A narrower AVX2-only stream-base alignment experiment was also rejected. The
+candidate kept the accepted static `stream[4][504]` scratch and the tightly
+packed 504-byte row layout, but added `__attribute__((aligned(32)))` to the
+static object in `sample_ntt4()`. This differs from the rejected row-padding
+experiment above: it does not change row stride, parser length, refill reuse, or
+stream contents. It only tests whether giving row 0 a known 32-byte-aligned base
+helps the current transpose/store and parser path.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected stream-base alignment highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.73 | 7.70 | 1.0032x | 1.0039x |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.20 | 117.95 | 1.0021x | 1.0048x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 931.32 | 931.09 | 1.0002x | 1.0000x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1113.02 | 1113.02 | 1.0000x | 0.9998x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1187.54 | 1180.86 | 1.0057x | 0.9994x |
+| `mlkem_core_stage_sample_matrix` | 2803.29 | 2812.50 | 0.9967x | 0.9992x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4154.44 | 4155.38 | 0.9998x | 1.0000x |
+| `mlkem_core_stage_kpke_keygen_full` | 4809.41 | 4801.84 | 1.0016x | 1.0001x |
+
+Decision: keep the unannotated static `stream[4][504]` object. Explicit base
+alignment produces only a tiny isolated store/parser movement and does not improve
+the full x4 sampler or sample-matrix rows. Because the 504-byte row stride still
+misaligns later rows, this hint is not a useful substitute for a real stream
+layout redesign, and the full row-padding redesign already failed the KEM gate.
+
 An AVX512VBMI2 parser compaction experiment was also rejected. The candidate
 kept the existing 48-byte decode shape but replaced the AVX2 table-shuffle
 packing of accepted 12-bit values with `_mm512_mask_compressstoreu_epi16()` over
