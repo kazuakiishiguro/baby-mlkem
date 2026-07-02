@@ -5632,6 +5632,55 @@ representation where multiply inputs are already canonical and arranged for the
 accumulator, not a drop-in replacement around the current scalar helper.
 
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 canonical `ntt_mul_acc3()` lane vectorization)
+
+A narrower follow-up measured the best plausible drop-in AVX2 accumulator shape
+when all inputs are already canonical NTT-domain coefficients. The diagnostic
+added two stage rows: `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` calls the
+current scalar `ntt_mul_acc3()`, while
+`mlkem_core_stage_ntt_mul_acc3_canonical_avx2` calls a manual 8-pair AVX2 helper
+on the same canonical fixture. This removes the lazy-input canonicalization cost
+from the previous production replacement attempt, but still keeps the required
+per-product modular reductions because the existing 32-bit reciprocal reducer is
+not valid for accumulated three-product or six-product sums.
+
+Correctness and benchmark checks:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_core_stagesc 1000 | \
+  rg 'ntt_mul_acc3_canonical|bench_iterations|bench_sink'
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Pinned AVX2-only direct benchmark command:
+
+```bash
+for i in $(seq 1 9); do \
+  taskset -c 0 ./bench_core_stagesc 70000 | \
+    rg 'mlkem_core_stage_ntt_mul_acc3_canonical_(scalar|avx2)_ns_per_op'; \
+done
+```
+
+Canonical accumulator highlights:
+
+| Metric | Avg ns/op | Median ns/op | Relative to scalar median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | 272.35 | 272.02 | 1.0000x |
+| `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | 355.65 | 354.79 | 0.7667x |
+
+Decision: reject the drop-in AVX2 accumulator direction even under canonical
+input assumptions. Removing lazy-input canonicalization is not enough; the AVX2
+version still spends too much work reducing individual products before summing.
+A future accumulation redesign needs to avoid this reduction shape entirely, for
+example by changing the multiply-input representation or using a different packed
+accumulation/reduction strategy, rather than vectorizing the current scalar
+helper one-for-one.
+
+
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `keccakf4_mem()` two-round noinline hybrid)
 
 A hybrid follow-up to the earlier two-round and noinline `keccakf4_mem()`
