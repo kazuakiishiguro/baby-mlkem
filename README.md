@@ -823,7 +823,32 @@ should only be reconsidered if neighboring producers and consumers can stay in
 this layout, for example by generating PRF/CBD output directly as tile2x4 and
 consuming the transformed values without an immediate unpack.
 
-A follow-up CBD-side diagnostic checks the input-generation part of that same
+A direct K=4 input-generation follow-up tested that condition from the PRF/CBD
+side. The bench-only tile2x4 decoders validate against the current four normal
+ETA2 CBD outputs packed into the same layout. Pinned CPU 0, `clang`,
+`AVX2_BACKEND=core`, `200000`-iteration snapshots measured:
+
+| Build | Metric | ns/op | Comparison |
+|---|---|---:|---:|
+| native | `mlkem_cbd_eta2x4` | 30.49 | baseline |
+| native | `mlkem_cbd_eta2x4_pack_tile2x4` | 48.41 | +17.92 ns |
+| native | `mlkem_cbd_eta2x4_direct_tile2x4` | 45.57 | +15.08 ns |
+| native | `mlkem_prf_cbd_eta2x4_current` | 197.11 | baseline |
+| native | `mlkem_prf_cbd_eta2x4_direct_tile2x4` | 211.78 | 0.931x |
+| AVX2-only | `mlkem_cbd_eta2x4` | 38.87 | baseline |
+| AVX2-only | `mlkem_cbd_eta2x4_pack_tile2x4` | 79.69 | +40.82 ns |
+| AVX2-only | `mlkem_cbd_eta2x4_direct_tile2x4` | 54.15 | +15.28 ns |
+| AVX2-only | `mlkem_prf_cbd_eta2x4_current` | 314.56 | baseline |
+| AVX2-only | `mlkem_prf_cbd_eta2x4_direct_tile2x4` | 330.41 | 0.952x |
+
+This rejects direct tile2x4 PRF/CBD as a standalone production change. Direct
+tile output removes much of the explicit pack cost, especially on AVX2-only, but
+it is still about 15 ns slower than producing four normal CBD polynomials. The
+full PRF/CBD x4 path also loses on both native and AVX2-only builds. Combined
+with the NTT result above, the AVX2-only tile2x4 NTT parity is not enough to pay
+for the input-generation cost, and native loses on both sides of the boundary.
+
+A follow-up CBD-side diagnostic checks the input-generation part of the K=3
 layout question. `mlkem_cbd_eta2x3` measures three prepared ETA2 CBD decodes,
 while `mlkem_cbd_eta2x3_pack_aos4` adds the diagnostic AoS4 pack step after the
 three normal polynomial outputs have already been produced. Pinned CPU 0,
@@ -1049,10 +1074,15 @@ metrics isolate these helpers:
 | `mlkem_prf_cbd_eta2x2_direct` | bench-only two-output PRF/CBD helper that decodes CBD directly from the Keccak-f4 state |
 | `mlkem_prf_cbd_eta2x3_current` | current AVX2 three-output PRF/CBD helper used by the second encryption noise batch |
 | `mlkem_prf_cbd_eta2x3_direct` | bench-only three-output PRF/CBD helper that decodes CBD directly from the Keccak-f4 state |
+| `mlkem_prf_cbd_eta2x4_current` | current AVX2 four-output PRF/CBD helper used by the first keygen/encrypt noise batch |
+| `mlkem_prf_cbd_eta2x4_direct_tile2x4` | bench-only four-output PRF/CBD helper that decodes directly from the Keccak-f4 state into the diagnostic K=4 tile2x4 layout |
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
 | `mlkem_cbd_eta2x3` | three prepared ETA2 CBD decodes, matching one K=3 NTT input vector |
 | `mlkem_cbd_eta2x3_pack_aos4` | three ETA2 CBD decodes followed by pack into the diagnostic K=3 AoS4 layout |
 | `mlkem_cbd_eta2x3_direct_aos4` | direct ETA2 CBD decode of three prepared inputs into the diagnostic K=3 AoS4 layout |
+| `mlkem_cbd_eta2x4` | four prepared ETA2 CBD decodes, matching the K=4 tile2x4 input-generation diagnostic |
+| `mlkem_cbd_eta2x4_pack_tile2x4` | four ETA2 CBD decodes followed by pack into the diagnostic K=4 tile2x4 layout |
+| `mlkem_cbd_eta2x4_direct_tile2x4` | direct ETA2 CBD decode of four prepared inputs into the diagnostic K=4 tile2x4 layout |
 | `mlkem_sample_ntt_parse` | one `sample_ntt_parse_stream()` pass over 504 bytes |
 | `mlkem_sample_ntt_full` | full `sample_ntt()` including SHAKE128 squeezing and parsing |
 
