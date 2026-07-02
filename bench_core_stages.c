@@ -42,6 +42,8 @@ static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u_accum[STAGE_BENCH_LANES][K];
 static poly256 stage_u[STAGE_BENCH_LANES][K];
 #if defined(__AVX2__)
+static poly256 stage_s_head[STAGE_BENCH_LANES][K];
+static poly256 stage_e_head[STAGE_BENCH_LANES][K];
 static poly256 stage_uhead[STAGE_BENCH_LANES][K];
 static poly256 stage_u_inv_l1[STAGE_BENCH_LANES][K];
 static poly256 stage_u_inv_l2[STAGE_BENCH_LANES][K];
@@ -192,6 +194,10 @@ static void derive_keygen_lane(size_t lane) {
                                  stage_e_raw[lane][2]);
   }
   for (int i = 0; i < K; i++) {
+    memcpy(stage_s_head[lane][i], stage_s_raw[lane][i], sizeof(poly256));
+    memcpy(stage_e_head[lane][i], stage_e_raw[lane][i], sizeof(poly256));
+    stage_ntt_head_avx2(stage_s_head[lane][i]);
+    stage_ntt_head_avx2(stage_e_head[lane][i]);
     memcpy(stage_shat[lane][i], stage_s_raw[lane][i], sizeof(poly256));
     memcpy(stage_ehat[lane][i], stage_e_raw[lane][i], sizeof(poly256));
     ntt(stage_shat[lane][i], stage_shat[lane][i]);
@@ -1265,6 +1271,48 @@ static uint64_t bench_keygen_noise_ntt_only(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__)
+static uint64_t bench_keygen_noise_ntt_head_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_s_raw[lane][j], sizeof(poly256));
+      memcpy(stage_tmp_vec1[lane][j], stage_e_raw[lane][j], sizeof(poly256));
+      stage_ntt_head_avx2(stage_tmp_vec0[lane][j]);
+      stage_ntt_head_avx2(stage_tmp_vec1[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_noise_ntt_tail_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec0[lane][j], stage_s_head[lane][j], sizeof(poly256));
+      memcpy(stage_tmp_vec1[lane][j], stage_e_head[lane][j], sizeof(poly256));
+      ntt_tail_avx2(stage_tmp_vec0[lane][j]);
+      ntt_tail_avx2(stage_tmp_vec1[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_keygen_secret_encode_only(size_t iters) {
   uint64_t acc = 0;
@@ -2730,6 +2778,12 @@ int main(int argc, char **argv) {
                bench_keygen_noise_ntt_encode(iters), iters);
   print_metric("mlkem_core_stage_keygen_noise_ntt_only",
                bench_keygen_noise_ntt_only(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_core_stage_keygen_noise_ntt_head_only",
+               bench_keygen_noise_ntt_head_only(iters), iters);
+  print_metric("mlkem_core_stage_keygen_noise_ntt_tail_only",
+               bench_keygen_noise_ntt_tail_only(iters), iters);
+#endif
   print_metric("mlkem_core_stage_keygen_secret_encode_only",
                bench_keygen_secret_encode_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_secret_decode_only",

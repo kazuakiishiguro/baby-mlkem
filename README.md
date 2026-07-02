@@ -1277,6 +1277,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_prf_cbd` | isolated keygen secret/error PRF and CBD only |
 | `mlkem_core_stage_keygen_noise_ntt_encode` | isolated keygen secret/error NTT plus secret-key encode |
 | `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
+| `mlkem_core_stage_keygen_noise_ntt_head_only` | AVX2-only keygen six-polynomial forward NTT upper stages before `ntt_tail_avx2()` |
+| `mlkem_core_stage_keygen_noise_ntt_tail_only` | AVX2-only keygen six-polynomial `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_keygen_secret_encode_only` | isolated keygen secret-key d12 encode for the already transformed `shat` vector |
 | `mlkem_core_stage_keygen_secret_decode_only` | isolated d12 decode for the three secret-key polynomials, with lightweight sink |
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
@@ -4593,6 +4595,47 @@ K=3 accumulation, inverse NTT, and encode/compress boundaries at once. The
 shorter-term implementation target remains the common `sample_ntt4()` three-rate
 Keccak/state layout, because the current sampler breakdown shows Keccak dominates
 over stream stores and parser bookkeeping.
+
+
+A follow-up AVX2-only keygen forward-NTT split diagnostic adds two bench-only
+rows for the six keygen secret/error NTTs: `head_only` for the scalar/vectorized
+upper levels before `ntt_tail_avx2()`, and `tail_only` for the lower AVX2 tail
+levels using precomputed head outputs. These rows are not additive with
+`keygen_noise_ntt_only`, because the split rows have their own copy/checksum
+shapes, but they show where a broader forward-NTT rewrite should focus.
+
+Command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    rg "mlkem_core_stage_keygen_noise_ntt(_only|_head_only|_tail_only)?_ns_per_op|mlkem_core_stage_decrypt_u_ntt(_head|_tail)?_ns_per_op"
+done
+```
+
+Median results from the 7-run AVX2-only diagnostic:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_core_stage_keygen_noise_ntt` | 1990.06 |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1542.85 |
+| `mlkem_core_stage_keygen_noise_ntt_head_only` | 951.05 |
+| `mlkem_core_stage_keygen_noise_ntt_tail_only` | 951.27 |
+| `mlkem_core_stage_decrypt_u_ntt` | 780.70 |
+| `mlkem_core_stage_decrypt_u_ntt_head` | 492.98 |
+| `mlkem_core_stage_decrypt_u_ntt_tail` | 487.26 |
+
+Decision: do not spend the next forward-NTT work on only the head or only the
+tail. Keygen's six-polynomial NTT cost is split almost evenly between the upper
+levels and the AVX2 tail, and decrypt's three-polynomial split shows the same
+shape. A useful next NTT optimization needs to change the full dataflow, for
+example by carrying multiple polynomials through the whole transform schedule or
+by redesigning the representation across NTT, K=3 accumulation, and encoding.
+Another isolated l1/l2/tail tweak is unlikely to move the integrated keygen or
+KEM rows robustly.
 
 
 A bench-only one-lane `keccakf4()` diagnostic rejects another tempting Keccak
