@@ -4451,6 +4451,45 @@ Keep the keygen tail helper self-initializing. The call-graph assumption is true
 today, but the removed branch/table-ready check did not produce an integrated
 keygen win, and it weakens the helper boundary for no measurable benefit.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 Keccak x4 byte-rotate shuffle)
+
+A Keccak x4 rotate cleanup was rejected. The candidate special-cased
+`rotl64x4(..., 8)` and `rotl64x4(..., 56)` to use byte shuffles instead of the
+existing shift/or sequence. This follows a common SIMD Keccak optimization: when
+a 64-bit rotate is byte-aligned, `vpshufb` can replace two shifts plus an OR.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only Keccak/stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=keccak,stage,kem KECCAK_ITERS=200000 \
+  STAGE_ITERS=70000 KEM_ITERS=30000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keccakf4` | 287.63 | 287.40 | 1.0008x | 1.0008x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 891.09 | 891.14 | 0.9999x | 1.0003x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 1176.47 | 1243.55 | 0.9461x | 1.0006x |
+| `mlkem_core_stage_sample_matrix` | 3331.91 | 3463.74 | 0.9619x | 1.0003x |
+| `mlkem_encaps_core` | 7762.54 | 7944.25 | 0.9771x | 1.0008x |
+| `mlkem_decaps_core` | 7056.96 | 7228.89 | 0.9762x | 0.9945x |
+| `mlkem_roundtrip_core` | 22373.59 | 23320.43 | 0.9594x | 0.9365x |
+
+Keep the shift/or rotate sequence in `rotl64x4()`. The byte-shuffle form is a
+valid Keccak trick, but here the direct `keccakf4()` improvement is only
+noise-sized and the extra shuffle constants/port pressure do not survive the
+integrated KEM gate.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
