@@ -5639,6 +5639,46 @@ public-matrix rows did not keep a useful win. The scalar extraction helper is
 still useful for AVX512 lane splitting, but on AVX2-only x4 sampling the current
 single YMM store plus scalar copies is the more robust layout.
 
+A helper-boundary follow-up was also rejected. The candidate changed only
+`sample_ntt4_store_rate()` from a plain `static` helper to
+`static MLKEM_ALWAYS_INLINE`, keeping the transpose/store sequence, scratch
+layout, parser, and Keccak schedule unchanged. This tested whether forcing the
+small rate-store helper into the common sampler and refill callers could preserve
+the isolated store-rate movement without changing arithmetic or dataflow.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected always-inline highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.75 | 7.71 | 1.0049x | 1.0052x |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 875.11 | 875.57 | 0.9995x | 0.9992x |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 993.71 | 994.96 | 0.9987x | 0.9996x |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 930.70 | 933.05 | 0.9975x | 0.9997x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1112.65 | 1115.39 | 0.9975x | 0.9993x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1187.67 | 1185.12 | 1.0022x | 0.9987x |
+| `mlkem_core_stage_sample_matrix` | 2806.37 | 2808.24 | 0.9993x | 0.9982x |
+| `mlkem_core_stage_kpke_keygen_full` | 4793.65 | 4892.65 | 0.9798x | 0.9983x |
+
+Do not force-inline `sample_ntt4_store_rate()`. The direct store-rate row improves
+by about half a percent, but the full sampler and public-matrix rows move
+negative and keygen weakens. The current compiler-selected helper boundary is
+better for the larger sampler path.
+
 ### Independent Benchmark Alignment Diagnostic (2026-07-02, AVX2 sample_ntt4 split rows)
 
 The AVX2-only `sample_ntt4()` stage split rows now use the same production
