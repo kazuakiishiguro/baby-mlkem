@@ -4329,6 +4329,43 @@ This follows the same target-specific lesson as the earlier AVX2 scalar-tail
 switch: wide SIMD is profitable while lanes are full, but a single remaining XOF
 stream should fall back to scalar once the useful co-scheduled lanes are gone.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 keygen tail lane2x4 extraction)
+
+A follow-up to the accepted AVX2 keygen tail scalar continuation was rejected.
+The candidate batched the extraction of the scalar tail Keccak state from AVX2
+lane 2: instead of calling `keccak_lane2_u64()` for all 25 state words, it used
+`unpacklo_epi64` plus `permute2x128` to store four lane-2 words at a time, with a
+single scalar extraction for word 24.
+
+Correctness passed both gates:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 5526.95 | 6166.48 | 0.8963x | 1.0006x |
+| `mlkem_core_stage_sample_matrix_tail` | 876.50 | 883.47 | 0.9921x | 0.9959x |
+| `mlkem_keygen` | 7578.71 | 7419.30 | 1.0215x | 0.9993x |
+| `mlkem_keygen_core` | 7541.61 | 7398.86 | 1.0193x | 0.9990x |
+| `mlkem_roundtrip_core` | 21685.50 | 21971.24 | 0.9870x | 0.9993x |
+
+Keep the simpler per-word `keccak_lane2_u64()` extraction. The 4-word vector
+extract form is mechanically tidy, but the extra shuffles do not improve the
+integrated keygen path.
+
 ### Independent Core Optimization A/B (2026-07-01, Keccak theta ternary XOR)
 
 A Keccak vector-permutation experiment replacing the five-input Theta column
