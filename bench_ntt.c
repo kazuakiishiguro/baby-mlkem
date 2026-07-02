@@ -1476,6 +1476,87 @@ static uint64_t bench_ntt4_pack_ntt_unpack_tile2x4(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ntt6_inplace(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt(bench_a0[lane], bench_a0[lane]);
+    ntt(bench_a1[lane], bench_a1[lane]);
+    ntt(bench_a2[lane], bench_a2[lane]);
+    ntt(bench_b0[lane], bench_b0[lane]);
+    ntt(bench_b1[lane], bench_b1[lane]);
+    ntt(bench_b2[lane], bench_b2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 277u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 281u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 283u) & (N - 1)];
+    acc += (uint16_t)bench_b0[lane][(i * 293u) & (N - 1)];
+    acc += (uint16_t)bench_b1[lane][(i * 307u) & (N - 1)];
+    acc += (uint16_t)bench_b2[lane][(i * 311u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt6_tile2x4_plus2_inplace(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    ntt4_pack_tile2x4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                      bench_b0[lane], bench_ntt4_tile2x4[lane]);
+  }
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt4_tile2x4_inplace(bench_ntt4_tile2x4[lane]);
+    ntt(bench_b1[lane], bench_b1[lane]);
+    ntt(bench_b2[lane], bench_b2[lane]);
+    acc += (uint16_t)bench_ntt4_tile2x4[lane]
+        [(i * 313u) & ((N / 2) - 1)][0];
+    acc += (uint16_t)bench_ntt4_tile2x4[lane]
+        [(i * 317u) & ((N / 2) - 1)][1];
+    acc += (uint16_t)bench_ntt4_tile2x4[lane]
+        [(i * 331u) & ((N / 2) - 1)][2];
+    acc += (uint16_t)bench_ntt4_tile2x4[lane]
+        [(i * 337u) & ((N / 2) - 1)][3];
+    acc += (uint16_t)bench_b1[lane][(i * 347u) & (N - 1)];
+    acc += (uint16_t)bench_b2[lane][(i * 349u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt6_pack_ntt_unpack_tile2x4_plus2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt4_pack_tile2x4(bench_a0[lane], bench_a1[lane], bench_a2[lane],
+                      bench_b0[lane], bench_ntt4_tile2x4[lane]);
+    ntt4_tile2x4_inplace(bench_ntt4_tile2x4[lane]);
+    ntt4_unpack_tile2x4(bench_ntt4_tile2x4[lane], bench_a0[lane],
+                        bench_a1[lane], bench_a2[lane], bench_b0[lane]);
+    ntt(bench_b1[lane], bench_b1[lane]);
+    ntt(bench_b2[lane], bench_b2[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 353u) & (N - 1)];
+    acc += (uint16_t)bench_a1[lane][(i * 359u) & (N - 1)];
+    acc += (uint16_t)bench_a2[lane][(i * 367u) & (N - 1)];
+    acc += (uint16_t)bench_b0[lane][(i * 373u) & (N - 1)];
+    acc += (uint16_t)bench_b1[lane][(i * 379u) & (N - 1)];
+    acc += (uint16_t)bench_b2[lane][(i * 383u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 #if defined(__AVX2__)
 static uint64_t bench_ntt_head_l7_l4(size_t iters) {
   uint64_t acc = 0;
@@ -1898,6 +1979,11 @@ int main(int argc, char **argv) {
                bench_ntt4_tile2x4_inplace(iters), iters);
   print_metric("mlkem_ntt4_pack_ntt_unpack_tile2x4",
                bench_ntt4_pack_ntt_unpack_tile2x4(iters), iters);
+  print_metric("mlkem_ntt6_inplace", bench_ntt6_inplace(iters), iters);
+  print_metric("mlkem_ntt6_tile2x4_plus2_inplace",
+               bench_ntt6_tile2x4_plus2_inplace(iters), iters);
+  print_metric("mlkem_ntt6_pack_ntt_unpack_tile2x4_plus2",
+               bench_ntt6_pack_ntt_unpack_tile2x4_plus2(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);

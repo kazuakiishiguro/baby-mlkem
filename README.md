@@ -643,6 +643,9 @@ helpers:
 | `mlkem_ntt4_unpack_tile2x4` | diagnostic unpack from the K=4 x 2-coefficient tiled layout |
 | `mlkem_ntt4_tile2x4_inplace` | bench-only K=4 forward NTT over the contiguous K=4 x 2-coefficient tiled layout |
 | `mlkem_ntt4_pack_ntt_unpack_tile2x4` | diagnostic standalone tiled K=4 x 2-coefficient forward NTT including pack and unpack |
+| `mlkem_ntt6_inplace` | six consecutive in-place forward NTTs, matching the keygen secret/error NTT count |
+| `mlkem_ntt6_tile2x4_plus2_inplace` | diagnostic lower bound: first four polynomials already in tile2x4 layout plus two normal in-place NTTs, excluding tile pack/unpack |
+| `mlkem_ntt6_pack_ntt_unpack_tile2x4_plus2` | diagnostic K=6 composition with tile2x4 pack/NTT/unpack for four polynomials plus two normal in-place NTTs |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
@@ -844,6 +847,25 @@ the win. The native row also loses before conversion. A production K=4 tile
 should only be reconsidered if neighboring producers and consumers can stay in
 this layout, for example by generating PRF/CBD output directly as tile2x4 and
 consuming the transformed values without an immediate unpack.
+
+After the keygen split identified the six secret/error forward NTTs as the
+remaining keygen-local target, a K=6 composition diagnostic checked whether the
+K=4 tile could help when paired with two ordinary NTTs. Pinned CPU 0, `clang`,
+`AVX2_BACKEND=core`, `-mavx2 -mbmi2 -mpopcnt`, median of seven
+`200000`-iteration runs measured:
+
+| Metric | Avg ns/op | Median ns/op | Relative to `mlkem_ntt6_inplace` median |
+|---|---:|---:|---:|
+| `mlkem_ntt6_inplace` | 1152.93 | 1152.66 | 1.0000x |
+| `mlkem_ntt6_tile2x4_plus2_inplace` | 1160.64 | 1160.32 | 0.9934x |
+| `mlkem_ntt6_pack_ntt_unpack_tile2x4_plus2` | 1297.96 | 1297.95 | 0.8881x |
+
+This rejects K=4-tile-plus-two as a keygen K=6 direction. Even the lower-bound
+row that assumes the first four inputs are already tiled loses slightly, and the
+normal-layout round trip is much worse. Keygen forward-NTT work should therefore
+not split six polynomials into a K=4 tile plus two scalar transforms; it needs a
+different schedule or representation that covers all six outputs without a
+normal-layout conversion boundary.
 
 A direct K=4 input-generation follow-up tested that condition from the PRF/CBD
 side. The bench-only tile2x4 decoders validate against the current four normal
