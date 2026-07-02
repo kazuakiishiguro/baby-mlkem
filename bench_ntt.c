@@ -32,6 +32,10 @@ static poly256 bench_ntt_inv_level_work[7][NTT_BENCH_LANES];
 static poly256 bench_ntt_head_work[NTT_BENCH_LANES];
 static poly256 bench_ntt_tail_work[3][NTT_BENCH_LANES];
 #endif
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#define NTT_LAZY_MUL_INPUT_BATCH 256
+static poly256 bench_lazy_mul_input_work[NTT_LAZY_MUL_INPUT_BATCH];
+#endif
 static int16_t bench_ntt3_aos4[NTT_BENCH_LANES][N][4];
 static int16_t bench_ntt3_tile2x3[NTT_BENCH_LANES][N / 2][8];
 static int16_t bench_ntt3_b_tile2x3[NTT_BENCH_LANES][N / 2][8];
@@ -884,6 +888,13 @@ static void validate_ntt_helpers(void) {
   check_equal(got, tmp, "forward ntt lazy l1 canonicalized");
   ntt_lazy_l1_canon_avx2(bench_a0[0], got);
   check_equal(got, tmp, "forward ntt lazy l1 full canonicalized");
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_lazy_mul_input_avx2(bench_a0[0], got);
+  check_equal_mod_q(got, tmp, "forward ntt lazy mul input copy");
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  ntt_lazy_mul_input_avx2(got, got);
+  check_equal_mod_q(got, tmp, "forward ntt lazy mul input inplace");
+#endif
 #endif
 
   ntt3_pack_aos4(bench_a0[0], bench_a1[0], bench_a2[0], bench_ntt3_aos4[0]);
@@ -1055,6 +1066,50 @@ static uint64_t bench_ntt_inplace_lazy_l1_canon(size_t iters) {
   bench_ntt_sink ^= acc;
   return t1 - t0;
 }
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_copy_lazy_mul_input(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_lazy_mul_input_avx2(bench_a0[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 29u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inplace_lazy_mul_input(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t elapsed = 0;
+  init_inputs();
+  for (size_t done = 0; done < iters;) {
+    size_t batch = iters - done;
+    if (batch > NTT_LAZY_MUL_INPUT_BATCH) {
+      batch = NTT_LAZY_MUL_INPUT_BATCH;
+    }
+    for (size_t j = 0; j < batch; j++) {
+      size_t lane = (done + j) & (NTT_BENCH_LANES - 1);
+      memcpy(bench_lazy_mul_input_work[j], bench_a0[lane], sizeof(poly256));
+    }
+    uint64_t t0 = now_ns();
+    for (size_t j = 0; j < batch; j++) {
+      ntt_lazy_mul_input_avx2(bench_lazy_mul_input_work[j],
+                              bench_lazy_mul_input_work[j]);
+      acc += (uint16_t)bench_lazy_mul_input_work[j][((done + j) * 31u) &
+                                                     (N - 1)];
+    }
+    uint64_t t1 = now_ns();
+    elapsed += t1 - t0;
+    done += batch;
+  }
+  bench_ntt_sink ^= acc;
+  return elapsed;
+}
+#endif
 #endif
 
 static uint64_t bench_ntt3_inplace(size_t iters) {
@@ -1804,6 +1859,12 @@ int main(int argc, char **argv) {
                bench_ntt_copy_lazy_l1_canon(iters), iters);
   print_metric("mlkem_ntt_inplace_lazy_l1_canon",
                bench_ntt_inplace_lazy_l1_canon(iters), iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_copy_lazy_mul_input",
+               bench_ntt_copy_lazy_mul_input(iters), iters);
+  print_metric("mlkem_ntt_inplace_lazy_mul_input",
+               bench_ntt_inplace_lazy_mul_input(iters), iters);
+#endif
 #endif
   print_metric("mlkem_ntt3_inplace", bench_ntt3_inplace(iters), iters);
   print_metric("mlkem_ntt3_pack_aos4", bench_ntt3_pack_aos4(iters), iters);

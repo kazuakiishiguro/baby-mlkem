@@ -623,6 +623,8 @@ helpers:
 |---|---|
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
+| `mlkem_ntt_copy_lazy_mul_input` | AVX2-only: production `ntt_lazy_mul_input_avx2(in, out)` including its initial copy, matching the out-of-place stage diagnostic shape |
+| `mlkem_ntt_inplace_lazy_mul_input` | AVX2-only: production lazy multiply-input NTT in-place body; scratch inputs are restored outside the timed window so each transform starts from canonical input |
 | `mlkem_ntt3_inplace` | three consecutive in-place forward NTTs, matching the K=3 batch shape in keygen/encrypt/decrypt |
 | `mlkem_ntt3_pack_aos4` | diagnostic pack of three polynomials into `[coefficient][poly0, poly1, poly2, pad]` layout |
 | `mlkem_ntt3_unpack_aos4` | diagnostic unpack from the padded K=3 AoS4 layout back to three polynomials |
@@ -685,6 +687,25 @@ and the AVX2 lower tail. Within the tail, `l1` is the largest single prepared
 stage, but the earlier isolated `l4` replacement regressed KEM throughput; the
 next implementation attempt should therefore fuse multiple stages or change data
 layout instead of swapping one stage in isolation.
+
+Current AVX2 lazy multiply-input snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, `-mavx2 -mbmi2 -mpopcnt`, median of seven
+`200000`-iteration runs:
+
+| Metric | Median ns/op | Interpretation |
+|---|---:|---|
+| `mlkem_ntt_copy` | 196.24 | canonical out-of-place baseline |
+| `mlkem_ntt_inplace` | 191.84 | canonical in-place baseline |
+| `mlkem_ntt_copy_lazy_mul_input` | 191.42 | production lazy helper with out-of-place copy |
+| `mlkem_ntt_inplace_lazy_mul_input` | 188.40 | production lazy helper body used by encrypt/decrypt `rhat` and `u` |
+
+The lazy multiply-input representation is a real but small NTT-local win: about
+`1.025x` over canonical out-of-place NTT and about `1.018x` over canonical
+in-place NTT in this microbench. This also fixes a measurement blind spot: the
+stage rows use the out-of-place helper shape, while production encryption and
+decryption call the helper in-place. Future NTT work should not chase another
+copy-boundary tweak here; it needs to change the K=3 NTT/accumulation layout or
+a broader representation boundary to move integrated KEM rows.
 
 A new `mlkem_ntt3_inplace` metric was added as the baseline for that next design
 step. It measures three consecutive in-place forward NTTs as one operation, which
@@ -9637,6 +9658,45 @@ negative. No longer KEM confirmation was run because the focused stage gate did
 not clear. Future message-fold work should not be another one-pass correction
 idiom swap; it needs to change the inverse-add/compress boundary or surrounding
 dataflow to matter.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy multiply-input NTT rows)
+
+A bench-only diagnostic added direct rows for the production AVX2
+`ntt_lazy_mul_input_avx2()` helper. This closes a measurement mismatch: existing
+stage diagnostics call the helper out-of-place, but production encryption and
+decryption call it in-place for `rhat[0..2]` and decoded `u[0..2]`. The in-place
+row restores a scratch batch outside the timed window so each measured transform
+still starts from canonical input instead of repeatedly transforming lazy output.
+
+Correctness is covered by the `bench_ntt` helper validation before timing; it now
+checks both copy and in-place lazy multiply-input output modulo `Q` against
+canonical `ntt()`.
+
+Command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core
+make bench-ntt CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_nttc 200000 | \
+    awk -F= -v run="$i" '/mlkem_ntt_(copy|inplace|copy_lazy_mul_input|inplace_lazy_mul_input)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Median AVX2-only results:
+
+| Metric | Median ns/op |
+|---|---:|
+| `mlkem_ntt_copy` | 196.24 |
+| `mlkem_ntt_inplace` | 191.84 |
+| `mlkem_ntt_copy_lazy_mul_input` | 191.42 |
+| `mlkem_ntt_inplace_lazy_mul_input` | 188.40 |
+
+Decision: keep these rows as diagnostics. The current lazy multiply-input path is
+already the right local representation for values consumed by `ntt_mul_acc3()`,
+but the remaining direct NTT-local headroom is only a few ns/op. The next
+optimization should target a larger K=3 dataflow, such as SIMD accumulation fed
+by the NTT layout, rather than another isolated lazy NTT helper tweak.
 
 ### Independent Core Optimization A/B (2026-07-01, AVX2 sample parser init hoist)
 
