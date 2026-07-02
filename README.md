@@ -4460,6 +4460,29 @@ Keep the existing canonical PRF/CBD output plus `ntt_lazy_mul_input_avx2()` for
 encapsulation. The local signed-representation idea does not survive the full
 KEM path unless a broader redesign removes the mixed decode and branch overhead.
 
+Design note on secp256k1-style endomorphism/NAF applicability: GLV-style
+endomorphism speedups do not translate directly to ML-KEM. They split elliptic
+curve scalar multiplication by exploiting a cheap group endomorphism, while the
+hot ML-KEM work is SHAKE-based dense public-matrix generation, NTT/inverse-NTT,
+and dense polynomial products. The seed-derived `A` matrix gives no fixed
+low-cost symmetry that can halve the core polynomial work without changing the
+specified distribution or wire format.
+
+NAF is more relevant only as a representation lesson. The useful analogue is
+not sparse scalar multiplication, but keeping coefficients in a signed or lazy
+centered range so reduction/canonicalization can be delayed. The rejected
+signed-ETA2 and signed-`rhat` experiments show that applying this only at the
+PRF/CBD-to-NTT boundary is too narrow: the saved canonicalization is smaller
+than the mixed-representation and code-shape cost. A serious NAF-inspired
+redesign must carry the representation through NTT, K=3 accumulation, inverse
+NTT, and only canonicalize at encode/compress boundaries.
+
+Practical next target from this decision: do not add another local signed-input
+helper. The next representation experiment should define exact value ranges at
+each boundary and prove that `ntt_mul_acc3()`, `ntt_inv_add*_inplace()`, and
+compress/encode can consume those ranges without reintroducing the same
+normalization work one stage later.
+
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
