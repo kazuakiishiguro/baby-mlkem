@@ -4204,6 +4204,51 @@ Keep keygen `shat[]` canonical unless a future design removes the d12
 canonicalization cost entirely or reworks the keygen accumulation/encoding order
 more broadly.
 
+### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
+
+A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
+candidate changed the ciphertext `u[0..2]` path to run each forward NTT only
+through the `l2` tail stage, then computed the final `l1` pair values inside a
+new K=3 accumulation helper instead of storing the final NTT output and reloading
+it in `ntt_mul_acc3()`. The intended win was to remove the final-l1 store/reload
+boundary for decrypt inputs that are consumed exactly once by the secret
+accumulation.
+
+Native and AVX2-only correctness gates passed:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected final-l1 accumulation fusion highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_ntt_accum_only` | 859.89 | 896.99 | 0.9586x | 0.9475x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 877.25 | 929.38 | 0.9439x | 0.9438x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 910.05 | 962.92 | 0.9451x | 0.9414x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 930.86 | 977.51 | 0.9523x | 0.9439x |
+| `mlkem_decaps` | 3642.98 | 3684.84 | 0.9886x | 0.9834x |
+| `mlkem_decaps_core` | 6840.06 | 6608.68 | 1.0350x | 1.0665x |
+| `mlkem_roundtrip_core` | 22381.27 | 21644.69 | 1.0340x | 1.0351x |
+
+Keep the existing AVX2 decrypt sequence: lazy final-l1 NTT output stored in
+`u[i]`, followed by the scalar K=3 accumulation. The contradictory positive KEM
+core medians are not a reliable acceptance signal because the direct boundary and
+K-PKE decrypt stage regressed by roughly 5-6%, and top-level decapsulation also
+moved negative. This scalar final-l1 fusion loses the existing AVX2 vectorized
+final-l1 helper; a future fusion attempt would need to carry the final-l1 values
+into a SIMD accumulation design rather than scalarizing the boundary.
+
 ### Latest Core Optimization A/B (2026-07-02, AVX2 d12 encode mask elision)
 
 The AVX2-only d12 byte encoder now skips the pack-time `& 0x0fff` when AVX512BW
