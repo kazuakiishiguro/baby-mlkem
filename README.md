@@ -1401,6 +1401,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
+| `mlkem_core_stage_encrypt_noise_ntt_lazy` | AVX2-only diagnostic: encryption forward NTT for `r` using the production lazy multiply-input range |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
 | `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add |
@@ -1428,6 +1429,7 @@ stage metrics.
 | `mlkem_core_stage_ciphertext_decode_decompress_d10` | isolated ciphertext DU=10 decode/decompression for the three `u` polynomials, with lightweight sink |
 | `mlkem_core_stage_ciphertext_decode_decompress_d4` | isolated ciphertext DV=4 decode/decompression for the `v` polynomial, with lightweight sink |
 | `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
+| `mlkem_core_stage_decrypt_u_ntt_lazy` | AVX2-only diagnostic: decrypt-side forward NTT for decoded `u` using the production lazy multiply-input range |
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
@@ -5325,6 +5327,37 @@ source of a robust KEM-level win. On the NTT side, head and tail are almost
 balanced; another local `l1`, inline-boundary, or table-width tweak is unlikely
 to move full KEM unless it is part of a representation change that carries
 through the multiply and encode/compress boundaries.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy NTT boundary)
+
+A bench-only diagnostic now measures the existing production AVX2 lazy
+multiply-input forward NTT against the canonical `ntt()` path on the same
+three-polynomial encryption/decryption inputs. This does not change production
+code; it makes the NAF/signed-lazy design rule measurable: delaying the final
+forward-NTT reduction is useful when the next consumer is `ntt_mul_acc3()`, while
+prior experiments showed that moving the same normalization to encode/compress
+boundaries tends to pay the cost back immediately.
+
+AVX2-only command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+taskset -c 0 ./bench_core_stagesc 30000 | \
+  rg "mlkem_core_stage_(encrypt_noise_ntt|decrypt_u_ntt)(_lazy)?_ns_per_op"
+```
+
+| Metric | Canonical ns/op | Lazy ns/op | Speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_ntt` | 792.93 | 775.06 | 1.0231x |
+| `mlkem_core_stage_decrypt_u_ntt` | 788.37 | 775.22 | 1.0170x |
+
+Decision: keep the current production lazy multiply-input NTT for values that
+flow directly into `ntt_mul_acc3()`. Do not generalize this into another local
+signed/lazy helper at encode or compress boundaries; those boundaries still need
+a broader representation redesign to avoid reintroducing the same
+canonicalization work one stage later.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 sample_ntt4 scalar lower bound)
