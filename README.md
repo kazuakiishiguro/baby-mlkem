@@ -3174,6 +3174,44 @@ public-key hash permutations are real work that pair well with the three initial
 SHAKE128 tail blocks. Moving the tail to the noise schedule saves an empty noise
 lane but pays extra scalar tail/hash work and clearly regresses `encaps_core`.
 
+A hash-tail Keccak shape experiment was rejected. The candidate changed only the
+initial three `keccakf4()` calls in `sha3_256_sample_ntt_tail_avx2()` and
+`sha3_512_sample_ntt_tail_avx2()` to `keccakf4_mem()`, leaving the rare refill
+continuation register-resident. This tested whether the memory-resident shape
+that helps the standalone `sample_ntt4()` public-matrix sampler also helps the
+mixed public-hash/tail helpers.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected hash-tail memory Keccak highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4234.57 | 4435.24 | 0.9548x | 0.9571x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4977.84 | 4984.73 | 0.9986x | 1.0011x |
+| `mlkem_encaps_core` | 7023.49 | 6999.93 | 1.0034x | 1.0053x |
+| `mlkem_decaps_core` | 6134.91 | 6109.61 | 1.0041x | 1.0003x |
+| `mlkem_roundtrip_core` | 20279.34 | 20209.39 | 1.0035x | 1.0028x |
+
+Keep the hash-tail helpers on register-resident `keccakf4()`. The small positive
+KEM movement is not an acceptance signal because the direct public-prepare stage
+regresses by about 4.3% on median. The `sample_ntt4()` memory-resident win does
+not transfer to these mixed helpers: public-key hash absorb, lane extraction, and
+hash continuation change the register-pressure/layout tradeoff.
+
 ### Independent Core Optimization A/B (2026-07-01, AVX512 message recovery)
 
 Snapshot command shape: pinned CPU, `clang`, `AVX2_BACKEND=core`. Baseline is
