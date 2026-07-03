@@ -3322,6 +3322,32 @@ static uint64_t bench_encrypt_noise(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_noise_lazy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    mlkem_encrypt_prf_cbd_eta2_32(stage_r[lane], stage_tmp_vec0[lane][0],
+                                  stage_tmp_vec0[lane][1],
+                                  stage_tmp_vec0[lane][2],
+                                  stage_tmp_vec1[lane][0],
+                                  stage_tmp_vec1[lane][1],
+                                  stage_tmp_vec1[lane][2],
+                                  stage_tmp_poly[lane]);
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_tmp_vec0[lane][j],
+                              stage_tmp_vec0[lane][j]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 #if defined(__AVX2__)
 static uint64_t bench_encrypt_noise_prf_cbd_tail_separate(size_t iters) {
   uint64_t acc = 0;
@@ -5448,6 +5474,10 @@ int main(int argc, char **argv) {
                bench_keygen_public_decode_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise", bench_encrypt_noise(iters),
                iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_encrypt_noise_lazy",
+               bench_encrypt_noise_lazy(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd",
                bench_encrypt_noise_prf_cbd(iters), iters);
 #if defined(__AVX2__)

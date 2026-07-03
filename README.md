@@ -1552,7 +1552,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_error_ntt_add_lazy_ehat` | AVX2-only diagnostic: lazy multiply-input forward NTT for the three keygen error polynomials followed by an add that reduces only the lazy `ehat` input |
 | `mlkem_core_stage_keygen_public_encode_only` | isolated keygen public-key d12 encode for the already accumulated `that` vector |
 | `mlkem_core_stage_keygen_public_decode_only` | isolated d12 decode for the three public-key polynomials, with lightweight sink |
-| `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and NTT for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and canonical NTT for `r`, using the historical stage shape |
+| `mlkem_core_stage_encrypt_noise_lazy` | AVX2-only production-aligned encryption PRF, CBD, and lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
@@ -11043,6 +11044,42 @@ already the right local representation for values consumed by `ntt_mul_acc3()`,
 but the remaining direct NTT-local headroom is only a few ns/op. The next
 optimization should target a larger K=3 dataflow, such as SIMD accumulation fed
 by the NTT layout, rather than another isolated lazy NTT helper tweak.
+
+### Independent Benchmark Alignment Diagnostic (2026-07-03, AVX2 production lazy encrypt noise)
+
+The stage harness now has a production-aligned AVX2-only `encrypt_noise_lazy` row.
+The older `encrypt_noise` row is still useful as a canonical-reference row, but
+it calls `ntt()` on the three `r` polynomials after PRF/CBD. Production AVX2
+encryption instead uses `ntt_lazy_mul_input_avx2()` before `ntt_mul_acc3()`, so
+`encrypt_noise_lazy` measures the same PRF/CBD plus lazy-NTT boundary used by
+`kpke_encrypt_prepared_public()` and the cache-miss prepared-noise path.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_noise(_lazy|_ntt|_ntt_lazy)?_ns_per_op=|mlkem_core_stage_encrypt_noise_prf_cbd_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_encrypt_noise` | 1389.96 | 1389.22 |
+| `mlkem_core_stage_encrypt_noise_lazy` | 1378.04 | 1377.01 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1166.89 | 1166.55 |
+| `mlkem_core_stage_encrypt_noise_ntt` | 781.82 | 781.34 |
+| `mlkem_core_stage_encrypt_noise_ntt_lazy` | 768.51 | 769.23 |
+
+Decision: keep both rows, but use `encrypt_noise_lazy` when ranking the current
+AVX2 production encryption path. The production-aligned combined row is `1.0087x`
+average and `1.0089x` median faster than the canonical reference, matching the
+isolated lazy-NTT advantage. The remaining encryption-noise bottleneck is mostly
+PRF/CBD and Keccak lane filling, not another local forward-NTT tweak.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
