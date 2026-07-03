@@ -5027,6 +5027,7 @@ static uint64_t bench_decrypt_inv_final_sub_from(size_t iters) {
 #endif
 #endif
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static uint64_t bench_decrypt_inv_final_sub_recover_split(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -5059,6 +5060,8 @@ static uint64_t bench_decrypt_inv_final_sub_recover_fused(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#endif
 
 static uint64_t bench_decrypt_inv_scale_sub_from(size_t iters) {
   uint64_t acc = 0;
