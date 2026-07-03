@@ -329,8 +329,28 @@ Do not remove final pre-normalization by feeding raw `(a + b)` or `(b + Q - a)`
 directly into `mod_q_reduce_ntt_u32x8()`. A bench-only validation attempt failed
 at `inverse final lazy-reduce mismatch at 0,0`: the final product range reaches
 about 22M, and the current AVX2 reduction uses a 32-bit `(x * 315)` quotient
-multiply that wraps outside the canonical NTT product range. A correct wider
-reducer would add cost, so this is not a near-term tail/final target.
+multiply that wraps outside the canonical NTT product range.
+
+A follow-up bench-only diagnostic used a correct AVX2 wide quotient reducer for
+that larger range. It validates against the existing final output, but is slower:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(final_raw|final_wide_reduce_raw|tail_final_raw|tail_final_wide_reduce_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Speedup vs existing median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 138.34 | 138.19 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_final_wide_reduce_raw` | 147.18 | 146.86 | 0.9410x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.16 | 325.94 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | 335.55 | 335.55 | 0.9714x |
+
+Decision: reject the wide-reducer lazy-final direction. Correctness requires
+64-bit quotient work, and that costs more than the two existing final
+pre-normalization operations it removes.
 
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
@@ -1922,6 +1942,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | same final-pass diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_final_wide_reduce_raw` | AVX2-only diagnostic: final pass with raw `(a+b)` / `(b+Q-a)` pre-normalization removal and a correct wide quotient reducer, byte-validated against the existing final path |
 | `mlkem_core_stage_encrypt_inv_add_u_final3_only` | AVX2-only diagnostic: the same final inverse butterfly plus scale/add for the three `u` accumulations, but grouped into one shared `j` loop |
 | `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode` | AVX2-only diagnostic: existing final inverse butterfly plus scale/add followed by DU=10 compression/encoding for the three `u` polynomials, from precomputed l6 outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode_fused` | AVX2-only diagnostic: fused final inverse butterfly plus scale/add directly into DU=10 compression/encoding, byte-validated against the existing split path |
@@ -1931,6 +1952,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | AVX2 builds only: final `e1` add against precomputed final-scaled `u` outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | AVX2-only diagnostic: tail/final path using the wide-reducer final diagnostic after the existing pre-final tail schedule |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_compress_encode_d10` | isolated ciphertext DU=10 compression/encoding for the three `u` polynomials, with lightweight sink |
