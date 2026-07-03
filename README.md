@@ -1482,6 +1482,7 @@ stage metrics.
 |---|---|
 | `mlkem_core_stage_kpke_keygen_full` | full `kpke_keygen()` |
 | `mlkem_core_stage_kpke_encrypt_uncached` | full `kpke_encrypt()` with internal caches disabled |
+| `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | AVX2-only diagnostic: cache-disabled encryption that generates noise/tail first, NTTs `r`, then samples public-matrix x4 batches and consumes complete rows immediately |
 | `mlkem_core_stage_kpke_prepare_public_no_cache` | no-cache `mlkem_encaps()` public preparation: public-key d12 decode, public-matrix sampling, and `H(ek)` with the AVX2 hash/tail co-schedule |
 | `mlkem_core_stage_public_key_decode_d12` | public-key d12 decode only for the three encoded public-key polynomials |
 | `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
@@ -9378,6 +9379,50 @@ co-scheduled row does not improve, and the tiny uncached-encrypt median movement
 is not supported by a clear target-row win. No KEM confirmation was run because
 the stage gate failed. Future work at this boundary should add real lane-filled
 work or remove a Keccak/state extraction, not only move the function boundary.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 rowwise uncached encrypt boundary)
+
+A bench-only AVX2 diagnostic tested whether the uncached encryption path should
+break the public-matrix materialization boundary. The diagnostic keeps the same
+outputs as `kpke_encrypt()` with internal caches disabled, but changes the local
+order: generate encryption noise plus the `(2,2)` matrix tail first, transform
+`rhat[0..2]`, then sample the first x4 public-matrix batch and immediately
+consume row 0, sample the second x4 batch and consume rows 1 and 2. This tests
+whether a rowwise public-matrix use pattern can beat the current prepare-then-use
+shape without relying on cache reuse.
+
+The benchmark harness validates the rowwise ciphertext byte-for-byte against the
+current cache-disabled `kpke_encrypt()` before timing.
+
+AVX2-only command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 9); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_kpke_encrypt_uncached(_rowwise)?_ns_per_op=|mlkem_core_stage_kpke_encrypt_cached_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4872.76 | 4872.90 |
+| `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | 4869.08 | 4867.46 |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2392.09 | 2389.89 |
+| `mlkem_core_stage_sample_matrix` | 2817.66 | 2812.90 |
+
+Relative rowwise speedup was only `1.0008x` average and `1.0011x` median.
+Decision: keep this as a diagnostic and do not change production. The rowwise
+schedule removes no Keccak work, no rejection parsing, and no K=3 arithmetic; it
+only changes when sampled rows are consumed. The result is effectively noise-sized
+and does not justify adding a second uncached encryption implementation. Future
+work at this boundary still needs a real multi-state co-schedule or a sampler /
+accumulator representation change, not just rowwise consumption of the existing
+public-matrix layout.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
