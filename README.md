@@ -5801,6 +5801,49 @@ use 3-rate parsing where keygen already owns the single tail continuation, but k
 encryption on the existing rolling parse because its caller is more code-shape
 sensitive.
 
+### Independent Core Optimization Diagnostic (2026-07-03, native AVX512 keygen tail 3-rate parse)
+
+A native AVX512 follow-up tried to generalize the accepted AVX2 keygen tail parser
+schedule to `mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512()`. The candidate
+extracted the lane-6 matrix-tail state after the `keccakf8()` PRF/CBD block into a
+scalar `uint64_t tail_state[25]`, accumulated the next two SHAKE128 rates with
+scalar `keccakf()`, and parsed one 504-byte stream instead of parsing the initial
+168-byte block and continuing through a one-live-lane `keccakf4()` state.
+
+Correctness passed both native and AVX2-only gates before benchmarking:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && make test CC=clang AVX2_BACKEND=core
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Native stage A/B command, using `2dc014f` as the baseline after the benchmark
+harness compile fix:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 3401.38 | 3475.46 | 0.9787x | 0.9980x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 2827.20 | 2855.39 | 0.9901x | 0.9851x |
+| `mlkem_core_stage_sample_matrix` | 1895.74 | 1900.43 | 0.9975x | 0.9967x |
+| `mlkem_core_stage_keygen_noise_ntt` | 1563.67 | 1564.90 | 0.9992x | 0.9991x |
+| `mlkem_core_stage_keygen_noise_prf_cbd` | 696.37 | 695.65 | 1.0010x | 1.0028x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3600.65 | 3602.29 | 0.9995x | 1.0007x |
+
+Decision: reject the AVX512 generalization. The local PRF/CBD-side movement is
+small, while native `kpke_keygen_full`, public preparation, and full
+`sample_matrix` medians move negative. Keep the AVX2-only 3-rate parse where it
+has direct keygen and KEM evidence, but do not assume the same parser schedule is
+profitable in the AVX512 `keccakf8()` shape without a stronger native integrated
+win.
+
 Current HEAD spot-check after the tile2x3 accumulator diagnostic, AVX2-only,
 `./bench_core_stagesc 12000`, keeps the same priority order: `sample_matrix`
 about 2.7 us, `keygen_noise_ntt` about 1.94 us, `encrypt_noise` about 1.37 us,
