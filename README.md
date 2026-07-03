@@ -1600,13 +1600,17 @@ stage metrics.
 | `mlkem_core_stage_decrypt_inv_copy_only` | AVX2-only diagnostic: decrypt inverse split copy plus checksum baseline for interpreting per-level rows |
 | `mlkem_core_stage_decrypt_inv_head` | AVX2-only decrypt-side inverse NTT head stages `l1`..`l3`, using precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_tail` | AVX2-only decrypt-side inverse NTT tail stages `l4`..`l7`, using precomputed inverse-head output |
+| `mlkem_core_stage_decrypt_inv_tail_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l4`..`l7`, rejected versus the compiler-vectorized scalar tail |
 | `mlkem_core_stage_decrypt_inv_head_l1` | AVX2-only diagnostic: decrypt inverse head `l1` stage from precomputed NTT-domain accumulation, using the previous scatter/gather helper shape |
 | `mlkem_core_stage_decrypt_inv_head_l1_block` | AVX2-only diagnostic: decrypt inverse head `l1` stage using the production block-load/shuffle helper |
 | `mlkem_core_stage_decrypt_inv_head_l2` | AVX2-only diagnostic: decrypt inverse head `l2` stage from precomputed `l1` output |
 | `mlkem_core_stage_decrypt_inv_head_l3` | AVX2-only diagnostic: decrypt inverse head `l3` stage from precomputed `l2` output |
 | `mlkem_core_stage_decrypt_inv_tail_l4` | AVX2-only diagnostic: decrypt inverse tail `l4` stage from precomputed head output |
+| `mlkem_core_stage_decrypt_inv_tail_l4_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l4`, rejected versus the compiler-vectorized scalar tail |
 | `mlkem_core_stage_decrypt_inv_tail_l5` | AVX2-only diagnostic: decrypt inverse tail `l5` stage from precomputed `l4` output |
+| `mlkem_core_stage_decrypt_inv_tail_l5_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l5`, rejected versus the compiler-vectorized scalar tail |
 | `mlkem_core_stage_decrypt_inv_tail_l6` | AVX2-only diagnostic: decrypt inverse tail `l6` stage from precomputed `l5` output |
+| `mlkem_core_stage_decrypt_inv_tail_l6_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l6`, rejected versus the compiler-vectorized scalar tail |
 | `mlkem_core_stage_decrypt_inv_final_sub_from` | AVX2-only diagnostic: production-style final inverse butterfly plus scale/subtraction from precomputed `l6` output |
 | `mlkem_core_stage_decrypt_inv_final_sub_recover_split` | AVX2-only diagnostic: final inverse butterfly plus scale/subtraction from precomputed `l6` output, then the existing message recovery pass |
 | `mlkem_core_stage_decrypt_inv_final_sub_recover_fused` | AVX2-only diagnostic: final inverse butterfly plus scale/subtraction from precomputed `l6` output, directly producing recovered message bytes |
@@ -5955,6 +5959,44 @@ scatter/gather overhead while preserving the level-wise schedule. The next
 remaining inverse target is a wider l2/l3/tail representation or schedule change,
 not another local l1 load/store variant.
 
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 inverse tail explicit vec8)
+
+A bench-only diagnostic tested replacing the AVX2-only inverse tail scalar loops
+with explicit 8-lane AVX2 butterflies. The candidate loads each 8-coefficient
+`a`/`b` half, applies the same inverse butterfly as the AVX2 head `l3`, and uses
+a pre-expanded bench-local zeta table. Output is validated byte-for-byte against
+the existing tail before timing.
+
+This is a useful negative result: the current scalar tail loops are already
+vectorized well by clang, and the manual 8-lane form loses to that code shape.
+
+Command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_decrypt_inv_(copy_only|tail|tail_vec8|tail_l4|tail_l4_vec8|tail_l5|tail_l5_vec8|tail_l6|tail_l6_vec8)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Results:
+
+| Metric | Existing avg ns/op | Existing median ns/op | Vec8 avg ns/op | Vec8 median ns/op |
+|---|---:|---:|---:|---:|
+| Full tail `l4`..`l7` | 268.68 | 268.72 | 277.63 | 277.06 |
+| Tail `l4` | 205.72 | 205.72 | 207.95 | 207.92 |
+| Tail `l5` | 205.62 | 205.65 | 207.06 | 207.05 |
+| Tail `l6` | 204.79 | 204.80 | 207.26 | 207.22 |
+
+Decision: reject the explicit vec8 tail rewrite. It is about `0.968x` as fast
+as the existing full-tail path by average, and every individual measured level is
+slower. Do not spend more time on a direct 8-lane rewrite of `l4`..`l6`; any
+future tail work needs a broader schedule/range change that beats clang's current
+vectorized scalar loop, not a one-to-one manual AVX2 transcription.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy ehat add boundary)
 
