@@ -325,6 +325,13 @@ done
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 139.92 | 138.19 | final remains smaller than the whole tail/final chain. |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.00 | 324.71 | combined l4-l6 plus final is the target shape. |
 
+Do not remove final pre-normalization by feeding raw `(a + b)` or `(b + Q - a)`
+directly into `mod_q_reduce_ntt_u32x8()`. A bench-only validation attempt failed
+at `inverse final lazy-reduce mismatch at 0,0`: the final product range reaches
+about 22M, and the current AVX2 reduction uses a 32-bit `(x * 315)` quotient
+multiply that wraps outside the canonical NTT product range. A correct wider
+reducer would add cost, so this is not a near-term tail/final target.
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
 ordering. The remaining plausible arithmetic direction is a representation-level
