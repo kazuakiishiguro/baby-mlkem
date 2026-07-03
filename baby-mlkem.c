@@ -3400,6 +3400,40 @@ static inline uint64_t keccak_lane2_u64(__m256i v) {
   return (uint64_t)_mm_cvtsi128_si64(_mm256_extracti128_si256(v, 1));
 }
 
+static void sample_ntt_tail_lane2_accum3_parse_avx2(const __m256i st[25],
+                                                    poly256 tail) {
+  uint64_t tail_state[25];
+  uint64_t stream[63];
+
+  for (int lane = 0; lane < 21; lane++) {
+    uint64_t w = keccak_lane2_u64(st[lane]);
+    tail_state[lane] = w;
+    stream[lane] = w;
+  }
+  for (int lane = 21; lane < 25; lane++) {
+    tail_state[lane] = keccak_lane2_u64(st[lane]);
+  }
+  for (int block = 1; block < 3; block++) {
+    keccakf(tail_state);
+    for (int lane = 0; lane < 21; lane++) {
+      stream[(size_t)block * 21 + (size_t)lane] = tail_state[lane];
+    }
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), tail, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf(tail_state);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = tail_state[lane];
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), tail, count);
+  }
+}
+
 static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
                                            const uint8_t *rho,
                                            poly256 out,
@@ -5140,7 +5174,6 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
     poly256 e0, poly256 e1, poly256 e2) {
   const uint8_t n0[4] = {0, 1, 2, 3};
   __m256i st[25];
-  uint64_t tail_state[25];
 
   mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
 
@@ -5174,18 +5207,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
     sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
                                      e1 + 16 * lane, e2 + 16 * lane);
   }
-  for (int lane = 0; lane < 25; lane++) {
-    tail_state[lane] = keccak_lane2_u64(st[lane]);
-  }
-
-  sample_ntt_parse_init_avx2();
-  int count = sample_ntt_parse_stream_avx2_ready(
-      (const uint8_t *)tail_state, 168, tail, 0);
-  while (count < N) {
-    keccakf(tail_state);
-    count = sample_ntt_parse_stream_avx2_ready(
-        (const uint8_t *)tail_state, 168, tail, count);
-  }
+  sample_ntt_tail_lane2_accum3_parse_avx2(st, tail);
 }
 
 static void mlkem_keygen_matrix_noise_avx2(

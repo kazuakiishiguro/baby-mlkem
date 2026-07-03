@@ -5736,6 +5736,71 @@ boundary contract--for example CBD/sampler output range -> NTT range -> K=3
 multiply range -> inverse/add range -> encode/compress range--or else stay in
 the measured Keccak lane-filling/co-scheduling space.
 
+### Independent Core Optimization A/B (2026-07-03, AVX2 keygen tail 3-rate parse)
+
+The AVX2 keygen matrix/noise co-schedule now accumulates the `(2,2)` public-matrix
+tail stream's first three SHAKE128 rates and calls the 504-byte rejection parser
+once, instead of parsing the first co-scheduled rate and then parsing each scalar
+continuation rate separately. Keccak work and outputs are unchanged; the change only
+removes hot parser entry/bookkeeping from the keygen-only tail/noise helper.
+
+The same parser-schedule idea was not applied to the encryption tail/noise helper.
+A full 3-rate accumulation variant improved the direct `tail_cosched` diagnostic but
+regressed `kpke_encrypt_uncached`, while a smaller 1+2-rate variant regressed the
+direct `tail_cosched` row. Keeping the change keygen-only preserved the keygen win
+without perturbing uncached encryption.
+
+Correctness passed the AVX2-only gate:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3030.57 | 3027.48 | 1.0010x | 1.0042x |
+| `mlkem_core_stage_keygen_matrix_noise_tail_first` | 3041.25 | 3026.01 | 1.0050x | 1.0046x |
+| `mlkem_core_stage_keygen_matrix_noise_tail_last` | 3040.07 | 3024.20 | 1.0052x | 1.0053x |
+| `mlkem_core_stage_kpke_keygen_full` | 4786.72 | 4763.50 | 1.0049x | 1.0025x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4845.19 | 4831.00 | 1.0029x | 1.0008x |
+
+AVX2-only KEM confirmation:
+
+```bash
+RUNS=17 WARMUP_RUNS=4 SUITES=kem KEM_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 6914.18 | 6875.29 | 1.0057x | 1.0042x |
+| `mlkem_keygen_core` | 6903.68 | 6850.36 | 1.0078x | 1.0038x |
+| `mlkem_encaps_core` | 6925.61 | 7030.15 | 0.9851x | 1.0052x |
+| `mlkem_decaps_core` | 6018.07 | 5969.93 | 1.0081x | 1.0026x |
+| `mlkem_roundtrip_core` | 19984.05 | 20021.69 | 0.9981x | 1.0015x |
+
+Decision: accept the keygen-only parser schedule. The direct keygen matrix/noise
+rows and KEM keygen medians move in the same direction, while the broader KEM
+median rows do not show a meaningful regression. This is a narrow dataflow win:
+use 3-rate parsing where keygen already owns the single tail continuation, but keep
+encryption on the existing rolling parse because its caller is more code-shape
+sensitive.
+
 Current HEAD spot-check after the tile2x3 accumulator diagnostic, AVX2-only,
 `./bench_core_stagesc 12000`, keeps the same priority order: `sample_matrix`
 about 2.7 us, `keygen_noise_ntt` about 1.94 us, `encrypt_noise` about 1.37 us,
