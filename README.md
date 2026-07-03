@@ -30,6 +30,12 @@ normalization across encode/compress boundaries.
 Current AVX2-only frontier snapshot, pinned to CPU 0, `clang`,
 `AVX2_BACKEND=core`, seven runs of `./bench_core_stagesc 30000`:
 
+Regenerate this table with:
+
+```bash
+RUNS=7 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang ./scripts/bench_core_frontier.sh
+```
+
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
 | `mlkem_core_stage_kpke_encrypt_uncached` | 4932.84 | 4886.79 | largest integrated cache-miss encryption row |
