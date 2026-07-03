@@ -1593,7 +1593,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
-| `mlkem_core_stage_decrypt_ntt_accum_only` | decrypt-side forward NTT for three decoded `u` polynomials plus `ntt_mul_acc3()` secret accumulation |
+| `mlkem_core_stage_decrypt_ntt_accum_only` | decrypt-side canonical forward NTT for three decoded `u` polynomials plus `ntt_mul_acc3()` secret accumulation |
+| `mlkem_core_stage_decrypt_lazy_ntt_accum_only` | AVX2-only diagnostic: production lazy multiply-input NTT for three decoded `u` polynomials plus `ntt_mul_acc3()` secret accumulation |
 | `mlkem_core_stage_decrypt_inv_sub_from` | decrypt-side inverse NTT subtraction only, using a precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_butterflies` | decrypt-side inverse NTT butterflies only, before final scale/subtraction |
 | `mlkem_core_stage_decrypt_inv_head` | AVX2-only decrypt-side inverse NTT head stages `l1`..`l3`, using precomputed NTT-domain accumulation |
@@ -1601,7 +1602,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_inv_scale_sub_from` | decrypt-side final inverse-NTT scale and subtraction only, using precomputed inverse-butterfly output |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
-| `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side NTT, accumulation, inverse NTT subtraction, and message recovery |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | decrypt-side canonical NTT, accumulation, inverse NTT subtraction, and message recovery |
+| `mlkem_core_stage_decrypt_lazy_ntt_accum_recover` | AVX2-only diagnostic: production lazy multiply-input NTT, accumulation, inverse NTT subtraction, and message recovery |
 
 The decrypt split metrics are diagnostic and intentionally reuse precomputed
 intermediates where noted. On one pinned AVX2 run with 20,000 iterations,
@@ -5720,6 +5722,42 @@ flow directly into `ntt_mul_acc3()`. Do not generalize this into another local
 signed/lazy helper at encode or compress boundaries; those boundaries still need
 a broader representation redesign to avoid reintroducing the same
 canonicalization work one stage later.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 decrypt lazy combined rows)
+
+A bench-only follow-up added decrypt-side combined rows that use the same lazy
+`u` forward NTT boundary as AVX2 production decrypt before `ntt_mul_acc3()`. The
+older combined diagnostics remain useful as canonical-reference rows, but they
+call `ntt()` and therefore slightly overstate the production NTT/accum/recover
+bundle. The new rows are validated by comparing lazy-NTT accumulation output
+against the existing canonical `stage_w_ntt` fixture before timing.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_decrypt_(u_ntt|u_ntt_lazy|accum_only|ntt_accum_only|lazy_ntt_accum_only|ntt_accum_recover|lazy_ntt_accum_recover|recover_message)_ns_per_op=|mlkem_core_stage_kpke_decrypt_cached_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric pair | Canonical avg ns/op | Lazy avg ns/op | Canonical median ns/op | Lazy median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|
+| `decrypt_u_ntt` vs `decrypt_u_ntt_lazy` | 787.15 | 773.00 | 786.56 | 772.78 | 1.0178x |
+| `decrypt_ntt_accum_only` vs `decrypt_lazy_ntt_accum_only` | 860.84 | 860.45 | 860.35 | 859.56 | 1.0009x |
+| `decrypt_ntt_accum_recover` vs `decrypt_lazy_ntt_accum_recover` | 889.02 | 873.73 | 888.05 | 872.50 | 1.0178x |
+
+Decision: keep the new lazy combined rows as production-aligned diagnostics.
+This is not a new production optimization; production already used the lazy
+`u` NTT. It fixes target selection: future decrypt work should compare against
+`decrypt_lazy_ntt_accum_recover`, not only the older canonical
+`decrypt_ntt_accum_recover`. The remaining decrypt-side headroom is now mostly
+the K=3 accumulation plus inverse/sub boundary, because the lazy NTT win is
+already present in production and disappears inside the accumulation-only row.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy ehat add boundary)

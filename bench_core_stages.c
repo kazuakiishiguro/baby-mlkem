@@ -938,6 +938,25 @@ static void validate_ntt_mul_acc3_encrypt4_scalar(void) {
   }
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void validate_decrypt_lazy_ntt_accum_avx2(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 uhat[K];
+    poly256 got;
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_u[lane][j], uhat[j]);
+    }
+    ntt_mul_acc3(stage_shat[lane][0], uhat[0], stage_shat[lane][1], uhat[1],
+                 stage_shat[lane][2], uhat[2], got);
+    if (memcmp(got, stage_w_ntt[lane], sizeof(poly256)) != 0) {
+      fprintf(stderr, "decrypt lazy NTT accumulation mismatch at %zu\n",
+              lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void prepare_inputs(void) {
   ensure_ntt_roots();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -983,6 +1002,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt_mul_acc3_canonical_avx2();
   validate_keygen_noise_ntt_headtail_batch_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  validate_decrypt_lazy_ntt_accum_avx2();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int col = 0; col < K; col++) {
       poly256 canonical, lazy, got, want;
@@ -4458,6 +4478,28 @@ static uint64_t bench_decrypt_ntt_accum_only(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_decrypt_lazy_ntt_accum_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 w;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_u[lane][j], stage_tmp_vec0[lane][j]);
+    }
+    ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
+                 stage_shat[lane][1], stage_tmp_vec0[lane][1],
+                 stage_shat[lane][2], stage_tmp_vec0[lane][2], w);
+    acc ^= checksum_poly(w);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_decrypt_inv_sub_from(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4599,6 +4641,30 @@ static uint64_t bench_decrypt_ntt_accum_recover(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_decrypt_lazy_ntt_accum_recover(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  poly256 w;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_u[lane][j], stage_tmp_vec0[lane][j]);
+    }
+    ntt_mul_acc3(stage_shat[lane][0], stage_tmp_vec0[lane][0],
+                 stage_shat[lane][1], stage_tmp_vec0[lane][1],
+                 stage_shat[lane][2], stage_tmp_vec0[lane][2], w);
+    ntt_inv_sub_from_inplace(stage_v[lane], w);
+    recover_message(w, stage_tmp_msg[lane]);
+    acc ^= stage_tmp_msg[lane][(i * 23u) & 31u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 int main(int argc, char **argv) {
   size_t iters = 20000;
@@ -4859,6 +4925,10 @@ int main(int argc, char **argv) {
                bench_decrypt_accum_only(iters), iters);
   print_metric("mlkem_core_stage_decrypt_ntt_accum_only",
                bench_decrypt_ntt_accum_only(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_decrypt_lazy_ntt_accum_only",
+               bench_decrypt_lazy_ntt_accum_only(iters), iters);
+#endif
   print_metric("mlkem_core_stage_decrypt_inv_sub_from",
                bench_decrypt_inv_sub_from(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_butterflies",
@@ -4877,6 +4947,10 @@ int main(int argc, char **argv) {
                bench_decrypt_recover_message(iters), iters);
   print_metric("mlkem_core_stage_decrypt_ntt_accum_recover",
                bench_decrypt_ntt_accum_recover(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_decrypt_lazy_ntt_accum_recover",
+               bench_decrypt_lazy_ntt_accum_recover(iters), iters);
+#endif
   printf("mlkem_core_stage_bench_sink=%llu\n",
          (unsigned long long)bench_stage_sink);
 
