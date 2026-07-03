@@ -1557,8 +1557,10 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3` | AVX2-only diagnostic: co-scheduled encryption PRF/CBD tail using the keygen-style three-rate tail parse schedule |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_lazy` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | AVX2-only diagnostic: co-scheduled `(2,2)` public-matrix tail plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3_lazy` | AVX2-only diagnostic: co-scheduled three-rate tail parse plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt_lazy` | AVX2-only diagnostic: encryption forward NTT for `r` using the production lazy multiply-input range |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
@@ -11122,6 +11124,70 @@ However, the co-scheduled cache-miss front-end is still `1.2171x` average and
 `1.2176x` median slower than `encrypt_noise_lazy`, which excludes public-matrix
 tail generation. The remaining cache-miss cost is therefore the residual tail
 generation/parse boundary, not another local lazy-NTT helper tweak.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 encrypt tail accum3 parse)
+
+A bench-only follow-up re-tested the keygen-style three-rate tail parse schedule
+against the encryption cache-miss tail path, including the production lazy NTT
+post-condition. The candidate accumulates the first three SHAKE128 rate blocks
+for the `(2,2)` tail and calls the 504-byte parser once, instead of parsing the
+co-scheduled first rate and then parsing scalar continuation rates one at a time.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_noise_prf_cbd_tail_(separate|cosched|cosched_accum3|separate_lazy|cosched_lazy|cosched_accum3_lazy)_ns_per_op=|mlkem_core_stage_kpke_encrypt_uncached_ns_per_op=|mlkem_core_stage_encrypt_noise_lazy_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4879.31 | 4864.33 |
+| `mlkem_core_stage_encrypt_noise_lazy` | 1381.21 | 1380.81 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1322.19 | 1322.61 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1113.05 | 1111.59 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3` | 1108.06 | 1109.92 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_lazy` | 1888.76 | 1888.08 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | 1672.29 | 1669.23 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3_lazy` | 1667.43 | 1666.38 |
+
+The direct diagnostic was only `1.0045x` average and `1.0015x` median faster
+than the existing co-scheduled tail row. Including production lazy NTT kept only
+`1.0029x` average and `1.0017x` median. A temporary production A/B that routed
+`mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2()` through the same accum3 parse
+schedule passed correctness but did not produce an integrated median win:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+RUNS=7 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production-candidate A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_noise_lazy` | 1378.27 | 1379.88 | 0.9988x | 0.9990x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1111.15 | 1110.98 | 1.0002x | 0.9999x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | 1674.13 | 1670.15 | 1.0024x | 1.0021x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2455.41 | 2423.27 | 1.0133x | 1.0010x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4928.83 | 4893.11 | 1.0073x | 1.0000x |
+
+Decision: keep the accum3 encryption-tail rows as diagnostics only and leave the
+production encryption helper on the existing one-rate parse/continuation schedule.
+The keygen helper keeps the accepted three-rate parse because it had a keygen-stage
+win, but the encryption path does not show enough integrated median improvement to
+justify another production boundary change. The next useful work should target a
+larger public-matrix tail/dataflow change, not this local parser schedule.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
