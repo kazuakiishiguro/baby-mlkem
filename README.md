@@ -1557,6 +1557,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_lazy` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | AVX2-only diagnostic: co-scheduled `(2,2)` public-matrix tail plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt_lazy` | AVX2-only diagnostic: encryption forward NTT for `r` using the production lazy multiply-input range |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
@@ -11080,6 +11082,46 @@ AVX2 production encryption path. The production-aligned combined row is `1.0087x
 average and `1.0089x` median faster than the canonical reference, matching the
 isolated lazy-NTT advantage. The remaining encryption-noise bottleneck is mostly
 PRF/CBD and Keccak lane filling, not another local forward-NTT tweak.
+
+### Independent Benchmark Alignment Diagnostic (2026-07-03, AVX2 tail co-schedule with lazy NTT)
+
+The stage harness now also has AVX2-only rows that include both the cache-miss
+`(2,2)` public-matrix tail and the production lazy multiply-input NTT for `r`.
+These rows make the cache-miss encryption front-end comparable under the same
+post-PRF condition: scalar tail generation versus the existing nonce 4/5/6
+`keccakf4()` lane-fill co-schedule, followed by lazy NTT on the three `r`
+polynomials.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_noise_lazy_ns_per_op=|mlkem_core_stage_encrypt_noise_prf_cbd_ns_per_op=|mlkem_core_stage_encrypt_noise_prf_cbd_tail_(separate|cosched|separate_lazy|cosched_lazy)_ns_per_op=|mlkem_core_stage_encrypt_noise_ntt_lazy_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_encrypt_noise_lazy` | 1375.58 | 1375.60 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1165.35 | 1165.16 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | 1319.73 | 1316.60 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1107.95 | 1108.35 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_lazy` | 1881.39 | 1880.36 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | 1674.28 | 1674.95 |
+| `mlkem_core_stage_encrypt_noise_ntt_lazy` | 768.77 | 767.79 |
+
+Decision: keep the lazy tail rows as diagnostic rows, not production changes.
+The co-scheduled tail path remains faster than the scalar-tail baseline even
+after including production lazy NTT: `1.1237x` average and `1.1226x` median.
+However, the co-scheduled cache-miss front-end is still `1.2171x` average and
+`1.2176x` median slower than `encrypt_noise_lazy`, which excludes public-matrix
+tail generation. The remaining cache-miss cost is therefore the residual tail
+generation/parse boundary, not another local lazy-NTT helper tweak.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 

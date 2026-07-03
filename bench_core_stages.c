@@ -3393,6 +3393,61 @@ static uint64_t bench_encrypt_noise_prf_cbd_tail_cosched(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_noise_prf_cbd_tail_separate_lazy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    sample_ntt(stage_rho[lane], 2, 2, stage_tmp_ahat[lane][2][2]);
+    mlkem_encrypt_prf_cbd_eta2_32(stage_r[lane], stage_tmp_vec0[lane][0],
+                                  stage_tmp_vec0[lane][1],
+                                  stage_tmp_vec0[lane][2],
+                                  stage_tmp_vec1[lane][0],
+                                  stage_tmp_vec1[lane][1],
+                                  stage_tmp_vec1[lane][2],
+                                  stage_tmp_poly[lane]);
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_tmp_vec0[lane][j],
+                              stage_tmp_vec0[lane][j]);
+    }
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u];
+    acc ^= (uint16_t)stage_tmp_vec1[lane][(i + 1u) % K][(i * 5u) & 255u];
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 7u) & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_noise_prf_cbd_tail_cosched_lazy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+        stage_r[lane], stage_rho[lane], stage_tmp_ahat[lane][2][2],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2], stage_tmp_vec1[lane][0],
+        stage_tmp_vec1[lane][1], stage_tmp_vec1[lane][2], stage_tmp_poly[lane]);
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_tmp_vec0[lane][j],
+                              stage_tmp_vec0[lane][j]);
+    }
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u];
+    acc ^= (uint16_t)stage_tmp_vec1[lane][(i + 1u) % K][(i * 5u) & 255u];
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 7u) & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 #endif
 
 static uint64_t bench_encrypt_noise_prf_cbd(size_t iters) {
@@ -5485,6 +5540,12 @@ int main(int argc, char **argv) {
                bench_encrypt_noise_prf_cbd_tail_separate(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched",
                bench_encrypt_noise_prf_cbd_tail_cosched(iters), iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_lazy",
+               bench_encrypt_noise_prf_cbd_tail_separate_lazy(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy",
+               bench_encrypt_noise_prf_cbd_tail_cosched_lazy(iters), iters);
+#endif
 #endif
   print_metric("mlkem_core_stage_encrypt_noise_ntt",
                bench_encrypt_noise_ntt(iters), iters);
