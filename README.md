@@ -288,13 +288,34 @@ done
 | Estimated scratch-copy component | 26.38 | 26.53 | `copy_only - checksum_only`; not the main cost. |
 | Estimated inverse-add body component | 556.73 | 556.65 | `only - copy_only`; still the dominant part. |
 
+Because the checksum itself is large, a second diagnostic uses lightweight
+coefficient sinks for the same work shapes. This matches the existing `*_raw`
+stage convention used by sampler rows and gives a production-adjacent readout:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(only|raw|copy_only|copy_raw|checksum_only|head_only|head_raw|final_only|final_raw|tail_final_only|tail_final_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 762.96 | 763.03 | checksum-heavy historical diagnostic. |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 586.97 | 587.03 | production-adjacent three-`u` inverse-add diagnostic. |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | 11.74 | 11.68 | scratch copies are negligible with lightweight sinks. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 259.89 | 258.87 | inverse-head remains material. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.06 | 324.88 | tail/final is the larger raw subtarget. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 138.56 | 138.27 | final pass alone is smaller after checksum removal. |
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
 ordering. The remaining plausible arithmetic direction is a representation-level
 inverse-add rewrite that removes load/extend/reduce work across the full tail and
-final boundary, with KEM confirmation as the adoption gate. The new copy/sink
-split confirms that the target is real arithmetic/dataflow, not merely diagnostic
-scratch-copy overhead.
+final boundary, with KEM confirmation as the adoption gate. The new raw split
+confirms that the target is real arithmetic/dataflow, not diagnostic scratch-copy
+or checksum overhead; the most useful local subtarget is tail/final, not final
+alone.
 
 ## Test
 
@@ -1860,9 +1881,12 @@ stage metrics.
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | same three-`u` inverse-NTT-add diagnostic with lightweight coefficient sinks instead of full-polynomial checksums |
 | `mlkem_core_stage_encrypt_inv_add_u_copy_only` | diagnostic lower bound for the three scratch copies plus the same checksum shape used by `encrypt_inv_add_u_only` |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | diagnostic lower bound for the same three scratch copies with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_checksum_only` | diagnostic checksum-only baseline for estimating the scratch-copy component in `encrypt_inv_add_u_only` |
 | `mlkem_core_stage_encrypt_inv_add_u_head_only` | AVX2 builds only: inverse-NTT head stages for the three precomputed `u` accumulations, including scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | same inverse-head diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
@@ -1870,6 +1894,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_final_raw` | same final-pass diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final3_only` | AVX2-only diagnostic: the same final inverse butterfly plus scale/add for the three `u` accumulations, but grouped into one shared `j` loop |
 | `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode` | AVX2-only diagnostic: existing final inverse butterfly plus scale/add followed by DU=10 compression/encoding for the three `u` polynomials, from precomputed l6 outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_final_d10_encode_fused` | AVX2-only diagnostic: fused final inverse butterfly plus scale/add directly into DU=10 compression/encoding, byte-validated against the existing split path |
@@ -1878,6 +1903,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | AVX2 builds only: high-half `diff * zeta_scale` scale/reduction portion of the final inverse pass |
 | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | AVX2 builds only: final `e1` add against precomputed final-scaled `u` outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
 | `mlkem_core_stage_ciphertext_compress_encode_d10` | isolated ciphertext DU=10 compression/encoding for the three `u` polynomials, with lightweight sink |
