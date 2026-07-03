@@ -123,6 +123,23 @@ static inline void bench_cbd_eta2_decode32_avx2(__m128i bytes,
   *out1 = _mm256_permute2x128_si256(a, b, 0x31);
 }
 
+static inline void bench_cbd_eta2_decode32_signed_avx2(__m128i bytes,
+                                                       __m256i *out0,
+                                                       __m256i *out1) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  __m256i lo = _mm256_cvtepi8_epi16(lo8);
+  __m256i hi = _mm256_cvtepi8_epi16(hi8);
+  __m256i a = _mm256_unpacklo_epi16(lo, hi);
+  __m256i b = _mm256_unpackhi_epi16(lo, hi);
+  *out0 = _mm256_permute2x128_si256(a, b, 0x20);
+  *out1 = _mm256_permute2x128_si256(a, b, 0x31);
+}
+
 static inline void bench_store_aos4_i16x16_avx2(__m256i v0, __m256i v1,
                                                 __m256i v2,
                                                 int16_t out[16][4]) {
@@ -205,6 +222,19 @@ static inline int16_t bench_cbd_eta2_scalar_value(uint32_t d, int j) {
   int val = a - b;
   return (int16_t)(val < 0 ? val + Q : val);
 }
+
+#if defined(__AVX2__)
+static void sample_poly_cbd_eta2_signed_avx2(const uint8_t *data,
+                                             poly256 out) {
+  for (int i = 0; i < N / 32; i++) {
+    __m256i lo, hi;
+    bench_cbd_eta2_decode32_signed_avx2(
+        _mm_loadu_si128((const __m128i *)(data + 16 * i)), &lo, &hi);
+    _mm256_storeu_si256((__m256i *)(out + 32 * i), lo);
+    _mm256_storeu_si256((__m256i *)(out + 32 * i + 16), hi);
+  }
+}
+#endif
 
 static void sample_poly_cbd_eta2x3_aos4_direct(const uint8_t *data0,
                                                const uint8_t *data1,
@@ -493,6 +523,27 @@ static void validate_prf_cbd_direct_matches_current(void) {
 }
 #endif
 
+#if defined(__AVX2__)
+static void validate_cbd_eta2_signed_matches_current(void) {
+  uint8_t prf[64 * ETA2];
+  poly256 current, signed_out;
+
+  for (int lane = 0; lane < KECCAK_BENCH_LANES; lane++) {
+    fill_bytes(prf, sizeof(prf), 0xB000u + (uint64_t)lane);
+    sample_poly_cbd(ETA2, prf, current);
+    sample_poly_cbd_eta2_signed_avx2(prf, signed_out);
+    for (int i = 0; i < N; i++) {
+      int16_t sv = signed_out[i];
+      int16_t cv = (int16_t)(sv < 0 ? sv + Q : sv);
+      if (sv < -ETA2 || sv > ETA2 || cv != current[i]) {
+        fprintf(stderr, "signed CBD mismatch lane=%d coeff=%d\n", lane, i);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 static void validate_cbd3_aos4_matches_pack(void) {
   uint8_t prf[3][64 * ETA2];
   poly256 p0, p1, p2;
@@ -544,6 +595,7 @@ static void validate_keccak_helpers(void) {
 #if defined(__AVX2__)
   validate_keccakf4_matches_scalar();
   validate_prf_cbd_direct_matches_current();
+  validate_cbd_eta2_signed_matches_current();
   sha3_256(bench_pk[0], sizeof(bench_pk[0]), out0);
   sha3_256_public_key_lane0_keccakf4(bench_pk[0], out1);
   if (memcmp(out0, out1, 32) != 0) {
@@ -857,6 +909,27 @@ static uint64_t bench_sample_poly_cbd_eta2(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__)
+static uint64_t bench_sample_poly_cbd_eta2_signed(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  for (int lane = 0; lane < KECCAK_BENCH_LANES; lane++) {
+    fill_bytes(bench_prfout[lane], sizeof(bench_prfout[lane]),
+               0x3000u + (uint64_t)lane);
+  }
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sample_poly_cbd_eta2_signed_avx2(bench_prfout[lane], bench_poly[lane]);
+    acc ^= (uint16_t)bench_poly[lane][(i * 23u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static void prepare_cbd3_inputs(void) {
   init_inputs();
   for (int lane = 0; lane < KECCAK_BENCH_LANES; lane++) {
@@ -895,6 +968,30 @@ static uint64_t bench_sample_poly_cbd_eta2x3(size_t iters) {
   bench_keccak_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__)
+static uint64_t bench_sample_poly_cbd_eta2x3_signed(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_cbd3_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sample_poly_cbd_eta2_signed_avx2(bench_prfout3[lane][0],
+                                     bench_poly3[lane][0]);
+    sample_poly_cbd_eta2_signed_avx2(bench_prfout3[lane][1],
+                                     bench_poly3[lane][1]);
+    sample_poly_cbd_eta2_signed_avx2(bench_prfout3[lane][2],
+                                     bench_poly3[lane][2]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 29u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 31u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][2][(i * 37u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_sample_poly_cbd_eta2x3_pack_aos4(size_t iters) {
   uint64_t acc = 0;
@@ -1076,7 +1173,15 @@ int main(int argc, char **argv) {
                bench_prf_cbd_eta2x4_direct_tile2x4(iters), iters);
 #endif
   print_metric("mlkem_cbd_eta2", bench_sample_poly_cbd_eta2(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_cbd_eta2_signed",
+               bench_sample_poly_cbd_eta2_signed(iters), iters);
+#endif
   print_metric("mlkem_cbd_eta2x3", bench_sample_poly_cbd_eta2x3(iters), iters);
+#if defined(__AVX2__)
+  print_metric("mlkem_cbd_eta2x3_signed",
+               bench_sample_poly_cbd_eta2x3_signed(iters), iters);
+#endif
   print_metric("mlkem_cbd_eta2x3_pack_aos4",
                bench_sample_poly_cbd_eta2x3_pack_aos4(iters), iters);
   print_metric("mlkem_cbd_eta2x3_direct_aos4",

@@ -58,7 +58,7 @@ Near-term target selection:
 | Candidate family | Status | Reason |
 |---|---|---|
 | Common `sample_ntt4()` Keccak/state layout | Open | `keccak_store3` is far larger than `parse_504`; a useful change must remove state movement or fill lanes with useful work, not just tweak parser bookkeeping. |
-| Broad lazy/signed range contract | Open | NAF-like signed/lazy ideas only make sense if the range is carried through CBD or sampler output, forward NTT, K=3 multiplication, inverse add/sub, and encode/compress. Narrow signed ETA2/rhat changes already lost. |
+| Broad lazy/signed range contract | Open | Signed CBD has a measured lower-bound saving of about 3.6 ns/poly, or 10.5 ns for K=3, but it only matters if a signed-aware NTT head consumes it without paying equivalent normalization. Narrow signed ETA2/rhat changes already lost. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
@@ -134,6 +134,41 @@ K=3 accumulator does not reveal extra downstream speed; the full accumulation
 plus inverse row is slightly slower in this short run. The next K=3 attempt still
 needs a real accumulation/reduction redesign, not just relying on the lazy input
 range to make the current scalar loop faster.
+
+### Signed CBD Canonicalization Lower Bound
+
+`bench_keccakc` now includes AVX2-only rows that decode ETA2 CBD output into
+signed `{-2..2}` lanes and validate them modulo `Q` against the current
+canonical `[0,Q)` `sample_poly_cbd(ETA2)` output. These rows deliberately do not
+touch production code: they measure only the CBD-side upper bound from removing
+the immediate negative-lane canonicalization.
+
+Short AVX2-only diagnostic command:
+
+```bash
+make bench-keccak CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_keccakc 200000 | \
+    awk -F= -v run="$i" '/mlkem_cbd_eta2(_signed|x3|x3_signed)?_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, seven `200000`-iteration runs:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_cbd_eta2` | 10.06 | 10.06 | current canonical ETA2 CBD output. |
+| `mlkem_cbd_eta2_signed` | 6.43 | 6.41 | bench-only signed `{-2..2}` output; excludes any downstream NTT cost. |
+| `mlkem_cbd_eta2x3` | 29.72 | 29.70 | three current canonical ETA2 CBD decodes. |
+| `mlkem_cbd_eta2x3_signed` | 19.19 | 19.17 | K=3 signed lower bound, about 10.5 ns faster before the NTT boundary. |
+
+Decision: signed CBD is worth considering only as part of a broad signed-aware
+NTT head prototype. The measured CBD-side room is real, but small enough that a
+consumer-side canonicalization or awkward signed first stage would erase it.
+Earlier production signed ETA2/rhat attempts already lost because they paid the
+range-conversion cost at the next boundary; this row narrows the acceptable
+budget for a real redesign instead of justifying another local CBD change.
 
 ## Test
 
@@ -1269,7 +1304,9 @@ metrics isolate these helpers:
 | `mlkem_prf_cbd_eta2x4_current` | current AVX2 four-output PRF/CBD helper used by the first keygen/encrypt noise batch |
 | `mlkem_prf_cbd_eta2x4_direct_tile2x4` | bench-only four-output PRF/CBD helper that decodes directly from the Keccak-f4 state into the diagnostic K=4 tile2x4 layout |
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
+| `mlkem_cbd_eta2_signed` | AVX2-only bench lower bound: ETA2 CBD decoded into signed `{-2..2}` lanes, excluding downstream signed-aware NTT cost |
 | `mlkem_cbd_eta2x3` | three prepared ETA2 CBD decodes, matching one K=3 NTT input vector |
+| `mlkem_cbd_eta2x3_signed` | AVX2-only bench lower bound: three signed ETA2 CBD decodes for a K=3 input vector |
 | `mlkem_cbd_eta2x3_pack_aos4` | three ETA2 CBD decodes followed by pack into the diagnostic K=3 AoS4 layout |
 | `mlkem_cbd_eta2x3_direct_aos4` | direct ETA2 CBD decode of three prepared inputs into the diagnostic K=3 AoS4 layout |
 | `mlkem_cbd_eta2x4` | four prepared ETA2 CBD decodes, matching the K=4 tile2x4 input-generation diagnostic |
