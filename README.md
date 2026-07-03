@@ -1597,8 +1597,16 @@ stage metrics.
 | `mlkem_core_stage_decrypt_lazy_ntt_accum_only` | AVX2-only diagnostic: production lazy multiply-input NTT for three decoded `u` polynomials plus `ntt_mul_acc3()` secret accumulation |
 | `mlkem_core_stage_decrypt_inv_sub_from` | decrypt-side inverse NTT subtraction only, using a precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_butterflies` | decrypt-side inverse NTT butterflies only, before final scale/subtraction |
+| `mlkem_core_stage_decrypt_inv_copy_only` | AVX2-only diagnostic: decrypt inverse split copy plus checksum baseline for interpreting per-level rows |
 | `mlkem_core_stage_decrypt_inv_head` | AVX2-only decrypt-side inverse NTT head stages `l1`..`l3`, using precomputed NTT-domain accumulation |
 | `mlkem_core_stage_decrypt_inv_tail` | AVX2-only decrypt-side inverse NTT tail stages `l4`..`l7`, using precomputed inverse-head output |
+| `mlkem_core_stage_decrypt_inv_head_l1` | AVX2-only diagnostic: decrypt inverse head `l1` stage from precomputed NTT-domain accumulation |
+| `mlkem_core_stage_decrypt_inv_head_l2` | AVX2-only diagnostic: decrypt inverse head `l2` stage from precomputed `l1` output |
+| `mlkem_core_stage_decrypt_inv_head_l3` | AVX2-only diagnostic: decrypt inverse head `l3` stage from precomputed `l2` output |
+| `mlkem_core_stage_decrypt_inv_tail_l4` | AVX2-only diagnostic: decrypt inverse tail `l4` stage from precomputed head output |
+| `mlkem_core_stage_decrypt_inv_tail_l5` | AVX2-only diagnostic: decrypt inverse tail `l5` stage from precomputed `l4` output |
+| `mlkem_core_stage_decrypt_inv_tail_l6` | AVX2-only diagnostic: decrypt inverse tail `l6` stage from precomputed `l5` output |
+| `mlkem_core_stage_decrypt_inv_final_sub_from` | AVX2-only diagnostic: production-style final inverse butterfly plus scale/subtraction from precomputed `l6` output |
 | `mlkem_core_stage_decrypt_inv_scale_sub_from` | decrypt-side final inverse-NTT scale and subtraction only, using precomputed inverse-butterfly output |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
@@ -5758,6 +5766,55 @@ This is not a new production optimization; production already used the lazy
 `decrypt_ntt_accum_recover`. The remaining decrypt-side headroom is now mostly
 the K=3 accumulation plus inverse/sub boundary, because the lazy NTT win is
 already present in production and disappears inside the accumulation-only row.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 decrypt inverse stage split)
+
+A bench-only diagnostic split the AVX2 decrypt inverse/sub path into production
+inverse-head levels, tail levels through `l6`, and the production-style final
+`l7` butterfly plus inverse scale/subtraction from precomputed `l6` output. A
+`decrypt_inv_copy_only` row is included because these per-stage probes all copy a
+polynomial into scratch and checksum it; the adjusted column below subtracts the
+copy/checksum median to show the approximate per-stage work. The final helper is
+validated against `ntt_inv_sub_from_inplace()` before timing.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_decrypt_inv_(copy_only|sub_from|butterflies|head|head_l1|head_l2|head_l3|tail|tail_l4|tail_l5|tail_l6|final_sub_from|scale_sub_from)_ns_per_op=|mlkem_core_stage_decrypt_(accum_inv|lazy_ntt_accum_recover)_ns_per_op=|mlkem_core_stage_kpke_decrypt_cached_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op | Median minus copy-only |
+|---|---:|---:|---:|
+| `mlkem_core_stage_decrypt_inv_copy_only` | 184.04 | 183.63 | 0.00 |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 381.66 | 381.76 | 198.13 |
+| `mlkem_core_stage_decrypt_inv_butterflies` | 359.88 | 359.97 | 176.34 |
+| `mlkem_core_stage_decrypt_inv_head` | 274.88 | 275.17 | 91.54 |
+| `mlkem_core_stage_decrypt_inv_tail` | 268.60 | 268.46 | 84.83 |
+| `mlkem_core_stage_decrypt_inv_head_l1` | 223.98 | 224.04 | 40.41 |
+| `mlkem_core_stage_decrypt_inv_head_l2` | 213.25 | 213.26 | 29.63 |
+| `mlkem_core_stage_decrypt_inv_head_l3` | 208.04 | 208.02 | 24.39 |
+| `mlkem_core_stage_decrypt_inv_tail_l4` | 205.98 | 205.85 | 22.22 |
+| `mlkem_core_stage_decrypt_inv_tail_l5` | 205.62 | 205.41 | 21.78 |
+| `mlkem_core_stage_decrypt_inv_tail_l6` | 204.79 | 204.81 | 21.18 |
+| `mlkem_core_stage_decrypt_inv_final_sub_from` | 226.73 | 226.80 | 43.17 |
+| `mlkem_core_stage_decrypt_accum_inv` | 460.34 | 460.36 | 276.73 |
+| `mlkem_core_stage_decrypt_lazy_ntt_accum_recover` | 874.06 | 873.50 | 689.87 |
+
+Decision: keep these rows as diagnostics and do not try another isolated tail
+level rewrite. After removing copy/sink overhead, no single inverse tail stage
+dominates; `l4`, `l5`, and `l6` are all about `21-22 ns`. The largest local
+items are the production final butterfly/scale/subtraction boundary
+(`~43 ns` adjusted) and head `l1` (`~40 ns` adjusted). A useful decrypt-side
+optimization should therefore either change the final boundary together with
+message recovery or redesign the whole inverse schedule/range contract, not only
+replace one tail level.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy ehat add boundary)
