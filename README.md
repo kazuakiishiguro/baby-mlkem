@@ -9632,6 +9632,44 @@ for the existing full-vector store is good enough here, and the one-lane tail is
 not currently a useful bottleneck. Future sampler work should target fewer
 Keccak/parser passes rather than this extraction micro-shape.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 `H(ek)`/tail order)
+
+A narrow public-preparation dataflow candidate reordered
+`sha3_256_sample_ntt_tail_avx2()`. The current helper co-schedules the first
+three `H(ek)` SHA3-256 blocks with the scalar public-matrix tail, then parses the
+tail stream before finishing the remaining `H(ek)` blocks. The candidate copied
+the lane-0 hash state after the first three co-scheduled blocks, finished
+`H(ek)` immediately, and parsed the lane-1 tail stream afterward. The hypothesis
+was that `hst[25]` would no longer stay live across the rejection parser and
+refill loop. Correctness passed the AVX2-only core gate, but the stage gate
+rejected it, so production was restored.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected candidate highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4267.81 | 4510.06 | 0.9463x | 0.9940x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | 4304.01 | 4312.84 | 0.9980x | 1.0011x |
+| `mlkem_core_stage_sample_matrix_tail` | 866.22 | 875.64 | 0.9892x | 0.9903x |
+| `mlkem_core_stage_sample_matrix` | 2811.64 | 2819.47 | 0.9972x | 0.9978x |
+| `mlkem_core_stage_kpke_keygen_full` | 4761.92 | 4752.48 | 1.0020x | 1.0001x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4910.24 | 4883.93 | 1.0054x | 0.9993x |
+
+Decision: reject the `H(ek)`-first ordering. The intended lifetime reduction does
+not improve the direct no-cache public-preparation row, and the tail/sampler
+rows regress. Keep parsing the co-scheduled tail stream before finishing the
+remaining scalar hash blocks; future work at this boundary needs to remove
+Keccak/parser work, not just reorder independent consumers of the same
+co-scheduled state.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
