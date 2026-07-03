@@ -9468,10 +9468,54 @@ The integrated tail21 row is `1.0057x` average and `1.0035x` median faster than
 the current cache-disabled `kpke_encrypt()` row, and `1.0112x` average /
 `1.0040x` median faster than the earlier rowwise diagnostic. This is still a
 small signal, but it is stronger than the standalone tail-choice row because it
-measures the full co-scheduled K-PKE encryption boundary. Treat tail21 as a
-production A/B candidate; do not accept it from this diagnostic alone because it
-requires changing hardcoded `(2,2)` tail helpers and must survive integrated stage
-and KEM confirmation.
+measures the full co-scheduled K-PKE encryption boundary.
+
+A follow-up production candidate changed the AVX2 `kpke_encrypt()` cache-miss
+path to use the `(2,1)` co-scheduled tail and put `(2,2)` in the second x4
+public-matrix batch. Correctness passed the AVX2-only gate, and the direct stage
+row improved, but cached KEM medians regressed enough to reject the production
+change.
+
+Correctness and A/B commands:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+RUNS=9 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production-candidate stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2445.74 | 2393.38 | 1.0219x | 1.0020x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4930.34 | 4847.49 | 1.0171x | 1.0069x |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | 4857.72 | 4860.32 | 0.9995x | 1.0014x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4156.18 | 4231.71 | 0.9821x | 0.9997x |
+
+Production-candidate KEM highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps` | 3596.32 | 3628.66 | 0.9911x | 0.9960x |
+| `mlkem_decaps_core` | 5995.70 | 6051.82 | 0.9907x | 0.9974x |
+| `mlkem_encaps` | 2657.98 | 2661.15 | 0.9988x | 0.9992x |
+| `mlkem_encaps_core` | 7053.24 | 6908.83 | 1.0209x | 0.9890x |
+| `mlkem_keygen_core` | 6872.80 | 6900.88 | 0.9959x | 0.9985x |
+| `mlkem_roundtrip_core` | 20135.35 | 20027.95 | 1.0054x | 0.9993x |
+
+Decision: keep `kpke_encrypt_uncached_tail21` as a diagnostic row only and leave
+production on the existing `(2,2)` co-scheduled tail. The direct K-PKE row is
+positive, but the helper duplication and changed hardcoded public-matrix grouping
+do not survive KEM median confirmation. Future tail work needs to remove shared
+work or redesign the helper so the direct K-PKE gain does not come with wider
+code-layout cost.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
