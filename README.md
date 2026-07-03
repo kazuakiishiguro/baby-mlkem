@@ -9517,6 +9517,42 @@ do not survive KEM median confirmation. Future tail work needs to remove shared
 work or redesign the helper so the direct K-PKE gain does not come with wider
 code-layout cost.
 
+A narrower follow-up tested that exact hypothesis by avoiding the duplicated
+helper body: the existing encryption PRF/tail helper was split into a shared
+`tail_suffix` implementation plus the original `(2,2)` wrapper, and only the
+AVX2 `kpke_encrypt()` cache-miss path called the shared helper with `(2,1)`.
+This preserved correctness but failed the stage gate, so KEM confirmation was not
+run.
+
+Shared-helper candidate command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make test CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+RUNS=7 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Shared-helper stage highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2397.62 | 2448.53 | 0.9792x | 1.0002x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4872.61 | 4913.62 | 0.9917x | 1.0029x |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | 4862.61 | 4861.83 | 1.0002x | 0.9993x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4148.31 | 4147.20 | 1.0003x | 1.0008x |
+| `mlkem_core_stage_sample_matrix` | 2800.96 | 2830.65 | 0.9895x | 0.9960x |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1180.67 | 1213.98 | 0.9726x | 0.9860x |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | 1671.08 | 1677.11 | 0.9964x | 0.9995x |
+
+This closes the local tail21 route for now. Removing helper duplication did not
+make the signal robust; the direct uncached median improved only `1.0029x` while
+the average regressed, and the diagnostic tail21 row itself regressed by median.
+The next candidate should avoid hardcoded tail rotation and instead remove work
+from the public-matrix or NTT/accumulation dataflow.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
