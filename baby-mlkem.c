@@ -2019,6 +2019,45 @@ static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
                      pack_i32x8_to_i16x8(mod_q_sub_i32x8(m1, scaled1)));
   }
 }
+
+static inline uint8_t recover_bits_i32x8_avx2(__m256i v) {
+  const __m256i half_q = _mm256_set1_epi32((Q + 1) / 2);
+  const __m256i quarter_q = _mm256_set1_epi32((Q + 1) / 4);
+  __m256i diff = _mm256_abs_epi32(_mm256_sub_epi32(v, half_q));
+  __m256i is_one = _mm256_cmpgt_epi32(quarter_q, diff);
+  return (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(is_one));
+}
+
+static inline void ntt_inv_sub_recover_from_inplace_avx2(
+    const poly256 minuend, poly256 out, uint8_t msg[32]) {
+  uint16_t zeta = ntt_inv_before_final_avx2(out);
+  const __m256i scale = _mm256_set1_epi32(3303);
+  const uint16_t zeta_scaled = mod_q_reduce_ntt_u32((uint32_t)zeta * 3303u);
+  const __m256i zeta_scale = _mm256_set1_epi32(zeta_scaled);
+  for (int j = 0; j < N / 2; j += 16) {
+    for (int half = 0; half < 2; half++) {
+      int off = j + 8 * half;
+      __m256i a = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + off)));
+      __m256i b = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + N / 2 + off)));
+      __m256i sum = mod_q_add_i32x8(a, b);
+      __m256i diff = mod_q_sub_i32x8(b, a);
+      __m256i scaled0 =
+          mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(sum, scale));
+      __m256i scaled1 =
+          mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(diff, zeta_scale));
+      __m256i m0 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(minuend + off)));
+      __m256i m1 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(minuend + N / 2 + off)));
+      __m256i w0 = mod_q_sub_i32x8(m0, scaled0);
+      __m256i w1 = mod_q_sub_i32x8(m1, scaled1);
+      msg[(size_t)off / 8] = recover_bits_i32x8_avx2(w0);
+      msg[16 + (size_t)off / 8] = recover_bits_i32x8_avx2(w1);
+    }
+  }
+}
 #endif
 
 static inline void ntt_inv_scale(poly256 out) {
@@ -4705,10 +4744,14 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
                kpke_secret_cache_shat[1], u[1],
                kpke_secret_cache_shat[2], u[2], w);
 #endif
-  ntt_inv_sub_from_inplace(v, w);
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_inv_sub_recover_from_inplace_avx2(v, w, out_m);
+#else
+  ntt_inv_sub_from_inplace(v, w);
   mlkem_recover_message(w, out_m);
+#endif
   *out_mlen = 32;
 }
 

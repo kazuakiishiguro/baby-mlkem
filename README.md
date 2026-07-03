@@ -1607,6 +1607,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_inv_tail_l5` | AVX2-only diagnostic: decrypt inverse tail `l5` stage from precomputed `l4` output |
 | `mlkem_core_stage_decrypt_inv_tail_l6` | AVX2-only diagnostic: decrypt inverse tail `l6` stage from precomputed `l5` output |
 | `mlkem_core_stage_decrypt_inv_final_sub_from` | AVX2-only diagnostic: production-style final inverse butterfly plus scale/subtraction from precomputed `l6` output |
+| `mlkem_core_stage_decrypt_inv_final_sub_recover_split` | AVX2-only diagnostic: final inverse butterfly plus scale/subtraction from precomputed `l6` output, then the existing message recovery pass |
+| `mlkem_core_stage_decrypt_inv_final_sub_recover_fused` | AVX2-only diagnostic: final inverse butterfly plus scale/subtraction from precomputed `l6` output, directly producing recovered message bytes |
 | `mlkem_core_stage_decrypt_inv_scale_sub_from` | decrypt-side final inverse-NTT scale and subtraction only, using precomputed inverse-butterfly output |
 | `mlkem_core_stage_decrypt_accum_inv` | decrypt-side secret accumulation plus inverse NTT subtraction, using precomputed `ntt(u)` |
 | `mlkem_core_stage_decrypt_recover_message` | decrypt-side message recovery from the already reconstructed `w` polynomial |
@@ -5815,6 +5817,70 @@ items are the production final butterfly/scale/subtraction boundary
 optimization should therefore either change the final boundary together with
 message recovery or redesign the whole inverse schedule/range contract, not only
 replace one tail level.
+
+### Independent Core Optimization A/B (2026-07-03, AVX2 final recover fusion)
+
+The final-boundary follow-up is accepted for AVX2-only production decrypt. The
+new `ntt_inv_sub_recover_from_inplace_avx2()` keeps the existing inverse-head and
+`l4..l6` schedule, but replaces the final `l7` butterfly + inverse scale +
+subtraction + `mlkem_recover_message()` sequence with a single final pass that
+turns the 32-bit final-sub lanes directly into message bits. This avoids storing
+the final `w` polynomial only to reload it in the recovery pass. AVX512 and
+scalar builds keep their existing paths.
+
+The bench-only lower-bound rows compare the old split boundary against the fused
+final boundary with the same scratch-copy shape. The fused helper is validated
+against the split `ntt_inv_sub_from_inplace()` plus `mlkem_recover_message()`
+path before timing.
+
+Direct AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 50000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_decrypt_inv_final_sub_(from|recover_split|recover_fused)_ns_per_op=|mlkem_core_stage_decrypt_recover_message_ns_per_op=|mlkem_core_stage_decrypt_lazy_ntt_accum_recover_ns_per_op=|mlkem_core_stage_kpke_decrypt_cached_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Direct final-boundary results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_decrypt_inv_final_sub_recover_split` | 52.64 | 52.15 |
+| `mlkem_core_stage_decrypt_inv_final_sub_recover_fused` | 48.11 | 48.10 |
+
+Fused final-recover is `1.0941x` faster by average and `1.0842x` faster by
+median, saving about `4.05 ns` at this local boundary.
+
+Production A/B command against the previous HEAD:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=24000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_lazy_ntt_accum_recover` | 874.91 | 871.49 | 1.0039x | 1.0034x |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 892.75 | 885.55 | 1.0081x | 1.0072x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 911.81 | 905.33 | 1.0072x | 1.0075x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 923.58 | 917.59 | 1.0065x | 1.0070x |
+| `mlkem_decaps` | 3611.26 | 3600.75 | 1.0029x | 1.0016x |
+| `mlkem_decaps_core` | 6055.96 | 6061.73 | 0.9990x | 1.0022x |
+
+Decision: keep the production fusion. The direct boundary win is small but real,
+and the decrypt stage rows move in the expected direction. Broad KEM rows are
+near noise, but decapsulation median does not regress. The older
+`decrypt_inv_final_sub_from` row includes a full-polynomial checksum and is no
+longer the acceptance signal for this boundary; use the split/fused final-recover
+rows and `kpke_decrypt_*` rows instead. The next decrypt-side target is no longer
+message recovery itself, but either head `l1` or a wider inverse schedule/range
+redesign that can also preserve the final-recover fusion.
 
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 lazy ehat add boundary)
