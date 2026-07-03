@@ -656,6 +656,8 @@ helpers:
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_fused_l3_l1` | AVX2-only diagnostic lower tail using one loop that completes `l3`, `l2`, and lazy `l1` per 16-coefficient block |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
+| `mlkem_ntt_tail_avx2_l2_block` | AVX2-only diagnostic: forward NTT tail `l2` using two contiguous 128-bit block loads/stores instead of the production pair-load helper |
+| `mlkem_ntt_tail_avx2_l2_block_lazy_l1_canon` | AVX2-only diagnostic: forward NTT tail `l3`, block-load `l2`, lazy `l1`, then canonicalization |
 | `mlkem_ntt_level_l7` .. `mlkem_ntt_level_l1` | one prepared scalar forward-NTT level, from length 128 down to length 2 |
 | `mlkem_ntt_inv` | `ntt_inv()` |
 | `mlkem_ntt_inv_level_l1` .. `mlkem_ntt_inv_level_l7` | one prepared inverse-NTT level, from length 2 up to length 128 |
@@ -5159,6 +5161,72 @@ This is a small but real classical NTT optimization: it removes per-vector
 conditional add/sub reductions from the final butterfly, pays one contiguous
 canonicalization pass, and keeps all external encoders and NTT-domain consumers
 on the existing canonical representation.
+
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 forward tail-l2 block load)
+
+A bench-only diagnostic tested the same block-load idea that helped inverse-head
+`l2`, but on the AVX2 forward NTT tail `l2` level. The candidate loads each
+16-coefficient block as two contiguous 128-bit halves, forms
+`a=[0..3,8..11]` and `b=[4..7,12..15]` with 64-bit unpacks, then writes the
+`sum,diff` output with two contiguous 128-bit stores. The diagnostic validates
+the block-load sequence against the existing tail before timing.
+
+Direct AVX2-only bench command:
+
+```bash
+make bench-ntt CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 9); do
+  taskset -c 0 ./bench_nttc 200000 | \
+    awk -F= -v run="$i" '/mlkem_ntt_(copy|inplace|tail_avx2|tail_avx2_l2|tail_avx2_l2_block|tail_avx2_l2_block_lazy_l1_canon|tail_avx2_lazy_l1_canon)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Direct diagnostic results:
+
+| Metric | Existing avg ns/op | Existing median ns/op | Block avg ns/op | Block median ns/op |
+|---|---:|---:|---:|---:|
+| Tail `l2` only | 29.00 | 29.00 | 28.65 | 28.64 |
+| Tail `l3 + l2 + lazy l1 + canon` | 94.68 | 94.66 | 94.27 | 94.25 |
+
+The direct `l2` row is about `1.0126x` faster by median, and the full-tail-like
+bench-only row is about `1.0044x` faster by median.
+
+Production A/B was still rejected. Temporarily routing production
+`ntt_tail_avx2()` and `ntt_tail_lazy_mul_input_avx2()` through the block-load
+`l2` helper produced only a tiny direct NTT improvement, and KEM confirmation did
+not hold.
+
+Production A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=ntt,stage,kem NTT_ITERS=200000 \
+  STAGE_ITERS=60000 KEM_ITERS=24000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_ab.sh HEAD
+```
+
+Production A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_ntt_tail_avx2` | 93.67 | 93.40 | 1.0029x | 1.0020x |
+| `mlkem_ntt_copy` | 195.48 | 194.94 | 1.0028x | 1.0028x |
+| `mlkem_ntt_inplace` | 190.99 | 190.68 | 1.0016x | 1.0018x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1557.00 | 1552.45 | 1.0029x | 1.0015x |
+| `mlkem_core_stage_encrypt_noise_ntt` | 787.62 | 787.68 | 0.9999x | 0.9999x |
+| `mlkem_core_stage_decrypt_u_ntt_tail` | 491.29 | 492.11 | 0.9983x | 0.9984x |
+| `mlkem_keygen_core` | 6882.25 | 6903.47 | 0.9969x | 1.0006x |
+| `mlkem_encaps_core` | 6977.26 | 7243.56 | 0.9632x | 0.9984x |
+| `mlkem_decaps_core` | 5967.96 | 6004.25 | 0.9940x | 0.9953x |
+| `mlkem_roundtrip_core` | 19995.61 | 20348.06 | 0.9827x | 0.9817x |
+
+Decision: reject the production forward-tail `l2` block-load helper. The direct
+NTT win is real but too small, and it does not survive integrated KEM
+confirmation. Keep the diagnostic rows only. Future forward-tail work should not
+mirror the inverse-head local load/store rewrites blindly; it needs a
+representation or scheduling change that remains positive in keygen, decrypt, and
+roundtrip core rows.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 NTT tail inline boundary)
 

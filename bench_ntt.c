@@ -623,6 +623,37 @@ static void run_ntt_tail_l2_avx2(poly256 f) {
 #endif
 }
 
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void run_ntt_tail_l1_lazy_avx2(poly256 f);
+
+static void run_ntt_tail_l2_block_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    __m128i lo = _mm_loadu_si128((const __m128i *)(f + start));
+    __m128i hi = _mm_loadu_si128((const __m128i *)(f + start + 8));
+    __m128i a16 = _mm_unpacklo_epi64(lo, hi);
+    __m128i b16 = _mm_unpackhi_epi64(lo, hi);
+    __m256i a = _mm256_cvtepu16_epi32(a16);
+    __m256i b = _mm256_cvtepu16_epi32(b16);
+    __m256i t = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(b, ZETA_NTT_TAIL_L2[i]));
+    __m128i sum16 = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t));
+    __m128i diff16 = pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t));
+    _mm_storeu_si128((__m128i *)(f + start),
+                     _mm_unpacklo_epi64(sum16, diff16));
+    _mm_storeu_si128((__m128i *)(f + start + 8),
+                     _mm_unpackhi_epi64(sum16, diff16));
+  }
+}
+
+static void ntt_tail_l2_block_lazy_l1_canon_avx2(poly256 f) {
+  run_ntt_tail_l3_avx2(f);
+  run_ntt_tail_l2_block_avx2(f);
+  run_ntt_tail_l1_lazy_avx2(f);
+  bench_reduce_poly_once(f);
+}
+#endif
+
 static void run_ntt_tail_l1_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly2x4_avx2(f + start, f + start + 2,
@@ -942,6 +973,18 @@ static void validate_ntt_helpers(void) {
   ntt_lazy_mul_input_avx2(got, got);
   check_equal_mod_q(got, tmp, "forward ntt lazy mul input inplace");
 
+
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  run_ntt_head_l7_l4(got);
+  run_ntt_tail_l3_avx2(got);
+  run_ntt_tail_l2_block_avx2(got);
+  run_ntt_tail_l1_avx2(got);
+  check_equal(got, tmp, "forward ntt tail l2 block sequence");
+
+  memcpy(got, bench_a0[0], sizeof(poly256));
+  run_ntt_head_l7_l4(got);
+  ntt_tail_l2_block_lazy_l1_canon_avx2(got);
+  check_equal(got, tmp, "forward ntt tail l2 block lazy l1 canonicalized");
   memcpy(got, bench_a0[0], sizeof(poly256));
   run_ntt_head_l7_l4(got);
   ntt_tail_fused_l3_l1_avx2(got);
@@ -1812,6 +1855,39 @@ static uint64_t bench_ntt_tail_l2_avx2(size_t iters) {
   return t1 - t0;
 }
 
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_tail_l2_block_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_tail_l2_block_avx2(bench_ntt_tail_work[1][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[1][lane][(i * 461u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_tail_l2_block_lazy_l1_canon_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_tail_l2_block_lazy_l1_canon_avx2(bench_ntt_tail_work[0][lane]);
+    acc += (uint16_t)bench_ntt_tail_work[0][lane][(i * 467u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_ntt_tail_l1_avx2(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2205,6 +2281,12 @@ int main(int argc, char **argv) {
                iters);
   print_metric("mlkem_ntt_tail_avx2_l2", bench_ntt_tail_l2_avx2(iters),
                iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_tail_avx2_l2_block",
+               bench_ntt_tail_l2_block_avx2(iters), iters);
+  print_metric("mlkem_ntt_tail_avx2_l2_block_lazy_l1_canon",
+               bench_ntt_tail_l2_block_lazy_l1_canon_avx2(iters), iters);
+#endif
   print_metric("mlkem_ntt_tail_avx2_l1", bench_ntt_tail_l1_avx2(iters),
                iters);
   print_metric("mlkem_ntt_tail_avx2_l1_lazy",
