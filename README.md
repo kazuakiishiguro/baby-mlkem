@@ -270,11 +270,31 @@ done
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | 254.27 | low half is not uniquely dominant. |
 | `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | 257.97 | high half is balanced with low half. |
 
+A follow-up copy/sink diagnostic checks whether the large inverse-add row is just
+an artifact of the scratch-copy harness:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(only|copy_only|checksum_only|tail_final_only|final_only|head_only)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 762.95 | 763.02 | full diagnostic row. |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_only` | 206.22 | 206.37 | three 512-byte scratch copies plus checksum. |
+| `mlkem_core_stage_encrypt_inv_add_u_checksum_only` | 179.84 | 179.84 | checksum baseline with no scratch copy. |
+| Estimated scratch-copy component | 26.38 | 26.53 | `copy_only - checksum_only`; not the main cost. |
+| Estimated inverse-add body component | 556.73 | 556.65 | `only - copy_only`; still the dominant part. |
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
 ordering. The remaining plausible arithmetic direction is a representation-level
 inverse-add rewrite that removes load/extend/reduce work across the full tail and
-final boundary, with KEM confirmation as the adoption gate.
+final boundary, with KEM confirmation as the adoption gate. The new copy/sink
+split confirms that the target is real arithmetic/dataflow, not merely diagnostic
+scratch-copy overhead.
 
 ## Test
 
@@ -1840,6 +1860,8 @@ stage metrics.
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_only` | diagnostic lower bound for the three scratch copies plus the same checksum shape used by `encrypt_inv_add_u_only` |
+| `mlkem_core_stage_encrypt_inv_add_u_checksum_only` | diagnostic checksum-only baseline for estimating the scratch-copy component in `encrypt_inv_add_u_only` |
 | `mlkem_core_stage_encrypt_inv_add_u_head_only` | AVX2 builds only: inverse-NTT head stages for the three precomputed `u` accumulations, including scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
