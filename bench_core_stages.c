@@ -220,6 +220,9 @@ static void stage_ntt_mul_acc3_canonical_avx2(
 #if defined(__AVX2__)
 static void stage_ntt_head_avx2(poly256 f);
 static void stage_ntt_inv_head_l1_avx2(poly256 f);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_inv_head_l1_block_avx2(poly256 f);
+#endif
 static void stage_ntt_inv_head_l2_avx2(poly256 f);
 static void stage_ntt_inv_head_l3_avx2(poly256 f);
 static void stage_ntt_inv_tail_l4_after_head_avx2(poly256 f);
@@ -1027,6 +1030,17 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_noise_ntt_headtail_batch_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   validate_decrypt_lazy_ntt_accum_avx2();
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 block, level;
+    memcpy(block, stage_w_ntt[lane], sizeof(poly256));
+    memcpy(level, stage_w_ntt[lane], sizeof(poly256));
+    stage_ntt_inv_head_l1_block_avx2(block);
+    stage_ntt_inv_head_l1_avx2(level);
+    if (memcmp(block, level, sizeof(poly256)) != 0) {
+      fprintf(stderr, "decrypt inverse l1 block mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     poly256 got, want;
     memcpy(got, stage_w_inv_l6[lane], sizeof(poly256));
@@ -4043,6 +4057,35 @@ static void stage_ntt_inv_head_l1_avx2(poly256 f) {
   }
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_inv_head_l1_block_avx2(poly256 f) {
+  const __m128i shuf_a = _mm_setr_epi8(
+      0, 1, 2, 3, 8, 9, 10, 11, -1, -1, -1, -1, -1, -1, -1, -1);
+  const __m128i shuf_b = _mm_setr_epi8(
+      4, 5, 6, 7, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1);
+
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    __m128i lo = _mm_loadu_si128((const __m128i *)(f + start));
+    __m128i hi = _mm_loadu_si128((const __m128i *)(f + start + 8));
+    __m128i a16 = _mm_unpacklo_epi64(_mm_shuffle_epi8(lo, shuf_a),
+                                     _mm_shuffle_epi8(hi, shuf_a));
+    __m128i b16 = _mm_unpacklo_epi64(_mm_shuffle_epi8(lo, shuf_b),
+                                     _mm_shuffle_epi8(hi, shuf_b));
+    __m256i a = _mm256_cvtepu16_epi32(a16);
+    __m256i b = _mm256_cvtepu16_epi32(b16);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i t = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(diff, ZETA_NTT_INV_HEAD_L1[i]));
+    __m128i sum16 = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b));
+    __m128i t16 = pack_i32x8_to_i16x8(t);
+    _mm_storeu_si128((__m128i *)(f + start),
+                     _mm_unpacklo_epi32(sum16, t16));
+    _mm_storeu_si128((__m128i *)(f + start + 8),
+                     _mm_unpackhi_epi32(sum16, t16));
+  }
+}
+#endif
+
 static void stage_ntt_inv_head_l2_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_inv_butterfly4x2_avx2(f + start, f + start + 4,
@@ -4705,6 +4748,21 @@ static uint64_t bench_decrypt_inv_head_l1(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_decrypt_inv_head_l1_block(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    memcpy(stage_tmp_poly[lane], stage_w_ntt[lane], sizeof(poly256));
+    stage_ntt_inv_head_l1_block_avx2(stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_decrypt_inv_head_l2(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -5221,6 +5279,8 @@ int main(int argc, char **argv) {
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_decrypt_inv_head_l1",
                bench_decrypt_inv_head_l1(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_inv_head_l1_block",
+               bench_decrypt_inv_head_l1_block(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_head_l2",
                bench_decrypt_inv_head_l2(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_head_l3",
