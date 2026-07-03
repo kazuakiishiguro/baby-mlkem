@@ -9595,6 +9595,43 @@ not survive the surrounding `H(ek)` co-schedule and full no-cache public
 preparation boundary. Future work should not spend more effort on hardcoded
 `(2,1)` tail routing unless a broader schedule removes Keccak or parser work.
 
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 sample_ntt4_one lane0 extract)
+
+A narrow production candidate tested the remaining one-lane x4 public-matrix
+tail sampler. `sample_ntt4_one()` extracted lane 0 from each `keccakf4()` state
+word by storing the full `__m256i` to a temporary `uint64_t words[4]` and reading
+`words[0]`. The candidate replaced that with direct low-lane extraction via
+`_mm256_castsi256_si128()` and `_mm_cvtsi128_si64()`, and applied the same shape
+to the stage helper used by the `sample_ntt4_one_keccak_store3` split row.
+Correctness passed the short AVX2 stage validation, but the full stage gate did
+not support the change, so production was restored.
+
+AVX2-only stage A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=70000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Rejected candidate highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_one_full_raw` | 882.98 | 882.82 | 1.0002x | 0.9995x |
+| `mlkem_core_stage_sample_ntt4_one_keccak_store3` | 851.55 | 849.39 | 1.0025x | 0.9994x |
+| `mlkem_core_stage_sample_matrix_tail` | 868.07 | 868.87 | 0.9991x | 0.9950x |
+| `mlkem_core_stage_sample_matrix` | 2797.43 | 2803.16 | 0.9980x | 0.9980x |
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3025.26 | 3033.92 | 0.9971x | 0.9966x |
+| `mlkem_core_stage_kpke_keygen_full` | 4755.56 | 4764.93 | 0.9980x | 0.9994x |
+
+Decision: reject the direct lane0 extraction. The apparent store split-row
+average win does not hold on median, and the integrated `sample_matrix`,
+keygen matrix/noise, and full K-PKE keygen rows regress. The compiler/codegen
+for the existing full-vector store is good enough here, and the one-lane tail is
+not currently a useful bottleneck. Future sampler work should target fewer
+Keccak/parser passes rather than this extraction micro-shape.
+
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
 A decrypt-only AVX2 final forward-NTT fusion experiment was rejected. The
