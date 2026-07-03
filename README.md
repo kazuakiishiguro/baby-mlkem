@@ -1603,7 +1603,8 @@ stage metrics.
 | `mlkem_core_stage_decrypt_inv_tail_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l4`..`l7`, rejected versus the compiler-vectorized scalar tail |
 | `mlkem_core_stage_decrypt_inv_head_l1` | AVX2-only diagnostic: decrypt inverse head `l1` stage from precomputed NTT-domain accumulation, using the previous scatter/gather helper shape |
 | `mlkem_core_stage_decrypt_inv_head_l1_block` | AVX2-only diagnostic: decrypt inverse head `l1` stage using the production block-load/shuffle helper |
-| `mlkem_core_stage_decrypt_inv_head_l2` | AVX2-only diagnostic: decrypt inverse head `l2` stage from precomputed `l1` output |
+| `mlkem_core_stage_decrypt_inv_head_l2` | AVX2-only diagnostic: decrypt inverse head `l2` stage from precomputed `l1` output, using the previous pair-load helper shape |
+| `mlkem_core_stage_decrypt_inv_head_l2_block` | AVX2-only diagnostic: decrypt inverse head `l2` stage using the production block-load helper |
 | `mlkem_core_stage_decrypt_inv_head_l3` | AVX2-only diagnostic: decrypt inverse head `l3` stage from precomputed `l2` output |
 | `mlkem_core_stage_decrypt_inv_tail_l4` | AVX2-only diagnostic: decrypt inverse tail `l4` stage from precomputed head output |
 | `mlkem_core_stage_decrypt_inv_tail_l4_vec8` | AVX2-only diagnostic: explicit 8-lane AVX2 rewrite of decrypt inverse tail `l4`, rejected versus the compiler-vectorized scalar tail |
@@ -5960,6 +5961,72 @@ remaining inverse target is a wider l2/l3/tail representation or schedule change
 not another local l1 load/store variant.
 
 
+
+
+### Independent Core Optimization A/B (2026-07-03, AVX2 inverse head-l2 block load)
+
+The AVX2-only inverse head now also uses a block-load helper for `l2`. The
+previous `l2` helper loaded `a0/a1` and `b0/b1` as four 64-bit chunks inside
+each 16-coefficient block. The new helper loads the low and high 8-coefficient
+halves with two contiguous 128-bit loads, forms `a=[0..3,8..11]` and
+`b=[4..7,12..15]` with 64-bit unpacks, and stores the two contiguous output
+halves with 128-bit stores. `l1` keeps the earlier block-load/shuffle helper and
+`l3` was already naturally contiguous. AVX512BW builds remain on the previous
+helper shape.
+
+The bench-only diagnostic validates the block-load output against the previous
+`stage_ntt_inv_head_l2_avx2()` helper before timing.
+
+Direct AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 50000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_decrypt_inv_(copy_only|head|head_l2|head_l2_block|sub_from)_ns_per_op=|mlkem_core_stage_kpke_decrypt_cached_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Direct diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_decrypt_inv_head_l2` | 213.00 | 213.00 |
+| `mlkem_core_stage_decrypt_inv_head_l2_block` | 210.87 | 210.86 |
+
+The block-load helper is `1.0101x` faster by average and median, saving about
+`2.14 ns` at this local `l2` boundary.
+
+Production A/B command against the previous HEAD:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=24000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production A/B highlights:
+
+| Metric | Baseline ns/op | Candidate ns/op | Avg speedup | Median speedup |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_decrypt_inv_head` | 268.50 | 267.37 | 1.0042x | 1.0041x |
+| `mlkem_core_stage_decrypt_inv_butterflies` | 353.55 | 352.21 | 1.0038x | 1.0031x |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 374.84 | 374.41 | 1.0012x | 1.0016x |
+| `mlkem_core_stage_decrypt_lazy_ntt_accum_recover` | 863.02 | 861.47 | 1.0018x | 1.0008x |
+| `mlkem_core_stage_encrypt_inv_add_u_head_only` | 448.41 | 445.93 | 1.0056x | 1.0055x |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 770.99 | 769.14 | 1.0024x | 1.0027x |
+| `mlkem_core_stage_encrypt_accum_inv` | 1304.16 | 1299.42 | 1.0036x | 1.0017x |
+| `mlkem_decaps` | 3578.38 | 3568.70 | 1.0027x | 1.0008x |
+| `mlkem_roundtrip` | 13305.95 | 13240.20 | 1.0050x | 1.0002x |
+
+Decision: keep the production `l2` block-load helper. The direct `l2` row and
+the shared inverse-head rows are consistently positive. Broad KEM rows are small
+and near noise, so this should be treated as a local core improvement rather than
+a headline end-to-end win. The useful pattern remains reducing inverse-head
+scatter/gather while preserving the level-wise schedule; `l3` is already
+contiguous, so the next inverse-head work should move beyond local load/store
+rewrites.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, AVX2 inverse tail explicit vec8)
 

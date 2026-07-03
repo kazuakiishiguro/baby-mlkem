@@ -1647,6 +1647,26 @@ static void ntt_inv_head_l1_block_avx2(poly256 f) {
                      _mm_unpackhi_epi32(sum16, t16));
   }
 }
+
+static void ntt_inv_head_l2_block_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    __m128i lo = _mm_loadu_si128((const __m128i *)(f + start));
+    __m128i hi = _mm_loadu_si128((const __m128i *)(f + start + 8));
+    __m128i a16 = _mm_unpacklo_epi64(lo, hi);
+    __m128i b16 = _mm_unpackhi_epi64(lo, hi);
+    __m256i a = _mm256_cvtepu16_epi32(a16);
+    __m256i b = _mm256_cvtepu16_epi32(b16);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i t = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(diff, ZETA_NTT_INV_HEAD_L2[i]));
+    __m128i sum16 = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b));
+    __m128i t16 = pack_i32x8_to_i16x8(t);
+    _mm_storeu_si128((__m128i *)(f + start),
+                     _mm_unpacklo_epi64(sum16, t16));
+    _mm_storeu_si128((__m128i *)(f + start + 8),
+                     _mm_unpackhi_epi64(sum16, t16));
+  }
+}
 #endif
 
 static void ntt_inv_head_avx2(poly256 f) {
@@ -1661,11 +1681,15 @@ static void ntt_inv_head_avx2(poly256 f) {
 #else
   ntt_inv_head_l1_block_avx2(f);
 #endif
+#if defined(__AVX512F__) && defined(__AVX512BW__)
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_inv_butterfly4x2_avx2(f + start, f + start + 4,
                               f + start + 8, f + start + 12,
                               ZETA_NTT_INV_HEAD_L2[i]);
   }
+#else
+  ntt_inv_head_l2_block_avx2(f);
+#endif
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_inv_butterfly8_avx2(f + start, f + start + 8,
                             ZETA_NTT_INV_HEAD_L3[i]);

@@ -253,6 +253,7 @@ static void stage_ntt_head_avx2(poly256 f);
 static void stage_ntt_inv_head_l1_avx2(poly256 f);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void stage_ntt_inv_head_l1_block_avx2(poly256 f);
+static void stage_ntt_inv_head_l2_block_avx2(poly256 f);
 #endif
 static void stage_ntt_inv_head_l2_avx2(poly256 f);
 static void stage_ntt_inv_head_l3_avx2(poly256 f);
@@ -1089,6 +1090,17 @@ static void validate_core_stage_helpers(void) {
     stage_ntt_inv_tail_after_head_avx2(scalar);
     if (memcmp(vec8, scalar, sizeof(poly256)) != 0) {
       fprintf(stderr, "decrypt inverse tail vec8 mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 block, level;
+    memcpy(block, stage_w_inv_l1[lane], sizeof(poly256));
+    memcpy(level, stage_w_inv_l1[lane], sizeof(poly256));
+    stage_ntt_inv_head_l2_block_avx2(block);
+    stage_ntt_inv_head_l2_avx2(level);
+    if (memcmp(block, level, sizeof(poly256)) != 0) {
+      fprintf(stderr, "decrypt inverse l2 block mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
     }
   }
@@ -4145,6 +4157,12 @@ static void stage_ntt_inv_head_l2_avx2(poly256 f) {
   }
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_inv_head_l2_block_avx2(poly256 f) {
+  ntt_inv_head_l2_block_avx2(f);
+}
+#endif
+
 static void stage_ntt_inv_head_l3_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_inv_butterfly8_avx2(f + start, f + start + 8,
@@ -4847,6 +4865,23 @@ static uint64_t bench_decrypt_inv_head_l2(size_t iters) {
   return t1 - t0;
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_decrypt_inv_head_l2_block(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    memcpy(stage_tmp_poly[lane], stage_w_inv_l1[lane], sizeof(poly256));
+    stage_ntt_inv_head_l2_block_avx2(stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_decrypt_inv_head_l3(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -5420,6 +5455,8 @@ int main(int argc, char **argv) {
                bench_decrypt_inv_head_l1_block(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_head_l2",
                bench_decrypt_inv_head_l2(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_inv_head_l2_block",
+               bench_decrypt_inv_head_l2_block(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_head_l3",
                bench_decrypt_inv_head_l3(iters), iters);
   print_metric("mlkem_core_stage_decrypt_inv_tail_vec8",
