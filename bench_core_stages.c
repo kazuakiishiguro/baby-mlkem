@@ -4492,6 +4492,25 @@ static uint64_t bench_encrypt_inv_add_u_tail_l4(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_encrypt_inv_add_u_tail_l4_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_head[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_tail_l4_after_head_avx2(stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (41u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_encrypt_inv_add_u_tail_l5(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4510,6 +4529,25 @@ static uint64_t bench_encrypt_inv_add_u_tail_l5(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_encrypt_inv_add_u_tail_l5_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l4[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_tail_l5_after_l4_avx2(stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (43u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_encrypt_inv_add_u_tail_l6(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4522,6 +4560,25 @@ static uint64_t bench_encrypt_inv_add_u_tail_l6(size_t iters) {
       stage_ntt_inv_tail_l6_after_l5_avx2(stage_tmp_vec0[lane][row]);
     }
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add_u_tail_l6_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l5[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_tail_l6_after_l5_avx2(stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (47u + 2u * (unsigned)row)) & (N - 1)];
+    }
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -6332,10 +6389,16 @@ int main(int argc, char **argv) {
                bench_encrypt_inv_add_u_head_l3(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l4",
                bench_encrypt_inv_add_u_tail_l4(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw",
+               bench_encrypt_inv_add_u_tail_l4_raw(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l5",
                bench_encrypt_inv_add_u_tail_l5(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw",
+               bench_encrypt_inv_add_u_tail_l5_raw(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l6",
                bench_encrypt_inv_add_u_tail_l6(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw",
+               bench_encrypt_inv_add_u_tail_l6_raw(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_final_only",
                bench_encrypt_inv_add_u_final_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_final_raw",

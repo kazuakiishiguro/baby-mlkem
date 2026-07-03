@@ -308,14 +308,31 @@ done
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.06 | 324.88 | tail/final is the larger raw subtarget. |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 138.56 | 138.27 | final pass alone is smaller after checksum removal. |
 
+A third diagnostic splits the tail stages with the same lightweight sink:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(tail_l4|tail_l4_raw|tail_l5|tail_l5_raw|tail_l6|tail_l6_raw|final_raw|tail_final_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 71.98 | 71.82 | l4 alone is not the unique bottleneck. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.30 | 71.09 | l5 is effectively tied with l4/l6. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 71.62 | 70.47 | l6 is effectively tied with l4/l5. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 139.92 | 138.19 | final remains smaller than the whole tail/final chain. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.00 | 324.71 | combined l4-l6 plus final is the target shape. |
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
 ordering. The remaining plausible arithmetic direction is a representation-level
 inverse-add rewrite that removes load/extend/reduce work across the full tail and
 final boundary, with KEM confirmation as the adoption gate. The new raw split
 confirms that the target is real arithmetic/dataflow, not diagnostic scratch-copy
-or checksum overhead; the most useful local subtarget is tail/final, not final
-alone.
+or checksum overhead; the most useful local subtarget is the full l4-l6 plus
+final chain, not a single tail stage or final alone.
 
 ## Test
 
@@ -1891,8 +1908,11 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | same inverse-tail l4 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | same inverse-tail l5 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | same final-pass diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final3_only` | AVX2-only diagnostic: the same final inverse butterfly plus scale/add for the three `u` accumulations, but grouped into one shared `j` loop |
