@@ -1485,6 +1485,7 @@ stage metrics.
 | `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | AVX2-only diagnostic: cache-disabled encryption that generates noise/tail first, NTTs `r`, then samples public-matrix x4 batches and consumes complete rows immediately |
 | `mlkem_core_stage_kpke_encrypt_uncached_tail21` | AVX2-only diagnostic: cache-disabled encryption that rotates the co-scheduled scalar public-matrix tail from `(2,2)` to `(2,1)` and samples `(2,2)` in the second x4 batch |
 | `mlkem_core_stage_kpke_prepare_public_no_cache` | no-cache `mlkem_encaps()` public preparation: public-key d12 decode, public-matrix sampling, and `H(ek)` with the AVX2 hash/tail co-schedule |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | AVX2-only diagnostic: no-cache public preparation that rotates the hash/co-scheduled scalar public-matrix tail from `(2,2)` to `(2,1)` and samples `(2,2)` in the second x4 batch |
 | `mlkem_core_stage_public_key_decode_d12` | public-key d12 decode only for the three encoded public-key polynomials |
 | `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
 | `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key, for repeated-key context only |
@@ -9552,6 +9553,47 @@ make the signal robust; the direct uncached median improved only `1.0029x` while
 the average regressed, and the diagnostic tail21 row itself regressed by median.
 The next candidate should avoid hardcoded tail rotation and instead remove work
 from the public-matrix or NTT/accumulation dataflow.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 public prepare tail21)
+
+A no-cache public-preparation diagnostic tested whether the earlier standalone
+`(2,1)` tail-choice signal survives the actual `H(ek)` + public-matrix
+co-schedule. The row keeps the first x4 batch unchanged, samples `(1,1)`,
+`(1,2)`, `(2,0)`, and `(2,2)` in the second x4 batch, and co-schedules `H(ek)`
+with the scalar `(2,1)` tail. The diagnostic validates `h`, decoded public-key
+polynomials, and all generated `A^T` entries against the current
+`kpke_prepare_public_no_cache()` path before timing. Production is unchanged.
+
+AVX2-only command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core && \
+  make bench-stages CC=clang AVX2_BACKEND=core \
+    ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 9); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_kpke_prepare_public_no_cache(_tail21)?_ns_per_op=|mlkem_core_stage_sample_matrix(_tail_choice_(21|22))?_ns_per_op=|mlkem_core_stage_kpke_encrypt_uncached_tail21_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4497.18 | 4285.02 |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | 4555.28 | 4298.70 |
+| `mlkem_core_stage_sample_matrix` | 2811.59 | 2806.33 |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2808.70 | 2798.69 |
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2832.51 | 2828.67 |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | 4885.23 | 4863.84 |
+
+The integrated public-prepare tail21 row is slower than the current row:
+`0.9872x` average and `0.9968x` median. This rejects the public-prepare tail
+rotation as a production candidate. The standalone sampler still shows
+`tail_choice_21` faster than `tail_choice_22` in this run, but the advantage does
+not survive the surrounding `H(ek)` co-schedule and full no-cache public
+preparation boundary. Future work should not spend more effort on hardcoded
+`(2,1)` tail routing unless a broader schedule removes Keccak or parser work.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
