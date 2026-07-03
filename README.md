@@ -62,9 +62,9 @@ Near-term target selection:
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The next implementation should therefore prioritize a real `sample_ntt4` state
-to accepted-coefficient path that avoids the current store/reload boundary, or a
-K=3 accumulation/reduction redesign. A signed CBD->NTT boundary change by itself
+The next implementation should therefore prioritize either a `sample_ntt4`
+redesign that changes the Keccak/state representation itself, or an encryption
+`u` inverse-add structural rewrite. A signed CBD->NTT boundary change by itself
 now has a measured budget that is too small: it reproduces the recent pattern of
 small direct wins, then neutral or negative integrated medians.
 
@@ -209,6 +209,72 @@ is therefore below 1 ns per K=3 input vector before integration noise, which is
 not enough to justify production risk. Signed representation should only be
 reopened if the decode and NTT first stage are redesigned together so the
 canonicalization is removed rather than moved.
+
+### Current Next-Target Triage
+
+After closing the standalone signed CBD boundary, the next AVX2-only target was
+rechecked against the current tree. The measurement intentionally includes both
+the public-matrix sampler rows and the encryption `u` accumulation/inverse-add
+rows, because both remain large but have different rejected-neighbor history.
+
+Short AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 5); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_(sample_ntt4_full_raw|sample_ntt4_keccak_store3|sample_ntt4_keccak3_only|sample_ntt4_parse_504|sample_ntt4_common3_step|sample_ntt4_state_parse_full_raw|sample_ntt4_block_parse_full_raw|sample_ntt4_state_mask3|encrypt_accum_inv_u|encrypt_accum_u_only|encrypt_inv_add_u_only|encrypt_inv_add_u_tail_final_only)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, five `20000`-iteration runs:
+
+| Family | Metric | Median ns/op | Readout |
+|---|---|---:|---|
+| sampler | `mlkem_core_stage_sample_ntt4_full_raw` | 934.68 | still large, but not parser-limited. |
+| sampler | `mlkem_core_stage_sample_ntt4_keccak3_only` | 824.31 | common three `keccakf4_mem()` blocks dominate. |
+| sampler | `mlkem_core_stage_sample_ntt4_keccak_store3` | 868.74 | store/transpose delta is much smaller than Keccak. |
+| sampler | `mlkem_core_stage_sample_ntt4_parse_504` | 117.14 | parser bookkeeping remains secondary. |
+| sampler | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | 995.43 | immediate block parse is slower than production. |
+| sampler | `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | 1462.05 | direct scalar state parse is not a production direction. |
+| sampler | `mlkem_core_stage_sample_ntt4_state_mask3` | 1249.02 | mask-only lower bound is still above production. |
+| encrypt `u` | `mlkem_core_stage_encrypt_accum_inv_u` | 1012.59 | combined three-`u` accumulation plus inverse-add. |
+| encrypt `u` | `mlkem_core_stage_encrypt_accum_u_only` | 439.02 | `ntt_mul_acc3()` itself is smaller than inverse-add side. |
+| encrypt `u` | `mlkem_core_stage_encrypt_inv_add_u_only` | 762.36 | largest nearby arithmetic target after many K=3 acc rewrites failed. |
+| encrypt `u` | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 505.58 | tail/final remains substantial. |
+
+The sampler readout confirms the previous conclusion: do not spend the next turn
+on another direct state parser, validity-mask counter, or store-only rewrite.
+A useful `sample_ntt4` change has to change the Keccak/state representation or
+reuse the three common permutations differently. The arithmetic readout points
+away from another `ntt_mul_acc3()` rewrite and toward the inverse-add structure.
+
+A second split keeps the inverse-add target honest:
+
+```bash
+for i in $(seq 1 5); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(only|head_only|head_l1|head_l2|head_l3|tail_l4|tail_l5|tail_l6|final_only|final_scale_only|final_scale_low_only|final_scale_high_only|final_noise_add_only|tail_final_only)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Median ns/op | Readout |
+|---|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 762.46 | full diagnostic inverse-add for three `u` rows. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_only` | 439.65 | inverse-head is large but prior block-local ordering regressed. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | 506.06 | tail plus final remains the larger local subtarget. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_only` | 318.18 | final pass is visible, but simple final-loop tweaks already failed. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_only` | 286.33 | scale/reduction dominates final over the noise add. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | 236.28 | isolated add path is not enough to target alone. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only` | 254.27 | low half is not uniquely dominant. |
+| `mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only` | 257.97 | high half is balanced with low half. |
+
+Next implementation filter: do not repeat final zeta constants, negative-scale,
+final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
+ordering. The remaining plausible arithmetic direction is a representation-level
+inverse-add rewrite that removes load/extend/reduce work across the full tail and
+final boundary, with KEM confirmation as the adoption gate.
 
 ## Test
 
