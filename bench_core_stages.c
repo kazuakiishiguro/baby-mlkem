@@ -67,6 +67,9 @@ static poly256 stage_ehat[STAGE_BENCH_LANES][K];
 static poly256 stage_that_accum[STAGE_BENCH_LANES][K];
 static poly256 stage_that[STAGE_BENCH_LANES][K];
 static poly256 stage_rhat[STAGE_BENCH_LANES][K];
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static poly256 stage_rhat_lazy[STAGE_BENCH_LANES][K];
+#endif
 static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
 static poly256 stage_e2_msg[STAGE_BENCH_LANES];
@@ -433,6 +436,9 @@ static void derive_encrypt_lane(size_t lane) {
   for (int i = 0; i < K; i++) {
     memcpy(stage_rhat[lane][i], stage_r_raw[lane][i], sizeof(poly256));
     ntt(stage_rhat[lane][i], stage_rhat[lane][i]);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    ntt_lazy_mul_input_avx2(stage_r_raw[lane][i], stage_rhat_lazy[lane][i]);
+#endif
   }
   memcpy(stage_e2_msg[lane], stage_e2[lane], sizeof(poly256));
   mlkem_add_message_to_poly(stage_msg[lane], stage_e2_msg[lane]);
@@ -1351,6 +1357,15 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_noise_ntt_headtail_batch_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   validate_decrypt_lazy_ntt_accum_avx2();
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int j = 0; j < K; j++) {
+      if (!stage_poly_equal_mod_q(stage_rhat_lazy[lane][j],
+                                  stage_rhat[lane][j])) {
+        fprintf(stderr, "encrypt lazy rhat mismatch at %zu,%d\n", lane, j);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     poly256 block, level;
     memcpy(block, stage_w_ntt[lane], sizeof(poly256));
@@ -4080,6 +4095,33 @@ static uint64_t bench_encrypt_accum_inv(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_accum_inv_lazy_input(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat_lazy[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat_lazy[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat_lazy[lane][2],
+                   stage_tmp_vec0[lane][row]);
+      ntt_inv_add_inplace(stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+    }
+    ntt_mul_acc3(stage_that[lane][0], stage_rhat_lazy[lane][0],
+                 stage_that[lane][1], stage_rhat_lazy[lane][1],
+                 stage_that[lane][2], stage_rhat_lazy[lane][2],
+                 stage_tmp_poly[lane]);
+    ntt_inv_add_v_inplace(stage_e2_msg[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_accum_inv_u(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4130,6 +4172,27 @@ static uint64_t bench_encrypt_accum_u_only(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_accum_u_only_lazy_input(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat_lazy[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat_lazy[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat_lazy[lane][2],
+                   stage_tmp_vec0[lane][row]);
+    }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_encrypt_accum4_separate_only(size_t iters) {
   uint64_t acc = 0;
@@ -6088,10 +6151,18 @@ int main(int argc, char **argv) {
 #endif
   print_metric("mlkem_core_stage_encrypt_accum_inv",
                bench_encrypt_accum_inv(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_encrypt_accum_inv_lazy_input",
+               bench_encrypt_accum_inv_lazy_input(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_accum_inv_u",
                bench_encrypt_accum_inv_u(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum_u_only",
                bench_encrypt_accum_u_only(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_encrypt_accum_u_only_lazy_input",
+               bench_encrypt_accum_u_only_lazy_input(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_accum4_separate_only",
                bench_encrypt_accum4_separate_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum4_combined_only",

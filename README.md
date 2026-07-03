@@ -101,6 +101,40 @@ natively with that wider range, or carry a signed CBD representation into an NTT
 head that does not reintroduce equivalent per-lane canonicalization. Repeating a
 local final-add or CBD lookup rewrite is already covered by prior rejection rows.
 
+### Production Lazy K=3 Accumulation Alignment
+
+The stage harness now also keeps `stage_rhat_lazy`, validates it modulo `Q`
+against canonical `stage_rhat`, and reports AVX2-only accumulation rows that feed
+`ntt_mul_acc3()` with the same `[0, 2Q)` lazy multiply-input range used by
+production encryption.
+
+Short AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 5); do
+  taskset -c 0 ./bench_core_stagesc 10000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_accum_inv(_lazy_input)?_ns_per_op=|mlkem_core_stage_encrypt_accum_u_only(_lazy_input)?_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Short-run AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_accum_inv` | 1288.67 | 1288.98 | historical canonical fixture row. |
+| `mlkem_core_stage_encrypt_accum_inv_lazy_input` | 1297.71 | 1293.95 | production-aligned lazy `rhat` input row. |
+| `mlkem_core_stage_encrypt_accum_u_only` | 440.34 | 440.52 | canonical K=3 `u` accumulations only. |
+| `mlkem_core_stage_encrypt_accum_u_only_lazy_input` | 442.53 | 439.85 | lazy-input K=3 `u` accumulations only. |
+
+Decision: keep these as alignment diagnostics, not production changes. The lazy
+forward NTT remains useful, but feeding `[0, 2Q)` values into the existing scalar
+K=3 accumulator does not reveal extra downstream speed; the full accumulation
+plus inverse row is slightly slower in this short run. The next K=3 attempt still
+needs a real accumulation/reduction redesign, not just relying on the lazy input
+range to make the current scalar loop faster.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
@@ -1647,9 +1681,11 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3_lazy` | AVX2-only diagnostic: co-scheduled three-rate tail parse plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt_lazy` | AVX2-only diagnostic: encryption forward NTT for `r` using the production lazy multiply-input range |
-| `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` |
+| `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` using the historical canonical fixture |
+| `mlkem_core_stage_encrypt_accum_inv_lazy_input` | AVX2-only diagnostic: same accumulation/inverse work but feeding `ntt_mul_acc3()` with production lazy `rhat` in `[0, 2Q)` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
-| `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add |
+| `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add, using the canonical fixture |
+| `mlkem_core_stage_encrypt_accum_u_only_lazy_input` | AVX2-only diagnostic: isolated three-`u` accumulations with production lazy `rhat` input |
 | `mlkem_core_stage_encrypt_accum4_separate_only` | diagnostic: three `u` accumulations plus the `v` accumulation as four separate `ntt_mul_acc3()` calls, excluding inverse NTT |
 | `mlkem_core_stage_encrypt_accum4_combined_only` | diagnostic: one scalar loop computes the same four encryption accumulations while reusing `rhat[0..2]` and `GAMMA` loads |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
