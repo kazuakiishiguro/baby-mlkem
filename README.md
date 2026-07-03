@@ -1483,6 +1483,7 @@ stage metrics.
 | `mlkem_core_stage_kpke_keygen_full` | full `kpke_keygen()` |
 | `mlkem_core_stage_kpke_encrypt_uncached` | full `kpke_encrypt()` with internal caches disabled |
 | `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | AVX2-only diagnostic: cache-disabled encryption that generates noise/tail first, NTTs `r`, then samples public-matrix x4 batches and consumes complete rows immediately |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | AVX2-only diagnostic: cache-disabled encryption that rotates the co-scheduled scalar public-matrix tail from `(2,2)` to `(2,1)` and samples `(2,2)` in the second x4 batch |
 | `mlkem_core_stage_kpke_prepare_public_no_cache` | no-cache `mlkem_encaps()` public preparation: public-key d12 decode, public-matrix sampling, and `H(ek)` with the AVX2 hash/tail co-schedule |
 | `mlkem_core_stage_public_key_decode_d12` | public-key d12 decode only for the three encoded public-key polynomials |
 | `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
@@ -9428,6 +9429,49 @@ and does not justify adding a second uncached encryption implementation. Future
 work at this boundary still needs a real multi-state co-schedule or a sampler /
 accumulator representation change, not just rowwise consumption of the existing
 public-matrix layout.
+
+### Independent Core Optimization Diagnostic (2026-07-03, AVX2 uncached encrypt tail21)
+
+A full cache-miss encryption diagnostic retested the persistent `(2,1)`
+public-matrix tail-choice signal in the actual co-scheduled encryption dataflow.
+The row keeps the first x4 batch unchanged, samples `(1,1)`, `(1,2)`, `(2,0)`,
+and `(2,2)` in the second x4 batch, and co-schedules encryption PRF/CBD with
+the scalar `(2,1)` tail. The diagnostic validates the ciphertext byte-for-byte
+against the current cache-disabled `kpke_encrypt()` before timing. Production is
+unchanged in this commit.
+
+AVX2-only command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 9); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_kpke_encrypt_uncached(_rowwise|_tail21)?_ns_per_op=|mlkem_core_stage_sample_matrix(_tail_choice_(21|22))?_ns_per_op=|mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched(_lazy)?_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op |
+|---|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4904.04 | 4875.94 |
+| `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | 4931.03 | 4878.38 |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | 4876.41 | 4858.93 |
+| `mlkem_core_stage_sample_matrix` | 2820.94 | 2809.88 |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2805.72 | 2790.98 |
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2821.60 | 2808.40 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | 1112.90 | 1111.69 |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_lazy` | 1673.76 | 1672.80 |
+
+The integrated tail21 row is `1.0057x` average and `1.0035x` median faster than
+the current cache-disabled `kpke_encrypt()` row, and `1.0112x` average /
+`1.0040x` median faster than the earlier rowwise diagnostic. This is still a
+small signal, but it is stronger than the standalone tail-choice row because it
+measures the full co-scheduled K-PKE encryption boundary. Treat tail21 as a
+production A/B candidate; do not accept it from this diagnostic alone because it
+requires changing hardcoded `(2,2)` tail helpers and must survive integrated stage
+and KEM confirmation.
 
 ### Independent Core Optimization Diagnostic (2026-07-02, AVX2 decrypt final-l1 accumulation fusion)
 
