@@ -19,6 +19,49 @@ The repository still keeps in-tree comparator backends. Set
 PQClean AVX2 sources. Results from those opt-in backends measure integration with
 external-origin vendored code, not an independent baby-mlkem core.
 
+## Current Core Optimization Frontier (2026-07-03)
+
+The active optimization goal is to keep improving the independent baby-mlkem
+core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
+The current short-term filter is therefore: only pursue changes that reduce real
+core work in SHAKE/sample_ntt, forward/inverse NTT, K=3 accumulation, or range
+normalization across encode/compress boundaries.
+
+Current AVX2-only frontier snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, seven runs of `./bench_core_stagesc 30000`:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4932.84 | 4886.79 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 4830.38 | 4762.78 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4372.95 | 4276.23 | public-key d12 decode + matrix sampling + H(pk) |
+| `mlkem_core_stage_sample_matrix` | 2837.65 | 2821.11 | largest standalone public-work target |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2439.32 | 2402.78 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1977.44 | 1976.18 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1582.56 | 1581.39 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise` | 1395.11 | 1394.77 | encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1292.18 | 1290.76 | K=3 accumulation plus inverse-add |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 872.12 | 871.99 | common x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.48 | 117.58 | parser bookkeeping is not the main sampler cost |
+| `mlkem_core_stage_keygen_accum_only` | 439.36 | 438.14 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 203.08 | 203.17 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.57 | 50.58 | d10/d4 packing is too small for the next target |
+
+Near-term target selection:
+
+| Candidate family | Status | Reason |
+|---|---|---|
+| Common `sample_ntt4()` Keccak/state layout | Open | `keccak_store3` is far larger than `parse_504`; a useful change must remove state movement or fill lanes with useful work, not just tweak parser bookkeeping. |
+| Broad lazy/signed range contract | Open | NAF-like signed/lazy ideas only make sense if the range is carried through CBD or sampler output, forward NTT, K=3 multiplication, inverse add/sub, and encode/compress. Narrow signed ETA2/rhat changes already lost. |
+| Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
+| d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
+
+The next implementation should therefore be either a real `sample_ntt4` state to
+accepted-coefficient path that avoids the current store/reload boundary, or a
+range-contract prototype broad enough to avoid paying normalization back at the
+next consumer. Anything narrower is likely to reproduce the recent pattern:
+small direct wins, then neutral or negative KEM medians.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
