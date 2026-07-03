@@ -30,6 +30,8 @@ static poly256 bench_ntt_level_work[7][NTT_BENCH_LANES];
 static poly256 bench_ntt_inv_level_work[7][NTT_BENCH_LANES];
 #if defined(__AVX2__)
 static poly256 bench_ntt_head_work[NTT_BENCH_LANES];
+static poly256 bench_ntt_head_cbd_canon_src[NTT_BENCH_LANES];
+static poly256 bench_ntt_head_cbd_signed_src[NTT_BENCH_LANES];
 static poly256 bench_ntt_tail_work[3][NTT_BENCH_LANES];
 #endif
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -599,6 +601,63 @@ static void run_ntt_head_l7_l4(poly256 f) {
   }
 }
 
+static inline int16_t bench_canon_signed_cbd_i16(int16_t v) {
+  return (int16_t)(v < 0 ? v + Q : v);
+}
+
+static void bench_canonicalize_signed_cbd_poly(poly256 f) {
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+  for (int i = 0; i < N; i++) {
+    f[i] = bench_canon_signed_cbd_i16(f[i]);
+  }
+}
+
+static void run_ntt_head_l7_l4_signed_input(poly256 f) {
+  int k = 1;
+  int length = 128;
+  uint16_t zeta = ZETA[k++];
+
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+  for (int j = 0; j < length; j++) {
+    int idx = j;
+    int16_t a = bench_canon_signed_cbd_i16(f[idx]);
+    int16_t b = bench_canon_signed_cbd_i16(f[idx + length]);
+    uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)b;
+    int16_t t = mod_q_reduce_ntt_u32(prod);
+    f[idx + length] = mod_q_sub_i16(a, t);
+    f[idx] = mod_q_add_i16(a, t);
+  }
+
+  for (int log2len = 6; log2len > 3; log2len--) {
+    length = 1 << log2len;
+    for (int start = 0; start < N; start += (2 * length)) {
+      zeta = ZETA[k++];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
+        int16_t t = mod_q_reduce_ntt_u32(prod);
+        int16_t a = f[idx];
+        f[idx + length] = mod_q_sub_i16(a, t);
+        f[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+}
+
+static void run_ntt_signed_input_avx2(poly256 f) {
+  run_ntt_head_l7_l4_signed_input(f);
+  ntt_tail_avx2(f);
+}
+
+static void run_ntt_signed_precanon_avx2(poly256 f) {
+  bench_canonicalize_signed_cbd_poly(f);
+  ntt(f, f);
+}
+
 static void run_ntt_tail_l3_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 16, i++) {
     ntt_butterfly8_avx2(f + start, f + start + 8, ZETA_NTT_TAIL_L3[i]);
@@ -882,6 +941,29 @@ static void prepare_ntt_split_inputs(void) {
     memcpy(bench_ntt_tail_work[2][lane], cur, sizeof(poly256));
   }
 }
+
+static void fill_cbd_signed_pair(poly256 signed_out, poly256 canon_out,
+                                 uint32_t seed) {
+  uint32_t x = seed;
+  for (int i = 0; i < N; i++) {
+    x = x * 1664525u + 1013904223u;
+    uint32_t d = x & 0x0fu;
+    int a = (int)(d & 1u) + (int)((d >> 1) & 1u);
+    int b = (int)((d >> 2) & 1u) + (int)((d >> 3) & 1u);
+    int16_t v = (int16_t)(a - b);
+    signed_out[i] = v;
+    canon_out[i] = bench_canon_signed_cbd_i16(v);
+  }
+}
+
+static void prepare_ntt_signed_head_inputs(void) {
+  ensure_ntt_roots();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    fill_cbd_signed_pair(bench_ntt_head_cbd_signed_src[lane],
+                         bench_ntt_head_cbd_canon_src[lane],
+                         0xC000u + (uint32_t)lane);
+  }
+}
 #endif
 
 static void prepare_ntt_inv_level_inputs(void) {
@@ -951,6 +1033,25 @@ static void validate_ntt_helpers(void) {
   ntt_tail_avx2(got);
   check_equal(got, tmp, "forward ntt head/tail split");
 
+  fill_cbd_signed_pair(got, want, 0xC123u);
+  memcpy(tmp, want, sizeof(poly256));
+  run_ntt_head_l7_l4(tmp);
+  run_ntt_head_l7_l4_signed_input(got);
+  check_equal(got, tmp, "forward ntt signed-input head");
+
+  fill_cbd_signed_pair(got, want, 0xC124u);
+  memcpy(tmp, want, sizeof(poly256));
+  ntt(tmp, tmp);
+  run_ntt_signed_input_avx2(got);
+  check_equal(got, tmp, "forward ntt signed-input full");
+
+  fill_cbd_signed_pair(got, want, 0xC125u);
+  memcpy(tmp, want, sizeof(poly256));
+  ntt(tmp, tmp);
+  run_ntt_signed_precanon_avx2(got);
+  check_equal(got, tmp, "forward ntt signed-precanon full");
+
+  ntt(bench_a0[0], tmp);
   memcpy(got, bench_a0[0], sizeof(poly256));
   run_ntt_head_l7_l4(got);
   run_ntt_tail_l3_avx2(got);
@@ -1793,6 +1894,109 @@ static uint64_t bench_ntt_head_l7_l4(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_ntt_head_l7_l4_cbd_canon_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_canon_src[lane],
+           sizeof(poly256));
+    run_ntt_head_l7_l4(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 401u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_head_l7_l4_signed_input_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_signed_src[lane],
+           sizeof(poly256));
+    run_ntt_head_l7_l4_signed_input(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 409u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_head_l7_l4_signed_precanon_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_signed_src[lane],
+           sizeof(poly256));
+    bench_canonicalize_signed_cbd_poly(bench_ntt_head_work[lane]);
+    run_ntt_head_l7_l4(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 421u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_cbd_canon_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_canon_src[lane],
+           sizeof(poly256));
+    ntt(bench_ntt_head_work[lane], bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 431u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_signed_input_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_signed_src[lane],
+           sizeof(poly256));
+    run_ntt_signed_input_avx2(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 433u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_signed_precanon_copy(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_signed_head_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    memcpy(bench_ntt_head_work[lane], bench_ntt_head_cbd_signed_src[lane],
+           sizeof(poly256));
+    run_ntt_signed_precanon_avx2(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 439u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_ntt_tail_avx2(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2272,6 +2476,18 @@ int main(int argc, char **argv) {
                bench_ntt6_pack_ntt_unpack_tile2x4_plus2(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
+  print_metric("mlkem_ntt_head_l7_l4_cbd_canon_copy",
+               bench_ntt_head_l7_l4_cbd_canon_copy(iters), iters);
+  print_metric("mlkem_ntt_head_l7_l4_signed_input_copy",
+               bench_ntt_head_l7_l4_signed_input_copy(iters), iters);
+  print_metric("mlkem_ntt_head_l7_l4_signed_precanon_copy",
+               bench_ntt_head_l7_l4_signed_precanon_copy(iters), iters);
+  print_metric("mlkem_ntt_cbd_canon_copy", bench_ntt_cbd_canon_copy(iters),
+               iters);
+  print_metric("mlkem_ntt_signed_input_copy",
+               bench_ntt_signed_input_copy(iters), iters);
+  print_metric("mlkem_ntt_signed_precanon_copy",
+               bench_ntt_signed_precanon_copy(iters), iters);
   print_metric("mlkem_ntt_tail_avx2", bench_ntt_tail_avx2(iters), iters);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_ntt_tail_avx2_fused_l3_l1",

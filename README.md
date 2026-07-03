@@ -58,15 +58,15 @@ Near-term target selection:
 | Candidate family | Status | Reason |
 |---|---|---|
 | Common `sample_ntt4()` Keccak/state layout | Open | `keccak_store3` is far larger than `parse_504`; a useful change must remove state movement or fill lanes with useful work, not just tweak parser bookkeeping. |
-| Broad lazy/signed range contract | Open | Signed CBD has a measured lower-bound saving of about 3.6 ns/poly, or 10.5 ns for K=3, but it only matters if a signed-aware NTT head consumes it without paying equivalent normalization. Narrow signed ETA2/rhat changes already lost. |
+| Broad lazy/signed range contract | Open only for an end-to-end redesign | Signed CBD saves about 10.5 ns for K=3 at the producer, but the measured forward-NTT boundary gives most or all of that back. A standalone signed CBD->NTT change is effectively closed; only a wider representation change remains plausible. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The next implementation should therefore be either a real `sample_ntt4` state to
-accepted-coefficient path that avoids the current store/reload boundary, or a
-range-contract prototype broad enough to avoid paying normalization back at the
-next consumer. Anything narrower is likely to reproduce the recent pattern:
-small direct wins, then neutral or negative KEM medians.
+The next implementation should therefore prioritize a real `sample_ntt4` state
+to accepted-coefficient path that avoids the current store/reload boundary, or a
+K=3 accumulation/reduction redesign. A signed CBD->NTT boundary change by itself
+now has a measured budget that is too small: it reproduces the recent pattern of
+small direct wins, then neutral or negative integrated medians.
 
 ### Range Contract Diagnostic
 
@@ -169,6 +169,46 @@ consumer-side canonicalization or awkward signed first stage would erase it.
 Earlier production signed ETA2/rhat attempts already lost because they paid the
 range-conversion cost at the next boundary; this row narrows the acceptable
 budget for a real redesign instead of justifying another local CBD change.
+
+### Signed CBD to NTT Boundary Lower Bound
+
+`bench_nttc` now has AVX2-only copy-in rows that force every timed iteration to
+start from the same CBD-like `{-2..2}` distribution. The canonical rows copy the
+same values after converting them to `[0,Q)`. Because both sides include the same
+512-byte copy, the delta isolates the signed-input handling cost rather than the
+fixture reset cost.
+
+Short AVX2-only diagnostic command:
+
+```bash
+make bench-ntt CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_nttc 200000 | \
+    awk -F= -v run="$i" '/mlkem_ntt_(head_l7_l4(_cbd_canon_copy|_signed_input_copy|_signed_precanon_copy)?|cbd_canon_copy|signed_input_copy|signed_precanon_copy)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, seven `200000`-iteration runs:
+
+| Metric | Avg ns/op | Median ns/op | Median delta |
+|---|---:|---:|---:|
+| `mlkem_ntt_head_l7_l4` | 97.64 | 97.54 | reference, no fixture copy |
+| `mlkem_ntt_head_l7_l4_cbd_canon_copy` | 99.59 | 99.60 | baseline |
+| `mlkem_ntt_head_l7_l4_signed_input_copy` | 105.77 | 105.61 | +6.01 ns/poly |
+| `mlkem_ntt_head_l7_l4_signed_precanon_copy` | 103.53 | 103.56 | +3.96 ns/poly |
+| `mlkem_ntt_cbd_canon_copy` | 195.62 | 195.72 | baseline |
+| `mlkem_ntt_signed_input_copy` | 201.73 | 201.63 | +5.91 ns/poly |
+| `mlkem_ntt_signed_precanon_copy` | 198.97 | 198.93 | +3.21 ns/poly |
+
+Decision: reject standalone signed CBD->NTT as the next production direction.
+The previous CBD row saved about 10.5 ns for three ETA2 polynomials. A fused
+signed first NTT stage gives back about 17.7 ns for K=3, and even a vectorized
+pre-canonicalization pass gives back about 9.6 ns for K=3. The best measured net
+is therefore below 1 ns per K=3 input vector before integration noise, which is
+not enough to justify production risk. Signed representation should only be
+reopened if the decode and NTT first stage are redesigned together so the
+canonicalization is removed rather than moved.
 
 ## Test
 
@@ -804,6 +844,12 @@ helpers:
 | `mlkem_ntt6_tile2x4_plus2_inplace` | diagnostic lower bound: first four polynomials already in tile2x4 layout plus two normal in-place NTTs, excluding tile pack/unpack |
 | `mlkem_ntt6_pack_ntt_unpack_tile2x4_plus2` | diagnostic K=6 composition with tile2x4 pack/NTT/unpack for four polynomials plus two normal in-place NTTs |
 | `mlkem_ntt_head_l7_l4` | AVX2 build only: current forward-NTT upper stages before `ntt_tail_avx2()` |
+| `mlkem_ntt_head_l7_l4_cbd_canon_copy` | AVX2-only diagnostic: copy a CBD-like canonical `[0,Q)` fixture, then run the current forward-NTT upper stages |
+| `mlkem_ntt_head_l7_l4_signed_input_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, canonicalize only the first forward-NTT stage inputs, then run the remaining upper stages |
+| `mlkem_ntt_head_l7_l4_signed_precanon_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, vector-canonicalize the whole polynomial, then run the current upper stages |
+| `mlkem_ntt_cbd_canon_copy` | AVX2-only diagnostic: copy a CBD-like canonical `[0,Q)` fixture, then run a full in-place forward NTT |
+| `mlkem_ntt_signed_input_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, run the signed-input upper stages, then the current AVX2 tail |
+| `mlkem_ntt_signed_precanon_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, vector-canonicalize the whole polynomial, then run a full in-place forward NTT |
 | `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
 | `mlkem_ntt_tail_avx2_fused_l3_l1` | AVX2-only diagnostic lower tail using one loop that completes `l3`, `l2`, and lazy `l1` per 16-coefficient block |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
