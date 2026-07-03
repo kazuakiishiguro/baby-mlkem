@@ -68,6 +68,39 @@ range-contract prototype broad enough to avoid paying normalization back at the
 next consumer. Anything narrower is likely to reproduce the recent pattern:
 small direct wins, then neutral or negative KEM medians.
 
+### Range Contract Diagnostic
+
+`bench_core_stagesc` now prints non-timing `mlkem_core_range_*` lines before the
+stage timings. These rows are intended to gate broad lazy/signed representation
+work without relying on comments or one-off reasoning.
+
+Short AVX2-only diagnostic run:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+taskset -c 0 ./bench_core_stagesc 1000 | sed -n '1,48p'
+```
+
+Observed fixture bounds:
+
+| Boundary | Stored range | Centered range | `>= Q` lanes | Readout |
+|---|---:|---:|---:|---|
+| ETA2 CBD outputs | `0..3328` | `-2..2` | `0` | current producer canonicalizes negative noise immediately. |
+| Keygen NTT outputs | `0..3328` | `-1664..1664` | `0` | public key path is fully canonical after NTT. |
+| Encrypt canonical NTT outputs | `0..3324` | `-1663..1662` | `0` | stage fixture canonical row remains exact. |
+| K=3 accumulation outputs | `0..3328` | `-1664..1664` | `0` | current `ntt_mul_acc3()` normalizes before inverse NTT. |
+| Inverse/add outputs | `0..3328` | `-1664..1664` | `0` | compress still receives canonical coefficients. |
+| Message-folded `e2` | `0..3328` | `-1664..1664` | `0` | message add already crosses the full centered range. |
+| Lazy multiply-input NTT | `20..6624` | `-1663..1663` | `3059` | modulo-checked against canonical NTT and still `< 2Q`. |
+
+Implication: the only currently proved lazy production contract on AVX2 is the
+`[0, 2Q)` output of `ntt_lazy_mul_input_avx2()` consumed by `ntt_mul_acc3()`.
+A useful next range optimization must either make K=3 accumulation/inverse work
+natively with that wider range, or carry a signed CBD representation into an NTT
+head that does not reintroduce equivalent per-lane canonicalization. Repeating a
+local final-add or CBD lookup rewrite is already covered by prior rejection rows.
+
 ## Test
 
 To run tests for the implementation, execute the following command:

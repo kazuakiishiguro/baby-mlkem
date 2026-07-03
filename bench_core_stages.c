@@ -1157,6 +1157,149 @@ static void validate_decrypt_lazy_ntt_accum_avx2(void) {
 }
 #endif
 
+
+struct stage_range_stats {
+  int min_i16;
+  int max_i16;
+  uint16_t min_u16;
+  uint16_t max_u16;
+  int centered_min;
+  int centered_max;
+  uint64_t ge_q;
+  uint64_t centered_negative;
+};
+
+static void stage_range_stats_init(struct stage_range_stats *s) {
+  s->min_i16 = INT16_MAX;
+  s->max_i16 = INT16_MIN;
+  s->min_u16 = UINT16_MAX;
+  s->max_u16 = 0;
+  s->centered_min = Q;
+  s->centered_max = -Q;
+  s->ge_q = 0;
+  s->centered_negative = 0;
+}
+
+static int stage_centered_mod_q(uint16_t x) {
+  int r = (int)(x % Q);
+  if (r > Q / 2) r -= Q;
+  return r;
+}
+
+static void stage_range_stats_collect_poly(struct stage_range_stats *s,
+                                           const poly256 p) {
+  for (int i = 0; i < N; i++) {
+    int v = p[i];
+    uint16_t u = (uint16_t)p[i];
+    int centered = stage_centered_mod_q(u);
+
+    if (v < s->min_i16) s->min_i16 = v;
+    if (v > s->max_i16) s->max_i16 = v;
+    if (u < s->min_u16) s->min_u16 = u;
+    if (u > s->max_u16) s->max_u16 = u;
+    if (centered < s->centered_min) s->centered_min = centered;
+    if (centered > s->centered_max) s->centered_max = centered;
+    if (u >= Q) s->ge_q++;
+    if (centered < 0) s->centered_negative++;
+  }
+}
+
+static void stage_range_stats_print(const char *name,
+                                    const struct stage_range_stats *s) {
+  printf("%s_i16_min=%d\n", name, s->min_i16);
+  printf("%s_i16_max=%d\n", name, s->max_i16);
+  printf("%s_u16_min=%u\n", name, (unsigned)s->min_u16);
+  printf("%s_u16_max=%u\n", name, (unsigned)s->max_u16);
+  printf("%s_centered_min=%d\n", name, s->centered_min);
+  printf("%s_centered_max=%d\n", name, s->centered_max);
+  printf("%s_ge_q=%llu\n", name, (unsigned long long)s->ge_q);
+  printf("%s_centered_negative=%llu\n", name,
+         (unsigned long long)s->centered_negative);
+}
+
+static int stage_poly_equal_mod_q(const poly256 a, const poly256 b) {
+  for (int i = 0; i < N; i++) {
+    if (((uint16_t)a[i] % Q) != ((uint16_t)b[i] % Q)) return 0;
+  }
+  return 1;
+}
+
+static void print_range_contract_stats(void) {
+  struct stage_range_stats cbd;
+  struct stage_range_stats keygen_ntt;
+  struct stage_range_stats encrypt_ntt;
+  struct stage_range_stats accum;
+  struct stage_range_stats inverse_out;
+  struct stage_range_stats message_fold;
+
+  stage_range_stats_init(&cbd);
+  stage_range_stats_init(&keygen_ntt);
+  stage_range_stats_init(&encrypt_ntt);
+  stage_range_stats_init(&accum);
+  stage_range_stats_init(&inverse_out);
+  stage_range_stats_init(&message_fold);
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int j = 0; j < K; j++) {
+      stage_range_stats_collect_poly(&cbd, stage_s_raw[lane][j]);
+      stage_range_stats_collect_poly(&cbd, stage_e_raw[lane][j]);
+      stage_range_stats_collect_poly(&cbd, stage_r_raw[lane][j]);
+      stage_range_stats_collect_poly(&cbd, stage_e1[lane][j]);
+      stage_range_stats_collect_poly(&keygen_ntt, stage_shat[lane][j]);
+      stage_range_stats_collect_poly(&keygen_ntt, stage_ehat[lane][j]);
+      stage_range_stats_collect_poly(&encrypt_ntt, stage_rhat[lane][j]);
+      stage_range_stats_collect_poly(&accum, stage_that_accum[lane][j]);
+      stage_range_stats_collect_poly(&accum, stage_u_accum[lane][j]);
+      stage_range_stats_collect_poly(&inverse_out, stage_u[lane][j]);
+    }
+    stage_range_stats_collect_poly(&cbd, stage_e2[lane]);
+    stage_range_stats_collect_poly(&message_fold, stage_e2_msg[lane]);
+    stage_range_stats_collect_poly(&accum, stage_w_ntt[lane]);
+    stage_range_stats_collect_poly(&inverse_out, stage_v[lane]);
+    stage_range_stats_collect_poly(&inverse_out, stage_w[lane]);
+  }
+
+  stage_range_stats_print("mlkem_core_range_cbd_eta2", &cbd);
+  stage_range_stats_print("mlkem_core_range_keygen_ntt", &keygen_ntt);
+  stage_range_stats_print("mlkem_core_range_encrypt_ntt", &encrypt_ntt);
+  stage_range_stats_print("mlkem_core_range_k3_accum", &accum);
+  stage_range_stats_print("mlkem_core_range_inverse_output", &inverse_out);
+  stage_range_stats_print("mlkem_core_range_message_fold", &message_fold);
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  {
+    struct stage_range_stats lazy_ntt;
+    poly256 lazy;
+    poly256 canonical;
+    stage_range_stats_init(&lazy_ntt);
+    for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+      for (int j = 0; j < K; j++) {
+        ntt_lazy_mul_input_avx2(stage_r_raw[lane][j], lazy);
+        ntt(stage_r_raw[lane][j], canonical);
+        if (!stage_poly_equal_mod_q(lazy, canonical)) {
+          fprintf(stderr, "lazy r NTT range contract mismatch at %zu,%d\n",
+                  lane, j);
+          exit(EXIT_FAILURE);
+        }
+        stage_range_stats_collect_poly(&lazy_ntt, lazy);
+
+        ntt_lazy_mul_input_avx2(stage_u[lane][j], lazy);
+        ntt(stage_u[lane][j], canonical);
+        if (!stage_poly_equal_mod_q(lazy, canonical)) {
+          fprintf(stderr, "lazy u NTT range contract mismatch at %zu,%d\n",
+                  lane, j);
+          exit(EXIT_FAILURE);
+        }
+        stage_range_stats_collect_poly(&lazy_ntt, lazy);
+      }
+    }
+    stage_range_stats_print("mlkem_core_range_lazy_mul_input_ntt", &lazy_ntt);
+    printf("mlkem_core_range_lazy_mul_input_ntt_lt_2q=%d\n",
+           lazy_ntt.max_u16 < 2 * Q);
+  }
+#endif
+}
+
 static void prepare_inputs(void) {
   ensure_ntt_roots();
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -5765,6 +5908,7 @@ int main(int argc, char **argv) {
 #endif
 
   printf("mlkem_core_stage_bench_iterations=%zu\n", iters);
+  print_range_contract_stats();
   print_metric("mlkem_core_stage_kpke_keygen_full",
                bench_kpke_keygen_full(iters), iters);
   print_metric("mlkem_core_stage_kpke_encrypt_uncached",
