@@ -321,13 +321,20 @@ done
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
 | `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 257.97 | 258.07 | full inverse-head remains material. |
-| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | 125.38 | 125.46 | l1 is the largest single head stage. |
-| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | 93.86 | 93.90 | l2 is smaller but still visible. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | 125.38 | 125.46 | old level helper; useful for historical comparison only. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_block_raw` | 111.92 | 110.50 | production-aligned l1 block-load helper. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | 93.86 | 93.90 | old level helper; useful for historical comparison only. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_block_raw` | 89.20 | 89.26 | production-aligned l2 block-load helper. |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | 77.41 | 77.34 | l3 is close to a single tail stage. |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.08 | 71.87 | tail l4 is below head l1/l2. |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.36 | 71.19 | tail l5 is below head l1/l2. |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 70.04 | 70.01 | tail l6 is below head l1/l2. |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.09 | 325.96 | full tail/final chain is still the larger boundary. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.08 | 71.87 | tail l4 is below production l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.36 | 71.19 | tail l5 is below production l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 70.04 | 70.01 | tail l6 is below production l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.64 | 326.10 | full tail/final chain is still the larger boundary. |
+
+The `head_l1_raw` and `head_l2_raw` rows intentionally use the older level
+helpers; production AVX2 uses the block-load helpers measured by
+`head_l1_block_raw` and `head_l2_block_raw`. Use the block rows for current
+bottleneck decisions.
 
 A matching diagnostic splits the tail stages with the same lightweight sink:
 
@@ -379,8 +386,9 @@ ordering. The remaining plausible arithmetic direction is a representation-level
 inverse-add rewrite that removes load/extend/reduce work across the full tail and
 final boundary, with KEM confirmation as the adoption gate. The new raw split
 confirms that the target is real arithmetic/dataflow, not diagnostic scratch-copy
-or checksum overhead. The head split makes l1 the largest single head stage, but
-the most useful local subtarget is still the full l4-l6 plus final chain rather
+or checksum overhead. With production-aligned block helpers, head l1 is still the
+largest single head stage, but it is smaller than the earlier legacy-level row.
+The most useful local subtarget is still the full l4-l6 plus final chain rather
 than a single tail stage, final alone, or one head level in isolation.
 
 ## Test
@@ -1954,9 +1962,11 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_only` | AVX2 builds only: inverse-NTT head stages for the three precomputed `u` accumulations, including scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_raw` | same inverse-head diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
-| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | same inverse-head l1 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | same inverse-head l1 diagnostic with lightweight coefficient sinks, using the old level helper |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_block_raw` | AVX2-only production-aligned inverse-head l1 block-load helper diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
-| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | same inverse-head l2 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | same inverse-head l2 diagnostic with lightweight coefficient sinks, using the old level helper |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_block_raw` | AVX2-only production-aligned inverse-head l2 block-load helper diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | same inverse-head l3 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
