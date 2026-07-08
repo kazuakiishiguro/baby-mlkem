@@ -308,7 +308,28 @@ done
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.06 | 324.88 | tail/final is the larger raw subtarget. |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 138.56 | 138.27 | final pass alone is smaller after checksum removal. |
 
-A third diagnostic splits the tail stages with the same lightweight sink:
+A matching diagnostic splits the inverse-head stages with the same lightweight
+sink:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(head_raw|head_l1|head_l1_raw|head_l2|head_l2_raw|head_l3|head_l3_raw|tail_l4_raw|tail_l5_raw|tail_l6_raw|tail_final_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 257.97 | 258.07 | full inverse-head remains material. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | 125.38 | 125.46 | l1 is the largest single head stage. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | 93.86 | 93.90 | l2 is smaller but still visible. |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | 77.41 | 77.34 | l3 is close to a single tail stage. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.08 | 71.87 | tail l4 is below head l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.36 | 71.19 | tail l5 is below head l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 70.04 | 70.01 | tail l6 is below head l1/l2. |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.09 | 325.96 | full tail/final chain is still the larger boundary. |
+
+A matching diagnostic splits the tail stages with the same lightweight sink:
 
 ```bash
 for i in $(seq 1 7); do
@@ -358,8 +379,9 @@ ordering. The remaining plausible arithmetic direction is a representation-level
 inverse-add rewrite that removes load/extend/reduce work across the full tail and
 final boundary, with KEM confirmation as the adoption gate. The new raw split
 confirms that the target is real arithmetic/dataflow, not diagnostic scratch-copy
-or checksum overhead; the most useful local subtarget is the full l4-l6 plus
-final chain, not a single tail stage or final alone.
+or checksum overhead. The head split makes l1 the largest single head stage, but
+the most useful local subtarget is still the full l4-l6 plus final chain rather
+than a single tail stage, final alone, or one head level in isolation.
 
 ## Test
 
@@ -1932,8 +1954,11 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_only` | AVX2 builds only: inverse-NTT head stages for the three precomputed `u` accumulations, including scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_raw` | same inverse-head diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l1` | AVX2 builds only: isolated inverse-head l1 stage for the three `u` accumulations, using precomputed inputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l1_raw` | same inverse-head l1 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | same inverse-head l2 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | same inverse-head l3 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | same inverse-tail l4 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
