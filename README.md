@@ -353,6 +353,31 @@ done
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | 139.92 | 138.19 | final remains smaller than the whole tail/final chain. |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.00 | 324.71 | combined l4-l6 plus final is the target shape. |
 
+A production-alignment check adds the same Clang vectorization pragmas used by
+`ntt_inv_before_final_avx2()` to the bench-only tail loops:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_(l4_raw|l4_pragma_raw|l5_raw|l5_pragma_raw|l6_raw|l6_pragma_raw|final_raw|final_pragma_raw|final_wide_reduce_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs existing |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.15 | 71.98 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_pragma_raw` | 72.54 | 72.12 | 0.9981x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.29 | 71.20 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_pragma_raw` | 72.63 | 71.55 | 0.9951x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 70.37 | 70.21 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_pragma_raw` | 70.47 | 70.41 | 0.9972x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.23 | 325.91 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 326.49 | 325.42 | 1.0015x |
+
+Decision: the missing bench-only pragmas are not the reason tail/final is large.
+Keep using `tail_final_raw` as a valid target signal; the next change must remove
+or reschedule arithmetic/data movement, not just adjust vectorization hints.
+
 Do not remove final pre-normalization by feeding raw `(a + b)` or `(b + Q - a)`
 directly into `mod_q_reduce_ntt_u32x8()`. A bench-only validation attempt failed
 at `inverse final lazy-reduce mismatch at 0,0`: the final product range reaches
@@ -1971,10 +1996,13 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | same inverse-head l3 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | same inverse-tail l4 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_pragma_raw` | AVX2-only inverse-tail l4 raw diagnostic with the production Clang loop-vectorization pragma |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | same inverse-tail l5 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_pragma_raw` | AVX2-only inverse-tail l5 raw diagnostic with the production Clang loop-vectorization pragma |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_pragma_raw` | AVX2-only inverse-tail l6 raw diagnostic with the production Clang loop-vectorization pragma |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | same final-pass diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final_wide_reduce_raw` | AVX2-only diagnostic: final pass with raw `(a+b)` / `(b+Q-a)` pre-normalization removal and a correct wide quotient reducer, byte-validated against the existing final path |
@@ -1987,6 +2015,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only` | AVX2 builds only: final `e1` add against precomputed final-scaled `u` outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | AVX2-only tail/final raw diagnostic with the production Clang loop-vectorization pragma in the pre-final tail loops |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | AVX2-only diagnostic: tail/final path using the wide-reducer final diagnostic after the existing pre-final tail schedule |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
