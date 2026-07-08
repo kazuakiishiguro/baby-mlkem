@@ -431,6 +431,37 @@ store/reload boundary without changing the range contract. Adoption still needs
 full KEM confirmation because production integration can lose the local gain to
 code size, register pressure, or neighboring layout effects.
 
+Production A/B follow-up, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
+`ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt'`, used `HEAD` as the baseline and replaced
+only `ntt_inv_add_fused_final_avx2()` with the fused `l6+final` shape:
+
+```bash
+RUNS=7 WARMUP_RUNS=1 SUITES=kem,stage KEM_ITERS=5000 STAGE_ITERS=20000 \
+  PIN_CPU=0 C_COMPILER=clang ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt' \
+  ./scripts/bench_core_ab.sh HEAD
+
+RUNS=11 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=10000 \
+  PIN_CPU=0 C_COMPILER=clang ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt' \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup | Readout |
+|---|---:|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 584.38 | 582.92 | 1.0025x | local raw inverse-add is only weakly positive. |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1013.23 | 1010.17 | 1.0030x | local `u` bundle is weakly positive. |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2392.68 | 2384.83 | 1.0033x | stage K-PKE is weakly positive. |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4886.34 | 4870.33 | 1.0033x | stage K-PKE is weakly positive. |
+| `mlkem_encaps` | 2660.09 | 2671.76 | 0.9956x | first full KEM run regressed. |
+| `mlkem_encaps_core` | 6858.56 | 6966.44 | 0.9845x | first full core run regressed. |
+| `mlkem_encaps` recheck | 2656.26 | 2661.97 | 0.9979x | focused KEM rerun still did not survive. |
+| `mlkem_roundtrip_core` recheck | 19973.33 | 20152.81 | 0.9911x | focused core roundtrip regressed. |
+
+Decision: reject production adoption of the AVX2 `l6+final` fused add path. The
+bench-only local row is real, but in production the gain is too small and is lost
+to code size, register pressure, or neighboring layout effects before it reaches
+the KEM gate. Keep the bench-only diagnostic as evidence, but do not carry the
+production helper.
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
 final-loop unroll, final3 grouping, packed final add, wide final reduction, or
 block-local inverse-head ordering. The most useful local subtarget is still the
