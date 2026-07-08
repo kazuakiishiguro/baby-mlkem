@@ -274,6 +274,9 @@ static void stage_ntt_inv_head_l1_avx2(poly256 f);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void stage_ntt_inv_head_l1_block_avx2(poly256 f);
 static void stage_ntt_inv_head_l2_block_avx2(poly256 f);
+static void stage_ntt_inv_head_l3_tail_l4_fused_after_l2_avx2(poly256 f);
+static void stage_ntt_inv_add_l3_tail_final_l4_fused_after_l2_avx2(
+    const poly256 add, poly256 out);
 #endif
 static void stage_ntt_inv_head_l2_avx2(poly256 f);
 static void stage_ntt_inv_head_l3_avx2(poly256 f);
@@ -1411,6 +1414,35 @@ static void validate_core_stage_helpers(void) {
     if (memcmp(block, level, sizeof(poly256)) != 0) {
       fprintf(stderr, "decrypt inverse l2 block mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
+    }
+  }
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int row = 0; row < K; row++) {
+      poly256 fused, split;
+      memcpy(split, stage_u_inv_l2[lane][row], sizeof(poly256));
+      stage_ntt_inv_head_l3_avx2(split);
+      stage_ntt_inv_tail_l4_after_head_avx2(split);
+      memcpy(fused, stage_u_inv_l2[lane][row], sizeof(poly256));
+      stage_ntt_inv_head_l3_tail_l4_fused_after_l2_avx2(fused);
+      if (memcmp(split, fused, sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "encrypt inverse l3/l4 fused mismatch at %zu,%d\n",
+                lane, row);
+        exit(EXIT_FAILURE);
+      }
+      memcpy(split, stage_u_inv_l2[lane][row], sizeof(poly256));
+      stage_ntt_inv_head_l3_avx2(split);
+      stage_ntt_inv_add_tail_final_pragma_after_head_avx2(
+          stage_e1[lane][row], split);
+      memcpy(fused, stage_u_inv_l2[lane][row], sizeof(poly256));
+      stage_ntt_inv_add_l3_tail_final_l4_fused_after_l2_avx2(
+          stage_e1[lane][row], fused);
+      if (memcmp(split, fused, sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "encrypt inverse l3/tail-final fused mismatch at %zu,%d\n",
+                lane, row);
+        exit(EXIT_FAILURE);
+      }
     }
   }
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -4643,6 +4675,92 @@ static uint64_t bench_encrypt_inv_add_u_head_l3_raw(size_t iters) {
   return t1 - t0;
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_inv_add_u_head_l3_tail_l4_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l2[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_head_l3_avx2(stage_tmp_vec0[lane][row]);
+      stage_ntt_inv_tail_l4_after_head_avx2(stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (113u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add_u_head_l3_tail_l4_fused_raw(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l2[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_head_l3_tail_l4_fused_after_l2_avx2(
+          stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (127u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add_u_head_l3_tail_final_pragma_raw(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l2[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_head_l3_avx2(stage_tmp_vec0[lane][row]);
+      stage_ntt_inv_add_tail_final_pragma_after_head_avx2(
+          stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (131u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add_u_head_l3_tail_final_l4_fused_raw(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_inv_l2[lane][row],
+             sizeof(poly256));
+      stage_ntt_inv_add_l3_tail_final_l4_fused_after_l2_avx2(
+          stage_e1[lane][row], stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (137u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_inv_add_u_tail_l4(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -5496,6 +5614,52 @@ static void stage_ntt_inv_head_l3_avx2(poly256 f) {
                             ZETA_NTT_INV_HEAD_L3[i]);
   }
 }
+
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_inv_head_l3_tail_l4_fused_after_l2_avx2(poly256 f) {
+  for (int start = 0, i = 0, k = 15; start < N; start += 32, i += 2, k--) {
+    const __m256i zeta_l4 = _mm256_set1_epi32(ZETA[k]);
+    __m256i a0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(f + start)));
+    __m256i b0 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(f + start + 8)));
+    __m256i a1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(f + start + 16)));
+    __m256i b1 = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(f + start + 24)));
+    __m256i lo0 = mod_q_add_i32x8(a0, b0);
+    __m256i hi0 = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(mod_q_sub_i32x8(b0, a0),
+                           ZETA_NTT_INV_HEAD_L3[i]));
+    __m256i lo1 = mod_q_add_i32x8(a1, b1);
+    __m256i hi1 = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(mod_q_sub_i32x8(b1, a1),
+                           ZETA_NTT_INV_HEAD_L3[i + 1]));
+    __m256i l4_lo = mod_q_add_i32x8(lo0, lo1);
+    __m256i l4_hi = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(mod_q_sub_i32x8(lo1, lo0), zeta_l4));
+    __m256i l4_lo_high = mod_q_add_i32x8(hi0, hi1);
+    __m256i l4_hi_high = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(mod_q_sub_i32x8(hi1, hi0), zeta_l4));
+    _mm_storeu_si128((__m128i *)(f + start),
+                     pack_i32x8_to_i16x8(l4_lo));
+    _mm_storeu_si128((__m128i *)(f + start + 8),
+                     pack_i32x8_to_i16x8(l4_lo_high));
+    _mm_storeu_si128((__m128i *)(f + start + 16),
+                     pack_i32x8_to_i16x8(l4_hi));
+    _mm_storeu_si128((__m128i *)(f + start + 24),
+                     pack_i32x8_to_i16x8(l4_hi_high));
+  }
+}
+
+static void stage_ntt_inv_add_l3_tail_final_l4_fused_after_l2_avx2(
+    const poly256 add, poly256 out) {
+  stage_ntt_inv_head_l3_tail_l4_fused_after_l2_avx2(out);
+  stage_ntt_inv_tail_level_pragma_avx2(out, 5, 7);
+  stage_ntt_inv_tail_level_pragma_avx2(out, 6, 3);
+  stage_ntt_inv_add_final_after_l6_avx2(add, out);
+}
+#endif
 
 static void stage_ntt_inv_tail_level_avx2(poly256 f, int log2len,
                                            int k_start, int zeta_idx) {
@@ -6904,6 +7068,19 @@ int main(int argc, char **argv) {
                bench_encrypt_inv_add_u_head_l3(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_head_l3_raw",
                bench_encrypt_inv_add_u_head_l3_raw(iters), iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_raw",
+               bench_encrypt_inv_add_u_head_l3_tail_l4_raw(iters), iters);
+  print_metric(
+      "mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_fused_raw",
+      bench_encrypt_inv_add_u_head_l3_tail_l4_fused_raw(iters), iters);
+  print_metric(
+      "mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_pragma_raw",
+      bench_encrypt_inv_add_u_head_l3_tail_final_pragma_raw(iters), iters);
+  print_metric(
+      "mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_l4_fused_raw",
+      bench_encrypt_inv_add_u_head_l3_tail_final_l4_fused_raw(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l4",
                bench_encrypt_inv_add_u_tail_l4(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw",

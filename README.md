@@ -470,6 +470,35 @@ head level in isolation. If the production `l6+final` A/B does not survive, move
 to a wider l2/l3/tail representation change instead of another isolated final
 loop tweak.
 
+A bench-only follow-up tested that wider direction by fusing inverse-head `l3`
+with the first tail level `l4`. For each 32-coefficient block, it computes the
+two `l3` butterflies and immediately feeds their low/high halves into the `l4`
+butterfly, removing the intermediate `l3` store/reload while keeping the same
+range contract and reductions:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(head_l3_tail_l4_raw|head_l3_tail_l4_fused_raw|head_l3_tail_final_pragma_raw|head_l3_tail_final_l4_fused_raw|tail_final_pragma_raw|head_l3_raw|tail_l4_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs matching split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | 77.77 | 77.63 | reference |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.12 | 72.12 | reference |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_raw` | 146.03 | 146.29 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_fused_raw` | 143.83 | 143.18 | 1.0217x |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_pragma_raw` | 397.16 | 397.60 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_l4_fused_raw` | 396.43 | 396.43 | 1.0030x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 326.08 | 325.99 | reference |
+
+Decision: keep `l3+l4` fusion as the next production A/B candidate, but treat it
+as fragile. The direct boundary wins locally, and unlike the rejected `l6+final`
+production attempt the experiment crosses a head/tail layout boundary. However,
+the integrated tail/final gain is only about 0.3% on median, so KEM confirmation
+must decide adoption.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
@@ -2048,6 +2077,10 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2_block_raw` | AVX2-only production-aligned inverse-head l2 block-load helper diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | same inverse-head l3 diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_raw` | AVX2-only diagnostic: split inverse-head l3 plus inverse-tail l4 from precomputed l2 outputs, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_fused_raw` | AVX2-only diagnostic: fused inverse-head l3 plus inverse-tail l4 from precomputed l2 outputs, byte-validated against the split path |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_pragma_raw` | AVX2-only diagnostic: split l3 followed by production-aligned l4-l6 tail/final from precomputed l2 outputs |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_final_l4_fused_raw` | AVX2-only diagnostic: fused l3/l4 followed by production-aligned l5-l6 tail/final from precomputed l2 outputs |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4` | AVX2 builds only: isolated inverse-tail l4 stage after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | same inverse-tail l4 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_pragma_raw` | AVX2-only inverse-tail l4 raw diagnostic with the production Clang loop-vectorization pragma |
