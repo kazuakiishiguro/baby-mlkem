@@ -405,16 +405,39 @@ Decision: reject the wide-reducer lazy-final direction. Correctness requires
 64-bit quotient work, and that costs more than the two existing final
 pre-normalization operations it removes.
 
+A narrower bench-only diagnostic then fused the last inverse-tail level (`l6`)
+with the existing final inverse butterfly, scale, and `e1` add. This keeps the
+same exact reductions, but avoids materializing the `l6` output only to reload it
+in the final pass:
+
+```bash
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_(l6_final_raw|l6_final_fused_raw|final_raw|final_pragma_raw|final_l6_fused_raw)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+| Metric | Avg ns/op | Median ns/op | Speedup vs matching median |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_final_raw` | 200.47 | 200.58 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_final_fused_raw` | 195.52 | 195.30 | 1.0270x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.43 | 325.94 | baseline |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 326.11 | 326.02 | 0.9998x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_l6_fused_raw` | 322.77 | 322.49 | 1.0107x |
+
+Decision: keep this as the next production A/B candidate. The win is small but
+consistent, and unlike the rejected lazy-final reducer it removes a concrete
+store/reload boundary without changing the range contract. Adoption still needs
+full KEM confirmation because production integration can lose the local gain to
+code size, register pressure, or neighboring layout effects.
+
 Next implementation filter: do not repeat final zeta constants, negative-scale,
-final-loop unroll, final3 grouping, packed final add, or block-local inverse-head
-ordering. The remaining plausible arithmetic direction is a representation-level
-inverse-add rewrite that removes load/extend/reduce work across the full tail and
-final boundary, with KEM confirmation as the adoption gate. The new raw split
-confirms that the target is real arithmetic/dataflow, not diagnostic scratch-copy
-or checksum overhead. With production-aligned block helpers, head l1 is still the
-largest single head stage, but it is smaller than the earlier legacy-level row.
-The most useful local subtarget is still the full l4-l6 plus final chain rather
-than a single tail stage, final alone, or one head level in isolation.
+final-loop unroll, final3 grouping, packed final add, wide final reduction, or
+block-local inverse-head ordering. The most useful local subtarget is still the
+full l4-l6 plus final chain rather than a single tail stage, final alone, or one
+head level in isolation. If the production `l6+final` A/B does not survive, move
+to a wider l2/l3/tail representation change instead of another isolated final
+loop tweak.
 
 ## Test
 
@@ -2003,6 +2026,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_pragma_raw` | AVX2-only inverse-tail l6 raw diagnostic with the production Clang loop-vectorization pragma |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_final_raw` | AVX2-only diagnostic: inverse-tail l6 followed by final inverse butterfly plus scale/add after precomputed l5 outputs, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_final_fused_raw` | AVX2-only diagnostic: fused l6 plus final inverse butterfly/scale/add from precomputed l5 outputs, byte-validated against the split path |
 | `mlkem_core_stage_encrypt_inv_add_u_final_only` | AVX2 builds only: final inverse butterfly plus scale/add after precomputed l6 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_final_raw` | same final-pass diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_final_wide_reduce_raw` | AVX2-only diagnostic: final pass with raw `(a+b)` / `(b+Q-a)` pre-normalization removal and a correct wide quotient reducer, byte-validated against the existing final path |
@@ -2016,6 +2041,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | AVX2-only tail/final raw diagnostic with the production Clang loop-vectorization pragma in the pre-final tail loops |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_l6_fused_raw` | AVX2-only diagnostic: production-aligned l4/l5 tail loops followed by the fused l6/final helper, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | AVX2-only diagnostic: tail/final path using the wide-reducer final diagnostic after the existing pre-final tail schedule |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
 | `mlkem_core_stage_ciphertext_compress_encode` | ciphertext compression and DU/DV bit-packing |
