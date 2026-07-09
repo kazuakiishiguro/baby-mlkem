@@ -2089,6 +2089,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_pair_blocked` | AVX2-only diagnostic: generate the two x4 public-matrix batches with interleaved three-block Keccak/store scheduling before parsing both batches |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | AVX2-only diagnostic: load the 32-byte public-matrix seed once and reuse those words when initializing the two x4 sampler batch states |
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
@@ -12278,6 +12279,51 @@ a standalone direction. The earlier local `l6+final` win is specific to the fina
 scale/add boundary and still failed production KEM confirmation; future inverse
 work needs a wider representation change rather than another two-level tail
 handoff.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 sample_ntt4 seed-init hoist)
+
+A bench-only public-matrix sampler diagnostic tested whether the repeated seed
+loads and parser setup in the two AVX2 x4 `sample_ntt4()` batches were worth
+hoisting. The candidate loads `seed[0..31]` once into four little-endian words,
+initializes each x4 Keccak state from those cached words, calls
+`sample_ntt_parse_init_avx2()` once for the two x4 batches, and leaves the final
+scalar `(2,2)` tail on the existing `sample_ntt()` path. It is byte-validated
+against the scalar matrix sampler before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_sample_matrix(_seed_init_hoist|_x4_pair_blocked|_x4_batch0|_x4_batch1)?_ns_per_op=|mlkem_core_stage_sample_ntt4_(init_only|full_raw|keccak_store3|parse_504)_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs current |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2796.38 | 2795.19 | 1.0000x |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2852.96 | 2842.25 | 0.9834x |
+| `mlkem_core_stage_sample_matrix_x4_pair_blocked` | 2863.86 | 2846.80 | context |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1108.11 | 1108.12 | context |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1179.78 | 1180.17 | context |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 933.85 | 934.35 | context |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.29 | 6.23 | context |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 868.45 | 868.43 | context |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 141.34 | 119.05 | context |
+
+The `parse_504` average includes one high outlier; the median is the useful
+context for this local diagnosis.
+
+Decision: reject the seed-init hoist candidate and keep it as a diagnostic row
+only. The initialization-only cost is about `6 ns` per x4 batch, so the total
+recoverable work across the two x4 public-matrix batches is too small. The
+helper shape and extra call boundary lose more than the hoist saves. Future
+sampler work should target Keccak/state movement or output compaction, not the
+seed loads or parser one-time setup.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
