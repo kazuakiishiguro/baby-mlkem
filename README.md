@@ -2201,6 +2201,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5_pragma_raw` | AVX2-only inverse-tail l5 raw diagnostic with the production Clang loop-vectorization pragma |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_raw` | AVX2-only diagnostic: split inverse-tail l4 followed by l5 from precomputed inverse heads, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_fused_raw` | AVX2-only diagnostic: fused inverse-tail l4/l5 from precomputed inverse heads, byte-validated against the split path |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_l6_raw` | AVX2-only diagnostic: split inverse-tail l5 followed by l6 from precomputed l4 outputs, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_l6_fused_raw` | AVX2-only diagnostic: fused inverse-tail l5/l6 from precomputed l4 outputs, byte-validated against the split path |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_pragma_raw` | AVX2-only inverse-tail l6 raw diagnostic with the production Clang loop-vectorization pragma |
@@ -12234,6 +12236,48 @@ boundary is not enough when the fused shape increases live vector state and
 constant pressure. Future inverse-tail work should target a wider representation
 change across more of the inverse-add pipeline, not another adjacent two-level
 fusion.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse tail l5/l6 fusion)
+
+A bench-only follow-up tested the other adjacent inverse-tail boundary: feeding
+`l5` directly into `l6` from precomputed `l4` outputs. The split path runs the
+existing `l5` and `l6` helpers. The fused path processes each 128-coefficient
+block by computing two `l5` butterflies and immediately applying the matching
+`l6` butterfly, removing the intermediate `l5` store/reload. It is byte-validated
+against the split path before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_l5_l6(_fused)?_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5(_fused)?_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_l[456]_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.24 | 72.18 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 71.35 | 71.25 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_raw` | 136.53 | 136.15 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_fused_raw` | 143.49 | 142.84 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_l6_raw` | 135.37 | 134.90 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_l6_fused_raw` | 138.94 | 138.97 | 0.9707x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 71.01 | 70.95 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 325.81 | 325.75 | context |
+
+Decision: reject the AVX2 inverse-tail `l5/l6` fusion candidate and keep it as a
+diagnostic row only. A short smoke run looked slightly positive, but the pinned
+seven-run median is about `2.9%` slower than the split `l5` then `l6` schedule.
+Together with the rejected `l4/l5` row, this closes adjacent tail-level fusion as
+a standalone direction. The earlier local `l6+final` win is specific to the final
+scale/add boundary and still failed production KEM confirmation; future inverse
+work needs a wider representation change rather than another two-level tail
+handoff.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
