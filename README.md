@@ -532,6 +532,40 @@ is below the KEM noise floor and the focused rerun regresses encapsulation. Do
 not carry the helper unless a wider representation change also removes later
 loads/reductions enough to survive full KEM.
 
+A bench-only sampler follow-up tested whether the two production x4 public-matrix
+batches benefit from matrix-level block scheduling. The diagnostic initializes
+both x4 Keccak states, runs the three common `keccakf4_mem()`/store blocks in
+alternating order for the two states, then parses both 504-byte streams before
+falling back to the existing scalar `(2,2)` tail. This changes matrix-level state
+layout and scheduling, but does not remove any Keccak permutation or parser pass:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt'
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_sample_matrix(_x4_pair_blocked|_x4_batch0|_x4_batch1|_x4x3x2)?_ns_per_op=|mlkem_core_stage_sample_ntt4_(full_raw|keccak_store3|parse_504)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, seven `30000`-iteration runs:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_sample_matrix` | 2865.33 | 2855.72 | production baseline. |
+| `mlkem_core_stage_sample_matrix_x4_pair_blocked` | 2865.84 | 2847.70 | 0.9998x avg, 1.0028x median vs production. |
+| `mlkem_core_stage_sample_matrix_x4x3x2` | 3609.56 | 3535.52 | partial-lane regrouping remains clearly slower. |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1115.77 | 1115.62 | first production x4 batch reference. |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1247.33 | 1236.76 | second production x4 batch reference. |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 870.03 | 870.90 | common Keccak/store cost still dominates. |
+
+Decision: keep `sample_matrix_x4_pair_blocked` as a diagnostic only. The tiny
+median win is not supported by the average, and the change does not remove real
+core work; it only moves two independent x4 states into a larger helper with more
+scratch and code-layout risk. This also narrows the remaining sampler route: the
+next useful `sample_ntt4()` redesign must reduce Keccak/state movement itself or
+fill unused lanes with useful work, not just reorder the two existing x4 batches.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
@@ -2014,6 +2048,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
+| `mlkem_core_stage_sample_matrix_x4_pair_blocked` | AVX2-only diagnostic: generate the two x4 public-matrix batches with interleaved three-block Keccak/store scheduling before parsing both batches |
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
 | `mlkem_core_stage_sample_matrix_tail_scalar_raw` | final `(2,2)` scalar `sample_ntt()` tail with a lightweight sink, excluding full-polynomial checksum overhead |
