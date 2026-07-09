@@ -736,11 +736,13 @@ static void stage_sample_ntt3_avx2(const uint8_t *seed, uint8_t row0,
   }
 }
 
-static void stage_sample_matrix_tail_choice_avx2(const uint8_t *seed,
-                                                 int tail_idx,
-                                                 poly256 out[K][K]) {
-  uint8_t row[8];
-  uint8_t col[8];
+static inline uint64_t stage_sample_ntt_tail_suffix(int tail_idx) {
+  return (uint64_t)(uint8_t)(tail_idx / K) |
+         ((uint64_t)(uint8_t)(tail_idx % K) << 8) | (0x1FULL << 16);
+}
+
+static void stage_sample_matrix_tail_choice_rows(int tail_idx, uint8_t row[8],
+                                                 uint8_t col[8]) {
   int n = 0;
 
   for (int idx = 0; idx < K * K; idx++) {
@@ -749,6 +751,15 @@ static void stage_sample_matrix_tail_choice_avx2(const uint8_t *seed,
     col[n] = (uint8_t)(idx % K);
     n++;
   }
+}
+
+static void stage_sample_matrix_tail_choice_avx2(const uint8_t *seed,
+                                                 int tail_idx,
+                                                 poly256 out[K][K]) {
+  uint8_t row[8];
+  uint8_t col[8];
+
+  stage_sample_matrix_tail_choice_rows(tail_idx, row, col);
 
   sample_ntt4(seed, row, col, out[row[0]][col[0]], out[row[1]][col[1]],
               out[row[2]][col[2]], out[row[3]][col[3]]);
@@ -1257,8 +1268,8 @@ static void stage_encrypt_prf_cbd_eta2_32_sample_tail_accum3_avx2(
   sample_ntt_tail_lane2_accum3_parse_avx2(st, tail);
 }
 
-static void stage_encrypt_prf_cbd_eta2_32_sample_tail21_avx2(
-    const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
+static void stage_encrypt_prf_cbd_eta2_32_sample_tail_idx_avx2(
+    const uint8_t seed[32], const uint8_t rho[32], int tail_idx, poly256 tail,
     poly256 r0, poly256 r1, poly256 r2, poly256 e10,
     poly256 e11, poly256 e12, poly256 e2) {
   const uint8_t n0[4] = {0, 1, 2, 3};
@@ -1287,7 +1298,8 @@ static void stage_encrypt_prf_cbd_eta2_32_sample_tail21_avx2(
                             (long long)load64_le(seed + 24),
                             (long long)load64_le(seed + 24));
   st[4] = _mm256_set_epi64x(
-      (long long)((uint64_t)6 | (0x1FULL << 8)), 0x1f0102LL,
+      (long long)((uint64_t)6 | (0x1FULL << 8)),
+      (long long)stage_sample_ntt_tail_suffix(tail_idx),
       (long long)((uint64_t)5 | (0x1FULL << 8)),
       (long long)((uint64_t)4 | (0x1FULL << 8)));
   st[16] = _mm256_set_epi64x((long long)(0x80ULL << 56), 0,
@@ -1316,6 +1328,14 @@ static void stage_encrypt_prf_cbd_eta2_32_sample_tail21_avx2(
     count = sample_ntt_parse_stream_avx2_ready(
         (const uint8_t *)tail_state, 168, tail, count);
   }
+}
+
+static void stage_encrypt_prf_cbd_eta2_32_sample_tail21_avx2(
+    const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
+    poly256 r0, poly256 r1, poly256 r2, poly256 e10,
+    poly256 e11, poly256 e12, poly256 e2) {
+  stage_encrypt_prf_cbd_eta2_32_sample_tail_idx_avx2(
+      seed, rho, 7, tail, r0, r1, r2, e10, e11, e12, e2);
 }
 
 static void validate_encrypt_prf_cbd_tail_cosched_matches_separate(void) {
@@ -2088,6 +2108,126 @@ static void stage_kpke_encrypt_uncached_tail21_avx2(
   *out_clen = (size_t)(p - out_c);
 }
 
+static void stage_kpke_encrypt_uncached_tail_idx_avx2(
+    const uint8_t *ek_pke, const uint8_t *m, const uint8_t *r,
+    uint8_t *out_c, size_t *out_clen, size_t lane, int tail_idx) {
+  const uint8_t *rho = ek_pke + K * 384;
+  uint8_t row[8];
+  uint8_t col[8];
+  poly256 (*ahat)[K] = stage_rowwise_ahat[lane];
+  poly256 *that = stage_rowwise_that[lane];
+  poly256 *rhat = stage_rowwise_rhat[lane];
+  poly256 *e1 = stage_rowwise_e1[lane];
+  poly256 *u = stage_rowwise_u[lane];
+  int16_t *e2 = stage_rowwise_e2[lane];
+  int16_t *v = stage_rowwise_v[lane];
+
+  for (int i = 0; i < K; i++) {
+    byte_decode(12, ek_pke + i * 384, that[i]);
+  }
+
+  stage_sample_matrix_tail_choice_rows(tail_idx, row, col);
+  sample_ntt4(rho, row, col, ahat[row[0]][col[0]], ahat[row[1]][col[1]],
+              ahat[row[2]][col[2]], ahat[row[3]][col[3]]);
+  sample_ntt4(rho, row + 4, col + 4, ahat[row[4]][col[4]],
+              ahat[row[5]][col[5]], ahat[row[6]][col[6]],
+              ahat[row[7]][col[7]]);
+  stage_encrypt_prf_cbd_eta2_32_sample_tail_idx_avx2(
+      r, rho, tail_idx, ahat[tail_idx / K][tail_idx % K], rhat[0], rhat[1],
+      rhat[2], e1[0], e1[1], e1[2], e2);
+
+  for (int i = 0; i < K; i++) {
+    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
+  }
+  for (int row_idx = 0; row_idx < K; row_idx++) {
+    ntt_mul_acc3(ahat[row_idx][0], rhat[0], ahat[row_idx][1], rhat[1],
+                 ahat[row_idx][2], rhat[2], u[row_idx]);
+    ntt_inv_add_inplace(e1[row_idx], u[row_idx]);
+  }
+  ntt_mul_acc3(that[0], rhat[0], that[1], rhat[1], that[2], rhat[2], v);
+  mlkem_add_message_to_poly(m, e2);
+  ntt_inv_add_v_inplace(e2, v);
+
+  uint8_t *p = out_c;
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(u[i], p);
+    p += (N * DU) / 8;
+  }
+  compress_encode_poly_d4_avx2(v, p);
+  p += (N * DV) / 8;
+  *out_clen = (size_t)(p - out_c);
+}
+
+static void stage_sha3_256_sample_ntt_tail_idx_avx2(const uint8_t *pk,
+                                                   const uint8_t *rho,
+                                                   int tail_idx,
+                                                   poly256 out,
+                                                   uint8_t h[32]) {
+  __m256i st[25];
+  uint64_t hst[25];
+  uint64_t stream[63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0), 0);
+  st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8), 0);
+  st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16), 0);
+  st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24), 0);
+  st[4] = _mm256_set_epi64x(0, 0,
+                            (long long)stage_sample_ntt_tail_suffix(tail_idx),
+                            0);
+  st[20] = _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56), 0);
+
+  for (int block = 0; block < 3; block++) {
+    const uint8_t *p = pk + (size_t)block * 136;
+    for (int lane = 0; lane < 16; lane++) {
+      st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(p + 8 * lane));
+    }
+    st[16] = keccak_xor_lane0_u64(st[16], load64_le(p + 128));
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      stream[(size_t)block * 21 + (size_t)lane] = keccak_lane1_u64(st[lane]);
+    }
+  }
+
+  for (int lane = 0; lane < 25; lane++) {
+    hst[lane] = keccak_lane0_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), out, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = keccak_lane1_u64(st[lane]);
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), out, count);
+  }
+
+  for (int block = 3; block < 8; block++) {
+    const uint8_t *p = pk + (size_t)block * 136;
+    keccak_xor_lanes16_avx2(hst, p);
+    hst[16] ^= load64_le(p + 128);
+    keccakf(hst);
+  }
+
+  const uint8_t *tail = pk + 8 * 136;
+  for (int lane = 0; lane < 12; lane += 4) {
+    __m256i s = _mm256_loadu_si256((const __m256i *)(hst + lane));
+    __m256i x =
+        _mm256_loadu_si256((const __m256i *)(const void *)(tail + 8 * lane));
+    _mm256_storeu_si256((__m256i *)(hst + lane), _mm256_xor_si256(s, x));
+  }
+  hst[12] ^= 0x06u;
+  hst[16] ^= 0x8000000000000000ULL;
+  keccakf(hst);
+  memcpy(h, hst, 32);
+}
+
 static void stage_sha3_256_sample_ntt_tail21_avx2(const uint8_t *pk,
                                                   const uint8_t *rho,
                                                   poly256 out,
@@ -2177,6 +2317,31 @@ static void stage_kpke_prepare_public_no_cache_tail21_avx2(
       ek_pke, rho, kpke_public_cache_ahat[2][1], h);
 }
 
+static void stage_kpke_prepare_public_no_cache_tail_idx_avx2(
+    const uint8_t *ek_pke, uint8_t h[32], int tail_idx) {
+  const uint8_t *rho = ek_pke + K * 384;
+  uint8_t row[8];
+  uint8_t col[8];
+
+  for (int i = 0; i < K; i++) {
+    byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+  }
+
+  stage_sample_matrix_tail_choice_rows(tail_idx, row, col);
+  sample_ntt4(rho, row, col, kpke_public_cache_ahat[row[0]][col[0]],
+              kpke_public_cache_ahat[row[1]][col[1]],
+              kpke_public_cache_ahat[row[2]][col[2]],
+              kpke_public_cache_ahat[row[3]][col[3]]);
+  sample_ntt4(rho, row + 4, col + 4,
+              kpke_public_cache_ahat[row[4]][col[4]],
+              kpke_public_cache_ahat[row[5]][col[5]],
+              kpke_public_cache_ahat[row[6]][col[6]],
+              kpke_public_cache_ahat[row[7]][col[7]]);
+  stage_sha3_256_sample_ntt_tail_idx_avx2(
+      ek_pke, rho, tail_idx,
+      kpke_public_cache_ahat[tail_idx / K][tail_idx % K], h);
+}
+
 static void validate_kpke_encrypt_uncached_rowwise_avx2(void) {
   uint8_t want[STAGE_CT_BYTES];
   uint8_t got[STAGE_CT_BYTES];
@@ -2198,6 +2363,20 @@ static void validate_kpke_encrypt_uncached_rowwise_avx2(void) {
     if (want_len != got_len || memcmp(want, got, want_len) != 0) {
       fprintf(stderr, "tail21 uncached encrypt mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
+    }
+    {
+      static const int tail_idx[2] = {2, 3};
+      static const char *tail_name[2] = {"tail02", "tail10"};
+      for (int t = 0; t < 2; t++) {
+        stage_kpke_encrypt_uncached_tail_idx_avx2(
+            stage_ek[lane], stage_msg[lane], stage_r[lane], got, &got_len,
+            lane, tail_idx[t]);
+        if (want_len != got_len || memcmp(want, got, want_len) != 0) {
+          fprintf(stderr, "%s uncached encrypt mismatch at %zu\n",
+                  tail_name[t], lane);
+          exit(EXIT_FAILURE);
+        }
+      }
     }
   }
   mlkem_set_internal_caches_enabled(1);
@@ -2221,6 +2400,21 @@ static void validate_kpke_prepare_public_no_cache_tail21_avx2(void) {
         memcmp(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat)) != 0) {
       fprintf(stderr, "tail21 public prepare mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
+    }
+    {
+      static const int tail_idx[2] = {2, 3};
+      static const char *tail_name[2] = {"tail02", "tail10"};
+      for (int t = 0; t < 2; t++) {
+        stage_kpke_prepare_public_no_cache_tail_idx_avx2(
+            stage_ek[lane], got_h, tail_idx[t]);
+        if (memcmp(want_h, got_h, sizeof(want_h)) != 0 ||
+            memcmp(want_that, kpke_public_cache_that, sizeof(want_that)) != 0 ||
+            memcmp(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat)) != 0) {
+          fprintf(stderr, "%s public prepare mismatch at %zu\n",
+                  tail_name[t], lane);
+          exit(EXIT_FAILURE);
+        }
+      }
     }
   }
   mlkem_set_internal_caches_enabled(1);
@@ -2264,6 +2458,26 @@ static uint64_t bench_kpke_encrypt_uncached_tail21(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_kpke_encrypt_uncached_tail_idx(size_t iters,
+                                                     int tail_idx) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  size_t clen = 0;
+
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_kpke_encrypt_uncached_tail_idx_avx2(
+        stage_ek[lane], stage_msg[lane], stage_r[lane], stage_tmp_ct[lane],
+        &clen, lane, tail_idx);
+    acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
+  }
+  t1 = now_ns();
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_kpke_prepare_public_no_cache_tail21(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2274,6 +2488,29 @@ static uint64_t bench_kpke_prepare_public_no_cache_tail21(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_kpke_prepare_public_no_cache_tail21_avx2(stage_ek[lane], h);
+    acc ^= h[(i * 17u) & 31u];
+    acc ^= (uint16_t)kpke_public_cache_that[i % K][i & 255u];
+    acc ^= (uint16_t)kpke_public_cache_ahat[(i / K) % K][i % K][0];
+  }
+  t1 = now_ns();
+  mlkem_set_internal_caches_enabled(1);
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_kpke_prepare_public_no_cache_tail_idx(size_t iters,
+                                                            int tail_idx) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  uint8_t h[32];
+
+  mlkem_set_internal_caches_enabled(0);
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_kpke_prepare_public_no_cache_tail_idx_avx2(stage_ek[lane], h,
+                                                     tail_idx);
     acc ^= h[(i * 17u) & 31u];
     acc ^= (uint16_t)kpke_public_cache_that[i % K][i & 255u];
     acc ^= (uint16_t)kpke_public_cache_ahat[(i / K) % K][i % K][0];
@@ -2678,6 +2915,77 @@ static void stage_keygen_matrix_noise_tail21_avx2(
   sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0], ahat[2][2]);
 }
 
+static void stage_keygen_prf_cbd_eta2_32_sample_tail_idx_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], int tail_idx,
+    poly256 tail, poly256 s0, poly256 s1, poly256 s2,
+    poly256 e0, poly256 e1, poly256 e2) {
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  __m256i st[25];
+  uint64_t tail_state[25];
+
+  mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(sigma + 0),
+                            (long long)load64_le(sigma + 0));
+  st[1] = _mm256_set_epi64x(0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(sigma + 8),
+                            (long long)load64_le(sigma + 8));
+  st[2] = _mm256_set_epi64x(0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(sigma + 16),
+                            (long long)load64_le(sigma + 16));
+  st[3] = _mm256_set_epi64x(0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(sigma + 24),
+                            (long long)load64_le(sigma + 24));
+  st[4] = _mm256_set_epi64x(
+      0, (long long)stage_sample_ntt_tail_suffix(tail_idx),
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)));
+  st[16] = _mm256_set_epi64x(0, 0,
+                             (long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56));
+  st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
+                                     e1 + 16 * lane, e2 + 16 * lane);
+  }
+  for (int lane = 0; lane < 25; lane++) {
+    tail_state[lane] = keccak_lane2_u64(st[lane]);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)tail_state, 168, tail, 0);
+  while (count < N) {
+    keccakf(tail_state);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)tail_state, 168, tail, count);
+  }
+}
+
+static void stage_keygen_matrix_noise_tail_idx_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], int tail_idx,
+    poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]) {
+  uint8_t row[8];
+  uint8_t col[8];
+
+  stage_sample_matrix_tail_choice_rows(tail_idx, row, col);
+  sample_ntt4(rho, row, col, ahat[row[0]][col[0]], ahat[row[1]][col[1]],
+              ahat[row[2]][col[2]], ahat[row[3]][col[3]]);
+  stage_keygen_prf_cbd_eta2_32_sample_tail_idx_avx2(
+      sigma, rho, tail_idx, ahat[tail_idx / K][tail_idx % K], shat[0],
+      shat[1], shat[2], ehat[0], ehat[1], ehat[2]);
+  sample_ntt4(rho, row + 4, col + 4, ahat[row[4]][col[4]],
+              ahat[row[5]][col[5]], ahat[row[6]][col[6]],
+              ahat[row[7]][col[7]]);
+}
+
 static void validate_keygen_matrix_noise_schedule_avx2(void) {
   poly256 cur_ahat[K][K], first_ahat[K][K], last_ahat[K][K];
   poly256 cur_s[K], first_s[K], last_s[K];
@@ -2722,6 +3030,22 @@ static void validate_keygen_matrix_noise_tail21_avx2(void) {
         memcmp(cur_e, alt_e, sizeof(cur_e)) != 0) {
       fprintf(stderr, "keygen matrix/noise tail21 mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
+    }
+    {
+      static const int tail_idx[2] = {2, 3};
+      static const char *tail_name[2] = {"tail02", "tail10"};
+      for (int t = 0; t < 2; t++) {
+        stage_keygen_matrix_noise_tail_idx_avx2(
+            stage_sigma[lane], stage_rho[lane], tail_idx[t], alt_ahat, alt_s,
+            alt_e);
+        if (memcmp(cur_ahat, alt_ahat, sizeof(cur_ahat)) != 0 ||
+            memcmp(cur_s, alt_s, sizeof(cur_s)) != 0 ||
+            memcmp(cur_e, alt_e, sizeof(cur_e)) != 0) {
+          fprintf(stderr, "keygen matrix/noise %s mismatch at %zu\n",
+                  tail_name[t], lane);
+          exit(EXIT_FAILURE);
+        }
+      }
     }
   }
 }
@@ -2791,6 +3115,23 @@ static uint64_t bench_keygen_matrix_noise_tail21(size_t iters) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_keygen_matrix_noise_tail21_avx2(
         stage_sigma[lane], stage_rho[lane], stage_tmp_ahat[lane],
+        stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
+    acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keygen_matrix_noise_tail_idx(size_t iters,
+                                                   int tail_idx) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_keygen_matrix_noise_tail_idx_avx2(
+        stage_sigma[lane], stage_rho[lane], tail_idx, stage_tmp_ahat[lane],
         stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
     acc ^= stage_keygen_matrix_noise_schedule_sink(i, lane);
   }
@@ -7915,12 +8256,20 @@ int main(int argc, char **argv) {
                bench_kpke_encrypt_uncached_rowwise(iters), iters);
   print_metric("mlkem_core_stage_kpke_encrypt_uncached_tail21",
                bench_kpke_encrypt_uncached_tail21(iters), iters);
+  print_metric("mlkem_core_stage_kpke_encrypt_uncached_tail02",
+               bench_kpke_encrypt_uncached_tail_idx(iters, 2), iters);
+  print_metric("mlkem_core_stage_kpke_encrypt_uncached_tail10",
+               bench_kpke_encrypt_uncached_tail_idx(iters, 3), iters);
 #endif
   print_metric("mlkem_core_stage_kpke_prepare_public_no_cache",
                bench_kpke_prepare_public_no_cache(iters), iters);
 #if defined(__AVX2__) && !(defined(__AVX512F__))
   print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_tail21",
                bench_kpke_prepare_public_no_cache_tail21(iters), iters);
+  print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_tail02",
+               bench_kpke_prepare_public_no_cache_tail_idx(iters, 2), iters);
+  print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_tail10",
+               bench_kpke_prepare_public_no_cache_tail_idx(iters, 3), iters);
 #endif
   print_metric("mlkem_core_stage_public_key_decode_d12",
                bench_public_key_decode_d12(iters), iters);
@@ -7962,6 +8311,10 @@ int main(int argc, char **argv) {
                bench_keygen_matrix_noise_tail_last(iters), iters);
   print_metric("mlkem_core_stage_keygen_matrix_noise_tail21",
                bench_keygen_matrix_noise_tail21(iters), iters);
+  print_metric("mlkem_core_stage_keygen_matrix_noise_tail02",
+               bench_keygen_matrix_noise_tail_idx(iters, 2), iters);
+  print_metric("mlkem_core_stage_keygen_matrix_noise_tail10",
+               bench_keygen_matrix_noise_tail_idx(iters, 3), iters);
 #endif
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",
