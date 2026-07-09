@@ -12370,6 +12370,48 @@ ordering previously failed full-keygen confirmation. The next step is a separate
 production patch that adds the head split to `baby-mlkem.c` and validates it with
 stage plus KEM A/B, not just this isolated stage row.
 
+### Independent Core Optimization A/B (2026-07-09, AVX2 keygen shat head/tail encode production route)
+
+A production A/B tested the carried-forward `shat` head/tail encode schedule from
+the bench-only diagnostic above. The candidate added an AVX2 `ntt_head` split in
+`baby-mlkem.c`, routed the non-AVX512 AVX2 `kpke_keygen()` path through
+`ntt_head(shat[0..2])`, `ntt_tail+encode(shat[0..2])`, then
+`ntt_head/tail(ehat[0..2])`, and left the scalar and AVX512 paths unchanged.
+
+Correctness gate:
+
+```bash
+make test CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+AVX2-only stage/KEM A/B command:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=70000 KEM_ITERS=20000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+A/B highlights:
+
+| Metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4766.98 | 4745.90 | 1.0044x | 4748.37 | 4738.71 | 1.0020x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1587.30 | 1590.56 | 0.9980x | 1587.80 | 1587.02 | 1.0005x |
+| `mlkem_core_stage_keygen_noise_ntt_shat_headtail_encode` | 1559.01 | 1559.43 | 0.9997x | 1558.95 | 1560.37 | 0.9991x |
+| `mlkem_keygen` | 6909.78 | 6886.91 | 1.0033x | 6883.09 | 6888.10 | 0.9993x |
+| `mlkem_keygen_core` | 6866.33 | 6866.78 | 0.9999x | 6866.15 | 6865.41 | 1.0001x |
+| `mlkem_roundtrip_core` | 20085.61 | 20043.45 | 1.0021x | 19967.99 | 19963.71 | 1.0002x |
+
+Decision: reject the production route and keep the existing AVX2 keygen NTT
+order. The direct `kpke_keygen_full` stage row is slightly positive, but the
+KEM-level medians are neutral to slightly negative (`mlkem_keygen` is `0.9993x`,
+`mlkem_keygen_core` is effectively flat). The candidate also duplicates the AVX2
+forward-NTT head loop in production for a gain that does not survive the broader
+KEM gate. Keep the bench-only row as a useful diagnostic, but do not carry this
+standalone schedule into `baby-mlkem.c`.
+
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
 A bench-only encryption accumulation diagnostic tested the natural follow-up to
