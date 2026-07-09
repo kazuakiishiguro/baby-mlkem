@@ -2155,6 +2155,9 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise` | encryption PRF, CBD, and canonical NTT for `r`, using the historical stage shape |
 | `mlkem_core_stage_encrypt_noise_lazy` | AVX2-only production-aligned encryption PRF, CBD, and lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_raw` | AVX2-only diagnostic: same encryption PRF/CBD helper with lightweight coefficient sinks instead of full-polynomial checksums |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw` | AVX2-only diagnostic: first four-lane encryption PRF/CBD block for nonces `0,1,2,3`, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw` | AVX2-only diagnostic: second three-output encryption PRF/CBD block for nonces `4,5,6`, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched` | AVX2-only diagnostic: encryption PRF/CBD with the first `(2,2)` public-matrix tail block co-scheduled into the nonce 4/5/6 `keccakf4()` call |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3` | AVX2-only diagnostic: co-scheduled encryption PRF/CBD tail using the keygen-style three-rate tail parse schedule |
@@ -12453,6 +12456,46 @@ robust representation win; it is within scheduling noise and does not justify
 adding an AVX2 `ntt_inv_add3_inplace()` production path. Future inverse-add work
 still needs a larger representation change than level-by-level batching of the
 current row-local transform.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 encrypt PRF/CBD x4/x3 raw split)
+
+A bench-only diagnostic split the encryption noise PRF/CBD helper into its two
+AVX2 Keccak calls under the same stage fixture. The production helper runs one
+four-output `mlkem_prf_cbd_eta2x4_32()` block for nonces `0,1,2,3` and one
+three-output `mlkem_prf_cbd_eta2x3_32()` block for nonces `4,5,6`. The new raw
+rows use lightweight coefficient sinks to avoid the full-polynomial checksum
+from dominating the split.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_noise_prf_cbd(_raw|_x4_raw|_x3_raw)?_ns_per_op=|mlkem_core_stage_encrypt_noise(_lazy)?_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_noise` | 1367.29 | 1367.20 | full PRF/CBD plus canonical `r` NTT |
+| `mlkem_core_stage_encrypt_noise_lazy` | 1357.63 | 1358.00 | production-aligned lazy `r` NTT |
+| `mlkem_core_stage_encrypt_noise_prf_cbd` | 1148.25 | 1148.69 | checksum-heavy PRF/CBD row |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_raw` | 609.37 | 608.93 | lightweight full PRF/CBD row |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw` | 311.39 | 311.49 | first four nonces, one `keccakf4()` |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw` | 304.67 | 304.09 | last three nonces, one underfilled `keccakf4()` |
+
+Decision: keep these rows as diagnostics and do not chase another CBD-local
+rewrite. The raw split shows that the useful PRF/CBD budget is almost exactly two
+`keccakf4()` calls: the x4 and x3 halves are balanced, and their summed median is
+about `616 ns` versus `609 ns` for the full raw helper. The checksum-heavy row is
+not a good proxy for internal PRF/CBD work. Future encryption-noise work should
+therefore either fill the fourth lane of the x3 block with independent useful
+work that survives KEM A/B, or remove a Keccak call; another local CBD decode or
+state extraction tweak is not the right target.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
