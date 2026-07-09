@@ -2178,6 +2178,7 @@ stage metrics.
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
 | `mlkem_core_stage_encrypt_inv_add_u_raw` | same three-`u` inverse-NTT-add diagnostic with lightweight coefficient sinks instead of full-polynomial checksums |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | AVX2-only diagnostic: run the three `u` inverse-add paths as a full three-polynomial head, production-aligned tail-level, and final schedule with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_copy_only` | diagnostic lower bound for the three scratch copies plus the same checksum shape used by `encrypt_inv_add_u_only` |
 | `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | diagnostic lower bound for the same three scratch copies with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_checksum_only` | diagnostic checksum-only baseline for estimating the scratch-copy component in `encrypt_inv_add_u_only` |
@@ -12411,6 +12412,47 @@ KEM-level medians are neutral to slightly negative (`mlkem_keygen` is `0.9993x`,
 forward-NTT head loop in production for a gain that does not survive the broader
 KEM gate. Keep the bench-only row as a useful diagnostic, but do not carry this
 standalone schedule into `baby-mlkem.c`.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse-add full3 level schedule)
+
+A bench-only follow-up tested the broader AVX2 analogue of the existing AVX512
+three-output inverse-add path. The candidate copies the three accumulated `u`
+polynomials, runs `ntt_inv_head_avx2()` for all three, runs the production-aligned
+`l4`, `l5`, and `l6` tail levels for all three rows level-by-level, then uses the
+existing three-output final helper. It is byte-validated against three independent
+`ntt_inv_add_inplace()` calls before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(raw|full3_pragma_raw|only|tail_final_raw|tail_final3_pragma_raw|head_raw|copy_raw)_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split raw |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 763.77 | 762.04 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 584.05 | 583.14 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 581.24 | 581.12 | 1.0035x |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | 11.76 | 11.80 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 259.98 | 258.39 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 327.70 | 325.76 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.08 | 329.13 | 0.9898x vs tail/final split |
+
+Decision: keep the full3 row as a diagnostic only and do not productionize this
+schedule. The full-path raw median is only about `0.35%` faster than the split raw
+row, while the isolated three-output tail/final schedule is slower than three
+independent tail/final calls. That means the small full-path signal is not a
+robust representation win; it is within scheduling noise and does not justify
+adding an AVX2 `ntt_inv_add3_inplace()` production path. Future inverse-add work
+still needs a larger representation change than level-by-level batching of the
+current row-local transform.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
