@@ -68,6 +68,7 @@ Near-term target selection:
 | Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median; a useful change must remove or restructure permutation/state movement, not just tweak parser bookkeeping. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
+| Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
 | Public-matrix x4 lane grouping | Closed | Column-major x4 batches measured 0.9994x median versus current row-major production; regrouping lanes without changing Keccak/state work is not enough. |
 | Broad lazy/signed range contract | Open only for an end-to-end redesign | Signed CBD saves about 10.5 ns for K=3 at the producer, but the measured forward-NTT boundary gives most or all of that back. A standalone signed CBD->NTT change is effectively closed; only a wider representation change remains plausible. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
@@ -78,8 +79,8 @@ The next implementation should therefore prioritize either a `sample_ntt4`
 redesign that changes the Keccak/state representation itself, or a broader
 inverse-add representation change that removes arithmetic or data movement rather
 than merely batching the same three `u` rows. Seed-load hoisting, public-matrix x4
-lane regrouping, three-polynomial inverse-add scheduling, and local
-`ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
+lane regrouping, adjacent inverse-level fusion, three-polynomial inverse-add
+scheduling, and local `ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
 change by itself has a measured budget that is too
 small: it reproduces the recent pattern of small direct wins, then neutral or
 negative integrated medians.
@@ -539,8 +540,8 @@ the KEM gate. Keep the bench-only diagnostic as evidence, but do not carry the
 production helper.
 
 Next implementation filter: do not repeat final zeta constants, negative-scale,
-final-loop unroll, final3 grouping, packed final add, wide final reduction, or
-block-local inverse-head ordering. The most useful local subtarget is still the
+final-loop unroll, final3 grouping, packed final add, wide final reduction,
+head `l2+l3` fusion, or block-local inverse-head ordering. The most useful local subtarget is still the
 full l4-l6 plus final chain rather than a single tail stage, final alone, or one
 head level in isolation. If the production `l6+final` A/B does not survive, move
 to a wider l2/l3/tail representation change instead of another isolated final
@@ -2239,6 +2240,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2` | AVX2 builds only: isolated inverse-head l2 stage for the three `u` accumulations, using precomputed l1 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2_raw` | same inverse-head l2 diagnostic with lightweight coefficient sinks, using the old level helper |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l2_block_raw` | AVX2-only production-aligned inverse-head l2 block-load helper diagnostic with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_l3_block_raw` | AVX2-only diagnostic: split production-aligned inverse-head l2 block helper followed by l3 from precomputed l1 outputs, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_l3_fused_raw` | AVX2-only diagnostic: fused inverse-head l2/l3 from precomputed l1 outputs, byte-validated against the split path |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3` | AVX2 builds only: isolated inverse-head l3 stage for the three `u` accumulations, using precomputed l2 outputs and scratch copies |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | same inverse-head l3 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_head_l3_tail_l4_raw` | AVX2-only diagnostic: split inverse-head l3 plus inverse-tail l4 from precomputed l2 outputs, with lightweight coefficient sinks |
@@ -12247,6 +12250,45 @@ butterfly compete for registers and instruction scheduling space on AVX2, so the
 store/load boundary is cheaper than interleaving the two loops. Future inverse-add
 work should change the arithmetic representation or the wider inverse schedule,
 not only push the final step into d10 packing.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse head l2/l3 fusion)
+
+A bench-only follow-up tested whether the AVX2 inverse-head `l2` output should be
+fed directly into `l3` inside one helper. The split path starts from precomputed
+`l1` outputs, runs the production-aligned `l2` block-load helper, then runs the
+existing `l3` helper. The fused path computes `l2` sums/products in registers,
+permutes them into the `l3` input layout, and immediately applies the `l3`
+butterfly. It is byte-validated against the split path before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(head_l2_block_raw|head_l2_l3_block_raw|head_l2_l3_fused_raw|head_l3_raw|head_raw|tail_final_raw)_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 259.12 | 259.29 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_block_raw` | 89.43 | 89.43 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_l3_block_raw` | 159.51 | 159.29 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l2_l3_fused_raw` | 191.70 | 191.59 | 0.8314x |
+| `mlkem_core_stage_encrypt_inv_add_u_head_l3_raw` | 77.69 | 77.53 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 325.60 | 325.52 | context |
+
+Decision: reject the AVX2 inverse-head `l2/l3` fusion candidate and keep it as a
+diagnostic row only. The fused helper is about `20%` slower than the split
+production-aligned `l2` then `l3` schedule. This closes the head-side analogue of
+the failed adjacent tail fusions: removing a store/reload boundary is not enough
+when the fused shape adds lane permutes and keeps more intermediate vectors live.
+Future inverse-add work needs a wider representation change than another adjacent
+two-level handoff.
 
 ### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse tail l4/l5 fusion)
 
