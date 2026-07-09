@@ -2108,6 +2108,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
+| `mlkem_core_stage_sample_ntt4_lane_store_full_raw` | AVX2-only diagnostic: x4 sampler using lane-extract state materialization plus the existing 504-byte parser |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
 | `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses Keccak state words directly with a scalar streaming parser instead of materializing 504-byte streams |
 | `mlkem_core_stage_sample_ntt4_state_mask3` | AVX2-only diagnostic lower bound: initial three `keccakf4_mem()` blocks plus direct SIMD validity masks from state words, without output compaction |
@@ -2116,8 +2117,10 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt2_full_raw` | AVX2-only diagnostic: two-lane SHAKE128 matrix sampler for `(2,0)` and `(2,1)`, using the existing parser and a lightweight sink |
 | `mlkem_core_stage_sample_ntt3_full_raw` | AVX2-only diagnostic: three-lane SHAKE128 matrix sampler for `(1,2)`, `(2,0)`, and `(2,1)`, using the existing parser and a lightweight sink |
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
+| `mlkem_core_stage_sample_ntt4_lane_store_rate` | AVX2-only diagnostic: 168-byte-rate materialization by storing each Keccak state word and extracting lanes into four streams |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
+| `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | AVX2-only diagnostic: initial three production `keccakf4_mem()` blocks plus lane-extract stream materialization |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
 | `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three production Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
 | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional production register `keccakf4()` refill block plus stream stores, conditioned on groups that need refill |
@@ -12462,6 +12465,49 @@ robust representation win; it is within scheduling noise and does not justify
 adding an AVX2 `ntt_inv_add3_inplace()` production path. Future inverse-add work
 still needs a larger representation change than level-by-level batching of the
 current row-local transform.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 sample_ntt4 lane-extract materialization)
+
+A bench-only diagnostic tested whether the x4 sampler should materialize Keccak
+state into the four rejection streams by storing each `__m256i` word and copying
+its four 64-bit lanes, rather than using the current transpose-oriented
+`sample_ntt4_store_rate()` path. This keeps the existing 504-byte AVX2 rejection
+parser and refill logic, so it isolates the state-to-stream materialization shape
+without changing Keccak work or parser semantics.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_sample_ntt4_(full_raw|lane_store_full_raw|store_rate|lane_store_rate|keccak3_only|keccak_store3|lane_store_keccak_store3|parse_504|common3_step)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_sample_matrix` | 2846.37 | 2805.51 | context row |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 952.05 | 938.53 | current x4 sampler |
+| `mlkem_core_stage_sample_ntt4_lane_store_full_raw` | 1011.39 | 988.95 | lane-extract materialization, `0.949x` median vs current |
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.52 | 7.55 | current transpose/store rate |
+| `mlkem_core_stage_sample_ntt4_lane_store_rate` | 16.28 | 16.26 | lane-extract rate store, `0.464x` median vs current |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 824.93 | 825.06 | three initial Keccak blocks only |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 870.86 | 873.22 | current Keccak plus stream stores |
+| `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | 878.19 | 877.93 | lane-extract Keccak plus stores |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 146.81 | 118.74 | context parser row; average includes outliers |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 1022.33 | 996.27 | context common-path row; average includes outliers |
+
+Decision: keep the existing transpose-oriented `sample_ntt4_store_rate()` path.
+Lane-extract materialization makes the isolated 168-byte rate store about twice
+as expensive and slows the full x4 sampler median by about `5%`. This closes the
+simple "store state words and feed the current parser" route. A future direct
+state-to-parser design would need to avoid both full stream materialization and
+per-word lane extraction; otherwise it is just a slower way to recreate the same
+504-byte parser input.
 
 ### Independent Core Optimization Diagnostic (2026-07-09, AVX2 public-matrix tail02/tail10 rotation)
 
