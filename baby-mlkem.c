@@ -3179,15 +3179,20 @@ static void sample_ntt4(const uint8_t *seed,
     need_more |= count[lane] < N;
   }
 
-  while (need_more) {
-    keccakf4(st);
-    sample_ntt4_store_rate(stream[0], stream[1], stream[2], stream[3], st);
-    need_more = 0;
+  if (need_more) {
+    uint64_t scalar_st[25];
     for (int lane = 0; lane < 4; lane++) {
-      if (count[lane] < N) {
+      if (count[lane] >= N) continue;
+      for (int word = 0; word < 25; word++) {
+        uint64_t words[4];
+        _mm256_storeu_si256((__m256i *)(void *)words, st[word]);
+        scalar_st[word] = words[lane];
+      }
+      while (count[lane] < N) {
+        keccakf(scalar_st);
         count[lane] = sample_ntt_parse_stream_avx2_ready(
-            stream[lane], 168, outs[lane], count[lane]);
-        need_more |= count[lane] < N;
+            (const uint8_t *)(const void *)scalar_st, 168, outs[lane],
+            count[lane]);
       }
     }
   }
