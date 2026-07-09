@@ -1998,30 +1998,88 @@ static inline void ntt_inv_butterflies_inplace(poly256 out) {
 }
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
-static inline uint16_t ntt_inv_before_final_avx2(poly256 out) {
-  ntt_inv_head_avx2(out);
+static inline void ntt_inv_tail_pair_avx2(__m256i a, __m256i b,
+                                          __m256i zeta, __m256i *lo,
+                                          __m256i *hi) {
+  *lo = mod_q_add_i32x8(a, b);
+  *hi = mod_q_reduce_ntt_u32x8(
+      _mm256_mullo_epi32(mod_q_sub_i32x8(b, a), zeta));
+}
 
-  int k = 15;
-  for (int log2len = 4; log2len <= 6; log2len++) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k--];
-#if defined(__clang__)
-#pragma clang loop vectorize_width(16) interleave_count(1)
-#endif
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        int16_t t = out[idx];
-        int16_t u = out[idx + length];
-        out[idx] = mod_q_add_i16(t, u);
-        int16_t tmp2 = mod_q_sub_i16(u, t);
-        uint32_t tmp3 = (uint32_t)(uint16_t)tmp2 * (uint32_t)zeta;
-        out[idx + length] = mod_q_reduce_ntt_u32(tmp3);
-      }
+static void ntt_inv_tail_l4_l6_fused_after_head_avx2(poly256 out) {
+  for (int start = 0, k4 = 15, k5 = 7, k6 = 3; start < N;
+       start += 128, k4 -= 4, k5 -= 2, k6--) {
+    const __m256i zeta_l4_0 = _mm256_set1_epi32(ZETA[k4]);
+    const __m256i zeta_l4_1 = _mm256_set1_epi32(ZETA[k4 - 1]);
+    const __m256i zeta_l4_2 = _mm256_set1_epi32(ZETA[k4 - 2]);
+    const __m256i zeta_l4_3 = _mm256_set1_epi32(ZETA[k4 - 3]);
+    const __m256i zeta_l5_0 = _mm256_set1_epi32(ZETA[k5]);
+    const __m256i zeta_l5_1 = _mm256_set1_epi32(ZETA[k5 - 1]);
+    const __m256i zeta_l6 = _mm256_set1_epi32(ZETA[k6]);
+    for (int j = 0; j < 16; j += 8) {
+      __m256i a0 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + j)));
+      __m256i b0 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 16 + j)));
+      __m256i a1 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 32 + j)));
+      __m256i b1 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 48 + j)));
+      __m256i a2 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 64 + j)));
+      __m256i b2 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 80 + j)));
+      __m256i a3 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 96 + j)));
+      __m256i b3 = _mm256_cvtepu16_epi32(
+          _mm_loadu_si128((const __m128i *)(out + start + 112 + j)));
+      __m256i l4_lo0, l4_hi0, l4_lo1, l4_hi1;
+      __m256i l4_lo2, l4_hi2, l4_lo3, l4_hi3;
+      ntt_inv_tail_pair_avx2(a0, b0, zeta_l4_0, &l4_lo0, &l4_hi0);
+      ntt_inv_tail_pair_avx2(a1, b1, zeta_l4_1, &l4_lo1, &l4_hi1);
+      ntt_inv_tail_pair_avx2(a2, b2, zeta_l4_2, &l4_lo2, &l4_hi2);
+      ntt_inv_tail_pair_avx2(a3, b3, zeta_l4_3, &l4_lo3, &l4_hi3);
+
+      __m256i l5_0, l5_1, l5_2, l5_3, l5_4, l5_5, l5_6, l5_7;
+      ntt_inv_tail_pair_avx2(l4_lo0, l4_lo1, zeta_l5_0, &l5_0,
+                             &l5_2);
+      ntt_inv_tail_pair_avx2(l4_hi0, l4_hi1, zeta_l5_0, &l5_1,
+                             &l5_3);
+      ntt_inv_tail_pair_avx2(l4_lo2, l4_lo3, zeta_l5_1, &l5_4,
+                             &l5_6);
+      ntt_inv_tail_pair_avx2(l4_hi2, l4_hi3, zeta_l5_1, &l5_5,
+                             &l5_7);
+
+      __m256i out0, out1, out2, out3, out4, out5, out6, out7;
+      ntt_inv_tail_pair_avx2(l5_0, l5_4, zeta_l6, &out0, &out4);
+      ntt_inv_tail_pair_avx2(l5_1, l5_5, zeta_l6, &out1, &out5);
+      ntt_inv_tail_pair_avx2(l5_2, l5_6, zeta_l6, &out2, &out6);
+      ntt_inv_tail_pair_avx2(l5_3, l5_7, zeta_l6, &out3, &out7);
+
+      _mm_storeu_si128((__m128i *)(out + start + j),
+                       pack_i32x8_to_i16x8(out0));
+      _mm_storeu_si128((__m128i *)(out + start + 16 + j),
+                       pack_i32x8_to_i16x8(out1));
+      _mm_storeu_si128((__m128i *)(out + start + 32 + j),
+                       pack_i32x8_to_i16x8(out2));
+      _mm_storeu_si128((__m128i *)(out + start + 48 + j),
+                       pack_i32x8_to_i16x8(out3));
+      _mm_storeu_si128((__m128i *)(out + start + 64 + j),
+                       pack_i32x8_to_i16x8(out4));
+      _mm_storeu_si128((__m128i *)(out + start + 80 + j),
+                       pack_i32x8_to_i16x8(out5));
+      _mm_storeu_si128((__m128i *)(out + start + 96 + j),
+                       pack_i32x8_to_i16x8(out6));
+      _mm_storeu_si128((__m128i *)(out + start + 112 + j),
+                       pack_i32x8_to_i16x8(out7));
     }
   }
+}
 
-  return ZETA[k];
+static inline uint16_t ntt_inv_before_final_avx2(poly256 out) {
+  ntt_inv_head_avx2(out);
+  ntt_inv_tail_l4_l6_fused_after_head_avx2(out);
+  return ZETA[1];
 }
 
 static inline void ntt_inv_add_fused_final_avx2(const poly256 add,
