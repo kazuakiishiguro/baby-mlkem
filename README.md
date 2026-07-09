@@ -67,6 +67,7 @@ Near-term target selection:
 | Candidate family | Status | Reason |
 |---|---|---|
 | Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. Remaining gains need parser representation or broader matrix/public-cache dataflow changes, not vendored KeccakP. |
+| Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
@@ -78,14 +79,15 @@ Near-term target selection:
 
 The next implementation should therefore prioritize either a common-path
 `sample_ntt4` redesign that changes the Keccak/state or parser representation
-itself, a public-cache dataflow change that makes the accepted `sample_matrix()`
-tail layout visible to KEM paths, or a broader inverse-add representation change
-that removes arithmetic or data movement rather than merely batching the same
-three `u` rows. Seed-load hoisting, public-matrix x4 lane regrouping, adjacent
-inverse-level fusion, three-polynomial inverse-add scheduling, and local
-`ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
-change by itself has a measured budget that is too small: it reproduces the recent
-pattern of small direct wins, then neutral or negative integrated medians.
+itself, a public-cache dataflow change that improves KEM paths without relying on
+the keygen-only tail21 result, or a broader inverse-add representation change that
+removes arithmetic or data movement rather than merely batching the same three
+`u` rows. Seed-load hoisting, public-matrix x4 lane regrouping, adjacent
+inverse-level fusion, three-polynomial inverse-add scheduling, local
+`ntt_mul_acc3()` -> inverse-L1 fusion, and public-prepare/uncached-encrypt tail21
+rotation are closed. A signed CBD->NTT boundary change by itself has a measured
+budget that is too small: it reproduces the recent pattern of small direct wins,
+then neutral or negative integrated medians.
 
 ### ECC/zkp Optimization Mapping
 
@@ -13009,6 +13011,71 @@ A follow-up scratch-parameter helper experiment was rejected before commit: maki
 `sample_matrix` median into the `2.82 us` range in a 7-run local check. The faster
 bench-only scalar-refill row is therefore not explained by simply exposing the
 scratch buffer to the caller.
+
+### Latest Core Optimization A/B (2026-07-09, AVX2 keygen matrix/noise tail21)
+
+The keygen-only matrix/noise co-schedule now uses the same tail choice that won
+for standalone `sample_matrix()`, but only where the integrated evidence supports
+it. `mlkem_keygen_matrix_noise_avx2()` samples `(2,1)` in the PRF/CBD tail lane
+and moves `(2,2)` into the second x4 `sample_ntt4()` batch. The old `(2,2)` tail
+helper remains available for diagnostics so the stage validator can still compare
+schedule variants.
+
+Pre-production pinned CPU 0 diagnostic on `eff0566`, `clang`, seven runs of
+`./bench_core_stagesc 50000`:
+
+| Metric | Current median ns/op | Tail21 median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3025.15 | 3003.35 | 1.0073x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4213.76 | 4244.07 | 0.9929x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4818.95 | 4831.85 | 0.9973x |
+
+Production stage/KEM A/B command, comparing `eff0566` to candidate:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3009.90 | 2965.49 | 1.0150x |
+| `mlkem_core_stage_kpke_keygen_full` | 4683.75 | 4688.23 | 0.9990x |
+| `mlkem_roundtrip_core` | 19873.21 | 19828.02 | 1.0023x |
+
+KEM-only confirmation used higher iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=40000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+KEM-only highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 6841.93 | 6832.53 | 1.0014x |
+| `mlkem_keygen_core` | 6822.73 | 6808.51 | 1.0021x |
+| `mlkem_roundtrip` | 13188.92 | 13181.54 | 1.0006x |
+| `mlkem_roundtrip_core` | 19810.82 | 19802.15 | 1.0004x |
+
+Verification:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-stages CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_core_stagesc 1000
+```
+
+Decision: accept tail21 only for keygen matrix/noise. The standalone producer row
+is clearly faster and the higher-iteration KEM-only gate keeps keygen and
+roundtrip medians non-negative. Do not apply this rotation to public prepare or
+uncached encrypt: their direct pre-production diagnostic medians are still
+negative, so that route remains diagnostic-only.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
