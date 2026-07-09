@@ -68,6 +68,7 @@ Near-term target selection:
 | Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median; a useful change must remove or restructure permutation/state movement, not just tweak parser bookkeeping. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
+| Public-matrix x4 lane grouping | Closed | Column-major x4 batches measured 0.9994x median versus current row-major production; regrouping lanes without changing Keccak/state work is not enough. |
 | Broad lazy/signed range contract | Open only for an end-to-end redesign | Signed CBD saves about 10.5 ns for K=3 at the producer, but the measured forward-NTT boundary gives most or all of that back. A standalone signed CBD->NTT change is effectively closed; only a wider representation change remains plausible. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
@@ -76,9 +77,10 @@ Near-term target selection:
 The next implementation should therefore prioritize either a `sample_ntt4`
 redesign that changes the Keccak/state representation itself, or a broader
 inverse-add representation change that removes arithmetic or data movement rather
-than merely batching the same three `u` rows. Seed-load hoisting, three-polynomial
-inverse-add scheduling, and local `ntt_mul_acc3()` -> inverse-L1 fusion are closed.
-A signed CBD->NTT boundary change by itself has a measured budget that is too
+than merely batching the same three `u` rows. Seed-load hoisting, public-matrix x4
+lane regrouping, three-polynomial inverse-add scheduling, and local
+`ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
+change by itself has a measured budget that is too
 small: it reproduces the recent pattern of small direct wins, then neutral or
 negative integrated medians.
 
@@ -2127,6 +2129,7 @@ stage metrics.
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_pair_blocked` | AVX2-only diagnostic: generate the two x4 public-matrix batches with interleaved three-block Keccak/store scheduling before parsing both batches |
+| `mlkem_core_stage_sample_matrix_col_batches` | AVX2-only diagnostic: generate the same eight x4 public-matrix entries in column-major x4 batches instead of the production row-major grouping, with `(2,2)` still scalar |
 | `mlkem_core_stage_sample_matrix_seed_init_hoist` | AVX2-only diagnostic: load the 32-byte public-matrix seed once and reuse those words when initializing the two x4 sampler batch states |
 | `mlkem_core_stage_sample_matrix_tail` | final `(2,2)` public-matrix sampler tail |
 | `mlkem_core_stage_sample_matrix_tail_scalar` | final `(2,2)` public-matrix sampler tail forced through scalar `sample_ntt()` with full checksum |
@@ -12458,6 +12461,46 @@ KEM-level medians are neutral to slightly negative (`mlkem_keygen` is `0.9993x`,
 forward-NTT head loop in production for a gain that does not survive the broader
 KEM gate. Keep the bench-only row as a useful diagnostic, but do not carry this
 standalone schedule into `baby-mlkem.c`.
+
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 sample_matrix column-major x4 grouping)
+
+A bench-only sampler diagnostic tested whether the two public-matrix `sample_ntt4()`
+batches should group entries by column instead of the current row-major order. The
+candidate keeps the same two x4 SHAKE samplers, the same scalar `(2,2)` tail, the
+same parser, and the same outputs; only the lane assignment changes from
+`{00,01,02,10}` / `{11,12,20,21}` to `{00,10,20,01}` / `{11,21,02,12}`.
+This is a direct check of the MSM-style batching idea at the public-matrix XOF
+boundary without changing the Keccak/state representation.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 30000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_sample_matrix(_ns_per_op|_col_batches_ns_per_op|_x4_pair_blocked_ns_per_op|_x4x3x2_ns_per_op|_x4_batch0_ns_per_op|_x4_batch1_ns_per_op|_tail_choice_22_ns_per_op)=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs production |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2812.99 | 2800.40 | 1.0000x |
+| `mlkem_core_stage_sample_matrix_col_batches` | 2816.69 | 2802.05 | 0.9994x |
+| `mlkem_core_stage_sample_matrix_x4_pair_blocked` | 2863.90 | 2845.91 | 0.9840x |
+| `mlkem_core_stage_sample_matrix_x4x3x2` | 3686.80 | 3539.74 | 0.7911x |
+| `mlkem_core_stage_sample_matrix_x4_batch0` | 1123.03 | 1110.67 | context |
+| `mlkem_core_stage_sample_matrix_x4_batch1` | 1180.80 | 1180.47 | context |
+
+Decision: keep `sample_matrix_col_batches` as a diagnostic only. Reassigning
+matrix entries to x4 lanes does not reduce Keccak permutations, stream stores,
+parser work, or refill probability enough to matter; the median is slightly slower
+than production. This closes another local batching direction: future sampler work
+must change the common Keccak/state representation itself, not only shuffle which
+matrix entries share the existing two x4 batches.
 
 ### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse-add full3 level schedule)
 
