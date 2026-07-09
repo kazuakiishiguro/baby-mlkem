@@ -38,31 +38,36 @@ RUNS=7 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang ./scripts/bench_core_frontie
 
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 4940.63 | 4866.95 | largest integrated cache-miss encryption row |
-| `mlkem_core_stage_kpke_keygen_full` | 4751.34 | 4743.33 | keygen still dominated by matrix sampling plus six NTTs |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4289.46 | 4267.56 | public-key d12 decode + matrix sampling + H(pk) |
-| `mlkem_core_stage_sample_matrix` | 2814.98 | 2799.90 | largest standalone public-work target |
-| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2838.30 | 2838.08 | seed word reuse is a rejected sampler-neighbor check |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2448.94 | 2380.32 | cached encapsulation arithmetic/noise target |
-| `mlkem_core_stage_keygen_noise_ntt` | 1971.47 | 1970.39 | keygen PRF/CBD plus six forward NTTs |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1590.48 | 1590.66 | six forward NTTs plus secret d12 encode |
-| `mlkem_core_stage_encrypt_noise` | 1367.91 | 1367.96 | encrypt PRF/CBD plus lazy r NTT |
-| `mlkem_core_stage_encrypt_accum_inv` | 1292.21 | 1290.12 | K=3 accumulation plus inverse-add |
-| `mlkem_core_stage_sample_ntt4_keccak_store3` | 868.32 | 868.17 | common x4 sampler Keccak/state/store cost |
-| `mlkem_core_stage_sample_ntt4_init_only` | 6.30 | 6.29 | x4 sampler initialization is too small to be the next target |
-| `mlkem_core_stage_sample_ntt4_keccak3_only` | 824.32 | 824.22 | common x4 sampler Keccak permutations dominate stream setup |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 118.53 | 118.40 | parser bookkeeping is not the main sampler cost |
-| `mlkem_core_stage_sample_ntt4_common3_step` | 992.62 | 990.68 | common first three-rate sampler step including parse/bookkeeping |
-| `mlkem_core_stage_keygen_accum_only` | 439.50 | 438.01 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
-| `mlkem_core_stage_keygen_add_only` | 203.52 | 202.85 | vector add is smaller than accumulation and NTT work |
-| `mlkem_core_stage_ciphertext_compress_encode` | 51.54 | 50.77 | d10/d4 packing is too small for the next target |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4874.00 | 4864.00 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 4766.92 | 4748.70 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4261.30 | 4259.84 | public-key d12 decode + matrix sampling + H(pk) |
+| `mlkem_core_stage_sample_matrix` | 2802.76 | 2801.46 | largest standalone public-work target |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2856.89 | 2844.25 | seed word reuse is a rejected sampler-neighbor check |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2382.22 | 2378.52 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1977.10 | 1972.01 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1612.62 | 1589.83 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise` | 1367.36 | 1367.36 | encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1290.60 | 1289.84 | K=3 accumulation plus inverse-add |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 584.41 | 584.35 | production-adjacent three-u inverse-add diagnostic |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 581.68 | 581.52 | three-polynomial inverse-add scheduling remains diagnostic only |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 328.10 | 326.19 | tail/final chain is the larger inverse-add subtarget |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.41 | 328.88 | level-by-level three-u tail/final batching is rejected |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 869.83 | 869.72 | common x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.41 | 6.42 | x4 sampler initialization is too small to be the next target |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 825.41 | 825.16 | common x4 sampler Keccak permutations dominate stream setup |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 118.53 | 118.45 | parser bookkeeping is not the main sampler cost |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 991.66 | 991.86 | common first three-rate sampler step including parse/bookkeeping |
+| `mlkem_core_stage_keygen_accum_only` | 438.59 | 437.52 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 202.91 | 203.01 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.66 | 50.90 | d10/d4 packing is too small for the next target |
 
 Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 824.22 ns median and `keccak_store3` is 868.17 ns median; a useful change must remove or restructure permutation/state movement, not just tweak parser bookkeeping. |
-| Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.29 ns median, and matrix-level seed word reuse regressed to 0.9865x median versus production. |
+| Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median; a useful change must remove or restructure permutation/state movement, not just tweak parser bookkeeping. |
+| Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
+| AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Broad lazy/signed range contract | Open only for an end-to-end redesign | Signed CBD saves about 10.5 ns for K=3 at the producer, but the measured forward-NTT boundary gives most or all of that back. A standalone signed CBD->NTT change is effectively closed; only a wider representation change remains plausible. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
@@ -70,12 +75,12 @@ Near-term target selection:
 
 The next implementation should therefore prioritize either a `sample_ntt4`
 redesign that changes the Keccak/state representation itself, or a broader
-encryption `u` inverse-add rewrite that changes the inverse schedule beyond the
-first head level. Seed-load hoisting is now closed because the initializer is too
-small and the matrix-level hoist regresses. A local `ntt_mul_acc3()` -> inverse-L1
-boundary fusion is also closed. A signed CBD->NTT boundary change by itself has a
-measured budget that is too small: it reproduces the recent pattern of small
-direct wins, then neutral or negative integrated medians.
+inverse-add representation change that removes arithmetic or data movement rather
+than merely batching the same three `u` rows. Seed-load hoisting, three-polynomial
+inverse-add scheduling, and local `ntt_mul_acc3()` -> inverse-L1 fusion are closed.
+A signed CBD->NTT boundary change by itself has a measured budget that is too
+small: it reproduces the recent pattern of small direct wins, then neutral or
+negative integrated medians.
 
 ### ECC/zkp Optimization Mapping
 
@@ -12469,7 +12474,7 @@ AVX2-only diagnostic command:
 make bench-stages CC=clang AVX2_BACKEND=core \
   ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
 for i in $(seq 1 7); do
-  taskset -c 0 ./bench_core_stagesc 20000 | \
+  taskset -c 0 ./bench_core_stagesc 40000 | \
     awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_(raw|full3_pragma_raw|only|tail_final_raw|tail_final3_pragma_raw|head_raw|copy_raw)_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
 done
 ```
@@ -12478,16 +12483,16 @@ AVX2-only diagnostic results:
 
 | Metric | Avg ns/op | Median ns/op | Median speedup vs split raw |
 |---|---:|---:|---:|
-| `mlkem_core_stage_encrypt_inv_add_u_only` | 763.77 | 762.04 | context |
-| `mlkem_core_stage_encrypt_inv_add_u_raw` | 584.05 | 583.14 | 1.0000x |
-| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 581.24 | 581.12 | 1.0035x |
-| `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | 11.76 | 11.80 | context |
-| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 259.98 | 258.39 | context |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 327.70 | 325.76 | context |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.08 | 329.13 | 0.9898x vs tail/final split |
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 763.01 | 763.15 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 585.84 | 585.94 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 583.49 | 582.13 | 1.0065x |
+| `mlkem_core_stage_encrypt_inv_add_u_copy_raw` | 11.79 | 11.73 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_head_raw` | 259.76 | 260.29 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 327.13 | 326.60 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.84 | 329.91 | 0.9900x vs tail/final split |
 
 Decision: keep the full3 row as a diagnostic only and do not productionize this
-schedule. The full-path raw median is only about `0.35%` faster than the split raw
+schedule. The full-path raw median is only about `0.65%` faster than the split raw
 row, while the isolated three-output tail/final schedule is slower than three
 independent tail/final calls. That means the small full-path signal is not a
 robust representation win; it is within scheduling noise and does not justify
