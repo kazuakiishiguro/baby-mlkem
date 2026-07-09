@@ -929,10 +929,10 @@ static void validate_sample_matrix_matches_scalar(void) {
 #endif
 }
 
-static inline void stage_ntt_mul_acc3_pair_from_y(
+static inline void stage_ntt_mul_acc3_pair_u16_from_y(
     const poly256 a0, const poly256 a1, const poly256 a2, uint32_t y00,
     uint32_t y01, uint32_t y10, uint32_t y11, uint32_t y20, uint32_t y21,
-    uint32_t gamma, int pair_idx, poly256 out) {
+    uint32_t gamma, int pair_idx, uint16_t *out0, uint16_t *out1) {
   int idx0 = 2 * pair_idx, idx1 = idx0 + 1;
   uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
   uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
@@ -942,9 +942,130 @@ static inline void stage_ntt_mul_acc3_pair_from_y(
   uint32_t c0 = c0_lo + (c0_hi % Q) * gamma;
   uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
                 x20 * y21 + x21 * y20;
-  out[idx0] = (int16_t)(c0 % Q);
-  out[idx1] = (int16_t)(c1 % Q);
+  *out0 = (uint16_t)(c0 % Q);
+  *out1 = (uint16_t)(c1 % Q);
 }
+
+static inline void stage_ntt_mul_acc3_pair_from_y(
+    const poly256 a0, const poly256 a1, const poly256 a2, uint32_t y00,
+    uint32_t y01, uint32_t y10, uint32_t y11, uint32_t y20, uint32_t y21,
+    uint32_t gamma, int pair_idx, poly256 out) {
+  uint16_t out0, out1;
+  stage_ntt_mul_acc3_pair_u16_from_y(a0, a1, a2, y00, y01, y10, y11, y20,
+                                     y21, gamma, pair_idx, &out0, &out1);
+  out[2 * pair_idx] = (int16_t)out0;
+  out[2 * pair_idx + 1] = (int16_t)out1;
+}
+
+static inline void stage_ntt_mul_acc3_pair_u16(
+    const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
+    const poly256 a2, const poly256 b2, int pair_idx, uint16_t *out0,
+    uint16_t *out1) {
+  int idx0 = 2 * pair_idx, idx1 = idx0 + 1;
+  uint32_t y00 = (uint16_t)b0[idx0], y01 = (uint16_t)b0[idx1];
+  uint32_t y10 = (uint16_t)b1[idx0], y11 = (uint16_t)b1[idx1];
+  uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
+  stage_ntt_mul_acc3_pair_u16_from_y(a0, a1, a2, y00, y01, y10, y11, y20,
+                                     y21, GAMMA[pair_idx], pair_idx, out0,
+                                     out1);
+}
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_mul_acc3_inv_l1_block_avx2(
+    const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
+    const poly256 a2, const poly256 b2, poly256 out) {
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    const int pair_base = start >> 1;
+    uint16_t r00, r01, r10, r11, r20, r21, r30, r31;
+    uint16_t r40, r41, r50, r51, r60, r61, r70, r71;
+
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 0,
+                                &r00, &r01);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 1,
+                                &r10, &r11);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 2,
+                                &r20, &r21);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 3,
+                                &r30, &r31);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 4,
+                                &r40, &r41);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 5,
+                                &r50, &r51);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 6,
+                                &r60, &r61);
+    stage_ntt_mul_acc3_pair_u16(a0, b0, a1, b1, a2, b2, pair_base + 7,
+                                &r70, &r71);
+
+    __m128i a16 = _mm_setr_epi16((int16_t)r00, (int16_t)r01,
+                                 (int16_t)r20, (int16_t)r21,
+                                 (int16_t)r40, (int16_t)r41,
+                                 (int16_t)r60, (int16_t)r61);
+    __m128i b16 = _mm_setr_epi16((int16_t)r10, (int16_t)r11,
+                                 (int16_t)r30, (int16_t)r31,
+                                 (int16_t)r50, (int16_t)r51,
+                                 (int16_t)r70, (int16_t)r71);
+    __m256i a = _mm256_cvtepu16_epi32(a16);
+    __m256i b = _mm256_cvtepu16_epi32(b16);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i t = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(diff, ZETA_NTT_INV_HEAD_L1[i]));
+    __m128i sum16 = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b));
+    __m128i t16 = pack_i32x8_to_i16x8(t);
+    _mm_storeu_si128((__m128i *)(out + start),
+                     _mm_unpacklo_epi32(sum16, t16));
+    _mm_storeu_si128((__m128i *)(out + start + 8),
+                     _mm_unpackhi_epi32(sum16, t16));
+  }
+}
+
+static void stage_ntt_mul_acc3_inv_l1_store_block_avx2(
+    const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
+    const poly256 a2, const poly256 b2, poly256 out) {
+  const __m128i shuf_a = _mm_setr_epi8(
+      0, 1, 2, 3, 8, 9, 10, 11, -1, -1, -1, -1, -1, -1, -1, -1);
+  const __m128i shuf_b = _mm_setr_epi8(
+      4, 5, 6, 7, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1);
+
+  for (int start = 0, block = 0; start < N; start += 16, block++) {
+    for (int j = 0; j < 8; j++) {
+      int pair_idx = (start >> 1) + j;
+      int idx0 = 2 * pair_idx, idx1 = idx0 + 1;
+      uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
+      uint32_t y00 = (uint16_t)b0[idx0], y01 = (uint16_t)b0[idx1];
+      uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
+      uint32_t y10 = (uint16_t)b1[idx0], y11 = (uint16_t)b1[idx1];
+      uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
+      uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
+      uint32_t g = GAMMA[pair_idx];
+      uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+      uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+      uint32_t c0 = c0_lo + (c0_hi % Q) * g;
+      uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
+                    x20 * y21 + x21 * y20;
+      out[idx0] = (int16_t)(c0 % Q);
+      out[idx1] = (int16_t)(c1 % Q);
+    }
+
+    __m128i lo = _mm_loadu_si128((const __m128i *)(out + start));
+    __m128i hi = _mm_loadu_si128((const __m128i *)(out + start + 8));
+    __m128i a16 = _mm_unpacklo_epi64(_mm_shuffle_epi8(lo, shuf_a),
+                                     _mm_shuffle_epi8(hi, shuf_a));
+    __m128i b16 = _mm_unpacklo_epi64(_mm_shuffle_epi8(lo, shuf_b),
+                                     _mm_shuffle_epi8(hi, shuf_b));
+    __m256i a = _mm256_cvtepu16_epi32(a16);
+    __m256i b = _mm256_cvtepu16_epi32(b16);
+    __m256i diff = mod_q_sub_i32x8(b, a);
+    __m256i t = mod_q_reduce_ntt_u32x8(
+        _mm256_mullo_epi32(diff, ZETA_NTT_INV_HEAD_L1[block]));
+    __m128i sum16 = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, b));
+    __m128i t16 = pack_i32x8_to_i16x8(t);
+    _mm_storeu_si128((__m128i *)(out + start),
+                     _mm_unpacklo_epi32(sum16, t16));
+    _mm_storeu_si128((__m128i *)(out + start + 8),
+                     _mm_unpackhi_epi32(sum16, t16));
+  }
+}
+#endif
 
 static void stage_ntt_mul_acc3_encrypt4_scalar(
     const poly256 a00, const poly256 a01, const poly256 a02,
@@ -1482,6 +1603,33 @@ static void validate_core_stage_helpers(void) {
     if (memcmp(block, level, sizeof(poly256)) != 0) {
       fprintf(stderr, "decrypt inverse l1 block mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
+    }
+  }
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int row = 0; row < K; row++) {
+      poly256 split, fused;
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2], split);
+      stage_ntt_inv_head_l1_block_avx2(split);
+      stage_ntt_mul_acc3_inv_l1_block_avx2(
+          stage_ahat[lane][row][0], stage_rhat[lane][0],
+          stage_ahat[lane][row][1], stage_rhat[lane][1],
+          stage_ahat[lane][row][2], stage_rhat[lane][2], fused);
+      if (memcmp(split, fused, sizeof(poly256)) != 0) {
+        fprintf(stderr, "encrypt accum l1 fused mismatch at %zu,%d\n", lane,
+                row);
+        exit(EXIT_FAILURE);
+      }
+      stage_ntt_mul_acc3_inv_l1_store_block_avx2(
+          stage_ahat[lane][row][0], stage_rhat[lane][0],
+          stage_ahat[lane][row][1], stage_rhat[lane][1],
+          stage_ahat[lane][row][2], stage_rhat[lane][2], fused);
+      if (memcmp(split, fused, sizeof(poly256)) != 0) {
+        fprintf(stderr, "encrypt accum l1 store-fused mismatch at %zu,%d\n",
+                lane, row);
+        exit(EXIT_FAILURE);
+      }
     }
   }
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -4402,6 +4550,71 @@ static uint64_t bench_encrypt_accum_u_only_lazy_input(size_t iters) {
 }
 #endif
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_encrypt_accum_u_l1_block_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2],
+                   stage_tmp_vec0[lane][row]);
+      stage_ntt_inv_head_l1_block_avx2(stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (79u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_accum_u_l1_fused_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      stage_ntt_mul_acc3_inv_l1_block_avx2(
+          stage_ahat[lane][row][0], stage_rhat[lane][0],
+          stage_ahat[lane][row][1], stage_rhat[lane][1],
+          stage_ahat[lane][row][2], stage_rhat[lane][2],
+          stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (83u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_accum_u_l1_store_fused_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      stage_ntt_mul_acc3_inv_l1_store_block_avx2(
+          stage_ahat[lane][row][0], stage_rhat[lane][0],
+          stage_ahat[lane][row][1], stage_rhat[lane][1],
+          stage_ahat[lane][row][2], stage_rhat[lane][2],
+          stage_tmp_vec0[lane][row]);
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (89u + 2u * (unsigned)row)) & (N - 1)];
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_accum4_separate_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -7130,6 +7343,12 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_encrypt_accum_u_only_lazy_input",
                bench_encrypt_accum_u_only_lazy_input(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum_u_l1_block_raw",
+               bench_encrypt_accum_u_l1_block_raw(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum_u_l1_fused_raw",
+               bench_encrypt_accum_u_l1_fused_raw(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_accum_u_l1_store_fused_raw",
+               bench_encrypt_accum_u_l1_store_fused_raw(iters), iters);
 #endif
   print_metric("mlkem_core_stage_encrypt_accum4_separate_only",
                bench_encrypt_accum4_separate_only(iters), iters);
