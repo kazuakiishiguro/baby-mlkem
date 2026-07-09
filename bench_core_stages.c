@@ -142,6 +142,9 @@ static void stage_sample_ntt4_init(const uint8_t *seed,
 #endif
 
 #if defined(__AVX2__) && !(defined(__AVX512F__))
+static void stage_sample_matrix_seed_init_hoist_avx2(
+    const uint8_t *seed, poly256 out[K][K], uint8_t stream0[4][504],
+    uint8_t stream1[4][504]);
 static void validate_kpke_encrypt_uncached_rowwise_avx2(void);
 static void validate_kpke_prepare_public_no_cache_tail21_avx2(void);
 static uint64_t bench_kpke_encrypt_uncached_rowwise(size_t iters);
@@ -932,6 +935,21 @@ static void validate_sample_matrix_matches_scalar(void) {
       for (int col = 0; col < K; col++) {
         if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
           fprintf(stderr, "sample_matrix x4-pair blocked mismatch at %d,%d\n",
+                  row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  {
+    poly256 alt[K][K];
+    stage_sample_matrix_seed_init_hoist_avx2(
+        stage_rho[0], alt, stage_tmp_sample_stream[0],
+        stage_tmp_sample_stream_pair[0]);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_matrix seed-init hoist mismatch at %d,%d\n",
                   row, col);
           exit(EXIT_FAILURE);
         }
@@ -2425,6 +2443,22 @@ static uint64_t bench_sample_matrix_x4_pair_blocked(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+static uint64_t bench_sample_matrix_seed_init_hoist(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_seed_init_hoist_avx2(
+        stage_rho[lane], stage_tmp_ahat[lane], stage_tmp_sample_stream[lane],
+        stage_tmp_sample_stream_pair[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
 #endif
 
 static uint64_t bench_sample_matrix_x4_batch0(size_t iters) {
@@ -2778,6 +2812,81 @@ static void stage_sample_ntt4_init(const uint8_t *seed,
       (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
   st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
 }
+
+#if !(defined(__AVX512F__))
+static void stage_sample_ntt4_init_seed_words(
+    const uint64_t seed_words[4], const uint8_t row[4],
+    const uint8_t col[4], __m256i st[25]) {
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)seed_words[0]);
+  st[1] = _mm256_set1_epi64x((long long)seed_words[1]);
+  st[2] = _mm256_set1_epi64x((long long)seed_words[2]);
+  st[3] = _mm256_set1_epi64x((long long)seed_words[3]);
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)row[3] | ((uint64_t)col[3] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[2] | ((uint64_t)col[2] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[1] | ((uint64_t)col[1] << 8) | (0x1FULL << 16)),
+      (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
+  st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+}
+
+static void stage_sample_ntt4_seed_words_avx2(
+    const uint64_t seed_words[4], const uint8_t row[4],
+    const uint8_t col[4], poly256 out0, poly256 out1, poly256 out2,
+    poly256 out3, uint8_t stream[4][504]) {
+  __m256i st[25];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+  int count[4];
+  int need_more = 0;
+
+  stage_sample_ntt4_init_seed_words(seed_words, row, col, st);
+  for (int block = 0; block < 3; block++) {
+    keccakf4_mem(st);
+    sample_ntt4_store_block(stream, (size_t)block * 168, st);
+  }
+
+  for (int lane = 0; lane < 4; lane++) {
+    count[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream[lane], 504, outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+
+  while (need_more) {
+    keccakf4(st);
+    sample_ntt4_store_rate(stream[0], stream[1], stream[2], stream[3], st);
+    need_more = 0;
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] < N) {
+        count[lane] = sample_ntt_parse_stream_avx2_ready(
+            stream[lane], 168, outs[lane], count[lane]);
+      }
+      need_more |= count[lane] < N;
+    }
+  }
+}
+
+static void stage_sample_matrix_seed_init_hoist_avx2(
+    const uint8_t *seed, poly256 out[K][K], uint8_t stream0[4][504],
+    uint8_t stream1[4][504]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+  uint64_t seed_words[4] = {load64_le(seed + 0), load64_le(seed + 8),
+                            load64_le(seed + 16), load64_le(seed + 24)};
+
+  sample_ntt_parse_init_avx2();
+  stage_sample_ntt4_seed_words_avx2(seed_words, r0, c0, out[0][0],
+                                    out[0][1], out[0][2], out[1][0],
+                                    stream0);
+  stage_sample_ntt4_seed_words_avx2(seed_words, r1, c1, out[1][1],
+                                    out[1][2], out[2][0], out[2][1],
+                                    stream1);
+  sample_ntt(seed, 2, 2, out[2][2]);
+}
+#endif
 
 static void stage_prepare_sample_ntt4_streams(void) {
   const uint8_t row[4] = {0, 0, 0, 1};
@@ -7647,6 +7756,8 @@ int main(int argc, char **argv) {
                bench_sample_matrix_x4x3x2(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_x4_pair_blocked",
                bench_sample_matrix_x4_pair_blocked(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_seed_init_hoist",
+               bench_sample_matrix_seed_init_hoist(iters), iters);
 #endif
   print_metric("mlkem_core_stage_sample_matrix_x4_batch0",
                bench_sample_matrix_x4_batch0(iters), iters);
