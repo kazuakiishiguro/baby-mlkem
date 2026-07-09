@@ -28,45 +28,45 @@ core work in SHAKE/sample_ntt, forward/inverse NTT, K=3 accumulation, or range
 normalization across encode/compress boundaries.
 
 Current AVX2-only frontier snapshot, pinned to CPU 0, `clang`,
-`AVX2_BACKEND=core`, seven runs of `./bench_core_stagesc 30000`:
+`AVX2_BACKEND=core`, five runs of `./bench_core_stagesc 30000`:
 
 Regenerate this table with:
 
 ```bash
-RUNS=7 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
+RUNS=5 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
   ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" ./scripts/bench_core_frontier.sh
 ```
 
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 4854.48 | 4836.34 | largest integrated cache-miss encryption row |
-| `mlkem_core_stage_kpke_keygen_full` | 4760.22 | 4723.19 | keygen still dominated by matrix sampling plus six NTTs |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4340.01 | 4259.12 | public-key d12 decode + matrix sampling + H(pk) |
-| `mlkem_core_stage_sample_matrix` | 2756.89 | 2753.71 | largest standalone public-work target |
-| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2766.36 | 2762.24 | seed word reuse is a rejected sampler-neighbor check |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2378.65 | 2374.37 | cached encapsulation arithmetic/noise target |
-| `mlkem_core_stage_keygen_noise_ntt` | 2012.22 | 1979.27 | keygen PRF/CBD plus six forward NTTs |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1591.56 | 1591.32 | six forward NTTs plus secret d12 encode |
-| `mlkem_core_stage_encrypt_noise_lazy` | 1394.52 | 1361.47 | production-aligned encrypt PRF/CBD plus lazy r NTT |
-| `mlkem_core_stage_encrypt_accum_inv` | 1303.11 | 1294.76 | K=3 accumulation plus inverse-add |
-| `mlkem_core_stage_encrypt_inv_add_u_raw` | 586.22 | 586.33 | production-adjacent three-u inverse-add diagnostic |
-| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 583.88 | 583.52 | three-polynomial inverse-add scheduling remains diagnostic only |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.87 | 326.69 | tail/final chain is the larger inverse-add subtarget |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.89 | 329.99 | level-by-level three-u tail/final batching is rejected |
-| `mlkem_core_stage_sample_ntt4_keccak_store3` | 795.77 | 793.79 | common x4 sampler Keccak/state/store cost |
-| `mlkem_core_stage_sample_ntt4_init_only` | 6.38 | 6.42 | x4 sampler initialization is too small to be the next target |
-| `mlkem_core_stage_sample_ntt4_keccak3_only` | 784.67 | 779.99 | common x4 sampler Keccak permutations dominate stream setup |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 120.11 | 119.97 | parser bookkeeping is not the main sampler cost |
-| `mlkem_core_stage_sample_ntt4_common3_step` | 920.73 | 919.74 | common first three-rate sampler step including parse/bookkeeping |
-| `mlkem_core_stage_keygen_accum_only` | 440.55 | 440.32 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
-| `mlkem_core_stage_keygen_add_only` | 203.04 | 203.03 | vector add is smaller than accumulation and NTT work |
-| `mlkem_core_stage_ciphertext_compress_encode` | 51.64 | 51.63 | d10/d4 packing is too small for the next target |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4857.04 | 4791.39 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 4710.08 | 4692.83 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4205.84 | 4207.23 | public-key d12 decode + matrix sampling + H(pk) |
+| `mlkem_core_stage_sample_matrix` | 2750.09 | 2746.75 | largest standalone public-work target |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2813.01 | 2756.19 | seed word reuse is a rejected sampler-neighbor check |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2407.01 | 2383.04 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1972.33 | 1971.93 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1588.24 | 1587.45 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise_lazy` | 1366.26 | 1359.51 | production-aligned encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1293.59 | 1290.62 | K=3 accumulation plus inverse-add |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 583.79 | 584.03 | production-adjacent three-u inverse-add diagnostic |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 586.46 | 586.64 | three-polynomial inverse-add scheduling remains diagnostic only |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 327.04 | 326.63 | tail/final chain is the larger inverse-add subtarget |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 329.56 | 329.41 | level-by-level three-u tail/final batching is rejected |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 789.97 | 788.45 | common x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.35 | 6.42 | x4 sampler initialization is too small to be the next target |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 776.85 | 777.14 | common x4 sampler Keccak permutations dominate stream setup |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 154.29 | 122.67 | parser bookkeeping is noisy and not the main sampler cost |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 930.78 | 912.18 | common first three-rate sampler step including parse/bookkeeping |
+| `mlkem_core_stage_keygen_accum_only` | 437.05 | 436.51 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 202.71 | 202.55 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.38 | 51.35 | d10/d4 packing is too small for the next target |
 
 Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. Remaining gains need parser representation or broader matrix/public-cache dataflow changes, not vendored KeccakP. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `788.45 ns` median and `sample_matrix` at `2746.75 ns` median. Remaining gains need parser representation or broader matrix/public-cache dataflow changes, not vendored KeccakP. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
