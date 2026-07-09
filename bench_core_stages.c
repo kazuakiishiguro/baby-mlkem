@@ -336,6 +336,9 @@ static void validate_keygen_matrix_noise_schedule_avx2(void);
 #endif
 static void validate_keygen_matrix_noise_tail21_avx2(void);
 static void validate_keygen_noise_ntt_headtail_batch_avx2(void);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void validate_ntt_lazy_mul_input3_level_batch_avx2(void);
+#endif
 #endif
 
 static void recover_message(const poly256 w, uint8_t out[32]) {
@@ -1584,6 +1587,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt_mul_acc3_canonical_avx2();
   validate_keygen_noise_ntt_headtail_batch_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  validate_ntt_lazy_mul_input3_level_batch_avx2();
   validate_decrypt_lazy_ntt_accum_avx2();
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     for (int j = 0; j < K; j++) {
@@ -3894,6 +3898,97 @@ static void validate_keygen_noise_ntt_headtail_batch_avx2(void) {
   }
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void stage_ntt_lazy_mul_input3_level_batch_avx2(
+    const poly256 in0, const poly256 in1, const poly256 in2,
+    poly256 out0, poly256 out1, poly256 out2) {
+  int16_t *outs[3] = {out0, out1, out2};
+
+  if (in0 != out0) memcpy(out0, in0, sizeof(poly256));
+  if (in1 != out1) memcpy(out1, in1, sizeof(poly256));
+  if (in2 != out2) memcpy(out2, in2, sizeof(poly256));
+
+  int k = 1;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = (1 << log2len);
+    for (int start = 0; start < N; start += (2 * length)) {
+      uint16_t zeta = ZETA[k++];
+      for (int poly = 0; poly < 3; poly++) {
+        int16_t *f = outs[poly];
+#if defined(__clang__)
+#pragma clang loop vectorize_width(16) interleave_count(1)
+#endif
+        for (int j = 0; j < length; j++) {
+          int idx = start + j;
+          uint32_t prod =
+              (uint32_t)zeta * (uint32_t)(uint16_t)f[idx + length];
+          int16_t t = mod_q_reduce_ntt_u32(prod);
+          int16_t a = f[idx];
+          f[idx + length] = mod_q_sub_i16(a, t);
+          f[idx] = mod_q_add_i16(a, t);
+        }
+      }
+    }
+  }
+
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    for (int poly = 0; poly < 3; poly++) {
+      ntt_butterfly8_avx2(outs[poly] + start, outs[poly] + start + 8,
+                          ZETA_NTT_TAIL_L3[i]);
+    }
+  }
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    for (int poly = 0; poly < 3; poly++) {
+      int16_t *f = outs[poly];
+      ntt_butterfly4x2_avx2(f + start, f + start + 4, f + start + 8,
+                            f + start + 12, ZETA_NTT_TAIL_L2[i]);
+    }
+  }
+  for (int start = 0, i = 0; start < N; start += 16, i++) {
+    for (int poly = 0; poly < 3; poly++) {
+      int16_t *f = outs[poly];
+      ntt_butterfly2x4_lazy_avx2(f + start, f + start + 2, f + start + 4,
+                                 f + start + 6, f + start + 8,
+                                 f + start + 10, f + start + 12,
+                                 f + start + 14, ZETA_NTT_TAIL_L1[i]);
+    }
+  }
+}
+
+static void validate_ntt_lazy_mul_input3_level_batch_avx2(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 split[K], batch[K];
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_r_raw[lane][j], split[j]);
+    }
+    stage_ntt_lazy_mul_input3_level_batch_avx2(
+        stage_r_raw[lane][0], stage_r_raw[lane][1], stage_r_raw[lane][2],
+        batch[0], batch[1], batch[2]);
+    for (int j = 0; j < K; j++) {
+      if (memcmp(split[j], batch[j], sizeof(poly256)) != 0) {
+        fprintf(stderr, "lazy NTT level-batch r mismatch at %zu,%d\n", lane,
+                j);
+        exit(EXIT_FAILURE);
+      }
+    }
+
+    for (int j = 0; j < K; j++) {
+      ntt_lazy_mul_input_avx2(stage_u[lane][j], split[j]);
+    }
+    stage_ntt_lazy_mul_input3_level_batch_avx2(
+        stage_u[lane][0], stage_u[lane][1], stage_u[lane][2], batch[0],
+        batch[1], batch[2]);
+    for (int j = 0; j < K; j++) {
+      if (memcmp(split[j], batch[j], sizeof(poly256)) != 0) {
+        fprintf(stderr, "lazy NTT level-batch u mismatch at %zu,%d\n", lane,
+                j);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 static uint64_t bench_keygen_noise_ntt_headtail_batch(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -4407,6 +4502,23 @@ static uint64_t bench_encrypt_noise_ntt_lazy(size_t iters) {
     for (int j = 0; j < K; j++) {
       ntt_lazy_mul_input_avx2(stage_r_raw[lane][j], stage_tmp_vec0[lane][j]);
     }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_noise_ntt_lazy_level_batch(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_ntt_lazy_mul_input3_level_batch_avx2(
+        stage_r_raw[lane][0], stage_r_raw[lane][1], stage_r_raw[lane][2],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2]);
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
   t1 = now_ns();
@@ -5847,6 +5959,23 @@ static uint64_t bench_decrypt_u_ntt_lazy(size_t iters) {
     for (int j = 0; j < K; j++) {
       ntt_lazy_mul_input_avx2(stage_u[lane][j], stage_tmp_vec0[lane][j]);
     }
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_decrypt_u_ntt_lazy_level_batch(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_ntt_lazy_mul_input3_level_batch_avx2(
+        stage_u[lane][0], stage_u[lane][1], stage_u[lane][2],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2]);
     acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
   }
   t1 = now_ns();
@@ -7329,6 +7458,8 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_encrypt_noise_ntt_lazy",
                bench_encrypt_noise_ntt_lazy(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_noise_ntt_lazy_level_batch",
+               bench_encrypt_noise_ntt_lazy_level_batch(iters), iters);
 #endif
   print_metric("mlkem_core_stage_encrypt_accum_inv",
                bench_encrypt_accum_inv(iters), iters);
@@ -7495,6 +7626,8 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_decrypt_u_ntt_lazy",
                bench_decrypt_u_ntt_lazy(iters), iters);
+  print_metric("mlkem_core_stage_decrypt_u_ntt_lazy_level_batch",
+               bench_decrypt_u_ntt_lazy_level_batch(iters), iters);
 #endif
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_decrypt_u_ntt_head",
