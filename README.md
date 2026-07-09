@@ -2217,6 +2217,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_only` | AVX2 builds only: inverse-NTT tail plus scale/add after precomputed inverse heads for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | AVX2-only tail/final raw diagnostic with the production Clang loop-vectorization pragma in the pre-final tail loops |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | AVX2-only diagnostic: the three `u` inverse tail/final paths scheduled level-by-level across polynomials, then finalized with the existing final3 helper |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_l6_fused_raw` | AVX2-only diagnostic: production-aligned l4/l5 tail loops followed by the fused l6/final helper, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | AVX2-only diagnostic: tail/final path using the wide-reducer final diagnostic after the existing pre-final tail schedule |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
@@ -12114,6 +12115,42 @@ regresses. The likely lesson is that this local scheduling win is absorbed by
 surrounding code layout, accumulation, inverse NTT, and packing boundaries. The
 next useful NTT work should combine lazy NTT with a larger `ntt_mul_acc3()` /
 inverse-NTT dataflow change rather than only rescheduling the three forward NTTs.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse tail/final3 scheduling)
+
+A bench-only follow-up tested whether the AVX512-style three-polynomial grouping
+helps the AVX2 encryption `u` inverse-add tail/final boundary. The candidate
+starts from the precomputed inverse-head outputs, runs `l4` for all three `u`
+polynomials, then `l5` for all three, then `l6` for all three, and finally calls
+the existing `stage_ntt_inv_add3_final_after_l6_avx2()` helper. It is byte-validated against three independent production-aligned
+`tail_final_pragma` paths before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_final_only_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 325.46 | 325.38 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 328.96 | 328.94 | 0.9892x |
+
+Decision: reject the AVX2 inverse tail/final3 scheduling candidate and keep it as
+a diagnostic row only. Grouping the three polynomials by inverse-tail level does
+not reproduce the useful AVX512-wide final-fusion effect on AVX2; it is about
+`1.1%` slower than the existing per-row pragma schedule. The likely issue is that
+AVX2 has no wider lane group to amortize the extra scheduling, so the grouped
+shape mostly increases live state and disrupts the compact per-row loop. The next
+AVX2 inverse-add attempt needs a different arithmetic representation or a direct
+encode/compress handoff, not only a three-polynomial schedule reorder.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
