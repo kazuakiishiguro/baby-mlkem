@@ -12837,6 +12837,48 @@ round schedule alone; it is the sampler-level `sample_ntt4()` state/output
 layout, especially how the first three SHAKE128 blocks, store-rate extraction,
 and rejection parser compose into `sample_matrix()`.
 
+### Independent Core Optimization Diagnostic (2026-07-09, post-PrepareTheta sampler split frontier)
+
+After the local `keccakf4_mem()` PrepareTheta rewrite, the sampler split rows were
+remeasured to avoid optimizing against stale bottlenecks. The goal was to decide
+whether the next useful change should target state-store extraction, direct
+state parsing, fixed-size 504-byte parser specialization, or a larger
+`sample_matrix()` layout change.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | awk -F= -v run="$i" '/mlkem_core_stage_sample_ntt4_(full_raw|block_parse_full_raw|state_parse_full_raw|state_mask3|keccak3_only|keccak_store3|parse_504|common3_step|store_rate)_ns_per_op=|mlkem_core_stage_sample_matrix_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 787.24 | 778.80 | three PrepareTheta `keccakf4_mem()` blocks only |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 799.32 | 791.21 | Keccak plus stream materialization; store-rate itself is not the bottleneck |
+| `mlkem_core_stage_sample_ntt4_store_rate` | 7.68 | 7.60 | one rate extraction/store, too small to chase locally |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 120.19 | 118.79 | four lane-local parses of the initial 504-byte streams |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 914.38 | 913.78 | production-like first-three-block common step |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 915.89 | 914.76 | full x4 sampler raw row |
+| `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | 965.15 | 963.91 | parsing after each block remains worse than buffering three blocks |
+| `mlkem_core_stage_sample_ntt4_state_parse_full_raw` | 1432.50 | 1403.71 | direct state parse remains much slower |
+| `mlkem_core_stage_sample_ntt4_state_mask3` | 1196.82 | 1198.72 | state-side validity counting is not a useful lower path |
+| `mlkem_core_stage_sample_matrix` | 2821.50 | 2819.62 | integrated matrix row; larger layout still dominates acceptance |
+
+Decision: do not re-open narrow store-rate or direct-state-parse work. After
+PrepareTheta, the first three blocks are already mostly `keccakf4_mem()` plus the
+existing lane-local parser: `keccak_store3` median `791.21 ns` plus `parse_504`
+median `118.79 ns` nearly explains `full_raw` median `914.76 ns`. A fixed-size
+504-byte parser specialization was already rejected and this new frontier does
+not make it more attractive. The next sampler attempt should either change the
+parser representation itself in a way that improves the integrated x4 rows, or
+change the `sample_matrix()` dataflow so two x4 batches and the scalar tail share
+more useful work without losing the memory-resident Keccak path.
+
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
 A bench-only encryption accumulation diagnostic tested the natural follow-up to
