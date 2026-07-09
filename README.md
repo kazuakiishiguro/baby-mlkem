@@ -65,7 +65,7 @@ Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median. An opt-in KeccakP reference is 1.044x median faster than local `keccakf4_mem`, so there is round-schedule headroom, but production must port ideas into the core rather than link the vendored backend. |
+| Common `sample_ntt4()` Keccak/state layout | First core rewrite accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity: `keccakf4_mem` is 275.12 -> 259.13 ns median (1.0617x), `keccak3_only` is 825.16 -> 778.79 ns, and `keccak_store3` is 869.72 -> 791.61 ns. Remaining gains need sampler-level state/output layout changes, not vendored KeccakP. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
@@ -12772,6 +12772,70 @@ external round schedule is about `4.4%` faster than the sampler-relevant local
 `keccakf4_mem()` shape. A production change must port the useful idea into the
 local core, preserve the memory-resident sampler path, and pass stage/KEM gates;
 linking the vendored permutation would not satisfy the core-optimization goal.
+
+### Latest Core Optimization A/B (2026-07-09, AVX2 `keccakf4_mem()` PrepareTheta)
+
+Production `keccakf4_mem()` now carries the next-round theta column parity while
+it stores each round output. This ports the useful KeccakP `PrepareTheta` idea
+into the local core: after emitting the five chi rows, the implementation has
+already accumulated the next `C[0..4]` values, so the following round does not
+re-read all 25 memory-resident lanes just to rebuild theta parity. This is a
+core rewrite only; it does not link or call the vendored KeccakP backend.
+
+AVX2-only microbench command:
+
+```bash
+make bench-keccak CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 11); do
+  taskset -c 0 ./bench_keccakc 200000 | \
+    awk -F= -v run="$i" '/mlkem_(keccakf4|keccakf4_mem)_ns_per_op=|mlkem_keccak_bench_iterations=|mlkem_keccak_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only microbench results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_keccakf4` | 286.77 | 287.12 | register-resident reference path |
+| `mlkem_keccakf4_mem` | 260.94 | 259.13 | production PrepareTheta memory-resident path; 1.0617x vs previous 275.12 ns median |
+
+AVX2-only stage command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 40000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_(sample_ntt4_(full_raw|keccak3_only|keccak_store3)|sample_matrix|kpke_prepare_public_no_cache|kpke_keygen_full)_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only stage results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 789.03 | 778.79 | 1.0595x vs previous 825.16 ns median |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 794.27 | 791.61 | 1.0987x vs previous 869.72 ns median |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 916.22 | 913.96 | sampler full raw lower bound improves, but still includes parse/store work |
+| `mlkem_core_stage_sample_matrix` | 2827.12 | 2813.22 | full matrix row is neutral/noisy; larger layout work remains |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4362.36 | 4226.69 | one large outlier; use as regression gate only for this run |
+| `mlkem_core_stage_kpke_keygen_full` | 4724.10 | 4713.98 | no correctness regression observed |
+
+Verification:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-run BENCH_ITERS=400 CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Decision: accept the PrepareTheta `keccakf4_mem()` rewrite. It is the first
+post-reference Keccak win that comes from the local core rather than external
+linkage or benchmark caching. The remaining bottleneck is no longer the isolated
+round schedule alone; it is the sampler-level `sample_ntt4()` state/output
+layout, especially how the first three SHAKE128 blocks, store-rate extraction,
+and rejection parser compose into `sample_matrix()`.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
