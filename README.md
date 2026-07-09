@@ -2136,6 +2136,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_noise_ntt_only` | isolated keygen six-polynomial secret/error forward NTT, excluding secret-key encode |
 | `mlkem_core_stage_keygen_noise_ntt_headtail_batch` | AVX2-only diagnostic: run the upper forward-NTT levels for all six keygen secret/error polynomials before running all six AVX2 tails |
 | `mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch` | AVX2-only diagnostic: the same six-polynomial head/tail batch schedule plus d12 secret-key encode for `shat[0..2]` |
+| `mlkem_core_stage_keygen_noise_ntt_shat_headtail_encode` | AVX2-only diagnostic: batch the `shat[0..2]` forward-NTT head stages, finish and encode each `shat`, then batch the `ehat[0..2]` head/tail stages |
 | `mlkem_core_stage_keygen_secret_ntt_encode_only` | isolated keygen secret-vector forward NTT plus secret-key d12 encode for `shat[0..2]` |
 | `mlkem_core_stage_keygen_secret_ntt_only` | isolated keygen secret-vector three-polynomial forward NTT for `shat[0..2]`, excluding d12 encode |
 | `mlkem_core_stage_keygen_error_ntt_only` | isolated keygen error-vector three-polynomial forward NTT for `ehat[0..2]` |
@@ -12324,6 +12325,50 @@ recoverable work across the two x4 public-matrix batches is too small. The
 helper shape and extra call boundary lose more than the hoist saves. Future
 sampler work should target Keccak/state movement or output compaction, not the
 seed loads or parser one-time setup.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 keygen shat head/tail encode scheduling)
+
+A bench-only keygen NTT scheduling diagnostic tested a narrower form of the
+previously risky all-NTT-first keygen ordering. The production AVX2 path currently
+runs `ntt(shat[j])`, immediately encodes `shat[j]` into `dk_pke`, then runs
+`ntt(ehat[j])`. The existing `keygen_noise_ntt_encode_headtail_batch` diagnostic
+finishes all six `shat`/`ehat` transforms before encoding the three `shat`
+polynomials. This candidate instead batches only the `shat[0..2]` head stages,
+finishes and encodes each `shat` immediately after its tail, then batches the
+`ehat[0..2]` head/tail stages. It is byte-validated against the existing `shat`,
+`ehat`, and d12 secret-key encode outputs before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_keygen_noise_ntt(_encode|_only|_headtail_batch|_encode_headtail_batch|_shat_headtail_encode)?_ns_per_op=|mlkem_core_stage_keygen_secret_ntt_encode_only_ns_per_op=|mlkem_core_stage_keygen_error_ntt_only_ns_per_op=|mlkem_core_stage_bench_iterations=|mlkem_core_stage_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs current |
+|---|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1590.68 | 1592.15 | 1.0000x |
+| `mlkem_core_stage_keygen_noise_ntt_shat_headtail_encode` | 1557.37 | 1555.79 | 1.0234x |
+| `mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch` | 1555.85 | 1556.17 | 1.0231x |
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1528.79 | 1528.38 | context |
+| `mlkem_core_stage_keygen_noise_ntt_headtail_batch` | 1520.28 | 1520.73 | context |
+| `mlkem_core_stage_keygen_secret_ntt_encode_only` | 816.23 | 816.91 | context |
+| `mlkem_core_stage_keygen_error_ntt_only` | 770.87 | 770.94 | context |
+
+Decision: carry the `shat` head/tail encode schedule forward as a production A/B
+candidate, but do not route production through it yet. The stage median shows a
+real local `2.3%` win over the current `ntt+encode` schedule while preserving
+secret-key encoding immediately after each `shat` tail. However, the core file
+does not yet expose an AVX2 `ntt_head` helper, and a broader all-NTT-first keygen
+ordering previously failed full-keygen confirmation. The next step is a separate
+production patch that adds the head split to `baby-mlkem.c` and validates it with
+stage plus KEM A/B, not just this isolated stage row.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
