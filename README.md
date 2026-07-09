@@ -65,7 +65,7 @@ Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` Keccak/state layout | First core rewrite accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity: `keccakf4_mem` is 275.12 -> 259.13 ns median (1.0617x), `keccak3_only` is 825.16 -> 778.79 ns, and `keccak_store3` is 869.72 -> 791.61 ns. Remaining gains need sampler-level state/output layout changes, not vendored KeccakP. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity and AVX2 `sample_matrix()` now uses `(2,1)` as the scalar tail. `keccakf4_mem` is 275.12 -> 259.13 ns median, `sample_ntt4_keccak_store3` is 869.72 -> 791.61 ns, and `sample_matrix` A/B is 2816.99 -> 2753.84 ns median. Remaining gains need parser representation or broader matrix dataflow changes, not vendored KeccakP. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
@@ -12878,6 +12878,64 @@ not make it more attractive. The next sampler attempt should either change the
 parser representation itself in a way that improves the integrated x4 rows, or
 change the `sample_matrix()` dataflow so two x4 batches and the scalar tail share
 more useful work without losing the memory-resident Keccak path.
+
+### Latest Core Optimization A/B (2026-07-09, AVX2 `sample_matrix()` tail21)
+
+The AVX2 `sample_matrix()` dataflow now keeps the first x4 batch unchanged,
+moves `(2,2)` into the second x4 batch, and leaves `(2,1)` as the scalar tail.
+This is the production form of the post-PrepareTheta tail-choice diagnostic: it
+preserves the two memory-resident `sample_ntt4()` batches and changes only which
+matrix entry pays the scalar tail cost.
+
+Production dataflow after the change:
+
+| Batch | Entries |
+|---|---|
+| x4 batch 0 | `(0,0)`, `(0,1)`, `(0,2)`, `(1,0)` |
+| x4 batch 1 | `(1,1)`, `(1,2)`, `(2,0)`, `(2,2)` |
+| scalar tail | `(2,1)` |
+
+Pre-change diagnostic, AVX2-only, `RUNS=7`, `STAGE_ITERS=30000`:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs production row |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2829.47 | 2820.22 | 1.0000x |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2776.22 | 2756.00 | 1.0233x |
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2830.31 | 2818.54 | 1.0006x |
+
+HEAD-vs-candidate A/B command:
+
+```bash
+RUNS=5 WARMUP_RUNS=1 SUITES=stage,kem STAGE_ITERS=30000 KEM_ITERS=8000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_matrix` | 2816.99 | 2753.84 | 1.0229x |
+| `mlkem_core_stage_kpke_keygen_full` | 4717.35 | 4714.05 | 1.0007x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4221.08 | 4238.49 | 0.9959x |
+| `mlkem_keygen` | 6851.66 | 6854.43 | 0.9996x |
+| `mlkem_encaps` | 2663.79 | 2666.84 | 0.9989x |
+| `mlkem_decaps` | 3554.17 | 3557.45 | 0.9991x |
+| `mlkem_roundtrip` | 13191.79 | 13181.34 | 1.0008x |
+| `mlkem_roundtrip_core` | 19999.29 | 19784.88 | 1.0108x |
+
+Verification:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Decision: accept the AVX2 `(2,1)` scalar-tail layout. The standalone
+`sample_matrix()` win is large enough to keep, while KEM medians are neutral and
+roundtrip rows are non-negative. The public-prepare stage row is noisy and
+slightly negative on median in this short A/B, so future work should still gate
+matrix-layout changes on KEM and public-prepare together rather than on
+`sample_matrix()` alone.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
