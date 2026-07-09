@@ -499,6 +499,39 @@ production attempt the experiment crosses a head/tail layout boundary. However,
 the integrated tail/final gain is only about 0.3% on median, so KEM confirmation
 must decide adoption.
 
+Production A/B follow-up replaced `ntt_inv_before_final_avx2()` with the
+`l3+l4` fused schedule, leaving the existing final loop unchanged. Baseline was
+`HEAD`, pinned to CPU 0, `clang`, `AVX2_BACKEND=core`,
+`ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt'`:
+
+```bash
+RUNS=7 WARMUP_RUNS=1 SUITES=kem,stage KEM_ITERS=5000 STAGE_ITERS=20000 \
+  PIN_CPU=0 C_COMPILER=clang ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt' \
+  ./scripts/bench_core_ab.sh HEAD
+
+RUNS=11 WARMUP_RUNS=2 SUITES=kem KEM_ITERS=10000 \
+  PIN_CPU=0 C_COMPILER=clang ARCH_CFLAGS='-mavx2 -mbmi2 -mpopcnt' \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup | Readout |
+|---|---:|---:|---:|---|
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 583.87 | 582.26 | 1.0028x | local inverse-add remains weakly positive. |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1011.80 | 1008.48 | 1.0033x | local `u` bundle remains weakly positive. |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 374.62 | 373.99 | 1.0017x | decrypt inverse/sub is only weakly positive. |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2395.57 | 2389.93 | 1.0024x | stage K-PKE is weakly positive. |
+| `mlkem_encaps` | 2658.45 | 2651.75 | 1.0025x | first full KEM run looked positive. |
+| `mlkem_encaps_core` | 6926.07 | 6934.36 | 0.9988x | first full core run did not improve. |
+| `mlkem_encaps` recheck | 2654.19 | 2657.24 | 0.9989x | focused KEM rerun did not survive. |
+| `mlkem_encaps_core` recheck | 6838.58 | 6931.47 | 0.9866x | focused core rerun regressed. |
+| `mlkem_roundtrip_core` recheck | 19954.13 | 19983.07 | 0.9986x | focused core roundtrip regressed. |
+
+Decision: reject production adoption of the AVX2 `l3+l4` fused before-final
+schedule. The boundary-level idea is valid in isolation, but the production gain
+is below the KEM noise floor and the focused rerun regresses encapsulation. Do
+not carry the helper unless a wider representation change also removes later
+loads/reductions enough to survive full KEM.
+
 ## Test
 
 To run tests for the implementation, execute the following command:
