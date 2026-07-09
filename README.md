@@ -66,7 +66,7 @@ Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity and AVX2 `sample_matrix()` now uses `(2,1)` as the scalar tail. The refreshed frontier has `sample_ntt4_keccak_store3` at 793.79 ns median and `sample_matrix` at 2753.71 ns median. Remaining gains need parser representation or broader matrix dataflow changes, not vendored KeccakP. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. Remaining gains need parser representation or broader matrix/public-cache dataflow changes, not vendored KeccakP. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
@@ -76,15 +76,16 @@ Near-term target selection:
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The next implementation should therefore prioritize either a `sample_ntt4`
-redesign that changes the Keccak/state representation itself, or a broader
-inverse-add representation change that removes arithmetic or data movement rather
-than merely batching the same three `u` rows. Seed-load hoisting, public-matrix x4
-lane regrouping, adjacent inverse-level fusion, three-polynomial inverse-add
-scheduling, and local `ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
-change by itself has a measured budget that is too
-small: it reproduces the recent pattern of small direct wins, then neutral or
-negative integrated medians.
+The next implementation should therefore prioritize either a common-path
+`sample_ntt4` redesign that changes the Keccak/state or parser representation
+itself, a public-cache dataflow change that makes the accepted `sample_matrix()`
+tail layout visible to KEM paths, or a broader inverse-add representation change
+that removes arithmetic or data movement rather than merely batching the same
+three `u` rows. Seed-load hoisting, public-matrix x4 lane regrouping, adjacent
+inverse-level fusion, three-polynomial inverse-add scheduling, and local
+`ntt_mul_acc3()` -> inverse-L1 fusion are closed. A signed CBD->NTT boundary
+change by itself has a measured budget that is too small: it reproduces the recent
+pattern of small direct wins, then neutral or negative integrated medians.
 
 ### ECC/zkp Optimization Mapping
 
@@ -12937,6 +12938,77 @@ roundtrip rows are non-negative. The public-prepare stage row is noisy and
 slightly negative on median in this short A/B, so future work should still gate
 matrix-layout changes on KEM and public-prepare together rather than on
 `sample_matrix()` alone.
+
+### Latest Core Optimization A/B (2026-07-09, AVX2 `sample_ntt4()` scalar refill)
+
+The rare-refill sampler path was re-opened after the `keccakf4_mem()`
+PrepareTheta change and the `(2,1)` `sample_matrix()` tail rotation. The common
+path still squeezes three SHAKE128 rates per lane and parses the first 504 bytes.
+Only after that parse, when a lane is still short of 256 coefficients,
+`sample_ntt4()` now extracts the incomplete lane state and continues it with
+scalar `keccakf()` instead of running another x4 `keccakf4()` block for every
+lane in the group.
+
+The reason this is bounded is the refill rate itself:
+
+| Counter | Value |
+|---|---:|
+| `mlkem_core_stage_sample_ntt4_initial_extra_group_pct` | 3.384000 |
+| `mlkem_core_stage_sample_ntt4_initial_extra_lane_pct` | 0.856000 |
+| `mlkem_core_stage_sample_ntt4_initial_avg_accepts` | 255.974000 |
+| `mlkem_core_stage_sample_ntt4_initial_min_accepts` | 238 |
+
+Pre-production bench-only diagnostic on `391064f`, pinned CPU 0, `clang`, seven
+runs of `./bench_core_stagesc 40000`:
+
+| Metric | Production median ns/op | Scalar-refill diagnostic median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 914.26 | 907.09 | 1.0079x |
+| `mlkem_core_stage_sample_matrix` | 2753.03 | 2728.53 | 1.0090x |
+
+Production A/B command, comparing `391064f` to `eabb8ee`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=40000 KEM_ITERS=10000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh 391064f
+```
+
+A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_full_raw` | 916.74 | 916.60 | 1.0002x |
+| `mlkem_core_stage_sample_matrix` | 2759.79 | 2762.17 | 0.9991x |
+| `mlkem_core_stage_kpke_keygen_full` | 4719.09 | 4703.94 | 1.0032x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4250.23 | 4224.09 | 1.0062x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4830.60 | 4866.51 | 0.9926x |
+| `mlkem_encaps` | 2660.64 | 2654.97 | 1.0021x |
+| `mlkem_decaps` | 3555.64 | 3549.07 | 1.0019x |
+| `mlkem_keygen` | 6849.43 | 6852.22 | 0.9996x |
+| `mlkem_roundtrip` | 13211.13 | 13220.66 | 0.9993x |
+| `mlkem_encaps_core` | 6790.94 | 6827.37 | 0.9947x |
+| `mlkem_roundtrip_core` | 19767.39 | 19869.56 | 0.9949x |
+
+Verification:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+```
+
+Decision: keep the scalar-refill production change, but treat it as a limited
+rare-path cleanup, not a headline speedup. It removes wasted x4 refill work on the
+0.856% of lanes that need another SHAKE block, and the top-level encaps/decaps
+medians are non-negative in this run. The integrated stage/KEM evidence is still
+mixed, especially `kpke_encrypt_uncached` and core roundtrip rows, so the next
+sampler work must target the common three-rate path or the public-cache fused
+paths rather than another rare-refill specialization.
+
+A follow-up scratch-parameter helper experiment was rejected before commit: making
+`sample_matrix()` call a `sample_ntt4_with_stream()` helper directly pushed the
+`sample_matrix` median into the `2.82 us` range in a 7-run local check. The faster
+bench-only scalar-refill row is therefore not explained by simply exposing the
+scratch buffer to the caller.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
