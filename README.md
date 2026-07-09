@@ -71,6 +71,29 @@ closed. A signed CBD->NTT boundary change by itself also has a measured budget
 that is too small: it reproduces the recent pattern of small direct wins, then
 neutral or negative integrated medians.
 
+### ECC/zkp Optimization Mapping
+
+secp256k1 GLV endomorphism, NAF, and wNAF are not directly applicable to
+FIPS 203 ML-KEM. They reduce elliptic-curve scalar multiplication by splitting a
+scalar or using a sparse signed-digit expansion. The hot paths here are SHAKE
+matrix/noise generation, NTTs, K=3 base multiplication, inverse NTT, and
+compression. There is no group scalar multiplication to decompose.
+
+The closest ML-KEM analogues are:
+
+| ECC/zkp idea | ML-KEM analogue | Current decision |
+|---|---|---|
+| GLV/endomorphism | Ring automorphisms such as `x -> x^k` in `Z_q[x]/(x^256+1)` | Not a drop-in optimization. FIPS 203 samples each public-matrix entry from `rho || j || i`; deriving entries from automorphic relations would change the matrix generation rule and wire-compatible distribution. |
+| NAF/wNAF signed digits | Signed CBD coefficients and delayed canonicalization | Local signed-CBD and lazy-range diagnostics show small direct wins that are lost at the NTT or integrated boundary. Keep only as part of a wider range-contract redesign. |
+| MSM batching from zkp code | Batched NTT/matrix-vector dataflow | Useful as a design pattern, but existing local batching of `sample_ntt4`, lazy NTTs, and inverse tails has mostly been neutral. Future work needs a larger packed K=3 multiply/inverse pipeline, not another isolated schedule reorder. |
+| Lazy modular reduction | Wider coefficient ranges carried across boundaries | Partially accepted for lazy multiply-input NTT. Further progress requires proving consumers can handle the wider range without reintroducing equal or greater canonicalization cost. |
+
+Implication: do not spend implementation time trying to transplant GLV or NAF
+directly. The viable classical optimization route is to redesign data
+representation across multiple ML-KEM stages: keep lane occupancy high, avoid
+byte-stream materialization where possible, and carry lazy/signed ranges only
+when the next consumer can use them natively.
+
 ### Range Contract Diagnostic
 
 `bench_core_stagesc` now prints non-timing `mlkem_core_range_*` lines before the
