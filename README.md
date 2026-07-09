@@ -60,13 +60,16 @@ Near-term target selection:
 | Common `sample_ntt4()` Keccak/state layout | Open | `keccak_store3` is far larger than `parse_504`; a useful change must remove state movement or fill lanes with useful work, not just tweak parser bookkeeping. |
 | Broad lazy/signed range contract | Open only for an end-to-end redesign | Signed CBD saves about 10.5 ns for K=3 at the producer, but the measured forward-NTT boundary gives most or all of that back. A standalone signed CBD->NTT change is effectively closed; only a wider representation change remains plausible. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
+| Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
 The next implementation should therefore prioritize either a `sample_ntt4`
-redesign that changes the Keccak/state representation itself, or an encryption
-`u` inverse-add structural rewrite. A signed CBD->NTT boundary change by itself
-now has a measured budget that is too small: it reproduces the recent pattern of
-small direct wins, then neutral or negative integrated medians.
+redesign that changes the Keccak/state representation itself, or a broader
+encryption `u` inverse-add rewrite that changes the inverse schedule beyond the
+first head level. A local `ntt_mul_acc3()` -> inverse-L1 boundary fusion is now
+closed. A signed CBD->NTT boundary change by itself also has a measured budget
+that is too small: it reproduces the recent pattern of small direct wins, then
+neutral or negative integrated medians.
 
 ### Range Contract Diagnostic
 
@@ -134,6 +137,43 @@ K=3 accumulator does not reveal extra downstream speed; the full accumulation
 plus inverse row is slightly slower in this short run. The next K=3 attempt still
 needs a real accumulation/reduction redesign, not just relying on the lazy input
 range to make the current scalar loop faster.
+
+### K=3 Accumulation to Inverse-L1 Boundary Diagnostic
+
+`bench_core_stagesc` now includes AVX2-only rows that test whether the three
+`u`-polynomial `ntt_mul_acc3()` outputs should be fused into the first inverse
+NTT head level. The split baseline computes the current scalar accumulator for
+all three rows, then runs the production AVX2 L1 block helper. The direct fused
+row builds the L1 `a/b` vectors from eight accumulated base pairs without a full
+poly store/reload. The store-fused row keeps a block-local store/load shape to
+separate direct-vector assembly cost from boundary locality.
+
+Diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_accum_u_l1_(block_raw|fused_raw|store_fused_raw)_ns_per_op=|mlkem_core_stage_encrypt_accum_u_only_ns_per_op=|bench_iterations=|bench_sink=/{print run, $1, $2}'
+done
+```
+
+Pinned CPU 0, `clang`, `AVX2_BACKEND=core`, seven `20000`-iteration runs:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_encrypt_accum_u_only` | 467.45 | 441.82 | context: three current scalar `u` accumulations plus checksum. |
+| `mlkem_core_stage_encrypt_accum_u_l1_block_raw` | 380.60 | 355.06 | split raw baseline: three `ntt_mul_acc3()` calls plus production inverse-L1 block. |
+| `mlkem_core_stage_encrypt_accum_u_l1_fused_raw` | 2012.56 | 1986.08 | direct register handoff from eight base pairs into L1 vectors; 0.189x avg / 0.179x median vs split. |
+| `mlkem_core_stage_encrypt_accum_u_l1_store_fused_raw` | 2107.67 | 2070.05 | block-local store/load fusion; 0.181x avg / 0.172x median vs split. |
+
+Decision: reject local `ntt_mul_acc3()` -> inverse-L1 fusion. The store/reload
+boundary is not the limiting cost at this granularity. The attempted fusion
+breaks the compact scalar accumulation loop shape and pays far more in scalar
+pair scheduling, modulo-reduction exposure, and vector assembly than it saves.
+Future encryption `u` work should target a wider inverse schedule or a different
+accumulation representation, not this first-L1 boundary alone.
 
 ### Signed CBD Canonicalization Lower Bound
 
@@ -2126,6 +2166,9 @@ stage metrics.
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
 | `mlkem_core_stage_encrypt_accum_u_only` | isolated three-`u` NTT-domain accumulations, excluding inverse-NTT-add, using the canonical fixture |
 | `mlkem_core_stage_encrypt_accum_u_only_lazy_input` | AVX2-only diagnostic: isolated three-`u` accumulations with production lazy `rhat` input |
+| `mlkem_core_stage_encrypt_accum_u_l1_block_raw` | AVX2-only diagnostic: split three-`u` accumulations plus the production inverse-head L1 block helper, using lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_accum_u_l1_fused_raw` | AVX2-only diagnostic: direct register handoff from accumulated base pairs into inverse-head L1 vectors |
+| `mlkem_core_stage_encrypt_accum_u_l1_store_fused_raw` | AVX2-only diagnostic: block-local store/load fusion between accumulated base pairs and inverse-head L1 |
 | `mlkem_core_stage_encrypt_accum4_separate_only` | diagnostic: three `u` accumulations plus the `v` accumulation as four separate `ntt_mul_acc3()` calls, excluding inverse NTT |
 | `mlkem_core_stage_encrypt_accum4_combined_only` | diagnostic: one scalar loop computes the same four encryption accumulations while reusing `rhat[0..2]` and `GAMMA` loads |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
