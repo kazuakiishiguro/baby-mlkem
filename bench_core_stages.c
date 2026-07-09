@@ -791,6 +791,18 @@ static void stage_sample_matrix_x4x3x2_avx2(const uint8_t *seed,
   stage_sample_ntt2_avx2(seed, 2, 1, 2, 2, out[2][1], out[2][2]);
 }
 
+static void stage_sample_matrix_col_batches_avx2(const uint8_t *seed,
+                                                poly256 out[K][K]) {
+  const uint8_t r0[4] = {0, 1, 2, 0};
+  const uint8_t c0[4] = {0, 0, 0, 1};
+  const uint8_t r1[4] = {1, 2, 0, 1};
+  const uint8_t c1[4] = {1, 1, 2, 2};
+
+  sample_ntt4(seed, r0, c0, out[0][0], out[1][0], out[2][0], out[0][1]);
+  sample_ntt4(seed, r1, c1, out[1][1], out[2][1], out[0][2], out[1][2]);
+  sample_ntt(seed, 2, 2, out[2][2]);
+}
+
 static void stage_sample_matrix_x4_pair_blocked_avx2(
     const uint8_t *seed, poly256 out[K][K], uint8_t stream0[4][504],
     uint8_t stream1[4][504]) {
@@ -936,6 +948,19 @@ static void validate_sample_matrix_matches_scalar(void) {
       for (int col = 0; col < K; col++) {
         if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
           fprintf(stderr, "sample_matrix x4x3x2 mismatch at %d,%d\n",
+                  row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  {
+    poly256 alt[K][K];
+    stage_sample_matrix_col_batches_avx2(stage_rho[0], alt);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_matrix col-batches mismatch at %d,%d\n",
                   row, col);
           exit(EXIT_FAILURE);
         }
@@ -2665,6 +2690,20 @@ static uint64_t bench_sample_matrix_x4x3x2(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_sample_matrix_x4x3x2_avx2(stage_rho[lane], stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_col_batches(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_col_batches_avx2(stage_rho[lane], stage_tmp_ahat[lane]);
     acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
   }
   t1 = now_ns();
@@ -8438,6 +8477,8 @@ int main(int argc, char **argv) {
                bench_sample_matrix_x3x3x3(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_x4x3x2",
                bench_sample_matrix_x4x3x2(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_col_batches",
+               bench_sample_matrix_col_batches(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_x4_pair_blocked",
                bench_sample_matrix_x4_pair_blocked(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_seed_init_hoist",
