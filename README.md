@@ -84,10 +84,11 @@ the keygen-only tail21 result, or a broader inverse-add representation change th
 removes arithmetic or data movement rather than merely batching the same three
 `u` rows. Seed-load hoisting, public-matrix x4 lane regrouping, adjacent
 inverse-level fusion, three-polynomial inverse-add scheduling, local
-`ntt_mul_acc3()` -> inverse-L1 fusion, and public-prepare/uncached-encrypt tail21
-rotation are closed. A signed CBD->NTT boundary change by itself has a measured
-budget that is too small: it reproduces the recent pattern of small direct wins,
-then neutral or negative integrated medians.
+`ntt_mul_acc3()` -> inverse-L1 fusion, and public-prepare/uncached-encrypt
+public-tail rotations (`tail02`, `tail10`, `tail21`) are closed. A signed CBD->NTT
+boundary change by itself has a measured budget that is too small: it reproduces
+the recent pattern of small direct wins, then neutral or negative integrated
+medians.
 
 ### ECC/zkp Optimization Mapping
 
@@ -13076,6 +13077,59 @@ is clearly faster and the higher-iteration KEM-only gate keeps keygen and
 roundtrip medians non-negative. Do not apply this rotation to public prepare or
 uncached encrypt: their direct pre-production diagnostic medians are still
 negative, so that route remains diagnostic-only.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 public prepare tail10 retry)
+
+A production retry tested whether a public-prepare-only tail rotation could use
+the standalone `sample_matrix()` tail-choice signal without also changing the
+uncached encrypt co-schedule. The candidate changed only
+`kpke_prepare_public_no_cache()` on AVX2: `(1,0)` became the SHA3-256/sample tail
+and `(2,2)` moved into the second x4 `sample_ntt4()` batch. The uncached encrypt
+path was intentionally left unchanged because its tail02/tail10 diagnostics were
+already slower.
+
+Pre-production pinned CPU 0 diagnostic on `398f684`, `clang`, seven runs of
+`./bench_core_stagesc 50000`:
+
+| Metric | Current median ns/op | Diagnostic median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail10` | 4203.74 | 4156.95 | 1.0113x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail02` | 4203.74 | 4162.26 | 1.0100x |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | 4203.74 | 4229.76 | 0.9938x |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail10` | 4788.97 | 4811.98 | 0.9952x |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail02` | 4788.97 | 4812.32 | 0.9951x |
+
+Production candidate A/B command, comparing `398f684` to the working-tree retry:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 SUITES=stage,kem STAGE_ITERS=50000 KEM_ITERS=12000 \
+  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4193.71 | 4201.18 | 0.9982x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4817.44 | 4889.88 | 0.9852x |
+| `mlkem_encaps_core` | 6891.34 | 6794.93 | 1.0142x |
+| `mlkem_roundtrip_core` | 19826.42 | 19810.87 | 1.0008x |
+
+Verification before rejection:
+
+```bash
+make test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+make bench-stages CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+./bench_core_stagesc 1000
+```
+
+Decision: reject the public-prepare tail10 production change and keep it as a
+diagnostic only. The pre-production diagnostic looked good for public prepare,
+but the actual production candidate regressed the target stage row on median.
+The KEM rows are positive, but they are indirect and not enough to override a
+failed direct stage gate for a narrow public-prepare change. The candidate was
+reverted before commit.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
