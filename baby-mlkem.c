@@ -550,83 +550,121 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
    PRF and Keccak callers keep the register-resident keccakf4() above. */
 static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
   __m256i e[25];
-
-  /* The 24 Keccak rounds are even, so ping-ponging with st as one side leaves
-     the final state in st and avoids copy-in/copy-out around the permutation. */
   __m256i *src = st;
   __m256i *dst = e;
+  /* Carry next-round column parity while storing each round output. */
+  __m256i c0 = _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_xor_si256(st[0], st[5]),
+                       _mm256_xor_si256(st[10], st[15])),
+      st[20]);
+  __m256i c1 = _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_xor_si256(st[1], st[6]),
+                       _mm256_xor_si256(st[11], st[16])),
+      st[21]);
+  __m256i c2 = _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_xor_si256(st[2], st[7]),
+                       _mm256_xor_si256(st[12], st[17])),
+      st[22]);
+  __m256i c3 = _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_xor_si256(st[3], st[8]),
+                       _mm256_xor_si256(st[13], st[18])),
+      st[23]);
+  __m256i c4 = _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_xor_si256(st[4], st[9]),
+                       _mm256_xor_si256(st[14], st[19])),
+      st[24]);
+
   for (int round = 0; round < 24; round++) {
-    __m256i c0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[0], src[5]), _mm256_xor_si256(src[10], src[15])), src[20]);
-    __m256i c1 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[1], src[6]), _mm256_xor_si256(src[11], src[16])), src[21]);
-    __m256i c2 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[2], src[7]), _mm256_xor_si256(src[12], src[17])), src[22]);
-    __m256i c3 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[3], src[8]), _mm256_xor_si256(src[13], src[18])), src[23]);
-    __m256i c4 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(src[4], src[9]), _mm256_xor_si256(src[14], src[19])), src[24]);
     __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
     __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
     __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
     __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
     __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+    __m256i n0, n1, n2, n3, n4;
 
 #define AX4(i, d) _mm256_xor_si256(src[(i)], (d))
-    __m256i b0 = AX4(0, d0);
-    __m256i b1 = rotl64x4(AX4(6, d1), 44);
-    __m256i b2 = rotl64x4(AX4(12, d2), 43);
-    __m256i b3 = rotl64x4(AX4(18, d3), 21);
-    __m256i b4 = rotl64x4(AX4(24, d4), 14);
 #if defined(__AVX512VL__) && defined(__AVX512F__)
 #define CHIX4(x, y, z) _mm256_ternarylogic_epi64((x), (y), (z), 0xd2)
 #else
 #define CHIX4(x, y, z) _mm256_xor_si256((x), _mm256_andnot_si256((y), (z)))
 #endif
-    dst[0] = _mm256_xor_si256(CHIX4(b0, b1, b2), _mm256_set1_epi64x((long long)rc[round]));
-    dst[1] = CHIX4(b1, b2, b3);
-    dst[2] = CHIX4(b2, b3, b4);
-    dst[3] = CHIX4(b3, b4, b0);
-    dst[4] = CHIX4(b4, b0, b1);
+#define STORE_INIT(i, expr, n)                                                \
+  do {                                                                        \
+    (n) = (expr);                                                             \
+    dst[(i)] = (n);                                                           \
+  } while (0)
+#define STORE_ACC(i, expr, n)                                                 \
+  do {                                                                        \
+    __m256i v_ = (expr);                                                      \
+    dst[(i)] = v_;                                                            \
+    (n) = _mm256_xor_si256((n), v_);                                          \
+  } while (0)
+
+    __m256i b0 = AX4(0, d0);
+    __m256i b1 = rotl64x4(AX4(6, d1), 44);
+    __m256i b2 = rotl64x4(AX4(12, d2), 43);
+    __m256i b3 = rotl64x4(AX4(18, d3), 21);
+    __m256i b4 = rotl64x4(AX4(24, d4), 14);
+    STORE_INIT(0, _mm256_xor_si256(CHIX4(b0, b1, b2),
+                                   _mm256_set1_epi64x((long long)rc[round])),
+               n0);
+    STORE_INIT(1, CHIX4(b1, b2, b3), n1);
+    STORE_INIT(2, CHIX4(b2, b3, b4), n2);
+    STORE_INIT(3, CHIX4(b3, b4, b0), n3);
+    STORE_INIT(4, CHIX4(b4, b0, b1), n4);
 
     b0 = rotl64x4(AX4(3, d3), 28);
     b1 = rotl64x4(AX4(9, d4), 20);
     b2 = rotl64x4(AX4(10, d0), 3);
     b3 = rotl64x4(AX4(16, d1), 45);
     b4 = rotl64x4(AX4(22, d2), 61);
-    dst[5] = CHIX4(b0, b1, b2);
-    dst[6] = CHIX4(b1, b2, b3);
-    dst[7] = CHIX4(b2, b3, b4);
-    dst[8] = CHIX4(b3, b4, b0);
-    dst[9] = CHIX4(b4, b0, b1);
+    STORE_ACC(5, CHIX4(b0, b1, b2), n0);
+    STORE_ACC(6, CHIX4(b1, b2, b3), n1);
+    STORE_ACC(7, CHIX4(b2, b3, b4), n2);
+    STORE_ACC(8, CHIX4(b3, b4, b0), n3);
+    STORE_ACC(9, CHIX4(b4, b0, b1), n4);
 
     b0 = rotl64x4(AX4(1, d1), 1);
     b1 = rotl64x4(AX4(7, d2), 6);
     b2 = rotl64x4(AX4(13, d3), 25);
     b3 = rotl64x4(AX4(19, d4), 8);
     b4 = rotl64x4(AX4(20, d0), 18);
-    dst[10] = CHIX4(b0, b1, b2);
-    dst[11] = CHIX4(b1, b2, b3);
-    dst[12] = CHIX4(b2, b3, b4);
-    dst[13] = CHIX4(b3, b4, b0);
-    dst[14] = CHIX4(b4, b0, b1);
+    STORE_ACC(10, CHIX4(b0, b1, b2), n0);
+    STORE_ACC(11, CHIX4(b1, b2, b3), n1);
+    STORE_ACC(12, CHIX4(b2, b3, b4), n2);
+    STORE_ACC(13, CHIX4(b3, b4, b0), n3);
+    STORE_ACC(14, CHIX4(b4, b0, b1), n4);
 
     b0 = rotl64x4(AX4(4, d4), 27);
     b1 = rotl64x4(AX4(5, d0), 36);
     b2 = rotl64x4(AX4(11, d1), 10);
     b3 = rotl64x4(AX4(17, d2), 15);
     b4 = rotl64x4(AX4(23, d3), 56);
-    dst[15] = CHIX4(b0, b1, b2);
-    dst[16] = CHIX4(b1, b2, b3);
-    dst[17] = CHIX4(b2, b3, b4);
-    dst[18] = CHIX4(b3, b4, b0);
-    dst[19] = CHIX4(b4, b0, b1);
+    STORE_ACC(15, CHIX4(b0, b1, b2), n0);
+    STORE_ACC(16, CHIX4(b1, b2, b3), n1);
+    STORE_ACC(17, CHIX4(b2, b3, b4), n2);
+    STORE_ACC(18, CHIX4(b3, b4, b0), n3);
+    STORE_ACC(19, CHIX4(b4, b0, b1), n4);
 
     b0 = rotl64x4(AX4(2, d2), 62);
     b1 = rotl64x4(AX4(8, d3), 55);
     b2 = rotl64x4(AX4(14, d4), 39);
     b3 = rotl64x4(AX4(15, d0), 41);
     b4 = rotl64x4(AX4(21, d1), 2);
-    dst[20] = CHIX4(b0, b1, b2);
-    dst[21] = CHIX4(b1, b2, b3);
-    dst[22] = CHIX4(b2, b3, b4);
-    dst[23] = CHIX4(b3, b4, b0);
-    dst[24] = CHIX4(b4, b0, b1);
+    STORE_ACC(20, CHIX4(b0, b1, b2), n0);
+    STORE_ACC(21, CHIX4(b1, b2, b3), n1);
+    STORE_ACC(22, CHIX4(b2, b3, b4), n2);
+    STORE_ACC(23, CHIX4(b3, b4, b0), n3);
+    STORE_ACC(24, CHIX4(b4, b0, b1), n4);
+
+    c0 = n0;
+    c1 = n1;
+    c2 = n2;
+    c3 = n3;
+    c4 = n4;
+
+#undef STORE_ACC
+#undef STORE_INIT
 #undef CHIX4
 #undef AX4
 
@@ -634,7 +672,6 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
     src = dst;
     dst = tmp;
   }
-
 }
 
 #if defined(__AVX512F__)
