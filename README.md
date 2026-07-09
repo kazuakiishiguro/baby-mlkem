@@ -65,7 +65,7 @@ Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median; a useful change must remove or restructure permutation/state movement, not just tweak parser bookkeeping. |
+| Common `sample_ntt4()` Keccak/state layout | Open only for a real state/Keccak redesign | `keccak3_only` is 825.16 ns median and `keccak_store3` is 869.72 ns median. An opt-in KeccakP reference is 1.044x median faster than local `keccakf4_mem`, so there is round-schedule headroom, but production must port ideas into the core rather than link the vendored backend. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.42 ns median, and matrix-level seed word reuse regressed to 0.9850x median versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
@@ -1755,13 +1755,21 @@ message recovery or isolated scalar inverse-tail levels.
 ### Independent Core Keccak/Sampling Microbench (2026-06-29)
 
 Use the Keccak/sampling microbench when changing the vendor-free scalar Keccak,
-CBD, PRF, or SHAKE128 rejection-sampling code. Like the NTT microbench, this
-benchmark includes `baby-mlkem.c` directly and does not link vendored upstream
-Kyber or PQClean AVX2 KEM sources.
+CBD, PRF, or SHAKE128 rejection-sampling code. Like the NTT microbench, the
+default `bench-keccak` target includes `baby-mlkem.c` directly and does not link
+vendored upstream Kyber or PQClean AVX2 KEM sources. The separate
+`bench-keccak-vendor` target is an explicit reference-only build: it links the
+vendored PQClean/Keccak-team times4 permutation so local `keccakf4` work can be
+compared against a known external implementation without changing production.
 
 ```bash
 make clean CC=clang AVX2_BACKEND=core && make bench-keccak CC=clang AVX2_BACKEND=core
 taskset -c 0 ./bench_keccakc 200000
+
+# Reference-only: links vendored KeccakP times4, not a production dependency.
+make bench-keccak-vendor CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+taskset -c 0 ./bench_keccak_vendorc 200000
 ```
 
 The binary validates deterministic helper behavior before timing. Reported
@@ -1771,6 +1779,8 @@ metrics isolate these helpers:
 |---|---|
 | `mlkem_keccakf` | one scalar `keccakf()` permutation |
 | `mlkem_keccakf4` | one AVX2 `keccakf4()` permutation over four parallel states |
+| `mlkem_keccakf4_mem` | one AVX2 memory-resident `keccakf4_mem()` permutation, matching the sampler common path shape |
+| `mlkem_vendor_keccakp4` | opt-in reference-only PQClean/Keccak-team times4 permutation from `bench-keccak-vendor`; not emitted by the default vendor-free target |
 | `mlkem_sha3_256_32` | `sha3_256()` over a 32-byte input |
 | `mlkem_sha3_256_public_key` | `sha3_256()` over a 1184-byte encoded ML-KEM-768 public key |
 | `mlkem_sha3_512_32` | `sha3_512()` over a 32-byte input |
@@ -12726,6 +12736,42 @@ not a good proxy for internal PRF/CBD work. Future encryption-noise work should
 therefore either fill the fourth lane of the x3 block with independent useful
 work that survives KEM A/B, or remove a Keccak call; another local CBD decode or
 state extraction tweak is not the right target.
+
+### Independent Core Optimization Diagnostic (2026-07-09, opt-in KeccakP times4 reference)
+
+A reference-only Keccak microbench now builds `bench-keccak-vendor`, which links
+vendored PQClean/Keccak-team `KeccakP1600times4_PermuteAll_24rounds()` for a
+bounded comparison against local `keccakf4()` and memory-resident
+`keccakf4_mem()`. This does not change production code and is not a dependency
+of the default `bench-keccak` target. The purpose is to measure remaining
+round-schedule/state-layout headroom before attempting another local core
+rewrite.
+
+AVX2-only reference command:
+
+```bash
+make bench-keccak-vendor CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 11); do
+  taskset -c 0 ./bench_keccak_vendorc 200000 | \
+    awk -F= -v run="$i" '/mlkem_(keccakf4|keccakf4_mem|vendor_keccakp4)_ns_per_op=|mlkem_keccak_bench_iterations=|mlkem_keccak_bench_sink=/{print run, $1, $2}'
+done
+```
+
+AVX2-only reference results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keccakf4` | 287.40 | 287.66 | 1.0000x |
+| `mlkem_keccakf4_mem` | 275.71 | 275.12 | 1.0456x vs `keccakf4` |
+| `mlkem_vendor_keccakp4` | 265.56 | 263.52 | 1.0440x vs `keccakf4_mem`; 1.0916x vs `keccakf4` |
+
+Decision: keep the vendored KeccakP row as a reference-only diagnostic and do
+not route production through it. The result shows real local headroom: the
+external round schedule is about `4.4%` faster than the sampler-relevant local
+`keccakf4_mem()` shape. A production change must port the useful idea into the
+local core, preserve the memory-resident sampler path, and pass stage/KEM gates;
+linking the vendored permutation would not satisfy the core-optimization goal.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
