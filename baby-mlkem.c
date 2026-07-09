@@ -5252,20 +5252,62 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
   sample_ntt_tail_lane2_accum3_parse_avx2(st, tail);
 }
 
+static void mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
+    poly256 s0, poly256 s1, poly256 s2,
+    poly256 e0, poly256 e1, poly256 e2) {
+  const uint8_t n0[4] = {0, 1, 2, 3};
+  __m256i st[25];
+
+  mlkem_prf_cbd_eta2x4_32(sigma, n0, s0, s1, s2, e0);
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set_epi64x(0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(sigma + 0),
+                            (long long)load64_le(sigma + 0));
+  st[1] = _mm256_set_epi64x(0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(sigma + 8),
+                            (long long)load64_le(sigma + 8));
+  st[2] = _mm256_set_epi64x(0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(sigma + 16),
+                            (long long)load64_le(sigma + 16));
+  st[3] = _mm256_set_epi64x(0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(sigma + 24),
+                            (long long)load64_le(sigma + 24));
+  st[4] = _mm256_set_epi64x(
+      0, 0x1f0102LL,
+      (long long)((uint64_t)5 | (0x1FULL << 8)),
+      (long long)((uint64_t)4 | (0x1FULL << 8)));
+  st[16] = _mm256_set_epi64x(0, 0,
+                             (long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56));
+  st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
+
+  keccakf4(st);
+
+  for (int lane = 0; lane < 16; lane++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
+                                     e1 + 16 * lane, e2 + 16 * lane);
+  }
+  sample_ntt_tail_lane2_accum3_parse_avx2(st, tail);
+}
+
 static void mlkem_keygen_matrix_noise_avx2(
     const uint8_t sigma[32], const uint8_t rho[32],
     poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]) {
   const uint8_t r0[4] = {0, 0, 0, 1};
   const uint8_t c0[4] = {0, 1, 2, 0};
   const uint8_t r1[4] = {1, 1, 2, 2};
-  const uint8_t c1[4] = {1, 2, 0, 1};
+  const uint8_t c1[4] = {1, 2, 0, 2};
 
   sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2],
               ahat[1][0]);
-  mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx2(
-      sigma, rho, ahat[2][2], shat[0], shat[1], shat[2],
+  mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
+      sigma, rho, ahat[2][1], shat[0], shat[1], shat[2],
       ehat[0], ehat[1], ehat[2]);
   sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
-              ahat[2][1]);
+              ahat[2][2]);
 }
 #endif
