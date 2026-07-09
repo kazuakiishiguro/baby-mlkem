@@ -121,6 +121,7 @@ static poly256 stage_tmp_vec1[STAGE_BENCH_LANES][K];
 static poly256 stage_tmp_poly[STAGE_BENCH_LANES];
 #if defined(__AVX2__)
 static uint8_t stage_tmp_sample_stream[STAGE_BENCH_LANES][4][504];
+static uint8_t stage_tmp_sample_stream_pair[STAGE_BENCH_LANES][4][504];
 static __m256i stage_tmp_sample_refill_st[STAGE_BENCH_LANES][25];
 static int stage_tmp_sample_refill_count[STAGE_BENCH_LANES][4];
 #if !defined(__AVX512F__)
@@ -132,6 +133,12 @@ static poly256 stage_rowwise_e2[STAGE_BENCH_LANES];
 static poly256 stage_rowwise_u[STAGE_BENCH_LANES][K];
 static poly256 stage_rowwise_v[STAGE_BENCH_LANES];
 #endif
+#endif
+
+#if defined(__AVX2__)
+static void stage_sample_ntt4_init(const uint8_t *seed,
+                                   const uint8_t row[4],
+                                   const uint8_t col[4], __m256i st[25]);
 #endif
 
 #if defined(__AVX2__) && !(defined(__AVX512F__))
@@ -752,6 +759,74 @@ static void stage_sample_matrix_x4x3x2_avx2(const uint8_t *seed,
                          out[1][1], out[1][2], out[2][0]);
   stage_sample_ntt2_avx2(seed, 2, 1, 2, 2, out[2][1], out[2][2]);
 }
+
+static void stage_sample_matrix_x4_pair_blocked_avx2(
+    const uint8_t *seed, poly256 out[K][K], uint8_t stream0[4][504],
+    uint8_t stream1[4][504]) {
+  const uint8_t r0[4] = {0, 0, 0, 1};
+  const uint8_t c0[4] = {0, 1, 2, 0};
+  const uint8_t r1[4] = {1, 1, 2, 2};
+  const uint8_t c1[4] = {1, 2, 0, 1};
+  __m256i st0[25];
+  __m256i st1[25];
+  int16_t *outs0[4] = {out[0][0], out[0][1], out[0][2], out[1][0]};
+  int16_t *outs1[4] = {out[1][1], out[1][2], out[2][0], out[2][1]};
+  int count0[4];
+  int count1[4];
+  int need0 = 0;
+  int need1 = 0;
+
+  stage_sample_ntt4_init(seed, r0, c0, st0);
+  stage_sample_ntt4_init(seed, r1, c1, st1);
+  for (int block = 0; block < 3; block++) {
+    size_t off = (size_t)block * 168;
+    keccakf4_mem(st0);
+    sample_ntt4_store_block(stream0, off, st0);
+    keccakf4_mem(st1);
+    sample_ntt4_store_block(stream1, off, st1);
+  }
+
+  sample_ntt_parse_init_avx2();
+  for (int lane = 0; lane < 4; lane++) {
+    count0[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream0[lane], 504, outs0[lane], 0);
+    count1[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream1[lane], 504, outs1[lane], 0);
+    need0 |= count0[lane] < N;
+    need1 |= count1[lane] < N;
+  }
+
+  while (need0 || need1) {
+    if (need0) {
+      keccakf4(st0);
+      sample_ntt4_store_rate(stream0[0], stream0[1], stream0[2], stream0[3],
+                             st0);
+      need0 = 0;
+      for (int lane = 0; lane < 4; lane++) {
+        if (count0[lane] < N) {
+          count0[lane] = sample_ntt_parse_stream_avx2_ready(
+              stream0[lane], 168, outs0[lane], count0[lane]);
+        }
+        need0 |= count0[lane] < N;
+      }
+    }
+    if (need1) {
+      keccakf4(st1);
+      sample_ntt4_store_rate(stream1[0], stream1[1], stream1[2], stream1[3],
+                             st1);
+      need1 = 0;
+      for (int lane = 0; lane < 4; lane++) {
+        if (count1[lane] < N) {
+          count1[lane] = sample_ntt_parse_stream_avx2_ready(
+              stream1[lane], 168, outs1[lane], count1[lane]);
+        }
+        need1 |= count1[lane] < N;
+      }
+    }
+  }
+
+  sample_ntt(seed, 2, 2, out[2][2]);
+}
 #endif
 
 static void validate_sample_matrix_matches_scalar(void) {
@@ -830,6 +905,21 @@ static void validate_sample_matrix_matches_scalar(void) {
       for (int col = 0; col < K; col++) {
         if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
           fprintf(stderr, "sample_matrix x4x3x2 mismatch at %d,%d\n",
+                  row, col);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  {
+    poly256 alt[K][K];
+    stage_sample_matrix_x4_pair_blocked_avx2(
+        stage_rho[0], alt, stage_tmp_sample_stream[0],
+        stage_tmp_sample_stream_pair[0]);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        if (memcmp(alt[row][col], matrix[row][col], sizeof(poly256)) != 0) {
+          fprintf(stderr, "sample_matrix x4-pair blocked mismatch at %d,%d\n",
                   row, col);
           exit(EXIT_FAILURE);
         }
@@ -2128,6 +2218,22 @@ static uint64_t bench_sample_matrix_x4x3x2(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_sample_matrix_x4x3x2_avx2(stage_rho[lane], stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_matrix_x4_pair_blocked(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_x4_pair_blocked_avx2(
+        stage_rho[lane], stage_tmp_ahat[lane], stage_tmp_sample_stream[lane],
+        stage_tmp_sample_stream_pair[lane]);
     acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
   }
   t1 = now_ns();
@@ -6864,6 +6970,8 @@ int main(int argc, char **argv) {
                bench_sample_matrix_x3x3x3(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix_x4x3x2",
                bench_sample_matrix_x4x3x2(iters), iters);
+  print_metric("mlkem_core_stage_sample_matrix_x4_pair_blocked",
+               bench_sample_matrix_x4_pair_blocked(iters), iters);
 #endif
   print_metric("mlkem_core_stage_sample_matrix_x4_batch0",
                bench_sample_matrix_x4_batch0(iters), iters);
