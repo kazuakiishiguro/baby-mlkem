@@ -2199,6 +2199,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5` | AVX2 builds only: isolated inverse-tail l5 stage after precomputed l4 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | same inverse-tail l5 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l5_pragma_raw` | AVX2-only inverse-tail l5 raw diagnostic with the production Clang loop-vectorization pragma |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_raw` | AVX2-only diagnostic: split inverse-tail l4 followed by l5 from precomputed inverse heads, with lightweight coefficient sinks |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_fused_raw` | AVX2-only diagnostic: fused inverse-tail l4/l5 from precomputed inverse heads, byte-validated against the split path |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6` | AVX2 builds only: isolated inverse-tail l6 stage after precomputed l5 outputs for the three `u` accumulations |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | same inverse-tail l6 diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_l6_pragma_raw` | AVX2-only inverse-tail l6 raw diagnostic with the production Clang loop-vectorization pragma |
@@ -12191,6 +12193,47 @@ butterfly compete for registers and instruction scheduling space on AVX2, so the
 store/load boundary is cheaper than interleaving the two loops. Future inverse-add
 work should change the arithmetic representation or the wider inverse schedule,
 not only push the final step into d10 packing.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse tail l4/l5 fusion)
+
+A bench-only follow-up tested whether the inverse-tail `l4` output should be fed
+directly into `l5` inside one AVX2 helper. The split path starts from precomputed
+inverse-head outputs and runs the existing `l4` then `l5` stage helpers. The
+fused path processes each 64-coefficient block by computing the two `l4`
+butterflies and immediately applying the matching `l5` butterfly, removing the
+intermediate `l4` store/reload. It is byte-validated against the split path
+before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5(_fused)?_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_l[456]_raw_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw` | 72.46 | 72.29 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw` | 72.43 | 71.51 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_raw` | 136.62 | 136.50 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l4_l5_fused_raw` | 143.35 | 142.88 | 0.9554x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw` | 70.30 | 70.30 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 326.02 | 325.70 | context |
+
+Decision: reject the AVX2 inverse-tail `l4/l5` fusion candidate and keep it as a
+diagnostic row only. The fused helper is about `4.7%` slower than the existing
+split `l4` then `l5` schedule. The likely issue is the same pattern seen in the
+failed `l3/l4` and final-to-d10 handoff experiments: removing a store/load
+boundary is not enough when the fused shape increases live vector state and
+constant pressure. Future inverse-tail work should target a wider representation
+change across more of the inverse-add pipeline, not another adjacent two-level
+fusion.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
