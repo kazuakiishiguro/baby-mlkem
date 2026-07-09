@@ -2161,6 +2161,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3_lazy` | AVX2-only diagnostic: co-scheduled three-rate tail parse plus encryption PRF/CBD and production lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt` | isolated encryption forward NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_ntt_lazy` | AVX2-only diagnostic: encryption forward NTT for `r` using the production lazy multiply-input range |
+| `mlkem_core_stage_encrypt_noise_ntt_lazy_level_batch` | AVX2-only diagnostic: three encryption lazy multiply-input NTTs scheduled level-by-level across the three `r` polynomials |
 | `mlkem_core_stage_encrypt_accum_inv` | encryption NTT-domain accumulation and inverse NTT for `u` and `v` using the historical canonical fixture |
 | `mlkem_core_stage_encrypt_accum_inv_lazy_input` | AVX2-only diagnostic: same accumulation/inverse work but feeding `ntt_mul_acc3()` with production lazy `rhat` in `[0, 2Q)` |
 | `mlkem_core_stage_encrypt_accum_inv_u` | the three `u`-polynomial accumulation plus inverse-NTT-add paths |
@@ -2229,6 +2230,7 @@ stage metrics.
 | `mlkem_core_stage_ciphertext_decode_decompress_d4` | isolated ciphertext DV=4 decode/decompression for the `v` polynomial, with lightweight sink |
 | `mlkem_core_stage_decrypt_u_ntt` | decrypt-side forward NTT for the three decoded `u` polynomials |
 | `mlkem_core_stage_decrypt_u_ntt_lazy` | AVX2-only diagnostic: decrypt-side forward NTT for decoded `u` using the production lazy multiply-input range |
+| `mlkem_core_stage_decrypt_u_ntt_lazy_level_batch` | AVX2-only diagnostic: three decrypt-side lazy multiply-input NTTs scheduled level-by-level across the decoded `u` polynomials |
 | `mlkem_core_stage_decrypt_u_ntt_head` | AVX2-only decrypt-side forward NTT upper stages before `ntt_tail_avx2()` |
 | `mlkem_core_stage_decrypt_u_ntt_tail` | AVX2-only decrypt-side `ntt_tail_avx2()` lower stages, using precomputed head output |
 | `mlkem_core_stage_decrypt_accum_only` | decrypt-side `ntt_mul_acc3()` secret accumulation only, using precomputed `ntt(u)` |
@@ -12058,6 +12060,60 @@ The keygen helper keeps the accepted three-rate parse because it had a keygen-st
 win, but the encryption path does not show enough integrated median improvement to
 justify another production boundary change. The next useful work should target a
 larger public-matrix tail/dataflow change, not this local parser schedule.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 lazy NTT level batching)
+
+A bench-only candidate rescheduled the three K=3 lazy multiply-input forward NTTs
+level-by-level across the three polynomials instead of completing one polynomial
+before starting the next. The helper preserves the production lazy output range
+`[0, 2Q)` and is byte-validated against three independent
+`ntt_lazy_mul_input_avx2()` calls for both encryption `r` and decrypt `u`
+fixtures.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_noise_ntt_lazy_ns_per_op=|mlkem_core_stage_encrypt_noise_ntt_lazy_level_batch_ns_per_op=|mlkem_core_stage_decrypt_u_ntt_lazy_ns_per_op=|mlkem_core_stage_decrypt_u_ntt_lazy_level_batch_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Boundary | Split avg ns/op | Level-batch avg ns/op | Split median ns/op | Level-batch median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|
+| encryption `r` lazy NTT | 768.39 | 761.25 | 766.98 | 760.22 | 1.0089x |
+| decrypt `u` lazy NTT | 772.19 | 761.84 | 770.48 | 761.54 | 1.0117x |
+
+A temporary production A/B replaced the AVX2 non-AVX512 `rhat[3]` and `u[3]`
+NTT loops with the same level-batch helper, then compared against `HEAD` with
+the existing stage A/B harness:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=50000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+Production-candidate A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 2388.49 | 2395.50 | 0.9971x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4877.69 | 4873.74 | 1.0008x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 889.94 | 895.31 | 0.9940x |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 899.80 | 906.01 | 0.9931x |
+
+Decision: keep the level-batch rows as diagnostics only and do not route
+production through this helper. The isolated lazy NTT boundary improves by about
+`1.009x` to `1.012x`, but full K-PKE encrypt is effectively neutral and decrypt
+regresses. The likely lesson is that this local scheduling win is absorbed by
+surrounding code layout, accumulation, inverse NTT, and packing boundaries. The
+next useful NTT work should combine lazy NTT with a larger `ntt_mul_acc3()` /
+inverse-NTT dataflow change rather than only rescheduling the three forward NTTs.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
