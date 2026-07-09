@@ -2218,6 +2218,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | same tail/final diagnostic with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | AVX2-only tail/final raw diagnostic with the production Clang loop-vectorization pragma in the pre-final tail loops |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | AVX2-only diagnostic: the three `u` inverse tail/final paths scheduled level-by-level across polynomials, then finalized with the existing final3 helper |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_d10_encode` | AVX2-only diagnostic: production-aligned inverse tail/final followed by DU=10 compression/encoding for the three `u` polynomials, from precomputed inverse heads |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_d10_encode_fused` | AVX2-only diagnostic: inverse tail followed by fused final inverse butterfly plus DU=10 compression/encoding, byte-validated against the split path |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_l6_fused_raw` | AVX2-only diagnostic: production-aligned l4/l5 tail loops followed by the fused l6/final helper, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_inv_add_u_tail_final_wide_reduce_raw` | AVX2-only diagnostic: tail/final path using the wide-reducer final diagnostic after the existing pre-final tail schedule |
 | `mlkem_core_stage_encrypt_accum_inv_v` | the single `v`-polynomial accumulation plus inverse-NTT-add2 path |
@@ -12151,6 +12153,44 @@ AVX2 has no wider lane group to amortize the extra scheduling, so the grouped
 shape mostly increases live state and disrupts the compact per-row loop. The next
 AVX2 inverse-add attempt needs a different arithmetic representation or a direct
 encode/compress handoff, not only a three-polynomial schedule reorder.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 inverse tail/final d10 handoff)
+
+A bench-only follow-up tested the direct encode/compress handoff suggested by the
+previous tail/final scheduling rejection. The split path starts from precomputed
+inverse-head outputs, runs the production-aligned `l4-l6` tail plus final add,
+then calls `compress_encode_poly_d10_avx2()`. The fused path keeps the same tail
+schedule, but feeds `l6` directly into the existing fused final inverse butterfly
+plus DU=10 encoder. It is byte-validated against the split path before timing.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_encrypt_inv_add_u_tail_final_d10_encode(_fused)?_ns_per_op=|mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw_ns_per_op=|mlkem_core_stage_ciphertext_compress_encode_d10_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup vs split |
+|---|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_pragma_raw` | 325.37 | 325.22 | context |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_d10_encode` | 378.67 | 378.39 | 1.0000x |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_d10_encode_fused` | 391.66 | 390.44 | 0.9691x |
+| `mlkem_core_stage_ciphertext_compress_encode_d10` | 47.16 | 47.19 | context |
+
+Decision: reject the AVX2 inverse tail/final-to-d10 handoff candidate and keep it
+as a diagnostic row only. The fused path is about `3.2%` slower than the existing
+split tail/final plus `compress_encode_poly_d10_avx2()` path. This reinforces the
+earlier final-only d10 fusion result: the dense d10 packer and final inverse
+butterfly compete for registers and instruction scheduling space on AVX2, so the
+store/load boundary is cheaper than interleaving the two loops. Future inverse-add
+work should change the arithmetic representation or the wider inverse schedule,
+not only push the final step into d10 packing.
 
 ### Independent Core Optimization Diagnostic (2026-07-03, scalar encrypt accum4 coalescing)
 
