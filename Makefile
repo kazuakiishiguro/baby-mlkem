@@ -68,6 +68,7 @@ TARGET = testc
 BENCH_TARGET = benchc
 BENCH_NTT_TARGET = bench_nttc
 BENCH_KECCAK_TARGET = bench_keccakc
+BENCH_KECCAK_VENDOR_TARGET = bench_keccak_vendorc
 BENCH_STAGES_TARGET = bench_core_stagesc
 BENCH_ITERS ?= 200
 BENCH_CT_STRIDE ?= 1088
@@ -113,6 +114,7 @@ endif
 BENCH_SRCS = bench.c $(BENCH_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
 BENCH_NTT_SRCS = bench_ntt.c
 BENCH_KECCAK_SRCS = bench_keccak.c
+BENCH_KECCAK_VENDOR_OBJS = bench_keccak_vendor.o $(PQ_AVX2_KECCAK_DIR)/KeccakP-1600-times4-SIMD256.o
 BENCH_STAGES_SRCS = bench_core_stages.c
 TEST_OBJS := $(TEST_SRCS:.c=.o)
 TEST_OBJS := $(TEST_OBJS:.S=.o)
@@ -121,10 +123,10 @@ BENCH_OBJS := $(BENCH_OBJS:.S=.o)
 BENCH_NTT_OBJS := $(BENCH_NTT_SRCS:.c=.o)
 BENCH_KECCAK_OBJS := $(BENCH_KECCAK_SRCS:.c=.o)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_SRCS:.c=.o)
-OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_STAGES_OBJS))
-TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_STAGES_TARGET)
+OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS))
+TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET)
 
-.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-stages bench-stages-run
+.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run
 
 all: $(TARGET)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
@@ -162,6 +164,7 @@ $(KY_UP_AVX2_KECCAK_DIR)/KeccakP-1600-times4-SIMD256.o: CFLAGS += $(KYBER_KECCAK
 bench.o: CFLAGS += -Wno-unused-function
 bench_ntt.o: CFLAGS += -Wno-unused-function
 bench_keccak.o: CFLAGS += -Wno-unused-function
+bench_keccak_vendor.o: CFLAGS += -Wno-unused-function -DMLKEM_BENCH_VENDOR_KECCAKP
 bench_core_stages.o: CFLAGS += -Wno-unused-function
 bench.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
 bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
@@ -171,6 +174,7 @@ test.o: baby-mlkem.c
 bench.o: baby-mlkem.c
 bench_ntt.o: baby-mlkem.c
 bench_keccak.o: baby-mlkem.c
+bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c
 bench_core_stages.o: baby-mlkem.c
 
 $(TARGET): $(TEST_OBJS)
@@ -184,6 +188,12 @@ $(BENCH_NTT_TARGET): $(BENCH_NTT_OBJS)
 
 $(BENCH_KECCAK_TARGET): $(BENCH_KECCAK_OBJS)
 	$(CC) $(BENCH_KECCAK_OBJS) -o $(BENCH_KECCAK_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
+bench_keccak_vendor.o: bench_keccak.c
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
+
+$(BENCH_KECCAK_VENDOR_TARGET): $(BENCH_KECCAK_VENDOR_OBJS)
+	$(CC) $(BENCH_KECCAK_VENDOR_OBJS) -o $(BENCH_KECCAK_VENDOR_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
 
 $(BENCH_STAGES_TARGET): $(BENCH_STAGES_OBJS)
 	$(CC) $(BENCH_STAGES_OBJS) -o $(BENCH_STAGES_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
@@ -214,6 +224,11 @@ bench-keccak: $(BENCH_KECCAK_TARGET)
 
 bench-keccak-run: $(BENCH_KECCAK_TARGET)
 	./$(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_ITERS)
+
+bench-keccak-vendor: $(BENCH_KECCAK_VENDOR_TARGET)
+
+bench-keccak-vendor-run: $(BENCH_KECCAK_VENDOR_TARGET)
+	./$(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_KECCAK_ITERS)
 
 bench-stages: $(BENCH_STAGES_TARGET)
 

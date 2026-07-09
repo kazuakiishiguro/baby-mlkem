@@ -7,6 +7,10 @@
 
 #include "baby-mlkem.c"
 
+#if defined(__AVX2__) && defined(MLKEM_BENCH_VENDOR_KECCAKP)
+#include "include/pqclean_avx2/keccak4x/KeccakP-1600-times4-SnP.h"
+#endif
+
 #define KECCAK_BENCH_LANES 8
 
 static volatile uint64_t bench_keccak_sink;
@@ -20,6 +24,10 @@ static uint8_t bench_stream[KECCAK_BENCH_LANES][SAMPLE_NTT_STREAM_CHUNK];
 static uint64_t bench_state[KECCAK_BENCH_LANES][25];
 #if defined(__AVX2__)
 static __m256i bench_state4[KECCAK_BENCH_LANES][25];
+#if defined(MLKEM_BENCH_VENDOR_KECCAKP)
+static uint8_t bench_vendor_state4[KECCAK_BENCH_LANES][KeccakP1600times4_statesSizeInBytes]
+    __attribute__((aligned(32)));
+#endif
 #endif
 static poly256 bench_poly[KECCAK_BENCH_LANES];
 static poly256 bench_poly3[KECCAK_BENCH_LANES][3];
@@ -447,6 +455,10 @@ static void init_inputs(void) {
           ((uint64_t)(4 * group + 1) << 56) ^ base,
           ((uint64_t)(4 * group + 0) << 56) ^ base);
     }
+#if defined(MLKEM_BENCH_VENDOR_KECCAKP)
+    memcpy(bench_vendor_state4[group], bench_state4[group],
+           sizeof(bench_state4[group]));
+#endif
   }
 #endif
 }
@@ -470,17 +482,52 @@ static void validate_keccakf4_matches_scalar(void) {
   for (int lane = 0; lane < 4; lane++) {
     keccakf(scalar[lane]);
   }
+  __m256i packed_mem[25];
+  memcpy(packed_mem, packed, sizeof(packed));
+
   keccakf4(packed);
+  keccakf4_mem(packed_mem);
 
   for (int word = 0; word < 25; word++) {
     uint64_t lanes[4];
+    uint64_t mem_lanes[4];
     _mm256_storeu_si256((__m256i *)lanes, packed[word]);
+    _mm256_storeu_si256((__m256i *)mem_lanes, packed_mem[word]);
     for (int lane = 0; lane < 4; lane++) {
       if (lanes[lane] != scalar[lane][word]) {
         fprintf(stderr, "keccakf4 mismatch lane=%d word=%d\n", lane, word);
         exit(EXIT_FAILURE);
       }
+      if (mem_lanes[lane] != scalar[lane][word]) {
+        fprintf(stderr, "keccakf4_mem mismatch lane=%d word=%d\n", lane, word);
+        exit(EXIT_FAILURE);
+      }
     }
+  }
+}
+#endif
+
+#if defined(__AVX2__) && defined(MLKEM_BENCH_VENDOR_KECCAKP)
+static void validate_vendor_keccakp4_matches_local(void) {
+  __m256i local[25];
+  uint8_t vendor[KeccakP1600times4_statesSizeInBytes]
+      __attribute__((aligned(32)));
+
+  for (int word = 0; word < 25; word++) {
+    local[word] = _mm256_set_epi64x(
+        ((uint64_t)(word + 41) << 32) ^ 3u,
+        ((uint64_t)(word + 41) << 32) ^ 2u,
+        ((uint64_t)(word + 41) << 32) ^ 1u,
+        ((uint64_t)(word + 41) << 32) ^ 0u);
+  }
+  memcpy(vendor, local, sizeof(local));
+
+  keccakf4(local);
+  KeccakP1600times4_PermuteAll_24rounds(vendor);
+
+  if (memcmp(local, vendor, sizeof(local)) != 0) {
+    fprintf(stderr, "vendor KeccakP times4 mismatch\n");
+    exit(EXIT_FAILURE);
   }
 }
 #endif
@@ -659,6 +706,47 @@ static uint64_t bench_keccakf4_perm(size_t iters) {
   bench_keccak_sink ^= acc;
   return t1 - t0;
 }
+
+static uint64_t bench_keccakf4_mem_perm(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_state4[lane][0] = _mm256_xor_si256(
+        bench_state4[lane][0], _mm256_set1_epi64x((long long)i));
+    keccakf4_mem(bench_state4[lane]);
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words,
+                        bench_state4[lane][(i * 7u) % 25]);
+    acc ^= words[i & 3u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+#if defined(MLKEM_BENCH_VENDOR_KECCAKP)
+static uint64_t bench_vendor_keccakp4_perm(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    __m256i *st = (__m256i *)(void *)bench_vendor_state4[lane];
+    st[0] = _mm256_xor_si256(st[0], _mm256_set1_epi64x((long long)i));
+    KeccakP1600times4_PermuteAll_24rounds(bench_vendor_state4[lane]);
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[(i * 7u) % 25]);
+    acc ^= words[i & 3u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 #endif
 
 static uint64_t bench_keccakf_perm(size_t iters) {
@@ -1142,11 +1230,19 @@ int main(int argc, char **argv) {
   }
 
   validate_keccak_helpers();
+#if defined(__AVX2__) && defined(MLKEM_BENCH_VENDOR_KECCAKP)
+  validate_vendor_keccakp4_matches_local();
+#endif
 
   printf("mlkem_keccak_bench_iterations=%zu\n", iters);
   print_metric("mlkem_keccakf", bench_keccakf_perm(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_keccakf4", bench_keccakf4_perm(iters), iters);
+  print_metric("mlkem_keccakf4_mem", bench_keccakf4_mem_perm(iters), iters);
+#if defined(MLKEM_BENCH_VENDOR_KECCAKP)
+  print_metric("mlkem_vendor_keccakp4", bench_vendor_keccakp4_perm(iters),
+               iters);
+#endif
 #endif
   print_metric("mlkem_sha3_256_32", bench_sha3_256_32(iters), iters);
   print_metric("mlkem_sha3_256_public_key",
