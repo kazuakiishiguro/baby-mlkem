@@ -2079,8 +2079,12 @@ stage metrics.
 | `mlkem_core_stage_kpke_encrypt_uncached` | full `kpke_encrypt()` with internal caches disabled |
 | `mlkem_core_stage_kpke_encrypt_uncached_rowwise` | AVX2-only diagnostic: cache-disabled encryption that generates noise/tail first, NTTs `r`, then samples public-matrix x4 batches and consumes complete rows immediately |
 | `mlkem_core_stage_kpke_encrypt_uncached_tail21` | AVX2-only diagnostic: cache-disabled encryption that rotates the co-scheduled scalar public-matrix tail from `(2,2)` to `(2,1)` and samples `(2,2)` in the second x4 batch |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail02` | AVX2-only diagnostic: cache-disabled encryption that rotates the co-scheduled scalar public-matrix tail to `(0,2)` and samples the other eight entries in two x4 batches |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail10` | AVX2-only diagnostic: cache-disabled encryption that rotates the co-scheduled scalar public-matrix tail to `(1,0)` and samples the other eight entries in two x4 batches |
 | `mlkem_core_stage_kpke_prepare_public_no_cache` | no-cache `mlkem_encaps()` public preparation: public-key d12 decode, public-matrix sampling, and `H(ek)` with the AVX2 hash/tail co-schedule |
 | `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | AVX2-only diagnostic: no-cache public preparation that rotates the hash/co-scheduled scalar public-matrix tail from `(2,2)` to `(2,1)` and samples `(2,2)` in the second x4 batch |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail02` | AVX2-only diagnostic: no-cache public preparation that rotates the hash/co-scheduled scalar public-matrix tail to `(0,2)` and samples the other eight entries in two x4 batches |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail10` | AVX2-only diagnostic: no-cache public preparation that rotates the hash/co-scheduled scalar public-matrix tail to `(1,0)` and samples the other eight entries in two x4 batches |
 | `mlkem_core_stage_public_key_decode_d12` | public-key d12 decode only for the three encoded public-key polynomials |
 | `mlkem_core_stage_kpke_decrypt_uncached` | full `kpke_decrypt()` with internal caches disabled |
 | `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key, for repeated-key context only |
@@ -2100,6 +2104,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail_first` | AVX2-only diagnostic order: co-scheduled PRF/CBD plus `(2,2)` tail before both public-matrix x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail_last` | AVX2-only diagnostic order: both public-matrix x4 batches before co-scheduled PRF/CBD plus `(2,2)` tail |
 | `mlkem_core_stage_keygen_matrix_noise_tail21` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(2,1)` as the PRF/CBD tail lane and placing `(2,2)` in the second x4 matrix batch |
+| `mlkem_core_stage_keygen_matrix_noise_tail02` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(0,2)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
+| `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
@@ -12456,6 +12462,65 @@ robust representation win; it is within scheduling noise and does not justify
 adding an AVX2 `ntt_inv_add3_inplace()` production path. Future inverse-add work
 still needs a larger representation change than level-by-level batching of the
 current row-local transform.
+
+### Independent Core Optimization Diagnostic (2026-07-09, AVX2 public-matrix tail02/tail10 rotation)
+
+A bench-only diagnostic extended the previous `tail21` public-matrix rotation to
+`tail02` and `tail10`. The new rows use the same validation rule as `tail21`: the
+rotated co-scheduled tail must produce the same `A` matrix, public hash, keygen
+noise/matrix tuple, and uncached encryption ciphertext as the current `(2,2)`
+tail path. A temporary production candidate also changed only
+`kpke_prepare_public_no_cache()` to use the local `tail02` layout; it was then
+A/B tested and reverted.
+
+AVX2-only diagnostic command:
+
+```bash
+make bench-stages CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 7); do
+  taskset -c 0 ./bench_core_stagesc 20000 | \
+    awk -F= -v run="$i" '/mlkem_core_stage_kpke_encrypt_uncached(_tail(02|10|21))?_ns_per_op=|mlkem_core_stage_kpke_prepare_public_no_cache(_tail(02|10|21))?_ns_per_op=|mlkem_core_stage_sample_matrix_tail_choice_(02|10|21|22)_ns_per_op=|mlkem_core_stage_keygen_matrix_noise_(current|tail02|tail10|tail21)_ns_per_op=/{print run, $1, $2}'
+done
+```
+
+AVX2-only diagnostic results:
+
+| Metric | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4866.82 | 4846.47 | current integrated no-cache encryption |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail21` | 4841.14 | 4848.47 | prior tail rotation; average-only signal |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail02` | 4863.23 | 4865.65 | `(0,2)` tail rotation |
+| `mlkem_core_stage_kpke_encrypt_uncached_tail10` | 4868.47 | 4870.56 | `(1,0)` tail rotation |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4247.65 | 4248.73 | current public prepare |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail21` | 4260.61 | 4262.29 | prior public-prepare rotation |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail02` | 4199.25 | 4203.98 | local public-prepare win |
+| `mlkem_core_stage_kpke_prepare_public_no_cache_tail10` | 4219.07 | 4201.53 | local public-prepare win, less stable |
+| `mlkem_core_stage_sample_matrix_tail_choice_02` | 2810.90 | 2804.65 | standalone matrix tail choice |
+| `mlkem_core_stage_sample_matrix_tail_choice_10` | 2815.18 | 2806.49 | standalone matrix tail choice |
+| `mlkem_core_stage_sample_matrix_tail_choice_21` | 2797.41 | 2783.14 | standalone matrix tail choice |
+| `mlkem_core_stage_sample_matrix_tail_choice_22` | 2812.78 | 2802.45 | current standalone matrix tail choice |
+| `mlkem_core_stage_keygen_matrix_noise_current` | 3024.74 | 3013.40 | current keygen matrix/noise schedule |
+| `mlkem_core_stage_keygen_matrix_noise_tail21` | 3042.57 | 3030.93 | prior tail rotation |
+| `mlkem_core_stage_keygen_matrix_noise_tail02` | 3068.11 | 3050.22 | `(0,2)` tail rotation |
+| `mlkem_core_stage_keygen_matrix_noise_tail10` | 3069.38 | 3049.48 | `(1,0)` tail rotation |
+
+Temporary production-candidate A/B, `RUNS=7`, `WARMUP_RUNS=2`, `STAGE_ITERS=40000`:
+
+| Metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4255.12 | 4263.12 | 0.9981x | 4256.19 | 4261.45 | 0.9988x |
+| `mlkem_core_stage_sample_matrix` | 2793.93 | 2811.36 | 0.9938x | 2791.80 | 2798.57 | 0.9976x |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4892.79 | 4894.38 | 0.9997x | 4860.51 | 4856.93 | 1.0007x |
+
+Decision: keep `tail02` and `tail10` as diagnostic rows only. `tail02` gives a
+local public-prepare row win, but that win does not survive the real
+`kpke_prepare_public_no_cache()` function boundary and code layout; the direct
+production candidate regressed median `0.9988x`. The same tail rotations also
+regress keygen matrix/noise and do not give a robust uncached-encryption median
+win. Future public-matrix work should target the x4 sampler Keccak/state-store
+boundary or a larger matrix/noise dataflow change, not another scalar-tail
+rotation.
 
 ### Independent Core Optimization Diagnostic (2026-07-09, AVX2 encrypt PRF/CBD x4/x3 raw split)
 
