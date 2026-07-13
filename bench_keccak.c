@@ -21,6 +21,7 @@ static volatile uint64_t bench_keccak_sink;
 static uint8_t bench_seed32[KECCAK_BENCH_LANES][32];
 static uint8_t bench_msg64[KECCAK_BENCH_LANES][64];
 static uint8_t bench_pk[KECCAK_BENCH_LANES][K * 384 + 32];
+static uint8_t bench_pk_copy[KECCAK_BENCH_LANES][K * 384 + 32];
 static uint8_t bench_prfout[KECCAK_BENCH_LANES][64 * ETA1];
 static uint8_t bench_prfout3[KECCAK_BENCH_LANES][3][64 * ETA2];
 static uint8_t bench_prfout4[KECCAK_BENCH_LANES][4][64 * ETA2];
@@ -814,6 +815,13 @@ static void validate_keccak_helpers(void) {
 #endif
   validate_cbd3_aos4_matches_pack();
   validate_cbd4_tile2x4_matches_pack();
+  sha3_256_copy_1184(bench_pk_copy[0], bench_pk[0], out0);
+  sha3_256(bench_pk[0], sizeof(bench_pk[0]), out1);
+  if (memcmp(bench_pk_copy[0], bench_pk[0], sizeof(bench_pk[0])) != 0 ||
+      memcmp(out0, out1, 32) != 0) {
+    fprintf(stderr, "sha3_256 public-key copy+hash mismatch\n");
+    exit(EXIT_FAILURE);
+  }
   sha3_256(bench_seed32[0], sizeof(bench_seed32[0]), out0);
   pq_sha3_256(out1, bench_seed32[0], sizeof(bench_seed32[0]));
   if (memcmp(out0, out1, 32) != 0) {
@@ -984,6 +992,23 @@ static uint64_t bench_sha3_256_public_key(size_t iters) {
     size_t lane = i & (KECCAK_BENCH_LANES - 1);
     sha3_256(bench_pk[lane], sizeof(bench_pk[lane]), bench_prfout[lane]);
     acc ^= bench_prfout[lane][(i * 37u) & 31u];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sha3_256_copy_public_key(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    sha3_256_copy_1184(bench_pk_copy[lane], bench_pk[lane],
+                       bench_prfout[lane]);
+    acc ^= bench_prfout[lane][(i * 47u) & 31u];
+    acc ^= bench_pk_copy[lane][(i * 53u) % sizeof(bench_pk_copy[lane])];
   }
   t1 = now_ns();
   bench_keccak_sink ^= acc;
@@ -1458,6 +1483,8 @@ int main(int argc, char **argv) {
   print_metric("mlkem_sha3_256_32", bench_sha3_256_32(iters), iters);
   print_metric("mlkem_sha3_256_public_key",
                bench_sha3_256_public_key(iters), iters);
+  print_metric("mlkem_sha3_256_copy_public_key",
+               bench_sha3_256_copy_public_key(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_sha3_256_public_key_persistent_avx2",
                bench_sha3_256_public_key_persistent_avx2(iters), iters);
