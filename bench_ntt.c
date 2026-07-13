@@ -601,6 +601,80 @@ static void run_ntt_head_l7_l4(poly256 f) {
   }
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static __m256i bench_ntt_mont_head_zeta_lo[15];
+static __m256i bench_ntt_mont_head_zeta_hi[15];
+static int bench_ntt_mont_head_ready;
+
+static void prepare_ntt_mont_head_zetas(void) {
+  if (bench_ntt_mont_head_ready) return;
+
+  const uint32_t mont = 65536u % Q;
+  const uint16_t qinv = (uint16_t)-3327;
+  for (int i = 0; i < 15; i++) {
+    int32_t zeta = (int32_t)(((uint32_t)(uint16_t)ZETA[i + 1] * mont) % Q);
+    if (zeta > Q / 2) zeta -= Q;
+    uint16_t zeta_lo = (uint16_t)((uint16_t)zeta * qinv);
+    bench_ntt_mont_head_zeta_lo[i] =
+        _mm256_set1_epi16((int16_t)zeta_lo);
+    bench_ntt_mont_head_zeta_hi[i] = _mm256_set1_epi16((int16_t)zeta);
+  }
+  bench_ntt_mont_head_ready = 1;
+}
+
+static inline __m256i bench_mont_mul_precomp_i16x16(
+    __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
+  __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
+  return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
+}
+
+static void bench_canonicalize_mont_head_avx2(poly256 f) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i barrett = _mm256_set1_epi16(20159);
+  for (int i = 0; i < N; i += 16) {
+    __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
+    __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
+    v = _mm256_sub_epi16(v, _mm256_mullo_epi16(quot, q));
+    v = _mm256_add_epi16(v, _mm256_and_si256(_mm256_srai_epi16(v, 15), q));
+    __m256i reduced = _mm256_sub_epi16(v, q);
+    v = _mm256_add_epi16(
+        reduced, _mm256_and_si256(_mm256_srai_epi16(reduced, 15), q));
+    _mm256_storeu_si256((__m256i *)(void *)(f + i), v);
+  }
+}
+
+static void run_ntt_head_l7_l4_mont_lazy_canon_avx2(poly256 f) {
+  int k = 0;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m256i zeta_lo = bench_ntt_mont_head_zeta_lo[k];
+      __m256i zeta_hi = bench_ntt_mont_head_zeta_hi[k++];
+      for (int j = 0; j < length; j += 16) {
+        __m256i a = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + j));
+        __m256i b = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + j + length));
+        __m256i t = bench_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+        _mm256_storeu_si256((__m256i *)(void *)(f + start + j),
+                            _mm256_add_epi16(a, t));
+        _mm256_storeu_si256((__m256i *)(void *)(f + start + j + length),
+                            _mm256_sub_epi16(a, t));
+      }
+    }
+  }
+  bench_canonicalize_mont_head_avx2(f);
+}
+
+static void ntt_mont_head_avx2(const poly256 f_in, poly256 f_out) {
+  if (f_in != f_out) memcpy(f_out, f_in, sizeof(poly256));
+  run_ntt_head_l7_l4_mont_lazy_canon_avx2(f_out);
+  ntt_tail_avx2(f_out);
+}
+#endif
+
 static inline int16_t bench_canon_signed_cbd_i16(int16_t v) {
   return (int16_t)(v < 0 ? v + Q : v);
 }
@@ -1033,6 +1107,21 @@ static void validate_ntt_helpers(void) {
   ntt_tail_avx2(got);
   check_equal(got, tmp, "forward ntt head/tail split");
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  prepare_ntt_mont_head_zetas();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    memcpy(want, bench_a0[lane], sizeof(poly256));
+    run_ntt_head_l7_l4(want);
+    memcpy(got, bench_a0[lane], sizeof(poly256));
+    run_ntt_head_l7_l4_mont_lazy_canon_avx2(got);
+    check_equal(got, want, "forward ntt Montgomery lazy head");
+
+    ntt(bench_a0[lane], tmp);
+    ntt_mont_head_avx2(bench_a0[lane], got);
+    check_equal(got, tmp, "forward ntt Montgomery lazy head full");
+  }
+#endif
+
   fill_cbd_signed_pair(got, want, 0xC123u);
   memcpy(tmp, want, sizeof(poly256));
   run_ntt_head_l7_l4(tmp);
@@ -1235,6 +1324,25 @@ static uint64_t bench_ntt_inplace(size_t iters) {
   bench_ntt_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_inplace_mont_head(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_mont_head_zetas();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_mont_head_avx2(bench_a0[lane], bench_a0[lane]);
+    acc += (uint16_t)bench_a0[lane][(i * 487u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 #if defined(__AVX2__)
 static uint64_t bench_ntt_copy_lazy_l1_canon(size_t iters) {
@@ -1894,6 +2002,24 @@ static uint64_t bench_ntt_head_l7_l4(size_t iters) {
   return t1 - t0;
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_head_l7_l4_mont_lazy_canon(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  prepare_ntt_mont_head_zetas();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_head_l7_l4_mont_lazy_canon_avx2(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 491u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_ntt_head_l7_l4_cbd_canon_copy(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2409,6 +2535,10 @@ int main(int argc, char **argv) {
   printf("mlkem_ntt_bench_iterations=%zu\n", iters);
   print_metric("mlkem_ntt_copy", bench_ntt_copy(iters), iters);
   print_metric("mlkem_ntt_inplace", bench_ntt_inplace(iters), iters);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_inplace_mont_head",
+               bench_ntt_inplace_mont_head(iters), iters);
+#endif
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_copy_lazy_l1_canon",
                bench_ntt_copy_lazy_l1_canon(iters), iters);
@@ -2476,6 +2606,10 @@ int main(int argc, char **argv) {
                bench_ntt6_pack_ntt_unpack_tile2x4_plus2(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_head_l7_l4_mont_lazy_canon",
+               bench_ntt_head_l7_l4_mont_lazy_canon(iters), iters);
+#endif
   print_metric("mlkem_ntt_head_l7_l4_cbd_canon_copy",
                bench_ntt_head_l7_l4_cbd_canon_copy(iters), iters);
   print_metric("mlkem_ntt_head_l7_l4_signed_input_copy",
