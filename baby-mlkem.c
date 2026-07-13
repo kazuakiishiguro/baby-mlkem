@@ -946,7 +946,11 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
 }
 
 static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
-                                 uint8_t out32[32]) {
+                                uint8_t out32[32]) {
+#if defined(__AVX2__)
+  memcpy(dst, src, 1184);
+  sha3_256_1184_avx2(src, out32);
+#else
   uint64_t st[25] = {0};
   for (int block = 0; block < 8; block++) {
     const uint8_t *p = src + (size_t)block * 136;
@@ -1011,6 +1015,7 @@ static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
   st[16] ^= 0x8000000000000000ULL;
   keccakf(st);
   memcpy(out32, st, 32);
+#endif
 }
 
 static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
