@@ -41,8 +41,10 @@
 #include <stdint.h>
 
 #if defined(__GNUC__) || defined(__clang__)
+#define MLKEM_KECCAKF1_ALWAYS_INLINE inline __attribute__((always_inline))
 #define MLKEM_KECCAKF1_NOINLINE __attribute__((noinline))
 #else
+#define MLKEM_KECCAKF1_ALWAYS_INLINE inline
 #define MLKEM_KECCAKF1_NOINLINE
 #endif
 
@@ -77,19 +79,42 @@ static inline __m256i mlkem_keccakf1_load_count(const uint64_t counts[4]) {
  * x0 broadcasts canonical lane 0. x1 holds lanes 1..4; x2..x6 use the
  * transformed six-vector order that keeps every round lane in YMM registers.
  */
-static MLKEM_KECCAKF1_NOINLINE void mlkem_keccakf1600_avx2(uint64_t st[25]) {
-  __m256i x0 = _mm256_set1_epi64x((long long)st[0]);
-  __m256i x1 = _mm256_loadu_si256((const __m256i *)(st + 1));
-  __m256i x2 = _mm256_setr_epi64x((long long)st[10], (long long)st[20],
-                                   (long long)st[5], (long long)st[15]);
-  __m256i x3 = _mm256_setr_epi64x((long long)st[16], (long long)st[7],
-                                   (long long)st[23], (long long)st[14]);
-  __m256i x4 = _mm256_setr_epi64x((long long)st[11], (long long)st[22],
-                                   (long long)st[8], (long long)st[19]);
-  __m256i x5 = _mm256_setr_epi64x((long long)st[21], (long long)st[17],
-                                   (long long)st[13], (long long)st[9]);
-  __m256i x6 = _mm256_setr_epi64x((long long)st[6], (long long)st[12],
-                                   (long long)st[18], (long long)st[24]);
+typedef struct {
+  __m256i x0;
+  __m256i x1;
+  __m256i x2;
+  __m256i x3;
+  __m256i x4;
+  __m256i x5;
+  __m256i x6;
+} mlkem_keccakf1600_avx2_state;
+
+static MLKEM_KECCAKF1_ALWAYS_INLINE void
+mlkem_keccakf1600_avx2_load(mlkem_keccakf1600_avx2_state *state,
+                            const uint64_t st[25]) {
+  state->x0 = _mm256_set1_epi64x((long long)st[0]);
+  state->x1 = _mm256_loadu_si256((const __m256i *)(st + 1));
+  state->x2 = _mm256_setr_epi64x((long long)st[10], (long long)st[20],
+                                  (long long)st[5], (long long)st[15]);
+  state->x3 = _mm256_setr_epi64x((long long)st[16], (long long)st[7],
+                                  (long long)st[23], (long long)st[14]);
+  state->x4 = _mm256_setr_epi64x((long long)st[11], (long long)st[22],
+                                  (long long)st[8], (long long)st[19]);
+  state->x5 = _mm256_setr_epi64x((long long)st[21], (long long)st[17],
+                                  (long long)st[13], (long long)st[9]);
+  state->x6 = _mm256_setr_epi64x((long long)st[6], (long long)st[12],
+                                  (long long)st[18], (long long)st[24]);
+}
+
+static MLKEM_KECCAKF1_ALWAYS_INLINE void
+mlkem_keccakf1600_avx2_permute(mlkem_keccakf1600_avx2_state *state) {
+  __m256i x0 = state->x0;
+  __m256i x1 = state->x1;
+  __m256i x2 = state->x2;
+  __m256i x3 = state->x3;
+  __m256i x4 = state->x4;
+  __m256i x5 = state->x5;
+  __m256i x6 = state->x6;
 
   for (int round = 0; round < 24; round++) {
     __m256i x13 = _mm256_shuffle_epi32(x2, 0x4e);
@@ -216,31 +241,50 @@ static MLKEM_KECCAKF1_NOINLINE void mlkem_keccakf1600_avx2(uint64_t st[25]) {
         x0, _mm256_load_si256((const __m256i *)mlkem_keccakf1_iota4[round]));
   }
 
-  st[0] = (uint64_t)_mm256_extract_epi64(x0, 0);
-  _mm256_storeu_si256((__m256i *)(st + 1), x1);
-  st[10] = (uint64_t)_mm256_extract_epi64(x2, 0);
-  st[20] = (uint64_t)_mm256_extract_epi64(x2, 1);
-  st[5] = (uint64_t)_mm256_extract_epi64(x2, 2);
-  st[15] = (uint64_t)_mm256_extract_epi64(x2, 3);
-  st[16] = (uint64_t)_mm256_extract_epi64(x3, 0);
-  st[7] = (uint64_t)_mm256_extract_epi64(x3, 1);
-  st[23] = (uint64_t)_mm256_extract_epi64(x3, 2);
-  st[14] = (uint64_t)_mm256_extract_epi64(x3, 3);
-  st[11] = (uint64_t)_mm256_extract_epi64(x4, 0);
-  st[22] = (uint64_t)_mm256_extract_epi64(x4, 1);
-  st[8] = (uint64_t)_mm256_extract_epi64(x4, 2);
-  st[19] = (uint64_t)_mm256_extract_epi64(x4, 3);
-  st[21] = (uint64_t)_mm256_extract_epi64(x5, 0);
-  st[17] = (uint64_t)_mm256_extract_epi64(x5, 1);
-  st[13] = (uint64_t)_mm256_extract_epi64(x5, 2);
-  st[9] = (uint64_t)_mm256_extract_epi64(x5, 3);
-  st[6] = (uint64_t)_mm256_extract_epi64(x6, 0);
-  st[12] = (uint64_t)_mm256_extract_epi64(x6, 1);
-  st[18] = (uint64_t)_mm256_extract_epi64(x6, 2);
-  st[24] = (uint64_t)_mm256_extract_epi64(x6, 3);
+  state->x0 = x0;
+  state->x1 = x1;
+  state->x2 = x2;
+  state->x3 = x3;
+  state->x4 = x4;
+  state->x5 = x5;
+  state->x6 = x6;
 }
 
+static MLKEM_KECCAKF1_ALWAYS_INLINE void
+mlkem_keccakf1600_avx2_store(uint64_t st[25],
+                             const mlkem_keccakf1600_avx2_state *state) {
+  st[0] = (uint64_t)_mm256_extract_epi64(state->x0, 0);
+  _mm256_storeu_si256((__m256i *)(st + 1), state->x1);
+  st[10] = (uint64_t)_mm256_extract_epi64(state->x2, 0);
+  st[20] = (uint64_t)_mm256_extract_epi64(state->x2, 1);
+  st[5] = (uint64_t)_mm256_extract_epi64(state->x2, 2);
+  st[15] = (uint64_t)_mm256_extract_epi64(state->x2, 3);
+  st[16] = (uint64_t)_mm256_extract_epi64(state->x3, 0);
+  st[7] = (uint64_t)_mm256_extract_epi64(state->x3, 1);
+  st[23] = (uint64_t)_mm256_extract_epi64(state->x3, 2);
+  st[14] = (uint64_t)_mm256_extract_epi64(state->x3, 3);
+  st[11] = (uint64_t)_mm256_extract_epi64(state->x4, 0);
+  st[22] = (uint64_t)_mm256_extract_epi64(state->x4, 1);
+  st[8] = (uint64_t)_mm256_extract_epi64(state->x4, 2);
+  st[19] = (uint64_t)_mm256_extract_epi64(state->x4, 3);
+  st[21] = (uint64_t)_mm256_extract_epi64(state->x5, 0);
+  st[17] = (uint64_t)_mm256_extract_epi64(state->x5, 1);
+  st[13] = (uint64_t)_mm256_extract_epi64(state->x5, 2);
+  st[9] = (uint64_t)_mm256_extract_epi64(state->x5, 3);
+  st[6] = (uint64_t)_mm256_extract_epi64(state->x6, 0);
+  st[12] = (uint64_t)_mm256_extract_epi64(state->x6, 1);
+  st[18] = (uint64_t)_mm256_extract_epi64(state->x6, 2);
+  st[24] = (uint64_t)_mm256_extract_epi64(state->x6, 3);
+}
 
+static MLKEM_KECCAKF1_NOINLINE void mlkem_keccakf1600_avx2(uint64_t st[25]) {
+  mlkem_keccakf1600_avx2_state state;
+  mlkem_keccakf1600_avx2_load(&state, st);
+  mlkem_keccakf1600_avx2_permute(&state);
+  mlkem_keccakf1600_avx2_store(st, &state);
+}
+
+#undef MLKEM_KECCAKF1_ALWAYS_INLINE
 #undef MLKEM_KECCAKF1_NOINLINE
 
 #endif
