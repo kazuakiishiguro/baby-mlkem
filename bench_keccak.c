@@ -7,6 +7,10 @@
 
 #include "baby-mlkem.c"
 
+#if defined(__AVX2__)
+#include "keccakf1600_avx2.h"
+#endif
+
 #if defined(__AVX2__) && defined(MLKEM_BENCH_VENDOR_KECCAKP)
 #include "include/pqclean_avx2/keccak4x/KeccakP-1600-times4-SnP.h"
 #endif
@@ -585,6 +589,27 @@ static void validate_keccakf_mem_matches_current(void) {
 }
 
 #if defined(__AVX2__)
+static void validate_keccakf1_avx2_matches_current(void) {
+  uint64_t current[25];
+  uint64_t avx2[25];
+
+  for (int input = 0; input < 4; input++) {
+    for (int word = 0; word < 25; word++) {
+      current[word] = ((uint64_t)(input + 19) << 56) ^
+                      ((uint64_t)(word + input) * 0xD6E8FEB86659FD93ULL);
+    }
+    memcpy(avx2, current, sizeof(avx2));
+    keccakf(current);
+    mlkem_keccakf1600_avx2(avx2);
+    if (memcmp(current, avx2, sizeof(avx2)) != 0) {
+      fprintf(stderr, "single-state AVX2 keccakf mismatch input=%d\n", input);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
+#if defined(__AVX2__)
 static void validate_keccakf4_matches_scalar(void) {
   uint64_t scalar[4][25];
   __m256i packed[25];
@@ -762,6 +787,7 @@ static void validate_keccak_helpers(void) {
   init_inputs();
   validate_keccakf_mem_matches_current();
 #if defined(__AVX2__)
+  validate_keccakf1_avx2_matches_current();
   validate_keccakf4_matches_scalar();
   validate_prf_cbd_direct_matches_current();
   validate_cbd_eta2_signed_matches_current();
@@ -809,6 +835,22 @@ static void validate_keccak_helpers(void) {
 }
 
 #if defined(__AVX2__)
+static uint64_t bench_keccakf1_avx2_perm(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_state[lane][0] ^= i;
+    mlkem_keccakf1600_avx2(bench_state[lane]);
+    acc ^= bench_state[lane][(i * 7u) % 25];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_keccakf4_perm(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -1376,6 +1418,7 @@ int main(int argc, char **argv) {
   print_metric("mlkem_keccakf", bench_keccakf_perm(iters), iters);
   print_metric("mlkem_keccakf_mem", bench_keccakf_mem_perm(iters), iters);
 #if defined(__AVX2__)
+  print_metric("mlkem_keccakf1_avx2", bench_keccakf1_avx2_perm(iters), iters);
   print_metric("mlkem_keccakf4", bench_keccakf4_perm(iters), iters);
   print_metric("mlkem_keccakf4_mem", bench_keccakf4_mem_perm(iters), iters);
 #if defined(MLKEM_BENCH_VENDOR_KECCAKP)

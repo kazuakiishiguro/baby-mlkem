@@ -173,8 +173,8 @@ test.o: CFLAGS += -Wno-unused-function
 test.o: baby-mlkem.c
 bench.o: baby-mlkem.c
 bench_ntt.o: baby-mlkem.c
-bench_keccak.o: baby-mlkem.c
-bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c
+bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h
+bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h
 bench_core_stages.o: baby-mlkem.c
 
 $(TARGET): $(TEST_OBJS)
