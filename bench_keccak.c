@@ -35,6 +35,110 @@ static poly256 bench_poly4[KECCAK_BENCH_LANES][4];
 static int16_t bench_cbd_aos4[KECCAK_BENCH_LANES][N][4];
 static int16_t bench_cbd_tile2x4[KECCAK_BENCH_LANES][N / 2][8];
 
+static MLKEM_NOINLINE void bench_keccakf_mem(uint64_t st[25]) {
+  uint64_t e[25];
+  uint64_t *src = st;
+  uint64_t *dst = e;
+  uint64_t c0 = st[0] ^ st[5] ^ st[10] ^ st[15] ^ st[20];
+  uint64_t c1 = st[1] ^ st[6] ^ st[11] ^ st[16] ^ st[21];
+  uint64_t c2 = st[2] ^ st[7] ^ st[12] ^ st[17] ^ st[22];
+  uint64_t c3 = st[3] ^ st[8] ^ st[13] ^ st[18] ^ st[23];
+  uint64_t c4 = st[4] ^ st[9] ^ st[14] ^ st[19] ^ st[24];
+
+  for (int round = 0; round < 24; round++) {
+    uint64_t d0 = c4 ^ ROTL64(c1, 1);
+    uint64_t d1 = c0 ^ ROTL64(c2, 1);
+    uint64_t d2 = c1 ^ ROTL64(c3, 1);
+    uint64_t d3 = c2 ^ ROTL64(c4, 1);
+    uint64_t d4 = c3 ^ ROTL64(c0, 1);
+    uint64_t n0, n1, n2, n3, n4;
+
+#define A(i, d) (src[(i)] ^ (d))
+#define CHI(x, y, z) ((x) ^ (~(y) & (z)))
+#define STORE_INIT(i, expr, n)                                                \
+  do {                                                                        \
+    (n) = (expr);                                                             \
+    dst[(i)] = (n);                                                           \
+  } while (0)
+#define STORE_ACC(i, expr, n)                                                 \
+  do {                                                                        \
+    uint64_t v_ = (expr);                                                     \
+    dst[(i)] = v_;                                                            \
+    (n) ^= v_;                                                                \
+  } while (0)
+
+    uint64_t b0 = A(0, d0);
+    uint64_t b1 = ROTL64(A(6, d1), 44);
+    uint64_t b2 = ROTL64(A(12, d2), 43);
+    uint64_t b3 = ROTL64(A(18, d3), 21);
+    uint64_t b4 = ROTL64(A(24, d4), 14);
+    STORE_INIT(0, CHI(b0, b1, b2) ^ rc[round], n0);
+    STORE_INIT(1, CHI(b1, b2, b3), n1);
+    STORE_INIT(2, CHI(b2, b3, b4), n2);
+    STORE_INIT(3, CHI(b3, b4, b0), n3);
+    STORE_INIT(4, CHI(b4, b0, b1), n4);
+
+    b0 = ROTL64(A(3, d3), 28);
+    b1 = ROTL64(A(9, d4), 20);
+    b2 = ROTL64(A(10, d0), 3);
+    b3 = ROTL64(A(16, d1), 45);
+    b4 = ROTL64(A(22, d2), 61);
+    STORE_ACC(5, CHI(b0, b1, b2), n0);
+    STORE_ACC(6, CHI(b1, b2, b3), n1);
+    STORE_ACC(7, CHI(b2, b3, b4), n2);
+    STORE_ACC(8, CHI(b3, b4, b0), n3);
+    STORE_ACC(9, CHI(b4, b0, b1), n4);
+
+    b0 = ROTL64(A(1, d1), 1);
+    b1 = ROTL64(A(7, d2), 6);
+    b2 = ROTL64(A(13, d3), 25);
+    b3 = ROTL64(A(19, d4), 8);
+    b4 = ROTL64(A(20, d0), 18);
+    STORE_ACC(10, CHI(b0, b1, b2), n0);
+    STORE_ACC(11, CHI(b1, b2, b3), n1);
+    STORE_ACC(12, CHI(b2, b3, b4), n2);
+    STORE_ACC(13, CHI(b3, b4, b0), n3);
+    STORE_ACC(14, CHI(b4, b0, b1), n4);
+
+    b0 = ROTL64(A(4, d4), 27);
+    b1 = ROTL64(A(5, d0), 36);
+    b2 = ROTL64(A(11, d1), 10);
+    b3 = ROTL64(A(17, d2), 15);
+    b4 = ROTL64(A(23, d3), 56);
+    STORE_ACC(15, CHI(b0, b1, b2), n0);
+    STORE_ACC(16, CHI(b1, b2, b3), n1);
+    STORE_ACC(17, CHI(b2, b3, b4), n2);
+    STORE_ACC(18, CHI(b3, b4, b0), n3);
+    STORE_ACC(19, CHI(b4, b0, b1), n4);
+
+    b0 = ROTL64(A(2, d2), 62);
+    b1 = ROTL64(A(8, d3), 55);
+    b2 = ROTL64(A(14, d4), 39);
+    b3 = ROTL64(A(15, d0), 41);
+    b4 = ROTL64(A(21, d1), 2);
+    STORE_ACC(20, CHI(b0, b1, b2), n0);
+    STORE_ACC(21, CHI(b1, b2, b3), n1);
+    STORE_ACC(22, CHI(b2, b3, b4), n2);
+    STORE_ACC(23, CHI(b3, b4, b0), n3);
+    STORE_ACC(24, CHI(b4, b0, b1), n4);
+
+    c0 = n0;
+    c1 = n1;
+    c2 = n2;
+    c3 = n3;
+    c4 = n4;
+
+#undef STORE_ACC
+#undef STORE_INIT
+#undef CHI
+#undef A
+
+    uint64_t *tmp = src;
+    src = dst;
+    dst = tmp;
+  }
+}
+
 static uint64_t now_ns(void) {
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
@@ -463,6 +567,23 @@ static void init_inputs(void) {
 #endif
 }
 
+static void validate_keccakf_mem_matches_current(void) {
+  uint64_t current[25];
+  uint64_t mem[25];
+
+  for (int word = 0; word < 25; word++) {
+    current[word] = ((uint64_t)(word + 17) << 48) ^
+                    ((uint64_t)word * 0xD6E8FEB86659FD93ULL);
+  }
+  memcpy(mem, current, sizeof(mem));
+  keccakf(current);
+  bench_keccakf_mem(mem);
+  if (memcmp(current, mem, sizeof(mem)) != 0) {
+    fprintf(stderr, "scalar keccakf memory diagnostic mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
 #if defined(__AVX2__)
 static void validate_keccakf4_matches_scalar(void) {
   uint64_t scalar[4][25];
@@ -639,6 +760,7 @@ static void validate_keccak_helpers(void) {
   poly256 p0, p1;
 
   init_inputs();
+  validate_keccakf_mem_matches_current();
 #if defined(__AVX2__)
   validate_keccakf4_matches_scalar();
   validate_prf_cbd_direct_matches_current();
@@ -758,6 +880,22 @@ static uint64_t bench_keccakf_perm(size_t iters) {
     size_t lane = i & (KECCAK_BENCH_LANES - 1);
     bench_state[lane][0] ^= i;
     keccakf(bench_state[lane]);
+    acc ^= bench_state[lane][(i * 7u) % 25];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_keccakf_mem_perm(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_state[lane][0] ^= i;
+    bench_keccakf_mem(bench_state[lane]);
     acc ^= bench_state[lane][(i * 7u) % 25];
   }
   t1 = now_ns();
@@ -1236,6 +1374,7 @@ int main(int argc, char **argv) {
 
   printf("mlkem_keccak_bench_iterations=%zu\n", iters);
   print_metric("mlkem_keccakf", bench_keccakf_perm(iters), iters);
+  print_metric("mlkem_keccakf_mem", bench_keccakf_mem_perm(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_keccakf4", bench_keccakf4_perm(iters), iters);
   print_metric("mlkem_keccakf4_mem", bench_keccakf4_mem_perm(iters), iters);
