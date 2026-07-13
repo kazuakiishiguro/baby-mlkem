@@ -53,7 +53,7 @@ static const uint64_t mlkem_keccakf1_rotr_count[6][4] __attribute__((aligned(32)
     {61, 46, 28, 23}, {63, 2, 36, 37}, {19, 58, 8, 25},
     {54, 3, 9, 56}, {62, 49, 39, 44}, {20, 21, 43, 50}};
 
-#define MLKEM_KECCAKF1_MLKEM_KECCAKF1_RC4(x) {UINT64_C(x), UINT64_C(x), UINT64_C(x), UINT64_C(x)}
+#define MLKEM_KECCAKF1_RC4(x) {UINT64_C(x), UINT64_C(x), UINT64_C(x), UINT64_C(x)}
 static const uint64_t mlkem_keccakf1_iota4[24][4] __attribute__((aligned(32))) = {
     MLKEM_KECCAKF1_RC4(0x0000000000000001), MLKEM_KECCAKF1_RC4(0x0000000000008082),
     MLKEM_KECCAKF1_RC4(0x800000000000808a), MLKEM_KECCAKF1_RC4(0x8000000080008000),
