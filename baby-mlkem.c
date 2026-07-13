@@ -1116,6 +1116,10 @@ static __m256i ZETA_NTT_TAIL_L1[16];
 static __m256i ZETA_NTT_INV_HEAD_L3[16];
 static __m256i ZETA_NTT_INV_HEAD_L2[16];
 static __m256i ZETA_NTT_INV_HEAD_L1[16];
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static __m256i ZETA_NTT_HEAD_MONT_LO[15];
+static __m256i ZETA_NTT_HEAD_MONT_HI[15];
+#endif
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static __m512i ZETA_NTT_HEAD_AVX512[15];
 static __m512i ZETA_NTT_INV_TAIL_AVX512[15];
@@ -1798,6 +1802,18 @@ static void init_ntt_roots(void) {
     GAMMA[i] = modexp(17, e2);
   }
 #if defined(__AVX2__)
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  const uint32_t mont = 65536u % Q;
+  const uint16_t qinv = (uint16_t)-3327;
+  for (int i = 0; i < 15; i++) {
+    int32_t zeta = (int32_t)(((uint32_t)ZETA[i + 1] * mont) % Q);
+    if (zeta > Q / 2) zeta -= Q;
+    uint16_t zeta_lo =
+        (uint16_t)((uint32_t)(uint16_t)zeta * (uint32_t)qinv);
+    ZETA_NTT_HEAD_MONT_LO[i] = _mm256_set1_epi16((int16_t)zeta_lo);
+    ZETA_NTT_HEAD_MONT_HI[i] = _mm256_set1_epi16((int16_t)zeta);
+  }
+#endif
   for (int i = 0; i < 16; i++) {
     ZETA_NTT_TAIL_L3[i] = _mm256_set1_epi32(ZETA[16 + i]);
     int k2 = 32 + 2 * i;
@@ -1887,6 +1903,57 @@ static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
   }
 }
 
+#if defined(__AVX2__) && \
+    !(defined(__AVX512F__) && defined(__AVX512BW__))
+/* zeta_lo = zeta_hi * QINV mod 2^16 makes the correction one mulhi. */
+static inline __m256i ntt_mont_mul_precomp_i16x16(
+    __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
+  __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
+  return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
+}
+
+static void ntt_canonicalize_signed_avx2(poly256 f) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i barrett = _mm256_set1_epi16(20159);
+  for (int i = 0; i < N; i += 16) {
+    __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
+    __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
+    v = _mm256_sub_epi16(v, _mm256_mullo_epi16(quot, q));
+    v = _mm256_add_epi16(v, _mm256_and_si256(_mm256_srai_epi16(v, 15), q));
+    __m256i reduced = _mm256_sub_epi16(v, q);
+    v = _mm256_add_epi16(
+        reduced, _mm256_and_si256(_mm256_srai_epi16(reduced, 15), q));
+    _mm256_storeu_si256((__m256i *)(void *)(f + i), v);
+  }
+}
+
+static void ntt_head_mont_lazy_avx2(poly256 f) {
+  /* Four lazy stages add at most four values in (-Q,Q), within int16_t. */
+  int k = 0;
+  for (int log2len = 7; log2len > 3; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m256i zeta_lo = ZETA_NTT_HEAD_MONT_LO[k];
+      __m256i zeta_hi = ZETA_NTT_HEAD_MONT_HI[k++];
+      for (int j = 0; j < length; j += 16) {
+        __m256i a = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + j));
+        __m256i b = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + j + length));
+        __m256i t = ntt_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+        _mm256_storeu_si256((__m256i *)(void *)(f + start + j),
+                            _mm256_add_epi16(a, t));
+        _mm256_storeu_si256((__m256i *)(void *)(f + start + j + length),
+                            _mm256_sub_epi16(a, t));
+      }
+    }
+  }
+  ntt_canonicalize_signed_avx2(f);
+}
+#endif
+
 /**
  * Performs a Number Theoretic Transform (NTT)
  */
@@ -1897,24 +1964,7 @@ static void ntt(const poly256 f_in, poly256 f_out) {
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_head_avx512(f_out);
 #elif defined(__AVX2__)
-  int k = 1;
-  for (int log2len = 7; log2len > 3; log2len--) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k++];
-#if defined(__clang__)
-#pragma clang loop vectorize_width(16) interleave_count(1)
-#endif
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
-        int16_t t = mod_q_reduce_ntt_u32(prod);
-        int16_t a = f_out[idx];
-        f_out[idx + length] = mod_q_sub_i16(a, t);
-        f_out[idx] = mod_q_add_i16(a, t);
-      }
-    }
-  }
+  ntt_head_mont_lazy_avx2(f_out);
 #else
   int k = 1;
   for (int log2len = 7; log2len > 0; log2len--) {
@@ -1945,24 +1995,7 @@ static void ntt_lazy_mul_input_avx2(const poly256 f_in, poly256 f_out) {
   if (f_in != f_out) {
     memcpy(f_out, f_in, sizeof(poly256));
   }
-  int k = 1;
-  for (int log2len = 7; log2len > 3; log2len--) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      uint16_t zeta = ZETA[k++];
-#if defined(__clang__)
-#pragma clang loop vectorize_width(16) interleave_count(1)
-#endif
-      for (int j = 0; j < length; j++) {
-        int idx = start + j;
-        uint32_t prod = (uint32_t)zeta * (uint32_t)(uint16_t)f_out[idx + length];
-        int16_t t = mod_q_reduce_ntt_u32(prod);
-        int16_t a = f_out[idx];
-        f_out[idx + length] = mod_q_sub_i16(a, t);
-        f_out[idx] = mod_q_add_i16(a, t);
-      }
-    }
-  }
+  ntt_head_mont_lazy_avx2(f_out);
   ntt_tail_lazy_mul_input_avx2(f_out);
 }
 #endif
