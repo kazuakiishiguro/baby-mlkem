@@ -19,7 +19,7 @@ The repository still keeps in-tree comparator backends. Set
 PQClean AVX2 sources. Results from those opt-in backends measure integration with
 external-origin vendored code, not an independent baby-mlkem core.
 
-## Current Core Optimization Frontier (2026-07-09)
+## Current Core Optimization Frontier (2026-07-14)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -66,6 +66,7 @@ Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
+| Scalar `keccakf()` state placement / parity schedule | Obvious local rewrites closed | A fresh KEM profile puts scalar `keccakf()` first at `22.87%` self time, but an explicit memory-resident PrepareTheta form was `0.9273x` the current median and a dead-lane parity-carry schedule left direct `keccakf()` effectively flat while regressing `encaps_core` to `0.9869x`. Further work must remove scalar permutation calls through useful batching/co-scheduling or demonstrate a genuinely different ISA-level single-state mapping. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign still open | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `786.87 ns` median and `sample_matrix` at `2747.78 ns` median. Remaining gains need parser representation or broader matrix/public-cache dataflow changes, not vendored KeccakP. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
@@ -78,7 +79,8 @@ Near-term target selection:
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The next implementation should therefore prioritize either a common-path
+The next implementation should therefore prioritize either removing scalar
+Keccak permutation calls through useful batching/co-scheduling, a common-path
 `sample_ntt4` redesign that changes the Keccak/state or parser representation
 itself, a public-cache dataflow change that improves KEM paths without relying on
 the keygen-only tail21 result, or a broader signed/lazy range contract that
@@ -92,6 +94,68 @@ public-prepare/uncached-encrypt public-tail rotations (`tail02`, `tail10`,
 `tail21`) are closed. A signed CBD->NTT boundary change by itself has a measured
 budget that is too small: it reproduces the recent pattern of small direct wins,
 then neutral or negative integrated medians.
+
+### Independent Core Optimization Diagnostic (2026-07-14, scalar Keccak state placement)
+
+A one-million-iteration `-pg` KEM run was used to refresh the target instead of
+continuing from stale stage timings. The flat profile put scalar `keccakf()` at
+`22.87%` self time (`73,441,495` calls), ahead of `sample_ntt4()` at `18.35%`.
+The existing two-round scalar permutation is `2313` bytes and has `154` static
+stack references in the emitted object because 25 live state lanes exceed the
+x86-64 GPR set.
+
+The first diagnostic ports the accepted AVX2 `keccakf4_mem()` PrepareTheta
+shape to one scalar state. It ping-pongs between two 25-lane arrays and
+accumulates the next round's five theta parities while storing Chi outputs. The
+benchmark validates its output against production `keccakf()` and reports it as
+`mlkem_keccakf_mem`; production callers are unchanged.
+
+AVX2-only direct command:
+
+```bash
+make clean CC=clang AVX2_BACKEND=core
+make bench-keccak CC=clang AVX2_BACKEND=core \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt"
+for i in $(seq 1 13); do
+  taskset -c 0 ./bench_keccakc 300000
+done
+```
+
+Direct results:
+
+| Metric | Avg ns/op | Median ns/op | Median speedup |
+|---|---:|---:|---:|
+| production `mlkem_keccakf` | 215.90 | 215.58 | 1.0000x |
+| diagnostic `mlkem_keccakf_mem` | 233.13 | 232.49 | 0.9273x |
+
+The explicit-memory form reduces emitted size from `2313` to `1222` bytes and
+static stack references from `154` to `40`, but writing all 25 lanes every
+round costs more than the spill reduction saves. Keep the diagnostic as a
+closed-design reference; do not replace production with it.
+
+A narrower follow-up retained the current two-round schedule and reused five
+dead first-round `A` lanes as incremental next-round parity accumulators. It
+passed the AVX2-only test gate, but clang emitted a slightly larger function
+(`2324` bytes versus `2313`) with one more static stack reference (`155` versus
+`154`). Thirteen-run Keccak A/B and fifteen-run stage/KEM A/B highlights:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keccakf` | 215.47 | 215.11 | 1.0017x |
+| `mlkem_sha3_256_32` | 229.55 | 226.76 | 1.0123x |
+| `mlkem_sha3_512_64` | 220.74 | 219.62 | 1.0051x |
+| `mlkem_keygen` | 6872.75 | 6862.95 | 1.0014x |
+| `mlkem_encaps` | 2629.93 | 2628.68 | 1.0005x |
+| `mlkem_encaps_core` | 6792.34 | 6882.76 | 0.9869x |
+| `mlkem_roundtrip` | 13177.37 | 13143.63 | 1.0026x |
+
+Decision: reject the parity-carry production candidate. Its small fixed-hash
+wins are not backed by a direct permutation or structural improvement and do
+not survive the `encaps_core` gate. The current scalar two-round Keccak schedule
+remains production. The next scalar-Keccak attempt must either remove
+permutation calls by filling useful parallel lanes or use a genuinely different
+single-state ISA mapping; another state-placement or parity-expression rewrite
+is closed.
 
 ### Latest Core Optimization A/B (2026-07-09, AVX2 inverse tail l4-l6 fusion)
 
