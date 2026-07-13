@@ -614,7 +614,8 @@ static void prepare_ntt_mont_head_zetas(void) {
   for (int i = 0; i < 15; i++) {
     int32_t zeta = (int32_t)(((uint32_t)(uint16_t)ZETA[i + 1] * mont) % Q);
     if (zeta > Q / 2) zeta -= Q;
-    uint16_t zeta_lo = (uint16_t)((uint16_t)zeta * qinv);
+    uint16_t zeta_lo =
+        (uint16_t)((uint32_t)(uint16_t)zeta * (uint32_t)qinv);
     bench_ntt_mont_head_zeta_lo[i] =
         _mm256_set1_epi16((int16_t)zeta_lo);
     bench_ntt_mont_head_zeta_hi[i] = _mm256_set1_epi16((int16_t)zeta);
