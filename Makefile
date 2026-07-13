@@ -170,12 +170,12 @@ bench.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
 bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += -Wno-unused-function
-test.o: baby-mlkem.c
-bench.o: baby-mlkem.c
-bench_ntt.o: baby-mlkem.c
+test.o: baby-mlkem.c keccakf1600_avx2.h
+bench.o: baby-mlkem.c keccakf1600_avx2.h
+bench_ntt.o: baby-mlkem.c keccakf1600_avx2.h
 bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h
 bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h
-bench_core_stages.o: baby-mlkem.c
+bench_core_stages.o: baby-mlkem.c keccakf1600_avx2.h
 
 $(TARGET): $(TEST_OBJS)
 	$(CC) $(TEST_OBJS) -o $(TARGET) $(CFLAGS) $(ARCH_CFLAGS)

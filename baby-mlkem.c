@@ -175,6 +175,7 @@ static inline __m512i rotl64x8(__m512i x, int s) {
 }
 #endif
 
+#if !defined(__AVX2__)
 /* The Keccak-f[1600] permutation on the state.
  * Two rounds are scheduled together to reduce scalar permutation overhead. */
 static void keccakf(uint64_t state[25])
@@ -440,6 +441,12 @@ static void keccakf(uint64_t state[25])
         state[23] = Aso;
         state[24] = Asu;
 }
+#else
+#include "keccakf1600_avx2.h"
+static MLKEM_ALWAYS_INLINE void keccakf(uint64_t state[25]) {
+  mlkem_keccakf1600_avx2(state);
+}
+#endif
 
 #if defined(__AVX2__)
 static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
