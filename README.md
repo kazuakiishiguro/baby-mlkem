@@ -74,6 +74,7 @@ Near-term target selection:
 | Candidate family | Status | Reason |
 |---|---|---|
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
+| Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign is next | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `793.15 ns` median and `sample_matrix` at `2676.86 ns` median. Remaining gains need a new x4 Keccak/state representation, parser dataflow, or broader matrix/public-cache redesign. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
@@ -90,9 +91,12 @@ The next implementation should therefore prioritize the common x4 sampler path:
 `sample_ntt4_keccak3_only` is `779.99 ns` median and accounts for most of the
 `913.47 ns` common three-rate step, while `sample_matrix` remains the largest
 standalone public-work row at `2676.86 ns`. The accepted single-state mapping
-closes the scalar Keccak state-placement target. The next useful redesign must
-change `keccakf4_mem()` state/layout work, connect its output more directly to
-the rejection parser, or improve matrix/public-cache dataflow; merely replacing
+and persistent long-hash path close the obvious scalar permutation and
+canonical-state-boundary targets. Further single-state work must remove useful
+permutation calls or co-schedule independent work, not re-pack the same state
+again. The next useful redesign should instead change `keccakf4_mem()`
+state/layout work, connect its output more directly to the rejection parser, or
+improve matrix/public-cache dataflow; merely replacing
 it with vendored KeccakP is outside the independent-core goal. The accepted
 inverse-tail change also closes the most obvious local AVX2 inverse-add tail
 representation gap. Seed-load hoisting, public-matrix x4 lane regrouping,
@@ -102,6 +106,87 @@ public-tail rotations (`tail02`, `tail10`, `tail21`) are closed. A signed
 CBD->NTT boundary change by itself has a measured budget that is too small: it
 reproduces the recent pattern of small direct wins, then neutral or negative
 integrated medians.
+
+### Latest Core Optimization A/B (2026-07-14, persistent AVX2 SHA3 state)
+
+A fresh AVX2-only `-pg` profile after the single-state AVX2 permutation was
+integrated changed the optimization question. The permutation itself was
+already near the XKCP/CRYPTOGAMS reference timing, but repeated callers still
+converted between canonical 25-lane memory and the seven-vector internal
+layout:
+
+| Symbol | Flat self time | Calls |
+|---|---:|---:|
+| `mlkem_keccakf1600_avx2` | 24.15% | 36,719,879 |
+| `sample_ntt4` | 19.08% | 8,000,036 |
+| `ntt_lazy_mul_input_avx2` | 10.75% | 19,500,144 |
+| `ntt_inv_before_final_avx2` | 8.36% | 20,000,144 |
+| `ntt` | 6.40% | 12,000,102 |
+| `sample_ntt_parse_stream_avx2_ready` | 4.38% | 38,024,914 |
+
+`keccakf1600_avx2.h` now exposes load, internal-permute, and store helpers around
+the same seven-YMM schedule. The canonical wrapper still performs all three
+steps, preserving its API. Fixed 1184-byte SHA3-256 instead loads zero state
+directly into the internal layout, XORs each 136-byte rate into the matching
+vector lanes, keeps that layout across all nine permutations, and extracts only
+the final 32-byte digest. This removes eight intermediate canonical
+scatter/gather boundaries without changing a permutation or relying on cached
+benchmark output.
+
+The header refactor was first gated as production-equivalent. Nine-run
+AVX2-only A/B highlights:
+
+| Metric | Baseline median ns/op | Refactor median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keccakf` | 190.40 | 190.37 | 1.0002x |
+| `mlkem_keccakf1_avx2` | 190.78 | 190.69 | 1.0005x |
+| `mlkem_keccakf4_mem` | 258.93 | 258.30 | 1.0024x |
+| `mlkem_sha3_256_public_key` | 1791.11 | 1791.07 | 1.0000x |
+
+The bench-only persistent-state diagnostic then produced a direct 13-run median
+of `1721.04 ns` versus `1791.80 ns` for the canonical path (`1.0411x`).
+Routing normal `sha3_256(1184)` through it kept the production metric at
+`1723.59 ns` versus `1791.34 ns` (`1.0393x`).
+
+Keygen uses `sha3_256_copy_1184()`, which copies the encoded public key into the
+secret key while computing `H(pk)`. On AVX2 the new path performs one
+`memcpy(1184)` and calls the packed hash; this is faster than fusing the copy
+with nine canonical-state absorb/permutation boundaries. Nine-run direct A/B:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_sha3_256_copy_public_key` | 1799.95 | 1728.85 | 1.0411x |
+
+The persistent round body is defined after the hot KEM functions in the single
+translation unit. An earlier source placement kept the direct hash win but
+shifted the much larger KEM body: `encaps_core` fell to `0.9977x` and
+`roundtrip_core` to `0.9983x` median. Moving the same `0x6ca`-byte function
+after the hot core preserved the direct win without that layout regression.
+This is a code-placement requirement, not benchmark caching.
+
+Final 13-run, 50,000-iteration KEM-only copy+hash confirmation:
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 6578.09 | 6511.37 | 1.0102x |
+| `mlkem_keygen_core` | 6555.62 | 6494.83 | 1.0094x |
+| `mlkem_encaps` | 2591.08 | 2589.75 | 1.0005x |
+| `mlkem_encaps_core` | 6705.01 | 6696.42 | 1.0013x |
+| `mlkem_decaps` | 3497.51 | 3495.86 | 1.0005x |
+| `mlkem_decaps_core` | 5807.90 | 5811.21 | 0.9994x |
+| `mlkem_roundtrip` | 12772.57 | 12703.92 | 1.0054x |
+| `mlkem_roundtrip_core` | 19269.96 | 19222.08 | 1.0025x |
+
+Correctness passed AVX2-only, `-march=native`, and explicit
+`-mno-avx -mno-avx2` builds. Non-AVX builds retain the canonical scalar
+copy+hash implementation. No external object or library was added; the internal
+state layout still has the disclosed XKCP/CRYPTOGAMS provenance, so this result
+is a baby-mlkem dataflow/integration improvement rather than a new independent
+Keccak round schedule.
+
+Decision: accept both fixed-length packed-state hash paths. The next
+single-state attempt must reduce permutation count or co-schedule useful work;
+another canonical/internal state conversion rewrite is closed.
 
 ### Latest Core Optimization A/B (2026-07-14, single-state AVX2 Keccak)
 
@@ -2031,12 +2116,15 @@ metrics isolate these helpers:
 
 | Metric | Core helper measured |
 |---|---|
-| `mlkem_keccakf` | one scalar `keccakf()` permutation |
+| `mlkem_keccakf` | one production `keccakf()` permutation |
+| `mlkem_keccakf1_avx2` | direct call to the repository-local single-state AVX2 permutation |
 | `mlkem_keccakf4` | one AVX2 `keccakf4()` permutation over four parallel states |
 | `mlkem_keccakf4_mem` | one AVX2 memory-resident `keccakf4_mem()` permutation, matching the sampler common path shape |
 | `mlkem_vendor_keccakp4` | opt-in reference-only PQClean/Keccak-team times4 permutation from `bench-keccak-vendor`; not emitted by the default vendor-free target |
 | `mlkem_sha3_256_32` | `sha3_256()` over a 32-byte input |
 | `mlkem_sha3_256_public_key` | `sha3_256()` over a 1184-byte encoded ML-KEM-768 public key |
+| `mlkem_sha3_256_copy_public_key` | copy the 1184-byte public key while computing SHA3-256, matching keygen's secret-key assembly boundary |
+| `mlkem_sha3_256_public_key_persistent_avx2` | direct fixed-length seven-vector-state SHA3-256 path; equal to production after acceptance |
 | `mlkem_sha3_512_32` | `sha3_512()` over a 32-byte input |
 | `mlkem_sha3_512_64` | `sha3_512()` over a 64-byte input |
 | `mlkem_prf_eta2` | `mlkem_prf(ETA2, seed[32], nonce)` |
