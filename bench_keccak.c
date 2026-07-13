@@ -331,94 +331,6 @@ static void sha3_256_public_key_lane0_keccakf4(const uint8_t *in,
   }
 }
 
-static MLKEM_ALWAYS_INLINE void bench_keccakf1_state_zero(
-    mlkem_keccakf1600_avx2_state *state) {
-  state->x0 = _mm256_setzero_si256();
-  state->x1 = _mm256_setzero_si256();
-  state->x2 = _mm256_setzero_si256();
-  state->x3 = _mm256_setzero_si256();
-  state->x4 = _mm256_setzero_si256();
-  state->x5 = _mm256_setzero_si256();
-  state->x6 = _mm256_setzero_si256();
-}
-
-static MLKEM_ALWAYS_INLINE void bench_keccakf1_absorb_rate136(
-    mlkem_keccakf1600_avx2_state *state, const uint8_t in[136]) {
-  state->x0 = _mm256_xor_si256(
-      state->x0, _mm256_set1_epi64x((long long)load64_le(in + 0)));
-  state->x1 = _mm256_xor_si256(
-      state->x1, _mm256_loadu_si256((const __m256i *)(const void *)(in + 8)));
-  state->x2 = _mm256_xor_si256(
-      state->x2,
-      _mm256_setr_epi64x((long long)load64_le(in + 80), 0,
-                         (long long)load64_le(in + 40),
-                         (long long)load64_le(in + 120)));
-  state->x3 = _mm256_xor_si256(
-      state->x3,
-      _mm256_setr_epi64x((long long)load64_le(in + 128),
-                         (long long)load64_le(in + 56), 0,
-                         (long long)load64_le(in + 112)));
-  state->x4 = _mm256_xor_si256(
-      state->x4,
-      _mm256_setr_epi64x((long long)load64_le(in + 88), 0,
-                         (long long)load64_le(in + 64), 0));
-  state->x5 = _mm256_xor_si256(
-      state->x5,
-      _mm256_setr_epi64x(0, 0, (long long)load64_le(in + 104),
-                         (long long)load64_le(in + 72)));
-  state->x6 = _mm256_xor_si256(
-      state->x6,
-      _mm256_setr_epi64x((long long)load64_le(in + 48),
-                         (long long)load64_le(in + 96), 0, 0));
-}
-
-static MLKEM_ALWAYS_INLINE void bench_keccakf1_absorb_sha3_256_tail96(
-    mlkem_keccakf1600_avx2_state *state, const uint8_t in[96]) {
-  state->x0 = _mm256_xor_si256(
-      state->x0, _mm256_set1_epi64x((long long)load64_le(in + 0)));
-  state->x1 = _mm256_xor_si256(
-      state->x1, _mm256_loadu_si256((const __m256i *)(const void *)(in + 8)));
-  state->x2 = _mm256_xor_si256(
-      state->x2,
-      _mm256_setr_epi64x((long long)load64_le(in + 80), 0,
-                         (long long)load64_le(in + 40), 0));
-  state->x3 = _mm256_xor_si256(
-      state->x3,
-      _mm256_setr_epi64x((long long)0x8000000000000000ULL,
-                         (long long)load64_le(in + 56), 0, 0));
-  state->x4 = _mm256_xor_si256(
-      state->x4,
-      _mm256_setr_epi64x((long long)load64_le(in + 88), 0,
-                         (long long)load64_le(in + 64), 0));
-  state->x5 = _mm256_xor_si256(
-      state->x5, _mm256_setr_epi64x(0, 0, 0,
-                                     (long long)load64_le(in + 72)));
-  state->x6 = _mm256_xor_si256(
-      state->x6,
-      _mm256_setr_epi64x((long long)load64_le(in + 48), 0x06, 0, 0));
-}
-
-static MLKEM_NOINLINE void
-sha3_256_public_key_persistent_avx2(const uint8_t in[1184],
-                                          uint8_t out[32]) {
-  mlkem_keccakf1600_avx2_state state;
-  bench_keccakf1_state_zero(&state);
-
-  for (int block = 0; block < 8; block++) {
-    bench_keccakf1_absorb_rate136(&state, in + (size_t)block * 136);
-    mlkem_keccakf1600_avx2_permute(&state);
-  }
-  bench_keccakf1_absorb_sha3_256_tail96(&state, in + 8 * 136);
-  mlkem_keccakf1600_avx2_permute(&state);
-
-  uint64_t lane0 = (uint64_t)_mm256_extract_epi64(state.x0, 0);
-  memcpy(out, &lane0, sizeof(lane0));
-  _mm_storeu_si128((__m128i *)(void *)(out + 8),
-                   _mm256_castsi256_si128(state.x1));
-  _mm_storel_epi64((__m128i *)(void *)(out + 24),
-                   _mm256_extracti128_si256(state.x1, 1));
-}
-
 #endif
 
 static inline int16_t bench_cbd_eta2_scalar_value(uint32_t d, int j) {
@@ -887,8 +799,12 @@ static void validate_keccak_helpers(void) {
     exit(EXIT_FAILURE);
   }
   for (int lane = 0; lane < KECCAK_BENCH_LANES; lane++) {
-    sha3_256(bench_pk[lane], sizeof(bench_pk[lane]), out0);
-    sha3_256_public_key_persistent_avx2(bench_pk[lane], out1);
+    keccak_ctx ctx;
+    keccak_init(&ctx, 136);
+    keccak_absorb(&ctx, bench_pk[lane], sizeof(bench_pk[lane]));
+    keccak_finalize(&ctx, 0x06);
+    keccak_squeeze(&ctx, out0, 32);
+    sha3_256_1184_avx2(bench_pk[lane], out1);
     if (memcmp(out0, out1, 32) != 0) {
       fprintf(stderr, "sha3_256 persistent AVX2 public-key mismatch lane=%d\n",
               lane);
@@ -1082,8 +998,7 @@ static uint64_t bench_sha3_256_public_key_persistent_avx2(size_t iters) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (KECCAK_BENCH_LANES - 1);
-    sha3_256_public_key_persistent_avx2(bench_pk[lane],
-                                        bench_prfout[lane]);
+    sha3_256_1184_avx2(bench_pk[lane], bench_prfout[lane]);
     acc ^= bench_prfout[lane][(i * 43u) & 31u];
   }
   t1 = now_ns();

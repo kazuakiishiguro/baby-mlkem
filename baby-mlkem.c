@@ -890,9 +890,16 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
   }
 }
 
+#if defined(__AVX2__)
+static void sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]);
+#endif
+
 static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
   // SHA3-256 => rate=1088 bits => 136 bytes, domain=0x06
   if (inlen == 1184) {  // ML-KEM-768 public key: K*384 + 32.
+#if defined(__AVX2__)
+    sha3_256_1184_avx2(in, out32);
+#else
     uint64_t st[25] = {0};
     for (int block = 0; block < 8; block++) {
       const uint8_t *p = in + (size_t)block * 136;
@@ -927,6 +934,7 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
     st[16] ^= 0x8000000000000000ULL;
     keccakf(st);
     memcpy(out32, st, 32);
+#endif
     return;
   }
 
@@ -5374,5 +5382,94 @@ static void mlkem_keygen_matrix_noise_avx2(
       ehat[0], ehat[1], ehat[2]);
   sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
               ahat[2][2]);
+}
+#endif
+
+#if defined(__AVX2__)
+static MLKEM_ALWAYS_INLINE void
+sha3_256_1184_state_zero(mlkem_keccakf1600_avx2_state *state) {
+  state->x0 = _mm256_setzero_si256();
+  state->x1 = _mm256_setzero_si256();
+  state->x2 = _mm256_setzero_si256();
+  state->x3 = _mm256_setzero_si256();
+  state->x4 = _mm256_setzero_si256();
+  state->x5 = _mm256_setzero_si256();
+  state->x6 = _mm256_setzero_si256();
+}
+
+static MLKEM_ALWAYS_INLINE void sha3_256_1184_absorb_rate(
+    mlkem_keccakf1600_avx2_state *state, const uint8_t in[136]) {
+  state->x0 = _mm256_xor_si256(
+      state->x0, _mm256_set1_epi64x((long long)load64_le(in + 0)));
+  state->x1 = _mm256_xor_si256(
+      state->x1, _mm256_loadu_si256((const __m256i *)(const void *)(in + 8)));
+  state->x2 = _mm256_xor_si256(
+      state->x2,
+      _mm256_setr_epi64x((long long)load64_le(in + 80), 0,
+                         (long long)load64_le(in + 40),
+                         (long long)load64_le(in + 120)));
+  state->x3 = _mm256_xor_si256(
+      state->x3,
+      _mm256_setr_epi64x((long long)load64_le(in + 128),
+                         (long long)load64_le(in + 56), 0,
+                         (long long)load64_le(in + 112)));
+  state->x4 = _mm256_xor_si256(
+      state->x4,
+      _mm256_setr_epi64x((long long)load64_le(in + 88), 0,
+                         (long long)load64_le(in + 64), 0));
+  state->x5 = _mm256_xor_si256(
+      state->x5,
+      _mm256_setr_epi64x(0, 0, (long long)load64_le(in + 104),
+                         (long long)load64_le(in + 72)));
+  state->x6 = _mm256_xor_si256(
+      state->x6,
+      _mm256_setr_epi64x((long long)load64_le(in + 48),
+                         (long long)load64_le(in + 96), 0, 0));
+}
+
+static MLKEM_ALWAYS_INLINE void sha3_256_1184_absorb_tail(
+    mlkem_keccakf1600_avx2_state *state, const uint8_t in[96]) {
+  state->x0 = _mm256_xor_si256(
+      state->x0, _mm256_set1_epi64x((long long)load64_le(in + 0)));
+  state->x1 = _mm256_xor_si256(
+      state->x1, _mm256_loadu_si256((const __m256i *)(const void *)(in + 8)));
+  state->x2 = _mm256_xor_si256(
+      state->x2,
+      _mm256_setr_epi64x((long long)load64_le(in + 80), 0,
+                         (long long)load64_le(in + 40), 0));
+  state->x3 = _mm256_xor_si256(
+      state->x3,
+      _mm256_setr_epi64x((long long)0x8000000000000000ULL,
+                         (long long)load64_le(in + 56), 0, 0));
+  state->x4 = _mm256_xor_si256(
+      state->x4,
+      _mm256_setr_epi64x((long long)load64_le(in + 88), 0,
+                         (long long)load64_le(in + 64), 0));
+  state->x5 = _mm256_xor_si256(
+      state->x5,
+      _mm256_setr_epi64x(0, 0, 0, (long long)load64_le(in + 72)));
+  state->x6 = _mm256_xor_si256(
+      state->x6,
+      _mm256_setr_epi64x((long long)load64_le(in + 48), 0x06, 0, 0));
+}
+
+static MLKEM_NOINLINE void
+sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]) {
+  mlkem_keccakf1600_avx2_state state;
+  sha3_256_1184_state_zero(&state);
+
+  for (int block = 0; block < 8; block++) {
+    sha3_256_1184_absorb_rate(&state, in + (size_t)block * 136);
+    mlkem_keccakf1600_avx2_permute(&state);
+  }
+  sha3_256_1184_absorb_tail(&state, in + 8 * 136);
+  mlkem_keccakf1600_avx2_permute(&state);
+
+  uint64_t lane0 = (uint64_t)_mm256_extract_epi64(state.x0, 0);
+  memcpy(out, &lane0, sizeof(lane0));
+  _mm_storeu_si128((__m128i *)(void *)(out + 8),
+                   _mm256_castsi256_si128(state.x1));
+  _mm_storel_epi64((__m128i *)(void *)(out + 24),
+                   _mm256_extracti128_si256(state.x1, 1));
 }
 #endif
