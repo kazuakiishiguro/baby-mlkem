@@ -1,5 +1,25 @@
 # Third-Party Notices
 
+## AVX2 16-bit Montgomery forward NTT
+
+The repository-local AVX2 forward-NTT head in `baby-mlkem.c` uses a C
+intrinsics implementation of the Montgomery/Harvey butterfly and precomputed
+low/high twiddle-factor decomposition used by the Kyber reference and AVX2
+implementations retained in this repository (upstream project:
+https://github.com/pq-crystals/kyber):
+
+- `include/kyber_upstream/ref/ntt.c`
+- `include/kyber_upstream/ref/reduce.c`
+- `include/kyber_upstream/avx2/ntt.S`
+- `include/kyber_upstream/avx2/fq.inc`
+
+The baby-mlkem path does not link or call those vendored NTT objects. The local
+intrinsics code and its four-stage range boundary are maintained separately,
+but the underlying arithmetic design is externally derived and is not claimed
+as an independently invented baby-mlkem NTT method. The retained Kyber/PQClean
+sources are public-domain/CC0 code; see
+`include/pqclean_avx2/ml-kem-768-avx2/LICENSE`.
+
 ## Single-state AVX2 Keccak-f[1600]
 
 The local keccakf1600_avx2.h implementation adapts the seven-vector state
