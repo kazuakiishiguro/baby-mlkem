@@ -23,6 +23,11 @@ Neither path adds an external library or object dependency, but neither design
 is claimed as independently invented by baby-mlkem. See
 `THIRD_PARTY_NOTICES.md` for the sources and licenses.
 
+The non-AVX512 AVX2 encryption accumulator is also repository-local. It
+implements the standard ML-KEM base-multiplication equations with a local
+four-output `vpmaddwd` schedule and fixed-range reducer; it imports no
+external object, precomputed factor table, or third-party library.
+
 The memory-resident x4 permutation used by public-matrix sampling, ETA2
 PRF/CBD helpers, and mixed noise/matrix-tail schedules remains repository-local
 AVX2 intrinsics code. Its carried-theta and plane-scheduling work is informed by
@@ -100,7 +105,8 @@ Near-term target selection:
 | Adjacent inverse-level fusion | Closed as a standalone tactic; superseded by the full representation | Head `l2+l3`, tail `l4+l5`/`l5+l6`, and `l6/final` fusion attempts were slower in the old 32-bit representation. The accepted full 16-bit inverse succeeds by changing butterfly arithmetic and range handling across all seven levels, not by reviving those local schedules. |
 | Public-matrix x4 lane grouping | Closed | Column-major x4 batches measured 0.9994x median versus current row-major production; regrouping lanes without changing Keccak/state work is not enough. |
 | Broad lazy/signed range contract | Full forward and inverse NTTs accepted; producer boundary still open only end-to-end | The forward transform removes stage-local 32-bit reductions, while the inverse proves a narrower contract: reduce only sum branches per level and keep difference products in Montgomery lanes. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins sampling, the transform, and accumulation together. |
-| Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
+| AVX2 four-output K=3 encryption accumulation | Accepted for non-AVX512 encryption | One centered `rhat` load feeds all three `u` rows and `v`; `vpmaddwd` computes even/odd and cross terms with a proved signed-32-bit reduction range. Eleven-pair A/B improves cached and uncached K-PKE medians by `1.0165x` and `1.0120x`; full encapsulation improves `1.0171x` with 11/11 wins. No external object, factor cache, or wire-format change is used. |
+| Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
@@ -110,14 +116,69 @@ frontier puts three production inverse-adds at `311.77 ns`. The same snapshot
 still puts three x4 sampler permutations at `767.87 ns`, a complete x4 sampler
 at `892.45 ns`, and `sample_matrix()` at `2632.53 ns`.
 
-The next independent target therefore remains the common x4 sampler. The
-remaining 24 nonzero lanes form the Rho/Pi cycle and still ping-pong through
+After the accepted four-output K=3 accumulation, the next independent target
+remains the common x4 sampler. Its remaining 24 nonzero lanes form the Rho/Pi cycle and still ping-pong through
 memory every round. Seed-load hoisting, lane regrouping, scalar refill tweaks,
 two-stream parser interleaving, final-round/rate-store fusion, and the expanded
 four-round in-place mapping are now closed by recorded A/B results. A new
 attempt must use a compact rotating plane window, controlled assembly/register
 allocation, or another representation that removes state traffic without
 recreating spill or instruction-cache pressure.
+
+### Latest Core Optimization A/B (2026-07-14, fused AVX2 K=3 encryption accumulation)
+
+Encryption used to call the scalar `ntt_mul_acc3()` helper four times: once for
+three `u` rows and once for `v`. The non-AVX512 AVX2 path now loads each
+16-coefficient `rhat` block once and reuses it across all four outputs.
+`vpmaddwd` forms adjacent even/odd products, a pair shuffle forms the cross term,
+and one fixed-reciprocal 32-bit reducer normalizes each result. Canonical `rhat`
+is centered in registers before the signed multiply; the full pair-sum bound is
+`+/-6*(Q-1)*(Q/2) = +/-33,226,752`, safely inside signed 32-bit arithmetic.
+
+This is a repository-local scheduling and range-reduction implementation of the
+standard ML-KEM base-multiplication equations. It does not copy, link, or call an
+external AVX2 object, and it adds no factor table, transformed-public-key cache,
+or wire-format change. The existing public-key cache is not required for the
+win: the cache-disabled K-PKE row is positive independently. Scalar and AVX-512
+production paths are unchanged.
+
+Production A/B used baseline `2bedc15`, candidate `5d3ee17`, CPU 0, `clang`,
+`AVX2_BACKEND=core`, explicit `-mavx2 -mno-avx512f`, two warmups, eleven
+alternating-order pairs, and `10000` iterations per KEM and stage run:
+
+```bash
+C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mno-avx512f" \
+  SUITES="kem,stage" RUNS=11 WARMUP_RUNS=2 RUN_ORDER=alternating \
+  PIN_CPU=0 KEM_ITERS=10000 STAGE_ITERS=10000 \
+  ./scripts/bench_core_ab.sh 2bedc15
+```
+
+| KEM metric | Paired geometric-mean speedup | Paired median speedup | Wins |
+|---|---:|---:|---:|
+| `mlkem_encaps` | 1.0164x | 1.0171x | 11/11 |
+| `mlkem_encaps_core` | 1.0104x | 1.0102x | 8/11 |
+| `mlkem_decaps` | 1.0304x | 1.0127x | 10/11 |
+| `mlkem_decaps_core` | 1.0143x | 1.0104x | 10/11 |
+| `mlkem_keygen` | 0.9985x | 0.9997x | 4/11 |
+| `mlkem_keygen_core` | 0.9986x | 0.9992x | 5/11 |
+| `mlkem_roundtrip` | 1.0103x | 1.0096x | 10/11 |
+| `mlkem_roundtrip_core` | 1.0104x | 1.0059x | 8/11 |
+
+The targeted stage guardrails were positive with and without the internal
+public-key cache:
+
+| Stage metric | Paired geometric-mean speedup | Paired median speedup | Wins |
+|---|---:|---:|---:|
+| `mlkem_core_stage_kpke_encrypt_cached` | 1.0361x | 1.0165x | 10/11 |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 1.0203x | 1.0120x | 10/11 |
+
+The fused helper is checked coefficient-for-coefficient against four scalar
+`ntt_mul_acc3()` calls. KEM and full stage validation passed with Clang and GCC
+AVX2-only builds, a Clang non-AVX build, a native AVX-512 build, and Clang
+ASan+UBSan. Keygen stays neutral because it deliberately retains the existing
+scalar accumulator; this also checks that the canonical forward NTT did not
+regress through code-generation side effects.
+
 
 ### Latest Core Optimization A/B (2026-07-14, full 16-bit Montgomery inverse NTT)
 
