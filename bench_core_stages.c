@@ -893,6 +893,121 @@ static void stage_sample_matrix_x3x3x3_avx2(const uint8_t *seed,
                          out[2][0], out[2][1], out[2][2]);
 }
 
+static inline void stage_hash_matrix_x3_init_group(__m256i st[25],
+                                                    const uint8_t *seed,
+                                                    uint8_t row) {
+  const __m256i hash_lane = _mm256_set_epi64x(0, 0, 0, -1LL);
+  const uint64_t pad = 0x80ULL << 56;
+
+  if (row != 0) {
+    for (int i = 0; i < 25; i++) {
+      st[i] = _mm256_and_si256(st[i], hash_lane);
+    }
+  }
+  for (int i = 0; i < 4; i++) {
+    uint64_t word = load64_le(seed + 8 * i);
+    st[i] = _mm256_or_si256(
+        st[i], _mm256_set_epi64x((long long)word, (long long)word,
+                                 (long long)word, 0));
+  }
+  st[4] = _mm256_or_si256(
+      st[4], _mm256_set_epi64x(
+                 (long long)((uint64_t)row | (2ULL << 8) | (0x1FULL << 16)),
+                 (long long)((uint64_t)row | (1ULL << 8) | (0x1FULL << 16)),
+                 (long long)((uint64_t)row | (0x1FULL << 16)), 0));
+  st[20] = _mm256_or_si256(
+      st[20], _mm256_set_epi64x((long long)pad, (long long)pad,
+                                (long long)pad, 0));
+}
+
+static inline void stage_hash_matrix_x3_absorb_hash(__m256i st[25],
+                                                     const uint8_t *pk,
+                                                     int block) {
+  if (block < 8) {
+    const uint8_t *p = pk + (size_t)block * 136;
+    for (int lane = 0; lane < 17; lane++) {
+      st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(p + 8 * lane));
+    }
+    return;
+  }
+
+  const uint8_t *tail = pk + 8 * 136;
+  for (int lane = 0; lane < 12; lane++) {
+    st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(tail + 8 * lane));
+  }
+  st[12] = keccak_xor_lane0_u64(st[12], 0x06u);
+  st[16] = keccak_xor_lane0_u64(st[16], 0x8000000000000000ULL);
+}
+
+static inline void stage_hash_matrix_x3_store_block(
+    uint64_t stream[3][63], int block, const __m256i st[25]) {
+  for (int word = 0; word < 21; word++) {
+    uint64_t lanes[4];
+    _mm256_storeu_si256((__m256i *)(void *)lanes, st[word]);
+    for (int lane = 0; lane < 3; lane++) {
+      stream[lane][(size_t)block * 21 + (size_t)word] = lanes[lane + 1];
+    }
+  }
+}
+
+static void stage_hash_matrix_x3_parse_group(const __m256i st[25],
+                                              uint64_t stream[3][63],
+                                              poly256 out0, poly256 out1,
+                                              poly256 out2) {
+  int16_t *outs[3] = {out0, out1, out2};
+
+  for (int lane = 0; lane < 3; lane++) {
+    int count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)(const void *)stream[lane], sizeof(stream[lane]),
+        outs[lane], 0);
+    if (count >= N) continue;
+
+    /* A refill must not advance the already co-scheduled hash lane. */
+    uint64_t scalar_st[25];
+    for (int word = 0; word < 25; word++) {
+      uint64_t lanes[4];
+      _mm256_storeu_si256((__m256i *)(void *)lanes, st[word]);
+      scalar_st[word] = lanes[lane + 1];
+    }
+    while (count < N) {
+      uint64_t extra[21];
+      keccakf(scalar_st);
+      memcpy(extra, scalar_st, sizeof(extra));
+      count = sample_ntt_parse_stream_avx2_ready(
+          (const uint8_t *)(const void *)extra, sizeof(extra), outs[lane],
+          count);
+    }
+  }
+}
+
+/* Advance H(pk) in lane 0 while lanes 1..3 generate one matrix row. */
+static void stage_sha3_256_sample_matrix_x3_avx2(
+    const uint8_t *pk, const uint8_t *rho, poly256 out[K][K], uint8_t h[32]) {
+  __m256i st[25];
+  uint64_t stream[3][63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  sample_ntt_parse_init_avx2();
+
+  for (int row = 0; row < K; row++) {
+    stage_hash_matrix_x3_init_group(st, rho, (uint8_t)row);
+    for (int block = 0; block < 3; block++) {
+      stage_hash_matrix_x3_absorb_hash(st, pk, 3 * row + block);
+      keccakf4_mem(st);
+      stage_hash_matrix_x3_store_block(stream, block, st);
+    }
+    stage_hash_matrix_x3_parse_group(
+        st, stream, out[row][0], out[row][1], out[row][2]);
+  }
+
+  for (int word = 0; word < 4; word++) {
+    uint64_t value = keccak_lane0_u64(st[word]);
+    memcpy(h + 8 * word, &value, sizeof(value));
+  }
+}
+
 static void stage_sample_matrix_x4x3x2_avx2(const uint8_t *seed,
                                             poly256 out[K][K]) {
   const uint8_t r0[4] = {0, 0, 0, 1};
@@ -2565,6 +2680,17 @@ static void stage_sha3_256_sample_ntt_tail21_avx2(const uint8_t *pk,
   memcpy(h, hst, 32);
 }
 
+static void stage_kpke_prepare_public_no_cache_hash_x3_avx2(
+    const uint8_t *ek_pke, uint8_t h[32]) {
+  const uint8_t *rho = ek_pke + K * 384;
+
+  for (int i = 0; i < K; i++) {
+    byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+  }
+  stage_sha3_256_sample_matrix_x3_avx2(
+      ek_pke, rho, kpke_public_cache_ahat, h);
+}
+
 static void stage_kpke_prepare_public_no_cache_tail21_avx2(
     const uint8_t *ek_pke, uint8_t h[32]) {
   const uint8_t *rho = ek_pke + K * 384;
@@ -2657,12 +2783,21 @@ static void validate_kpke_prepare_public_no_cache_tail21_avx2(void) {
   uint8_t got_h[32];
   poly256 want_that[K];
   poly256 want_ahat[K][K];
+  uint8_t fixture_ek[STAGE_PK_BYTES];
 
   mlkem_set_internal_caches_enabled(0);
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     kpke_prepare_public_no_cache(stage_ek[lane], want_h);
     memcpy(want_that, kpke_public_cache_that, sizeof(want_that));
     memcpy(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat));
+
+    stage_kpke_prepare_public_no_cache_hash_x3_avx2(stage_ek[lane], got_h);
+    if (memcmp(want_h, got_h, sizeof(want_h)) != 0 ||
+        memcmp(want_that, kpke_public_cache_that, sizeof(want_that)) != 0 ||
+        memcmp(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat)) != 0) {
+      fprintf(stderr, "hash+x3 public prepare mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
 
     stage_kpke_prepare_public_no_cache_tail21_avx2(stage_ek[lane], got_h);
     if (memcmp(want_h, got_h, sizeof(want_h)) != 0 ||
@@ -2687,6 +2822,23 @@ static void validate_kpke_prepare_public_no_cache_tail21_avx2(void) {
       }
     }
   }
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    fill_bytes(fixture_ek, sizeof(fixture_ek),
+               0x484153485833ULL + fixture);
+    kpke_prepare_public_no_cache(fixture_ek, want_h);
+    memcpy(want_that, kpke_public_cache_that, sizeof(want_that));
+    memcpy(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat));
+
+    stage_kpke_prepare_public_no_cache_hash_x3_avx2(fixture_ek, got_h);
+    if (memcmp(want_h, got_h, sizeof(want_h)) != 0 ||
+        memcmp(want_that, kpke_public_cache_that, sizeof(want_that)) != 0 ||
+        memcmp(want_ahat, kpke_public_cache_ahat, sizeof(want_ahat)) != 0) {
+      fprintf(stderr, "hash+x3 public prepare fixture mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+
   mlkem_set_internal_caches_enabled(1);
 }
 
@@ -2743,6 +2895,27 @@ static uint64_t bench_kpke_encrypt_uncached_tail_idx(size_t iters,
     acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
   }
   t1 = now_ns();
+
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_kpke_prepare_public_no_cache_hash_x3(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  uint8_t h[32];
+
+  mlkem_set_internal_caches_enabled(0);
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_kpke_prepare_public_no_cache_hash_x3_avx2(stage_ek[lane], h);
+    acc ^= h[(i * 17u) & 31u];
+    acc ^= (uint16_t)kpke_public_cache_that[i % K][i & 255u];
+    acc ^= (uint16_t)kpke_public_cache_ahat[(i / K) % K][i % K][0];
+  }
+  t1 = now_ns();
+  mlkem_set_internal_caches_enabled(1);
 
   bench_stage_sink ^= acc;
   return t1 - t0;
@@ -11204,6 +11377,8 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_kpke_prepare_public_no_cache",
                bench_kpke_prepare_public_no_cache(iters), iters);
 #if defined(__AVX2__) && !(defined(__AVX512F__))
+  print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_hash_x3",
+               bench_kpke_prepare_public_no_cache_hash_x3(iters), iters);
   print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_tail21",
                bench_kpke_prepare_public_no_cache_tail21(iters), iters);
   print_metric("mlkem_core_stage_kpke_prepare_public_no_cache_tail02",
