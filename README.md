@@ -35,6 +35,14 @@ the Keccak Team implementation literature, but production does not compile,
 link, or call the reference KeccakP times4 object. The separate vendor benchmark
 is reference-only.
 
+The GCC AVX512 x8 public-matrix sampler is repository-local as well. Its first
+SHAKE128 permutation partially evaluates Keccak round 0 from the six known
+nonzero state lanes, then rejoins the normal dense schedule for rounds 1..23
+and the next two permutations. Clang retains the original generic schedule
+because its automatic inlining makes the specialized form slower. Neither
+compiler path adds a cache, external object, library dependency, or wire-format
+change.
+
 The cold non-AVX512 AVX2 public-key preparation schedule is also
 repository-local. It co-schedules the nine serial `H(pk)` permutation
 steps with three three-lane matrix rows in the existing x4 permutation.
@@ -116,7 +124,8 @@ Near-term target selection:
 | AVX2 x4 byte-aligned Rho rotations | Accepted only in memory-resident path | The 8/56-bit rotations in `keccakf4_mem_parity()` use one `vpshufb` on AVX2-only builds, removing 96 GCC instructions per permutation while leaving generic `rotl64x4()` and AVX512 `vprolq` unchanged. Clang already generated the shuffle and stays neutral; GCC `keccakf4_mem` improves `1.0069x` paired median and KEM medians remain neutral-to-positive. |
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
 | Pairwise x4 next-parity reduction | Bench retained; production closed | Materializing two output rows before completing next-round parity shortens the XOR dependency chain, but reloads ten output vectors. Clang improves the full sampler by only `1.0032x` paired median while GCC regresses to `0.9943x`; the Clang round probe grows from 13 to 28 stack references. The compiler split does not justify a production branch. |
-| Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up selected | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The same specialization must therefore target x8. |
+| Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up completed | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The live GCC AVX512 x8 follow-up below confirms the specialization on the real path. |
+| Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
@@ -1055,6 +1064,88 @@ Decision: retain the exact x4 schedule as a bench-only artifact and do not add a
 dead AVX-512 production branch or a regressing GCC AVX2 branch. The actionable
 next target is the live x8 matrix sampler, whose fresh state has the same sparse
 lane structure and can use the same round-0 partial evaluation.
+
+### Independent Core Optimization A/B (2026-07-14, GCC AVX512 sparse x8 first round)
+
+The live AVX512 public-matrix batch starts each of its eight SHAKE128 streams
+with only Keccak lanes `0..4` and `20` nonzero. The specialized first
+permutation constructs those six vectors directly, computes the known theta
+parities `C0=A0^A20`, `C1=A1`, `C2=A2`, `C3=A3`, and `C4=A4`, and substitutes
+`D[x]` for each of the other 19 zero source lanes in round 0. Rounds 1..23, the
+next two permutations, rate stores, rejection parsing, refill behavior, and the
+matrix tail are unchanged.
+
+This is fixed-state partial evaluation in the local intrinsics core. It does
+not cache a seed or matrix, call a vendored Keccak object, or add an external
+library. The approach follows the specialization principle discussed in the x4
+diagnostic above; the Keccak mapping remains informed by the Keccak Team's
+[implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf).
+
+The exact AVX512 validator uses four fixture seeds. It compares all 25 x8 state
+vectors with generic `keccakf8()` after the specialized first permutation and
+after each of the next two generic permutations. It then compares all nine
+matrix polynomials with scalar `sample_ntt()`. Native Clang and GCC stage
+validation, native Clang/GCC `make test`, explicit AVX2-only Clang `make test`,
+and `git diff --check` passed.
+
+Baseline commit `215c4d1` and candidate commit `3e565e3` were built as separate
+binaries. Nine pairs were pinned to CPU 0 with execution order alternated on
+each pair. Stage used 50000 iterations and KEM used 30000. Equivalent command
+shapes are:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 SUITES=stage STAGE_ITERS=50000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 215c4d1
+RUNS=9 WARMUP_RUNS=1 SUITES=kem KEM_ITERS=30000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 215c4d1
+```
+
+Ratios are baseline divided by candidate. GCC AVX512 stage results:
+
+| Metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt8_full_raw` | 1676.03 | 1642.22 | 1.0206x | 1.0224x | 9/9 |
+| `mlkem_core_stage_sample_matrix` | 2394.71 | 2359.70 | 1.0148x | 1.0114x | 9/9 |
+| `mlkem_core_stage_kpke_keygen_full` | 6001.73 | 5969.30 | 1.0054x | 1.0023x | 6/9 |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4382.86 | 4425.40 | 0.9904x | 1.0017x | 5/9 |
+
+The uncached-encrypt average contains a large scheduling outlier; its median is
+neutral. The direct sampler, complete matrix, and KEM measurements provide the
+acceptance signal rather than that row alone.
+
+GCC AVX512 KEM results:
+
+| Metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 6243.95 | 6193.08 | 1.0082x | 1.0077x | 9/9 |
+| `mlkem_encaps_core` | 5934.73 | 5891.34 | 1.0074x | 1.0068x | 8/9 |
+| `mlkem_decaps_core` | 5212.06 | 5218.01 | 0.9989x | 1.0022x | 7/9 |
+| `mlkem_roundtrip_core` | 17509.44 | 17440.99 | 1.0039x | 1.0040x | 8/9 |
+
+An unrestricted Clang production route was tested and rejected before adding
+the compiler guard. Clang auto-inlines the generic x8 permutation into the
+sampler; adding the specialized dense schedule expands the hot function and
+loses the local operation-count win:
+
+| Clang unrestricted metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt8_full_raw` | 1196.62 | 1198.67 | 0.9983x | 0.9961x | 2/9 |
+| `mlkem_core_stage_sample_matrix` | 1903.38 | 1908.62 | 0.9973x | 0.9958x | 2/9 |
+| `mlkem_core_stage_kpke_keygen_full` | 3429.98 | 3435.34 | 0.9984x | 0.9983x | 3/9 |
+| `mlkem_keygen_core` | 5091.13 | 5105.06 | 0.9973x | 0.9980x | 3/9 |
+| `mlkem_encaps_core` | 4801.14 | 4803.33 | 0.9995x | 1.0003x | 5/9 |
+| `mlkem_roundtrip_core` | 14428.21 | 14414.01 | 1.0010x | 0.9982x | 2/9 |
+
+The final source therefore enables the specialized first permutation only for
+GCC and leaves Clang on the original initialization plus three generic
+permutations. Rebuilding the final source produced Clang `benchc` and stage
+binaries byte-for-byte identical to baseline, while the GCC binaries were
+byte-for-byte identical to the measured candidate. GCC `benchc` text grows
+from 81713 to 84561 bytes, a 2848-byte cost for the retained speedup.
+
+Decision: accept the GCC AVX512 route and keep the exact x8 schedule and
+baseline/candidate metrics in the stage harness. The bench/validator commit is
+`215c4d1`; the compiler-gated production commit is `3e565e3`.
 
 ### Independent Core Optimization Diagnostic (2026-07-14, four-round in-place x4 Keccak)
 
@@ -4018,6 +4109,7 @@ stage metrics.
 | `mlkem_core_stage_kpke_encrypt_cached` | full `kpke_encrypt()` with a cached public key, for repeated-key context only |
 | `mlkem_core_stage_kpke_decrypt_cached` | full `kpke_decrypt()` with a cached secret key, for repeated-key context only |
 | `mlkem_core_stage_sample_matrix` | the 3x3 `sample_ntt()` public matrix generation |
+| `mlkem_core_stage_sample_matrix_sparse_first_x8` | AVX512-only diagnostic: full 3x3 matrix using the sparse-first x8 batch plus the production x4 tail |
 | `mlkem_core_stage_sample_matrix_x4_batch0` | first four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_batch1` | second four-entry x4 public-matrix sampler batch |
 | `mlkem_core_stage_sample_matrix_x4_pair_blocked` | AVX2-only diagnostic: generate the two x4 public-matrix batches with interleaved three-block Keccak/store scheduling before parsing both batches |
@@ -4035,6 +4127,14 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail21` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(2,1)` as the PRF/CBD tail lane and placing `(2,2)` in the second x4 matrix batch |
 | `mlkem_core_stage_keygen_matrix_noise_tail02` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(0,2)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
+| `mlkem_core_stage_sample_ntt8_full_raw` | AVX512-only production x8 matrix-batch sampler with a lightweight sink |
+| `mlkem_core_stage_sample_ntt8_sparse_first_full_raw` | AVX512-only diagnostic: complete x8 sampler with initialization fused into sparse round 0 |
+| `mlkem_core_stage_sample_ntt8_keccak1_only` | AVX512-only baseline: fresh x8 matrix state plus one generic permutation |
+| `mlkem_core_stage_sample_ntt8_sparse_first_keccak1_only` | AVX512-only diagnostic: fused fresh-state initialization and sparse round 0 plus dense rounds 1..23 |
+| `mlkem_core_stage_sample_ntt8_keccak3_only` | AVX512-only baseline: fresh x8 matrix state plus three generic permutations, excluding rate stores |
+| `mlkem_core_stage_sample_ntt8_sparse_first_keccak3_only` | AVX512-only diagnostic: sparse first permutation plus two generic permutations, excluding rate stores |
+| `mlkem_core_stage_sample_ntt8_keccak_store3` | AVX512-only baseline: three generic x8 permutations plus all three production rate stores |
+| `mlkem_core_stage_sample_ntt8_sparse_first_keccak_store3` | AVX512-only diagnostic: sparse first permutation plus two generic permutations and all three rate stores |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only historical accepted-path baseline: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent at commit `0f9613f` before rolling lane zero |
 | `mlkem_core_stage_sample_ntt4_lane0_carry_full_raw` | AVX2-only accepted-path diagnostic: complete persistent-parity x4 sampler carrying lane `(0,0)` in a YMM register across all 24 rounds; production-equivalent after commit `1fccb50` |
