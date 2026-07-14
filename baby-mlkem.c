@@ -553,8 +553,8 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
   st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
 
-/* Matrix sampling and four-output ETA2 PRF/CBD benefit from this
-   memory-resident shape; other direct Keccak callers keep keccakf4() above. */
+/* Matrix sampling, ETA2 PRF/CBD, and mixed noise/matrix-tail schedules benefit
+   from this shape; other direct Keccak callers keep keccakf4() above. */
 static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     __m256i st[25], __m256i parity[5]) {
   __m256i e[25];
