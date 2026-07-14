@@ -137,6 +137,7 @@ Near-term target selection:
 | Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up completed | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The live GCC AVX512 x8 follow-up below confirms the specialization on the real path. |
 | Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
 | Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now exposes AVX512F immediate rotates directly. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15. Corrected native validation shows Clang `testc`/`benchc` and GCC AVX2-only binaries remain byte-identical; the Clang stage diagnostic differs only through inline-TU layout. |
+| GCC AVX512 x8 four-round Keccak mapping | Accepted for GCC; Clang and AVX2-only paths unchanged | Four rounds reuse logical lane names so Theta, Rho/Pi, and Chi consume five-lane rows without materializing 25 simultaneous Rho/Pi outputs. GCC x8 one-/three-permutation stage medians improve `1.0560x`/`1.0553x`, full sampling `1.0244x`, and matrix generation `1.0185x`; 15-pair KEM core medians improve `1.0108x`/`1.0135x`/`1.0117x`/`1.0135x` for keygen/encaps/decaps/roundtrip. The mapping is explicitly adapted from XKCP's CC0 AVX512 times8 core, not claimed as a new schedule, and adds no external object or cache. |
 | Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
 | AVX512 x8 Theta D/state ternary fusion | Closed | Direct `state XOR Cprev XOR ROL(Cnext)` lowers the GCC round body by five instructions, stack references from 37 to 21, and function size from 1,564 to 1,455 bytes. That static win does not survive integration: complete x8 sampling/matrix medians regress to `0.9958x`/`0.9961x`, and high-iteration decaps-core/roundtrip-core end at `0.9965x`/`0.9981x`. Keep the explicit shared D values. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
@@ -4984,6 +4985,88 @@ object or runtime-library dependency. Its seven-vector Keccak schedule remains
 the already disclosed XKCP/CRYPTOGAMS-derived mapping; this change claims only
 the local ISA selection and fixed-caller integration, not a new Keccak
 schedule.
+
+### Independent Core Optimization A/B (2026-07-15, GCC AVX512 x8 four-round mapping)
+
+After the fixed H(pk) rotate change, the refreshed profile put `keccakf8()`
+first at `20.72%` self time: 5.02 seconds over 14693485 calls, or about
+`0.34 us/call`. The old canonical C loop kept the 25 state vectors, five
+column parities, five Theta corrections, and 25 Rho/Pi outputs live in one
+round. GCC's 1580-byte function contained 96 `vmovdqa64` instructions and 37
+stack references around that one-round loop body.
+
+Production commit `86c9db9` adapts the four-round logical-lane mapping from
+Ronny Van Keer's [XKCP AVX512 times8 core](https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600-times8/AVX512/KeccakP-1600-times8-AVX512.c).
+Each five-lane group applies its Theta correction, rotates directly into one
+Chi row, and writes the result into a renamed state variable. Four successive
+mappings return to canonical lane names. This avoids materializing a separate
+25-vector Rho/Pi state while preserving the exact Keccak arithmetic.
+
+An 11-pair, 300000-iteration direct harness put four-round unrolling at
+`1.0761x` paired median with 11/11 wins. XKCP's default 12-round unrolling was
+only `1.0468x` here and lost one pair, so production uses the smaller form.
+The GCC function grows from 1580 to 3724 bytes. The complete generated
+candidate has 144 `vmovdqa64` instructions and 34 stack references around a
+loop that performs four rounds, versus the old function's 96/37 counts around
+a one-round loop. This is an explicit throughput versus instruction-footprint
+tradeoff, not an unconditional code-size win.
+
+The compiler gate is also deliberate. An unrestricted Clang stage A/B put
+x8 one-permutation, three-permutation, full-sampler, and matrix paired medians
+at `0.9502x`, `0.9512x`, `0.9450x`, and `0.9658x`. Clang therefore retains the
+old one-round mapping byte-for-byte; only GCC native AVX512 builds use the new
+schedule.
+
+The accepted GCC stage gate used CPU 0, two warmups, seven alternating pairs,
+and 40000 iterations against `023213f`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=40000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 023213f
+```
+
+| Stage metric | GCC paired median speedup | GCC wins |
+|---|---:|---:|
+| `mlkem_core_stage_sample_ntt8_keccak1_only` | 1.0560x | 7/7 |
+| `mlkem_core_stage_sample_ntt8_keccak3_only` | 1.0553x | 6/7 |
+| `mlkem_core_stage_sample_ntt8_keccak_store3` | 1.0542x | 7/7 |
+| `mlkem_core_stage_sample_ntt8_full_raw` | 1.0244x | 7/7 |
+| `mlkem_core_stage_sample_ntt8_sparse_first_full_raw` | 1.0240x | 7/7 |
+| `mlkem_core_stage_sample_matrix` | 1.0185x | 7/7 |
+| `mlkem_core_stage_sample_matrix_sparse_first_x8` | 1.0198x | 7/7 |
+
+Full-KEM confirmation used 50000 iterations, two warmups, and fifteen
+alternating pairs:
+
+```bash
+RUNS=15 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=kem KEM_ITERS=50000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 023213f
+```
+
+| KEM metric | GCC paired median speedup | GCC wins |
+|---|---:|---:|
+| `mlkem_keygen` | 1.0102x | 14/15 |
+| `mlkem_keygen_core` | 1.0108x | 14/15 |
+| `mlkem_encaps` | 1.0145x | 14/15 |
+| `mlkem_encaps_core` | 1.0135x | 14/15 |
+| `mlkem_decaps` | 1.0063x | 13/15 |
+| `mlkem_decaps_core` | 1.0117x | 14/15 |
+| `mlkem_roundtrip` | 1.0106x | 14/15 |
+| `mlkem_roundtrip_core` | 1.0135x | 15/15 |
+
+The final production function matches the old implementation over 256
+independent eight-state fixtures and eight consecutive permutations per
+fixture. GCC and Clang native, explicit AVX2-only, and scalar KEM/NTT tests
+pass; GCC native ASan+UBSan also passes. Clang native `testc`, `benchc`, and
+`bench_core_stagesc`, plus both compilers' AVX2-only `testc` and `benchc`, are
+byte-identical to `023213f`.
+
+The compiled core still links no XKCP object or runtime library and adds no
+cross-operation cache or wire-format dependency. The four-round mapping is a
+local intrinsics adaptation of XKCP's CC0 implementation and is explicitly not
+claimed as independently designed Keccak work; baby-mlkem's contribution here
+is the measured GCC-only integration and its narrower compiler/ISA boundary.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
