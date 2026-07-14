@@ -2963,7 +2963,11 @@ static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
       (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
   st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
 
+#if defined(__AVX512F__)
   keccakf4(st);
+#else
+  keccakf4_mem(st);
+#endif
 
 #if defined(__AVX512F__)
   for (int lane = 0; lane < 16; lane++) {
