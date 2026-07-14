@@ -458,6 +458,9 @@ static void validate_sample_ntt4_lane0_carry_avx2(void);
 static void validate_sample_ntt4_lane0_sparse_first_avx2(void);
 static void validate_sample_ntt4_lane0_pairwise_avx2(void);
 static void validate_sample_ntt4_lane03_carry_avx2(void);
+#if defined(__AVX512F__)
+static void validate_sample_ntt8_sparse_first_avx512(void);
+#endif
 void mlkem_bench_keccakf4_mem_parity_avx2_asm(__m256i st[25],
                                               __m256i parity[5]);
 static void validate_sample_ntt4_asm16_avx2(void);
@@ -2172,6 +2175,9 @@ static void validate_core_stage_helpers(void) {
   validate_sample_ntt4_persistent_parity_avx2();
   validate_sample_ntt4_lane0_carry_avx2();
   validate_sample_ntt4_lane0_sparse_first_avx2();
+#if defined(__AVX512F__)
+  validate_sample_ntt8_sparse_first_avx512();
+#endif
   validate_sample_ntt4_lane0_pairwise_avx2();
   validate_sample_ntt4_lane03_carry_avx2();
   validate_sample_ntt4_asm16_avx2();
@@ -4680,6 +4686,255 @@ static MLKEM_ALWAYS_INLINE void stage_sample_ntt4_lane0_sparse_first_init(
   parity[4] = c4;
 }
 
+#if defined(__AVX512F__)
+static MLKEM_ALWAYS_INLINE void stage_sample_ntt8_init(const uint8_t *seed,
+                                                       __m512i st[25]) {
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm512_setzero_si512();
+  }
+  st[0] = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  st[4] = _mm512_set_epi64(
+      0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+      0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+  st[20] = _mm512_set1_epi64((long long)(0x80ULL << 56));
+}
+
+static MLKEM_ALWAYS_INLINE void stage_sample_ntt8_sparse_first_init(const uint8_t *seed,
+                                                __m512i st[25]) {
+  __m512i a0 = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  __m512i a1 = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  __m512i a2 = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  __m512i a3 = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  __m512i a4 = _mm512_set_epi64(
+      0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+      0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+  __m512i a5, a6, a7, a8, a9;
+  __m512i a10, a11, a12, a13, a14;
+  __m512i a15, a16, a17, a18, a19;
+  __m512i a20 = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  __m512i a21, a22, a23, a24;
+  __m512i c0 = _mm512_xor_si512(a0, a20);
+  __m512i c1 = a1;
+  __m512i c2 = a2;
+  __m512i c3 = a3;
+  __m512i c4 = a4;
+  __m512i d0 = _mm512_xor_si512(c4, rotl64x8(c1, 1));
+  __m512i d1 = _mm512_xor_si512(c0, rotl64x8(c2, 1));
+  __m512i d2 = _mm512_xor_si512(c1, rotl64x8(c3, 1));
+  __m512i d3 = _mm512_xor_si512(c2, rotl64x8(c4, 1));
+  __m512i d4 = _mm512_xor_si512(c3, rotl64x8(c0, 1));
+
+  /* Round 0 consumes only lanes 0..4 and 20; all other inputs are zero. */
+#define CHIX8(x, y, z) _mm512_ternarylogic_epi64((x), (y), (z), 0xd2)
+  __m512i b0 = rotl64x8(_mm512_xor_si512(a3, d3), 28);
+  __m512i b1 = rotl64x8(d4, 20);
+  __m512i b2 = rotl64x8(d0, 3);
+  __m512i b3 = rotl64x8(d1, 45);
+  __m512i b4 = rotl64x8(d2, 61);
+  a5 = CHIX8(b0, b1, b2);
+  a6 = CHIX8(b1, b2, b3);
+  a7 = CHIX8(b2, b3, b4);
+  a8 = CHIX8(b3, b4, b0);
+  a9 = CHIX8(b4, b0, b1);
+
+  b0 = rotl64x8(_mm512_xor_si512(a1, d1), 1);
+  b1 = rotl64x8(d2, 6);
+  b2 = rotl64x8(d3, 25);
+  b3 = rotl64x8(d4, 8);
+  b4 = rotl64x8(_mm512_xor_si512(a20, d0), 18);
+  a10 = CHIX8(b0, b1, b2);
+  a11 = CHIX8(b1, b2, b3);
+  a12 = CHIX8(b2, b3, b4);
+  a13 = CHIX8(b3, b4, b0);
+  a14 = CHIX8(b4, b0, b1);
+
+  b0 = rotl64x8(_mm512_xor_si512(a4, d4), 27);
+  b1 = rotl64x8(d0, 36);
+  b2 = rotl64x8(d1, 10);
+  b3 = rotl64x8(d2, 15);
+  b4 = rotl64x8(d3, 56);
+  a15 = CHIX8(b0, b1, b2);
+  a16 = CHIX8(b1, b2, b3);
+  a17 = CHIX8(b2, b3, b4);
+  a18 = CHIX8(b3, b4, b0);
+  a19 = CHIX8(b4, b0, b1);
+
+  b0 = rotl64x8(_mm512_xor_si512(a2, d2), 62);
+  b1 = rotl64x8(d3, 55);
+  b2 = rotl64x8(d4, 39);
+  b3 = rotl64x8(d0, 41);
+  b4 = rotl64x8(d1, 2);
+  a20 = CHIX8(b0, b1, b2);
+  a21 = CHIX8(b1, b2, b3);
+  a22 = CHIX8(b2, b3, b4);
+  a23 = CHIX8(b3, b4, b0);
+  a24 = CHIX8(b4, b0, b1);
+
+  b0 = _mm512_xor_si512(a0, d0);
+  b1 = rotl64x8(d1, 44);
+  b2 = rotl64x8(d2, 43);
+  b3 = rotl64x8(d3, 21);
+  b4 = rotl64x8(d4, 14);
+  a0 = _mm512_xor_si512(CHIX8(b0, b1, b2),
+                        _mm512_set1_epi64((long long)rc[0]));
+  a1 = CHIX8(b1, b2, b3);
+  a2 = CHIX8(b2, b3, b4);
+  a3 = CHIX8(b3, b4, b0);
+  a4 = CHIX8(b4, b0, b1);
+#undef CHIX8
+
+  for (int round = 1; round < 24; round++) {
+    c0 = _mm512_xor_si512(
+        _mm512_xor_si512(_mm512_xor_si512(a0, a5),
+                         _mm512_xor_si512(a10, a15)), a20);
+    c1 = _mm512_xor_si512(
+        _mm512_xor_si512(_mm512_xor_si512(a1, a6),
+                         _mm512_xor_si512(a11, a16)), a21);
+    c2 = _mm512_xor_si512(
+        _mm512_xor_si512(_mm512_xor_si512(a2, a7),
+                         _mm512_xor_si512(a12, a17)), a22);
+    c3 = _mm512_xor_si512(
+        _mm512_xor_si512(_mm512_xor_si512(a3, a8),
+                         _mm512_xor_si512(a13, a18)), a23);
+    c4 = _mm512_xor_si512(
+        _mm512_xor_si512(_mm512_xor_si512(a4, a9),
+                         _mm512_xor_si512(a14, a19)), a24);
+    d0 = _mm512_xor_si512(c4, rotl64x8(c1, 1));
+    d1 = _mm512_xor_si512(c0, rotl64x8(c2, 1));
+    d2 = _mm512_xor_si512(c1, rotl64x8(c3, 1));
+    d3 = _mm512_xor_si512(c2, rotl64x8(c4, 1));
+    d4 = _mm512_xor_si512(c3, rotl64x8(c0, 1));
+
+    a0 = _mm512_xor_si512(a0, d0);   a5 = _mm512_xor_si512(a5, d0);
+    a10 = _mm512_xor_si512(a10, d0); a15 = _mm512_xor_si512(a15, d0);
+    a20 = _mm512_xor_si512(a20, d0);
+    a1 = _mm512_xor_si512(a1, d1);   a6 = _mm512_xor_si512(a6, d1);
+    a11 = _mm512_xor_si512(a11, d1); a16 = _mm512_xor_si512(a16, d1);
+    a21 = _mm512_xor_si512(a21, d1);
+    a2 = _mm512_xor_si512(a2, d2);   a7 = _mm512_xor_si512(a7, d2);
+    a12 = _mm512_xor_si512(a12, d2); a17 = _mm512_xor_si512(a17, d2);
+    a22 = _mm512_xor_si512(a22, d2);
+    a3 = _mm512_xor_si512(a3, d3);   a8 = _mm512_xor_si512(a8, d3);
+    a13 = _mm512_xor_si512(a13, d3); a18 = _mm512_xor_si512(a18, d3);
+    a23 = _mm512_xor_si512(a23, d3);
+    a4 = _mm512_xor_si512(a4, d4);   a9 = _mm512_xor_si512(a9, d4);
+    a14 = _mm512_xor_si512(a14, d4); a19 = _mm512_xor_si512(a19, d4);
+    a24 = _mm512_xor_si512(a24, d4);
+
+    b0 = a0;
+    b1 = rotl64x8(a6, 44);
+    b2 = rotl64x8(a12, 43);
+    b3 = rotl64x8(a18, 21);
+    b4 = rotl64x8(a24, 14);
+    __m512i b5 = rotl64x8(a3, 28);
+    __m512i b6 = rotl64x8(a9, 20);
+    __m512i b7 = rotl64x8(a10, 3);
+    __m512i b8 = rotl64x8(a16, 45);
+    __m512i b9 = rotl64x8(a22, 61);
+    __m512i b10 = rotl64x8(a1, 1);
+    __m512i b11 = rotl64x8(a7, 6);
+    __m512i b12 = rotl64x8(a13, 25);
+    __m512i b13 = rotl64x8(a19, 8);
+    __m512i b14 = rotl64x8(a20, 18);
+    __m512i b15 = rotl64x8(a4, 27);
+    __m512i b16 = rotl64x8(a5, 36);
+    __m512i b17 = rotl64x8(a11, 10);
+    __m512i b18 = rotl64x8(a17, 15);
+    __m512i b19 = rotl64x8(a23, 56);
+    __m512i b20 = rotl64x8(a2, 62);
+    __m512i b21 = rotl64x8(a8, 55);
+    __m512i b22 = rotl64x8(a14, 39);
+    __m512i b23 = rotl64x8(a15, 41);
+    __m512i b24 = rotl64x8(a21, 2);
+
+#define CHIX8(x, y, z) _mm512_ternarylogic_epi64((x), (y), (z), 0xd2)
+    a0 = CHIX8(b0, b1, b2);
+    a1 = CHIX8(b1, b2, b3);
+    a2 = CHIX8(b2, b3, b4);
+    a3 = CHIX8(b3, b4, b0);
+    a4 = CHIX8(b4, b0, b1);
+    a5 = CHIX8(b5, b6, b7);
+    a6 = CHIX8(b6, b7, b8);
+    a7 = CHIX8(b7, b8, b9);
+    a8 = CHIX8(b8, b9, b5);
+    a9 = CHIX8(b9, b5, b6);
+    a10 = CHIX8(b10, b11, b12);
+    a11 = CHIX8(b11, b12, b13);
+    a12 = CHIX8(b12, b13, b14);
+    a13 = CHIX8(b13, b14, b10);
+    a14 = CHIX8(b14, b10, b11);
+    a15 = CHIX8(b15, b16, b17);
+    a16 = CHIX8(b16, b17, b18);
+    a17 = CHIX8(b17, b18, b19);
+    a18 = CHIX8(b18, b19, b15);
+    a19 = CHIX8(b19, b15, b16);
+    a20 = CHIX8(b20, b21, b22);
+    a21 = CHIX8(b21, b22, b23);
+    a22 = CHIX8(b22, b23, b24);
+    a23 = CHIX8(b23, b24, b20);
+    a24 = CHIX8(b24, b20, b21);
+#undef CHIX8
+
+    a0 = _mm512_xor_si512(a0, _mm512_set1_epi64((long long)rc[round]));
+  }
+
+  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
+  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
+  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
+  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
+  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
+}
+
+static void stage_sample_ntt8_sparse_first_avx512(
+    const uint8_t *seed, poly256 out0, poly256 out1, poly256 out2,
+    poly256 out3, poly256 out4, poly256 out5, poly256 out6, poly256 out7) {
+  __m512i st[25];
+  uint8_t stream[8][504];
+  int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
+
+  stage_sample_ntt8_sparse_first_init(seed, st);
+  sample_ntt8_store_block(stream, 0, st);
+  for (int block = 1; block < 3; block++) {
+    keccakf8(st);
+    sample_ntt8_store_block(stream, (size_t)block * 168, st);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count[8];
+  int need_more = 0;
+  for (int lane = 0; lane < 8; lane++) {
+    count[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream[lane], sizeof(stream[lane]), outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+  while (need_more) {
+    uint8_t extra[8][168];
+    keccakf8(st);
+    sample_ntt8_store_rate(extra[0], extra[1], extra[2], extra[3],
+                           extra[4], extra[5], extra[6], extra[7], st);
+    need_more = 0;
+    for (int lane = 0; lane < 8; lane++) {
+      if (count[lane] < N) {
+        count[lane] = sample_ntt_parse_stream_avx2_ready(
+            extra[lane], sizeof(extra[lane]), outs[lane], count[lane]);
+        need_more |= count[lane] < N;
+      }
+    }
+  }
+}
+
+static void stage_sample_matrix_sparse_first_x8_avx512(
+    const uint8_t *seed, poly256 out[K][K]) {
+  stage_sample_ntt8_sparse_first_avx512(
+      seed, out[0][0], out[0][1], out[0][2], out[1][0], out[1][1],
+      out[1][2], out[2][0], out[2][1]);
+  sample_ntt4_one(seed, 2, 2, out[2][2]);
+}
+#endif
+
 static MLKEM_ALWAYS_INLINE void stage_keccakf4_mem_parity_lane0_pairwise(
     __m256i st[25], __m256i parity[5]) {
   __m256i e[25];
@@ -6246,6 +6501,53 @@ static void validate_sample_ntt4_lane0_sparse_first_avx2(void) {
   }
 }
 
+#if defined(__AVX512F__)
+static void validate_sample_ntt8_sparse_first_avx512(void) {
+  static const uint8_t rows[8] = {0, 0, 0, 1, 1, 1, 2, 2};
+  static const uint8_t cols[8] = {0, 1, 2, 0, 1, 2, 0, 1};
+
+  for (size_t fixture = 0; fixture < STAGE_BENCH_LANES; fixture++) {
+    __m512i base_st[25];
+    __m512i got_st[25];
+    poly256 got[K][K];
+    poly256 want;
+
+    stage_sample_ntt8_init(stage_rho[fixture], base_st);
+    keccakf8(base_st);
+    stage_sample_ntt8_sparse_first_init(stage_rho[fixture], got_st);
+    for (int checkpoint = 1; checkpoint <= 3; checkpoint++) {
+      if (memcmp(got_st, base_st, sizeof(base_st)) != 0) {
+        fprintf(stderr,
+                "sample_ntt8 sparse-first state mismatch at %zu,%d\n",
+                fixture, checkpoint);
+        exit(EXIT_FAILURE);
+      }
+      if (checkpoint < 3) {
+        keccakf8(base_st);
+        keccakf8(got_st);
+      }
+    }
+
+    stage_sample_matrix_sparse_first_x8_avx512(stage_rho[fixture], got);
+    for (int lane = 0; lane < 8; lane++) {
+      sample_ntt(stage_rho[fixture], rows[lane], cols[lane], want);
+      if (memcmp(got[rows[lane]][cols[lane]], want, sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "sample_ntt8 sparse-first full mismatch at %zu,%d\n",
+                fixture, lane);
+        exit(EXIT_FAILURE);
+      }
+    }
+    sample_ntt(stage_rho[fixture], 2, 2, want);
+    if (memcmp(got[2][2], want, sizeof(poly256)) != 0) {
+      fprintf(stderr, "sample_ntt8 sparse-first tail mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void validate_sample_ntt4_lane0_pairwise_avx2(void) {
   static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
   static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
@@ -6698,6 +7000,179 @@ static uint64_t bench_sample_ntt4_lane0_sparse_first_full_raw(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+#if defined(__AVX512F__)
+static uint64_t bench_sample_matrix_sparse_first_x8(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_matrix_sparse_first_x8_avx512(stage_rho[lane],
+                                               stage_tmp_ahat[lane]);
+    acc ^= checksum_poly(stage_tmp_ahat[lane][(i / K) % K][i % K]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_full_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    size_t poly = i & 7u;
+    sample_ntt8_matrix(
+        stage_rho[lane], stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0], stage_tmp_ahat[lane][1][1],
+        stage_tmp_ahat[lane][1][2], stage_tmp_ahat[lane][2][0],
+        stage_tmp_ahat[lane][2][1]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][poly / K][poly % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_sparse_first_full_raw(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    size_t poly = i & 7u;
+    stage_sample_ntt8_sparse_first_avx512(
+        stage_rho[lane], stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0], stage_tmp_ahat[lane][1][1],
+        stage_tmp_ahat[lane][1][2], stage_tmp_ahat[lane][2][0],
+        stage_tmp_ahat[lane][2][1]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][poly / K][poly % K][i & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_keccak1_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    uint64_t words[8];
+    stage_sample_ntt8_init(stage_rho[lane], st);
+    keccakf8(st);
+    _mm512_storeu_si512((void *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 7u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_sparse_first_keccak1_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    uint64_t words[8];
+    stage_sample_ntt8_sparse_first_init(stage_rho[lane], st);
+    _mm512_storeu_si512((void *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 7u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_keccak3_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    uint64_t words[8];
+    stage_sample_ntt8_init(stage_rho[lane], st);
+    for (int block = 0; block < 3; block++) {
+      keccakf8(st);
+    }
+    _mm512_storeu_si512((void *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 7u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_sparse_first_keccak3_only(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    uint64_t words[8];
+    stage_sample_ntt8_sparse_first_init(stage_rho[lane], st);
+    for (int block = 1; block < 3; block++) {
+      keccakf8(st);
+    }
+    _mm512_storeu_si512((void *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 7u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_keccak_store3(size_t iters) {
+  uint8_t stream[8][504];
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    stage_sample_ntt8_init(stage_rho[lane], st);
+    for (int block = 0; block < 3; block++) {
+      keccakf8(st);
+      sample_ntt8_store_block(stream, (size_t)block * 168, st);
+    }
+    acc ^= stream[i & 7u][(i * 17u) % 504u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt8_sparse_first_keccak_store3(size_t iters) {
+  uint8_t stream[8][504];
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m512i st[25];
+    stage_sample_ntt8_sparse_first_init(stage_rho[lane], st);
+    sample_ntt8_store_block(stream, 0, st);
+    for (int block = 1; block < 3; block++) {
+      keccakf8(st);
+      sample_ntt8_store_block(stream, (size_t)block * 168, st);
+    }
+    acc ^= stream[i & 7u][(i * 17u) % 504u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 
 static uint64_t bench_sample_ntt4_lane0_pairwise_full_raw(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
@@ -12779,6 +13254,10 @@ int main(int argc, char **argv) {
                bench_kpke_decrypt_cached(iters), iters);
   print_metric("mlkem_core_stage_sample_matrix", bench_sample_matrix(iters),
                iters);
+#if defined(__AVX512F__)
+  print_metric("mlkem_core_stage_sample_matrix_sparse_first_x8",
+               bench_sample_matrix_sparse_first_x8(iters), iters);
+#endif
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_matrix_scalar_refill",
                bench_sample_matrix_scalar_refill(iters), iters);
@@ -12825,6 +13304,24 @@ int main(int argc, char **argv) {
                bench_keygen_matrix_noise_tail_idx(iters, 3), iters);
 #endif
 #if defined(__AVX2__)
+#if defined(__AVX512F__)
+  print_metric("mlkem_core_stage_sample_ntt8_full_raw",
+               bench_sample_ntt8_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_sparse_first_full_raw",
+               bench_sample_ntt8_sparse_first_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_keccak1_only",
+               bench_sample_ntt8_keccak1_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_sparse_first_keccak1_only",
+               bench_sample_ntt8_sparse_first_keccak1_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_keccak3_only",
+               bench_sample_ntt8_keccak3_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_sparse_first_keccak3_only",
+               bench_sample_ntt8_sparse_first_keccak3_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_keccak_store3",
+               bench_sample_ntt8_keccak_store3(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt8_sparse_first_keccak_store3",
+               bench_sample_ntt8_sparse_first_keccak_store3(iters), iters);
+#endif
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",
                bench_sample_ntt4_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_persistent_parity_full_raw",
