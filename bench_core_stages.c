@@ -682,6 +682,13 @@ static void derive_encrypt_lane(size_t lane) {
   stage_inv_sub_from_scale_only(stage_v[lane], stage_w[lane]);
 }
 
+#if defined(__AVX2__)
+static inline uint64_t stage_sample_ntt_tail_suffix(int tail_idx) {
+  return (uint64_t)(uint8_t)(tail_idx / K) |
+         ((uint64_t)(uint8_t)(tail_idx % K) << 8) | (0x1FULL << 16);
+}
+#endif
+
 #if defined(__AVX2__) && !(defined(__AVX512F__))
 static inline void stage_sample_ntt2_store_block(uint64_t stream0[63],
                                                  uint64_t stream1[63],
@@ -845,11 +852,6 @@ static void stage_sample_ntt3_avx2(const uint8_t *seed, uint8_t row0,
           count2);
     }
   }
-}
-
-static inline uint64_t stage_sample_ntt_tail_suffix(int tail_idx) {
-  return (uint64_t)(uint8_t)(tail_idx / K) |
-         ((uint64_t)(uint8_t)(tail_idx % K) << 8) | (0x1FULL << 16);
 }
 
 static void stage_sample_matrix_tail_choice_rows(int tail_idx, uint8_t row[8],
