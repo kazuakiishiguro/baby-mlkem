@@ -723,56 +723,103 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
 #define MLKEM_KECCAKF8_CHI(a, b, c) \
   _mm512_ternarylogic_epi64((a), (b), (c), 0xd2)
 
-#define MLKEM_KECCAKF8_ROW(L1, L2, L3, L4, L5, B1, B2, B3, B4, B5, \
-                           R1, R2, R3, R4, R5)                       \
-  do {                                                               \
-    (B1) = _mm512_xor_si512((L1), Da);                               \
-    (B2) = _mm512_xor_si512((L2), De);                               \
-    (B3) = _mm512_xor_si512((L3), Di);                               \
-    (B4) = _mm512_xor_si512((L4), Do);                               \
-    (B5) = _mm512_xor_si512((L5), Du);                               \
-    if ((R1) != 0) (B1) = rotl64x8((B1), (R1));                      \
-    (B2) = rotl64x8((B2), (R2));                                     \
-    (B3) = rotl64x8((B3), (R3));                                     \
-    (B4) = rotl64x8((B4), (R4));                                     \
-    (B5) = rotl64x8((B5), (R5));                                     \
-    (L1) = MLKEM_KECCAKF8_CHI(Ba, Be, Bi);                           \
-    (L2) = MLKEM_KECCAKF8_CHI(Be, Bi, Bo);                           \
-    (L3) = MLKEM_KECCAKF8_CHI(Bi, Bo, Bu);                           \
-    (L4) = MLKEM_KECCAKF8_CHI(Bo, Bu, Ba);                           \
-    (L5) = MLKEM_KECCAKF8_CHI(Bu, Ba, Be);                           \
+/* Consume one Theta D at a time so only the five parities stay live. */
+#define MLKEM_KECCAKF8_THETA_COLUMN(CPREV, CNEXT, L1, L2, L3, L4, L5) \
+  do {                                                                 \
+    D = _mm512_xor_si512((CPREV), rotl64x8((CNEXT), 1));               \
+    (L1) = _mm512_xor_si512((L1), D);                                  \
+    (L2) = _mm512_xor_si512((L2), D);                                  \
+    (L3) = _mm512_xor_si512((L3), D);                                  \
+    (L4) = _mm512_xor_si512((L4), D);                                  \
+    (L5) = _mm512_xor_si512((L5), D);                                  \
   } while (0)
 
-#define MLKEM_KECCAKF8_ROUND0(L1, L2, L3, L4, L5, round)            \
+#define MLKEM_KECCAKF8_RHOPI(L1, L2, L3, L4, L5, R1, R2, R3, R4, R5) \
+  do {                                                                 \
+    if ((R1) != 0) (L1) = rotl64x8((L1), (R1));                       \
+    (L2) = rotl64x8((L2), (R2));                                       \
+    (L3) = rotl64x8((L3), (R3));                                       \
+    (L4) = rotl64x8((L4), (R4));                                       \
+    (L5) = rotl64x8((L5), (R5));                                       \
+  } while (0)
+
+/* Logical rows hold B at cyclic offsets 0, 2, 4, 1, and 3 respectively. */
+#define MLKEM_KECCAKF8_ROW0(L1, L2, L3, L4, L5)                     \
   do {                                                               \
-    Ba = MLKEM_KECCAKF8_XOR5(ba, ga, ka, ma, sa);                    \
-    Be = MLKEM_KECCAKF8_XOR5(be, ge, ke, me, se);                    \
-    Bi = MLKEM_KECCAKF8_XOR5(bi, gi, ki, mi, si);                    \
-    Bo = MLKEM_KECCAKF8_XOR5(bo, go, ko, mo, so);                    \
-    Bu = MLKEM_KECCAKF8_XOR5(bu, gu, ku, mu, su);                    \
-    Da = _mm512_xor_si512(rotl64x8(Be, 1), Bu);                       \
-    De = _mm512_xor_si512(rotl64x8(Bi, 1), Ba);                       \
-    Di = _mm512_xor_si512(rotl64x8(Bo, 1), Be);                       \
-    Do = _mm512_xor_si512(rotl64x8(Bu, 1), Bi);                       \
-    Du = _mm512_xor_si512(rotl64x8(Ba, 1), Bo);                       \
-    MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Ba, Be, Bi, Bo, \
-                       Bu, 0, 44, 43, 21, 14);                       \
-    (L1) = _mm512_xor_si512(                                         \
-        (L1), _mm512_set1_epi64((long long)rc[(round)]));            \
+    MLKEM_KECCAKF8_RHOPI((L1), (L2), (L3), (L4), (L5), 0, 44, 43,  \
+                          21, 14);                                   \
+    __m512i T0 = (L1), T1 = (L2);                                    \
+    (L1) = MLKEM_KECCAKF8_CHI(T0, T1, (L3));                         \
+    (L2) = MLKEM_KECCAKF8_CHI(T1, (L3), (L4));                       \
+    (L3) = MLKEM_KECCAKF8_CHI((L3), (L4), (L5));                     \
+    (L4) = MLKEM_KECCAKF8_CHI((L4), (L5), T0);                       \
+    (L5) = MLKEM_KECCAKF8_CHI((L5), T0, T1);                         \
   } while (0)
 
 #define MLKEM_KECCAKF8_ROW1(L1, L2, L3, L4, L5)                     \
-  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bi, Bo, Bu, Ba,  \
-                     Be, 3, 45, 61, 28, 20)
+  do {                                                               \
+    MLKEM_KECCAKF8_RHOPI((L1), (L2), (L3), (L4), (L5), 3, 45, 61,  \
+                          28, 20);                                   \
+    __m512i T0 = (L1), T1 = (L2);                                    \
+    (L1) = MLKEM_KECCAKF8_CHI((L4), (L5), T0);                       \
+    (L2) = MLKEM_KECCAKF8_CHI((L5), T0, T1);                         \
+    (L5) = MLKEM_KECCAKF8_CHI((L3), (L4), (L5));                     \
+    (L4) = MLKEM_KECCAKF8_CHI(T1, (L3), (L4));                       \
+    (L3) = MLKEM_KECCAKF8_CHI(T0, T1, (L3));                         \
+  } while (0)
+
 #define MLKEM_KECCAKF8_ROW2(L1, L2, L3, L4, L5)                     \
-  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bu, Ba, Be, Bi,  \
-                     Bo, 18, 1, 6, 25, 8)
+  do {                                                               \
+    MLKEM_KECCAKF8_RHOPI((L1), (L2), (L3), (L4), (L5), 18, 1, 6,   \
+                          25, 8);                                    \
+    __m512i T0 = (L1), T1 = (L2), T2 = (L3);                         \
+    (L1) = MLKEM_KECCAKF8_CHI(T1, T2, (L4));                         \
+    (L2) = MLKEM_KECCAKF8_CHI(T2, (L4), (L5));                       \
+    (L3) = MLKEM_KECCAKF8_CHI((L4), (L5), T0);                       \
+    (L4) = MLKEM_KECCAKF8_CHI((L5), T0, T1);                         \
+    (L5) = MLKEM_KECCAKF8_CHI(T0, T1, T2);                           \
+  } while (0)
+
 #define MLKEM_KECCAKF8_ROW3(L1, L2, L3, L4, L5)                     \
-  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Be, Bi, Bo, Bu,  \
-                     Ba, 36, 10, 15, 56, 27)
+  do {                                                               \
+    MLKEM_KECCAKF8_RHOPI((L1), (L2), (L3), (L4), (L5), 36, 10, 15, \
+                          56, 27);                                   \
+    __m512i T0 = (L1), T1 = (L2), T3 = (L4);                         \
+    (L1) = MLKEM_KECCAKF8_CHI((L5), T0, T1);                         \
+    (L2) = MLKEM_KECCAKF8_CHI(T0, T1, (L3));                         \
+    (L4) = MLKEM_KECCAKF8_CHI((L3), T3, (L5));                       \
+    (L3) = MLKEM_KECCAKF8_CHI(T1, (L3), T3);                         \
+    (L5) = MLKEM_KECCAKF8_CHI(T3, (L5), T0);                         \
+  } while (0)
+
 #define MLKEM_KECCAKF8_ROW4(L1, L2, L3, L4, L5)                     \
-  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bo, Bu, Ba, Be,  \
-                     Bi, 41, 2, 62, 55, 39)
+  do {                                                               \
+    MLKEM_KECCAKF8_RHOPI((L1), (L2), (L3), (L4), (L5), 41, 2, 62,  \
+                          55, 39);                                   \
+    __m512i T0 = (L1), T1 = (L2), T2 = (L3);                         \
+    (L1) = MLKEM_KECCAKF8_CHI(T2, (L4), (L5));                       \
+    (L2) = MLKEM_KECCAKF8_CHI((L4), (L5), T0);                       \
+    (L3) = MLKEM_KECCAKF8_CHI((L5), T0, T1);                         \
+    (L5) = MLKEM_KECCAKF8_CHI(T1, T2, (L4));                         \
+    (L4) = MLKEM_KECCAKF8_CHI(T0, T1, T2);                           \
+  } while (0)
+
+#define MLKEM_KECCAKF8_ROUND0(L1, L2, L3, L4, L5, round)           \
+  do {                                                              \
+    Ba = MLKEM_KECCAKF8_XOR5(ba, ga, ka, ma, sa);                   \
+    Be = MLKEM_KECCAKF8_XOR5(be, ge, ke, me, se);                   \
+    Bi = MLKEM_KECCAKF8_XOR5(bi, gi, ki, mi, si);                   \
+    Bo = MLKEM_KECCAKF8_XOR5(bo, go, ko, mo, so);                   \
+    Bu = MLKEM_KECCAKF8_XOR5(bu, gu, ku, mu, su);                   \
+    MLKEM_KECCAKF8_THETA_COLUMN(Bu, Be, ba, ga, ka, ma, sa);        \
+    MLKEM_KECCAKF8_THETA_COLUMN(Ba, Bi, be, ge, ke, me, se);        \
+    MLKEM_KECCAKF8_THETA_COLUMN(Be, Bo, bi, gi, ki, mi, si);        \
+    MLKEM_KECCAKF8_THETA_COLUMN(Bi, Bu, bo, go, ko, mo, so);        \
+    MLKEM_KECCAKF8_THETA_COLUMN(Bo, Ba, bu, gu, ku, mu, su);        \
+    MLKEM_KECCAKF8_ROW0((L1), (L2), (L3), (L4), (L5));             \
+    (L1) = _mm512_xor_si512(                                        \
+        (L1), _mm512_set1_epi64((long long)rc[(round)]));           \
+  } while (0)
 
 #define MLKEM_KECCAKF8_FOUR_ROUNDS(i)                                \
   do {                                                               \
@@ -799,7 +846,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
   } while (0)
 
 static void keccakf8(__m512i st[25]) {
-  __m512i Ba, Be, Bi, Bo, Bu, Da, De, Di, Do, Du;
+  __m512i Ba, Be, Bi, Bo, Bu, D;
   __m512i ba = st[0], be = st[1], bi = st[2], bo = st[3], bu = st[4];
   __m512i ga = st[5], ge = st[6], gi = st[7], go = st[8], gu = st[9];
   __m512i ka = st[10], ke = st[11], ki = st[12], ko = st[13];
@@ -823,8 +870,10 @@ static void keccakf8(__m512i st[25]) {
 #undef MLKEM_KECCAKF8_ROW3
 #undef MLKEM_KECCAKF8_ROW2
 #undef MLKEM_KECCAKF8_ROW1
+#undef MLKEM_KECCAKF8_ROW0
 #undef MLKEM_KECCAKF8_ROUND0
-#undef MLKEM_KECCAKF8_ROW
+#undef MLKEM_KECCAKF8_RHOPI
+#undef MLKEM_KECCAKF8_THETA_COLUMN
 #undef MLKEM_KECCAKF8_CHI
 #undef MLKEM_KECCAKF8_XOR5
 #undef MLKEM_KECCAKF8_XOR3
