@@ -490,6 +490,28 @@ static void bench_prf_cbd_eta2x3_direct_32(const uint8_t seed[32],
   }
 }
 
+static void bench_prf_cbd_eta2x4_mem_32(
+    const uint8_t seed[32], const uint8_t nonce[4], poly256 out0,
+    poly256 out1, poly256 out2, poly256 out3) {
+  __m256i st[25];
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4_mem(st);
+  sample_poly_cbd_eta2x4_state_avx2(st, out0, out1, out2, out3);
+}
+
 static void bench_prf_cbd_eta2x4_tile2x4_direct_32(
     const uint8_t seed[32], const uint8_t nonce[4], int16_t out[N / 2][8]) {
   __m256i st[25];
@@ -686,6 +708,7 @@ static void validate_prf_cbd_direct_matches_current(void) {
   const uint8_t nonce3[4] = {4, 5, 6, 0};
   const uint8_t nonce4[4] = {4, 5, 6, 7};
   poly256 cur0, cur1, cur2, cur3, direct0, direct1, direct2;
+  poly256 mem0, mem1, mem2, mem3;
   int16_t packed_tile[N / 2][8];
   int16_t direct_tile[N / 2][8];
 
@@ -708,6 +731,15 @@ static void validate_prf_cbd_direct_matches_current(void) {
   }
 
   mlkem_prf_cbd_eta2x4_32(bench_seed32[2], nonce4, cur0, cur1, cur2, cur3);
+  bench_prf_cbd_eta2x4_mem_32(bench_seed32[2], nonce4, mem0, mem1, mem2,
+                              mem3);
+  if (memcmp(cur0, mem0, sizeof(poly256)) != 0 ||
+      memcmp(cur1, mem1, sizeof(poly256)) != 0 ||
+      memcmp(cur2, mem2, sizeof(poly256)) != 0 ||
+      memcmp(cur3, mem3, sizeof(poly256)) != 0) {
+    fprintf(stderr, "memory-resident PRF/CBD x4 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
   pack_poly4_tile2x4(cur0, cur1, cur2, cur3, packed_tile);
   bench_prf_cbd_eta2x4_tile2x4_direct_32(bench_seed32[2], nonce4,
                                          direct_tile);
@@ -1193,6 +1225,27 @@ static uint64_t bench_prf_cbd_eta2x4_current(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_prf_cbd_eta2x4_mem(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 6, 7};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_prf_cbd_eta2x4_mem_32(
+        bench_seed32[lane], nonce, bench_poly4[lane][0], bench_poly4[lane][1],
+        bench_poly4[lane][2], bench_poly4[lane][3]);
+    acc ^= (uint16_t)bench_poly4[lane][0][(i * 67u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly4[lane][1][(i * 71u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly4[lane][2][(i * 73u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly4[lane][3][(i * 79u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_prf_cbd_eta2x4_direct_tile2x4(size_t iters) {
   const uint8_t nonce[4] = {4, 5, 6, 7};
   uint64_t acc = 0;
@@ -1505,6 +1558,8 @@ int main(int argc, char **argv) {
                bench_prf_cbd_eta2x3_direct(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x4_current",
                bench_prf_cbd_eta2x4_current(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x4_mem",
+               bench_prf_cbd_eta2x4_mem(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x4_direct_tile2x4",
                bench_prf_cbd_eta2x4_direct_tile2x4(iters), iters);
 #endif
