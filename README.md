@@ -312,6 +312,15 @@ rel8 displacement cannot span the 1245-byte round body; a trampoline would add
 a second taken branch. Decision: retain the base-only constant pointer and
 `dec`/`jne` loop.
 
+Pre-expanded vector Iota constants were also rejected at generated-code review.
+The baseline scalar `vpbroadcastq` form has 273 round-loop instructions, 12
+`rsp` references, and 32 `vmov*` instructions. A 32-byte-aligned four-lane
+constant table removed the broadcast, but Clang changed allocation to 280
+instructions, 16 stack references, and 36 moves; forcing the memory `vpxor`
+with inline assembly worsened this to 295, 22, and 43. Decision: keep the scalar
+round-constant table and compiler-visible broadcast. Saving one local instruction
+is not useful when it perturbs the saturated 16-YMM allocation.
+
 Eleven same-binary runs of 30000 iterations on CPU 0 show a compiler split:
 
 | Compiler / metric | C lane-zero median ns/op | Fixed-register asm median ns/op | Median ratio | Paired median | Wins |
