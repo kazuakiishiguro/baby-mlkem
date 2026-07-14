@@ -1797,6 +1797,7 @@ static void stage_encrypt_prf_cbd_eta2_32_sample_tail21_avx2(
 #if !defined(__AVX512F__)
 static void validate_encrypt_prf_cbd_tail_3x4_matches_separate(void) {
   poly256 got[8];
+  poly256 got_compact[8];
   poly256 want[8];
 
   for (uint32_t fixture = 0; fixture < 256; fixture++) {
@@ -1815,6 +1816,10 @@ static void validate_encrypt_prf_cbd_tail_3x4_matches_separate(void) {
     stage_encrypt_prf_cbd_eta2_32_sample_tail_3x4_avx2(
         seed, rho, got[0], got[1], got[2], got[3], got[4], got[5], got[6],
         got[7]);
+    mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+        seed, rho, got_compact[0], got_compact[1], got_compact[2],
+        got_compact[3], got_compact[4], got_compact[5], got_compact[6],
+        got_compact[7]);
     sample_ntt(rho, 2, 2, want[0]);
     mlkem_encrypt_prf_cbd_eta2_32(seed, want[1], want[2], want[3], want[4],
                                   want[5], want[6], want[7]);
@@ -1824,6 +1829,12 @@ static void validate_encrypt_prf_cbd_tail_3x4_matches_separate(void) {
         fprintf(stderr,
                 "encrypt PRF/tail 3x4 mismatch at fixture %u output %d\n",
                 fixture, output);
+        exit(EXIT_FAILURE);
+      }
+      if (memcmp(got_compact[output], want[output], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "encrypt PRF/tail compact 3x4 mismatch at fixture %u "
+                "output %d\n", fixture, output);
         exit(EXIT_FAILURE);
       }
     }
@@ -8340,6 +8351,29 @@ static uint64_t bench_encrypt_noise_prf_cbd_tail_3x4(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+static uint64_t bench_encrypt_noise_prf_cbd_tail_3x4_compact(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
+        stage_r[lane], stage_rho[lane], stage_tmp_ahat[lane][2][2],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2], stage_tmp_vec1[lane][0],
+        stage_tmp_vec1[lane][1], stage_tmp_vec1[lane][2],
+        stage_tmp_poly[lane]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u];
+    acc ^= (uint16_t)stage_tmp_vec1[lane][(i + 1u) % K][(i * 5u) & 255u];
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 7u) & 255u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
 #endif
 
 static uint64_t bench_encrypt_noise_prf_cbd_tail_cosched_accum3(size_t iters) {
@@ -12207,6 +12241,8 @@ int main(int argc, char **argv) {
 #if !defined(__AVX512F__)
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_3x4",
                bench_encrypt_noise_prf_cbd_tail_3x4(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_3x4_compact",
+               bench_encrypt_noise_prf_cbd_tail_3x4_compact(iters), iters);
 #endif
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3",
                bench_encrypt_noise_prf_cbd_tail_cosched_accum3(iters), iters);
