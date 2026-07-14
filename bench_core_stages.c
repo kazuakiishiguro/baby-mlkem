@@ -1936,6 +1936,169 @@ static void validate_ntt_mul_acc3_encrypt4_scalar(void) {
   }
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+/* Exact over the full centered K=3 pair-sum range. */
+static inline __m256i stage_ntt_acc4_madd_reduce_i32x8(__m256i x) {
+  const __m256i reciprocal = _mm256_set1_epi32(315);
+  const __m256i q = _mm256_set1_epi32(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi32(Q - 1);
+  const __m256i zero = _mm256_setzero_si256();
+  __m256i quot = _mm256_srai_epi32(
+      _mm256_mullo_epi32(_mm256_srai_epi32(x, 3), reciprocal), 17);
+  __m256i reduced = _mm256_sub_epi32(x, _mm256_mullo_epi32(quot, q));
+  __m256i negative = _mm256_cmpgt_epi32(zero, reduced);
+  reduced = _mm256_add_epi32(reduced, _mm256_and_si256(negative, q));
+  __m256i ge_q = _mm256_cmpgt_epi32(reduced, q_minus_1);
+  return _mm256_sub_epi32(reduced, _mm256_and_si256(ge_q, q));
+}
+
+static inline __m256i stage_ntt_final_l1_block16_avx2(
+    const poly256 f, int offset, __m256i zeta) {
+  __m128i a16 = load_i16x2_quad(f + offset, f + offset + 4,
+                                 f + offset + 8, f + offset + 12);
+  __m128i b16 = load_i16x2_quad(f + offset + 2, f + offset + 6,
+                                 f + offset + 10, f + offset + 14);
+  __m256i a = _mm256_cvtepu16_epi32(a16);
+  __m256i b = _mm256_cvtepu16_epi32(b16);
+  __m256i t = mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(b, zeta));
+  __m128i sum = pack_i32x8_to_i16x8(mod_q_add_i32x8(a, t));
+  __m128i diff = pack_i32x8_to_i16x8(mod_q_sub_i32x8(a, t));
+  __m256i out = _mm256_castsi128_si256(_mm_unpacklo_epi32(sum, diff));
+  return _mm256_inserti128_si256(out, _mm_unpackhi_epi32(sum, diff), 1);
+}
+
+static inline void stage_ntt_acc4_madd_block_avx2(
+    const poly256 a0, const poly256 a1, const poly256 a2, int offset,
+    __m256i y0, __m256i y1, __m256i y2,
+    __m256i y0_odd, __m256i y1_odd, __m256i y2_odd,
+    __m256i pair_swap, __m256i gamma, poly256 out) {
+  __m256i x = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(a0 + offset));
+  __m256i sum = _mm256_madd_epi16(x, y0);
+  __m256i odd = _mm256_madd_epi16(x, y0_odd);
+  __m256i c1 = _mm256_madd_epi16(x, _mm256_shuffle_epi8(y0, pair_swap));
+
+  x = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + offset));
+  sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, y1));
+  odd = _mm256_add_epi32(odd, _mm256_madd_epi16(x, y1_odd));
+  c1 = _mm256_add_epi32(
+      c1, _mm256_madd_epi16(x, _mm256_shuffle_epi8(y1, pair_swap)));
+
+  x = _mm256_loadu_si256((const __m256i *)(const void *)(a2 + offset));
+  sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, y2));
+  odd = _mm256_add_epi32(odd, _mm256_madd_epi16(x, y2_odd));
+  c1 = _mm256_add_epi32(
+      c1, _mm256_madd_epi16(x, _mm256_shuffle_epi8(y2, pair_swap)));
+
+  __m256i even = _mm256_sub_epi32(sum, odd);
+  odd = stage_ntt_acc4_madd_reduce_i32x8(odd);
+  __m256i c0 = _mm256_add_epi32(even, _mm256_mullo_epi32(odd, gamma));
+  c0 = stage_ntt_acc4_madd_reduce_i32x8(c0);
+  c1 = stage_ntt_acc4_madd_reduce_i32x8(c1);
+  __m128i c0_16 = pack_i32x8_to_i16x8(c0);
+  __m128i c1_16 = pack_i32x8_to_i16x8(c1);
+  _mm_storeu_si128((__m128i *)(void *)(out + offset),
+                   _mm_unpacklo_epi16(c0_16, c1_16));
+  _mm_storeu_si128((__m128i *)(void *)(out + offset + 8),
+                   _mm_unpackhi_epi16(c0_16, c1_16));
+}
+
+static void stage_ntt3_mul_acc4_fused_final_madd_avx512(
+    const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
+    poly256 out[K], poly256 outv) {
+  const __m256i pair_swap = _mm256_setr_epi8(
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+  const __m256i even_mask = _mm256_set1_epi32(0xffff);
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i half_q = _mm256_set1_epi16(Q / 2);
+
+  ntt_before_final_l1_avx512(b[0]);
+  ntt_before_final_l1_avx512(b[1]);
+  ntt_before_final_l1_avx512(b[2]);
+
+  for (int offset = 0, i = 0, pair = 0; offset < N;
+       offset += 16, i++, pair += 8) {
+    __m256i y0 = stage_ntt_final_l1_block16_avx2(
+        b[0], offset, ZETA_NTT_TAIL_L1[i]);
+    __m256i y1 = stage_ntt_final_l1_block16_avx2(
+        b[1], offset, ZETA_NTT_TAIL_L1[i]);
+    __m256i y2 = stage_ntt_final_l1_block16_avx2(
+        b[2], offset, ZETA_NTT_TAIL_L1[i]);
+    y0 = _mm256_sub_epi16(
+        y0, _mm256_and_si256(_mm256_cmpgt_epi16(y0, half_q), q));
+    y1 = _mm256_sub_epi16(
+        y1, _mm256_and_si256(_mm256_cmpgt_epi16(y1, half_q), q));
+    y2 = _mm256_sub_epi16(
+        y2, _mm256_and_si256(_mm256_cmpgt_epi16(y2, half_q), q));
+    __m256i y0_odd = _mm256_andnot_si256(even_mask, y0);
+    __m256i y1_odd = _mm256_andnot_si256(even_mask, y1);
+    __m256i y2_odd = _mm256_andnot_si256(even_mask, y2);
+    __m256i gamma = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(const void *)(GAMMA + pair)));
+
+    stage_ntt_acc4_madd_block_avx2(
+        ahat[0][0], ahat[0][1], ahat[0][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[0]);
+    stage_ntt_acc4_madd_block_avx2(
+        ahat[1][0], ahat[1][1], ahat[1][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[1]);
+    stage_ntt_acc4_madd_block_avx2(
+        ahat[2][0], ahat[2][1], ahat[2][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[2]);
+    stage_ntt_acc4_madd_block_avx2(
+        that[0], that[1], that[2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, outv);
+  }
+}
+
+static void stage_ntt3_mul_acc4_fused_final_scalar_avx512(
+    const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
+    poly256 out[K], poly256 outv) {
+  ntt3_mul_acc4_fused_final_avx512(
+      ahat[0][0], ahat[0][1], ahat[0][2], ahat[1][0], ahat[1][1],
+      ahat[1][2], ahat[2][0], ahat[2][1], ahat[2][2], that[0], that[1],
+      that[2], b[0], b[1], b[2], out[0], out[1], out[2], outv);
+}
+
+static void validate_ntt3_mul_acc4_fused_final_madd_avx512(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 scalar_b[K], madd_b[K], final_b[K];
+    poly256 scalar[K], madd[K], scalarv, maddv;
+    for (int j = 0; j < K; j++) {
+      memcpy(scalar_b[j], stage_r_raw[lane][j], sizeof(poly256));
+      memcpy(madd_b[j], stage_r_raw[lane][j], sizeof(poly256));
+      memcpy(final_b[j], stage_r_raw[lane][j], sizeof(poly256));
+      ntt_before_final_l1_avx512(final_b[j]);
+      for (int offset = 0, i = 0; offset < N; offset += 16, i++) {
+        __m256i got = stage_ntt_final_l1_block16_avx2(
+            final_b[j], offset, ZETA_NTT_TAIL_L1[i]);
+        _mm256_storeu_si256((__m256i *)(void *)(final_b[j] + offset), got);
+      }
+      if (memcmp(final_b[j], stage_rhat[lane][j], sizeof(poly256)) != 0) {
+        fprintf(stderr, "fused final madd NTT mismatch at %zu,%d\n", lane, j);
+        exit(EXIT_FAILURE);
+      }
+    }
+    stage_ntt3_mul_acc4_fused_final_scalar_avx512(
+        stage_ahat[lane], stage_that[lane], scalar_b, scalar, scalarv);
+    stage_ntt3_mul_acc4_fused_final_madd_avx512(
+        stage_ahat[lane], stage_that[lane], madd_b, madd, maddv);
+    for (int row = 0; row < K; row++) {
+      if (memcmp(scalar[row], madd[row], sizeof(poly256)) != 0) {
+        fprintf(stderr, "fused final madd row mismatch at %zu,%d\n", lane,
+                row);
+        exit(EXIT_FAILURE);
+      }
+    }
+    if (memcmp(scalarv, maddv, sizeof(poly256)) != 0) {
+      fprintf(stderr, "fused final madd v mismatch at %zu\n", lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void validate_decrypt_lazy_ntt_accum_avx2(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -2168,6 +2331,8 @@ static void validate_core_stage_helpers(void) {
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   validate_ntt_mul_acc3_madd_avx2();
   validate_ntt_mul_acc4_madd_avx2();
+#else
+  validate_ntt3_mul_acc4_fused_final_madd_avx512();
 #endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
@@ -10102,6 +10267,46 @@ static uint64_t bench_encrypt_accum4_combined_only(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t bench_encrypt_rhat_acc4_fused_scalar_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec1[lane][j], stage_r_raw[lane][j], sizeof(poly256));
+    }
+    stage_ntt3_mul_acc4_fused_final_scalar_avx512(
+        stage_ahat[lane], stage_that[lane], stage_tmp_vec1[lane],
+        stage_tmp_vec0[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_rhat_acc4_fused_madd_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec1[lane][j], stage_r_raw[lane][j], sizeof(poly256));
+    }
+    stage_ntt3_mul_acc4_fused_final_madd_avx512(
+        stage_ahat[lane], stage_that[lane], stage_tmp_vec1[lane],
+        stage_tmp_vec0[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static uint64_t bench_ntt_mul_acc4_madd_avx2(size_t iters) {
   uint64_t acc = 0;
@@ -13556,6 +13761,12 @@ int main(int argc, char **argv) {
                bench_encrypt_accum4_separate_only(iters), iters);
   print_metric("mlkem_core_stage_encrypt_accum4_combined_only",
                bench_encrypt_accum4_combined_only(iters), iters);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_scalar_avx512",
+               bench_encrypt_rhat_acc4_fused_scalar_avx512(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512",
+               bench_encrypt_rhat_acc4_fused_madd_avx512(iters), iters);
+#endif
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_ntt_mul_acc4_madd_avx2",
                bench_ntt_mul_acc4_madd_avx2(iters), iters);
