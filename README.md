@@ -78,7 +78,7 @@ Near-term target selection:
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
-| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign is next | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `791.93 ns` median and `sample_matrix` at `2649.35 ns` median. Remaining gains need a new x4 Keccak/state representation, parser dataflow, or broader matrix/public-cache redesign. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign is next | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `791.93 ns` median and `sample_matrix` at `2649.35 ns` median. A paired 504-byte parser schedule was also rejected after `sample_matrix` regressed to `0.9964x` median. Remaining gains need a new x4 Keccak/state or parser representation, or a broader matrix/public-cache redesign. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.30 ns median, and matrix-level seed word reuse regressed in earlier checks versus production. |
@@ -99,8 +99,60 @@ the canonical single-state Keccak permutation (`13.96%`), fixed public-key SHA3
 The next independent arithmetic target is therefore the common x4 sampler:
 `sample_ntt4` is the largest standalone symbol and `sample_matrix` remains the
 largest stage-level public-work row at `2649.35 ns` median. The useful direction
-must change x4 Keccak/state/parser dataflow; seed-load hoisting, lane regrouping,
-and scalar refill tweaks are already closed by their recorded A/B results.
+must change x4 Keccak/state/parser representation; seed-load hoisting, lane
+regrouping, scalar refill tweaks, and two-stream interleaving of the existing
+parser are already closed by their recorded A/B results.
+
+### Independent Core Optimization Diagnostic (2026-07-14, AVX2 interleaved x4 rejection parser)
+
+A bench-only parser tested whether two independent 504-byte rejection streams
+could expose more instruction-level parallelism than four sequential calls to
+the existing lane-local parser. Each pair decodes and compares both 48-byte
+chunks before performing their separate count-dependent compactions; two pair
+calls cover the four `sample_ntt4()` lanes. The generic parser still handles the
+short final portion and 168-byte refills. This changes parser scheduling only
+and uses no external implementation or library.
+
+Exact lane-by-lane parser output/count validation and full sampler validation
+passed with Clang and GCC AVX2-only builds. An initial same-binary diagnostic used
+11 runs of 40000 iterations on CPU 0:
+
+| Metric | Existing avg ns/op | Interleaved avg ns/op | Avg speedup | Existing median ns/op | Interleaved median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| four 504-byte parses | 117.05 | 117.88 | 0.9930x | 116.78 | 115.53 | 1.0108x |
+| full x4 sampler | 905.84 | 905.30 | 1.0006x | 905.70 | 903.68 | 1.0022x |
+
+The parser average includes one interleaved-side `140.82 ns` outlier; ordinary
+runs were about 1% faster. Because the full-sampler gain was only 0.2% on
+median, this was evidence to test production placement, not to accept it.
+
+Production A/B used baseline commit `6f491af`, 13 runs, three warmups, CPU 0,
+Clang AVX2-only flags, 60000 stage iterations, and 30000 KEM iterations:
+
+```bash
+RUNS=13 WARMUP_RUNS=3 SUITES=stage,kem STAGE_ITERS=60000 KEM_ITERS=30000 \
+  C_COMPILER=clang PIN_CPU=0 ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Metric | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| `sample_ntt4_full_raw` | 911.76 | 910.61 | 1.0013x | 904.82 | 904.99 | 0.9998x |
+| `sample_matrix_x4_batch0` | 1088.58 | 1086.66 | 1.0018x | 1081.49 | 1081.24 | 1.0002x |
+| `sample_matrix_x4_batch1` | 1134.20 | 1137.09 | 0.9975x | 1132.45 | 1132.85 | 0.9996x |
+| `sample_matrix` | 2666.77 | 2673.46 | 0.9975x | 2653.36 | 2663.04 | 0.9964x |
+| `kpke_keygen_full` | 3848.22 | 3837.65 | 1.0028x | 3837.15 | 3836.30 | 1.0002x |
+| `mlkem_keygen` | 5802.61 | 5815.53 | 0.9978x | 5765.05 | 5781.77 | 0.9971x |
+| `mlkem_encaps` | 2234.09 | 2262.05 | 0.9876x | 2226.56 | 2226.98 | 0.9998x |
+| `mlkem_decaps` | 2790.25 | 2795.14 | 0.9983x | 2780.50 | 2771.49 | 1.0033x |
+| `mlkem_roundtrip` | 10928.16 | 10968.38 | 0.9963x | 10902.83 | 10886.44 | 1.0015x |
+
+Decision: retain commit `6f491af` as a diagnostic, but reject and revert the
+production route. The direct sampler median is neutral, the full matrix row
+regresses on both average and median, and keygen/encapsulation do not provide a
+clean no-regression signal. Interleaving the existing decode/compact schedule is
+too small; the next parser attempt must change representation or remove a
+producer/consumer boundary rather than merely pair two lane-local parsers.
 
 ### Latest Core Optimization A/B (2026-07-14, full 16-bit Montgomery forward NTT)
 
@@ -2642,6 +2694,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail02` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(0,2)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
+| `mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw` | AVX2-only diagnostic: full x4 sampler using two interleaved 504-byte parser pairs for the initial four streams |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_lane_store_full_raw` | AVX2-only diagnostic: x4 sampler using lane-extract state materialization plus the existing 504-byte parser |
 | `mlkem_core_stage_sample_ntt4_block_parse_full_raw` | AVX2-only diagnostic: x4 sampler variant that parses each 168-byte SHAKE block immediately instead of materializing and parsing the initial 504-byte streams |
@@ -2657,6 +2710,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only x4 sampler initial three production `keccakf4_mem()` blocks plus stream stores |
 | `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | AVX2-only diagnostic: initial three production `keccakf4_mem()` blocks plus lane-extract stream materialization |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
+| `mlkem_core_stage_sample_ntt4_parse_504_interleaved` | AVX2-only diagnostic: parse four 504-byte streams as two pairs that decode before count-dependent compaction |
 | `mlkem_core_stage_sample_ntt4_common3_step` | AVX2-only x4 sampler common first three-rate step, including Keccak state init, three production Keccak/store blocks, four 504-byte parses, and refill-decision bookkeeping |
 | `mlkem_core_stage_sample_ntt4_refill_keccak_store1` | AVX2-only x4 sampler one additional production register `keccakf4()` refill block plus stream stores, conditioned on groups that need refill |
 | `mlkem_core_stage_sample_ntt4_refill_step_once` | AVX2-only x4 sampler one additional refill step including Keccak/store and parsing only lanes still below 256 coefficients |
