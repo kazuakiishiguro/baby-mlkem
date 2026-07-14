@@ -79,6 +79,7 @@ Near-term target selection:
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Cross-permutation theta parity accepted; larger redesign is next | Production `sample_ntt4()` now initializes five column-parity vectors from its sparse SHAKE state and carries them across all three `keccakf4_mem_parity()` calls, avoiding three 25-lane parity reconstructions. Together with the prior in-round parity carry, `(2,1)` scalar matrix tail, and rare-refill cleanup, this is a local core dataflow improvement. Production A/B improved `sample_ntt4_full_raw` and `sample_matrix` by `1.0073x` and `1.0055x` median; the refreshed production parity Keccak/store row is `783.72 ns` median. A paired 504-byte parser schedule remains rejected. The next attempt needs a larger x4 Keccak/state or producer/consumer representation change. |
+| Final-round x4 Keccak/rate-store fusion | Closed | Peeling round 24 and transposing rate words directly reduced the isolated final epilogue, but expanded the preceding 23-round body through register pressure. Inline and split/noinline forms regress complete sampler medians to `0.9934x` and `0.9804x`; production remains unchanged. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.30 ns median, and matrix-level seed word reuse regressed in earlier checks versus production. |
@@ -103,6 +104,8 @@ parity removes repeated work around the permutation, but the 24-round x4
 Keccak body and its state/materialization boundary still dominate. Seed-load
 hoisting, lane regrouping, scalar refill tweaks, and two-stream interleaving of
 the existing parser are already closed by their recorded A/B results.
+Final-round peeling and direct rate-store fusion are also closed: the saved
+state reloads lose to a larger 23-round body and noinline boundary traffic.
 
 ### Latest Core Optimization A/B (2026-07-14, persistent x4 Keccak theta parity)
 
@@ -195,6 +198,68 @@ The full report was generated at
 `/tmp/baby-mlkem-gprof.VyMiuv/gprof.txt`. The x4 sampler remains first, so the
 next useful redesign must reduce the permutation/state boundary itself rather
 than repeat a closed parser schedule change.
+
+### Independent Core Optimization Diagnostic (2026-07-14, x4 Keccak final-round/rate-store fusion)
+
+The production x4 sampler completes all 24 Keccak-f[1600] rounds into its
+word-major SIMD state, then reloads the 21 SHAKE128 rate vectors and transposes
+them into four contiguous rejection-sampling streams. This diagnostic tested a
+producer/consumer fusion: run 23 ordinary rounds, keep each row of the final
+round in YMM registers, and transpose rate words as soon as final Chi produces
+them. All 25 final state vectors and the five next-round theta parities were
+still stored because rare sampler refills consume the canonical x4 state.
+
+The design borrows only a representation-boundary principle from other fast
+cryptographic systems. [XKCP](https://github.com/XKCP/XKCP) keeps independent
+Keccak instances in a times4 SIMD representation,
+[libsecp256k1](https://github.com/bitcoin-core/secp256k1) avoids unnecessary
+coordinate conversions across elliptic-curve operations, and
+[PipeZK](https://www.cs.toronto.edu/~fanl/papers/pipezk-isca21.pdf) uses blocked
+on-chip transposes to keep a useful layout near its consumer. GLV
+endomorphisms, wNAF, and Shamir multiplication themselves do not apply to
+ML-KEM matrix sampling; only the general data-layout lesson motivated this
+experiment. No source, object, or library dependency was imported.
+
+The validator compared the candidate with the production persistent-parity
+path after each of the three common permutations. It checked all 25 state
+vectors, all five parity vectors, every byte in all four 168-byte rate streams,
+and the four complete sampled polynomials. All comparisons passed.
+
+The first version kept the final round inline. Eleven same-binary runs of 40000
+iterations on CPU 0 with Clang AVX2-only flags produced:
+
+| Metric | Production avg ns/op | Inline fused avg ns/op | Avg speedup | Production median ns/op | Inline fused median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| three permutations plus rate stores | 784.95 | 793.37 | 0.9894x | 782.89 | 789.47 | 0.9917x |
+| complete x4 sampler | 898.79 | 904.62 | 0.9936x | 898.41 | 904.36 | 0.9934x |
+
+Disassembly explains why removing reloads did not win. The ordinary round body
+in the production sampler has 228 static instructions. Making the final round
+special reduced the final-round-plus-store region from 318 to 305 instructions,
+but register allocation expanded each of the preceding 23 rounds from 228 to
+236 instructions. The estimated executed total therefore grew from
+`24*228 + 90 = 5562` to `23*236 + 305 = 5733` instructions per permutation.
+The sampler stack frame grew from `0x780` to `0x800`, and the function grew from
+`0xf7e` to `0x147e` bytes.
+
+A second version isolated only the final round and rate transpose behind a
+noinline boundary. This reduced the preceding round body to 233 instructions,
+but forced five parity stores and reloads, a call boundary, `vzeroupper`, and a
+319-instruction final helper. Eleven more same-binary runs gave:
+
+| Metric | Production avg ns/op | Split fused avg ns/op | Avg speedup | Production median ns/op | Split fused median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| three permutations plus rate stores | 784.48 | 810.38 | 0.9680x | 782.19 | 805.18 | 0.9714x |
+| complete x4 sampler | 902.68 | 917.48 | 0.9839x | 899.13 | 917.15 | 0.9804x |
+
+Decision: reject both forms and leave production unchanged. The direct
+Keccak/store and full-sampler gates both regress, so matrix and KEM A/B would
+only measure dilution and were intentionally not run. Commit `c2e2bdb` retains
+the inline diagnostic and commit `ec6a0be` retains the split diagnostic. The
+result closes final-round peeling for the current memory-resident AVX2 shape.
+A future producer/consumer fusion must avoid increasing live state across the
+23-round loop, or change the state/parser representation enough to eliminate
+more than the final rate reloads.
 
 ### Independent Core Optimization Diagnostic (2026-07-14, AVX2 interleaved x4 rejection parser)
 
@@ -2788,6 +2853,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only accepted-path diagnostic: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent after commit `0f9613f` |
+| `mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw` | AVX2-only diagnostic: complete x4 sampler with 23 inline rounds and a noinline final-round plus rate-store epilogue |
 | `mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw` | AVX2-only diagnostic: full x4 sampler using two interleaved 504-byte parser pairs for the initial four streams |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
 | `mlkem_core_stage_sample_ntt4_lane_store_full_raw` | AVX2-only diagnostic: x4 sampler using lane-extract state materialization plus the existing 504-byte parser |
@@ -2804,6 +2870,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only` | AVX2-only production-aligned initial three x4 Keccak permutations with theta parity carried across call boundaries, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only legacy baseline: three self-contained `keccakf4_mem()` calls that rebuild theta parity at each boundary, plus stream stores |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3` | AVX2-only production-aligned initial three x4 Keccak permutations with persistent theta parity plus stream stores |
+| `mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3` | AVX2-only diagnostic: three persistent-parity x4 permutations whose final round and rate transpose are isolated behind a noinline boundary |
 | `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | AVX2-only legacy-parity diagnostic: three self-contained `keccakf4_mem()` calls plus lane-extract stream materialization |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
 | `mlkem_core_stage_sample_ntt4_parse_504_interleaved` | AVX2-only diagnostic: parse four 504-byte streams as two pairs that decode before count-dependent compaction |
