@@ -1056,6 +1056,115 @@ static void ntt_mont_full_avx2(const poly256 f_in, poly256 f_out) {
 }
 #endif
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static __m512i bench_ntt_mont_head_zeta_lo_avx512[15];
+static __m512i bench_ntt_mont_head_zeta_hi_avx512[15];
+static int bench_ntt_mont_head_zetas_ready_avx512;
+
+static void bench_ntt_mont_factor_avx512(uint16_t zeta_normal,
+                                         int16_t *zeta_lo,
+                                         int16_t *zeta_hi) {
+  const uint32_t mont = 65536u % Q;
+  const uint16_t qinv = (uint16_t)-3327;
+  int32_t zeta = (int32_t)(((uint32_t)zeta_normal * mont) % Q);
+  if (zeta > Q / 2) zeta -= Q;
+  *zeta_lo =
+      (int16_t)(uint16_t)((uint32_t)(uint16_t)zeta * (uint32_t)qinv);
+  *zeta_hi = (int16_t)zeta;
+}
+
+static void prepare_ntt_mont_head_zetas_avx512(void) {
+  if (bench_ntt_mont_head_zetas_ready_avx512) return;
+  ensure_ntt_roots();
+  for (int i = 0; i < 15; i++) {
+    int16_t zeta_lo, zeta_hi;
+    bench_ntt_mont_factor_avx512(ZETA[i + 1], &zeta_lo, &zeta_hi);
+    bench_ntt_mont_head_zeta_lo_avx512[i] = _mm512_set1_epi16(zeta_lo);
+    bench_ntt_mont_head_zeta_hi_avx512[i] = _mm512_set1_epi16(zeta_hi);
+  }
+  bench_ntt_mont_head_zetas_ready_avx512 = 1;
+}
+
+static inline __m512i bench_mont_mul_precomp_i16x32_avx512(
+    __m512i b, __m512i zeta_lo, __m512i zeta_hi) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i lo = _mm512_mullo_epi16(b, zeta_lo);
+  __m512i hi = _mm512_mulhi_epi16(b, zeta_hi);
+  return _mm512_sub_epi16(hi, _mm512_mulhi_epi16(lo, q));
+}
+
+static inline __m256i bench_mont_mul_precomp_i16x16_avx512(
+    __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
+  __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
+  return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
+}
+
+static void bench_canonicalize_mont_avx512(poly256 f) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i barrett = _mm512_set1_epi16(20159);
+  for (int i = 0; i < N; i += 32) {
+    __m512i v = _mm512_loadu_si512((const void *)(f + i));
+    __m512i quot = _mm512_srai_epi16(_mm512_mulhi_epi16(v, barrett), 10);
+    v = _mm512_sub_epi16(v, _mm512_mullo_epi16(quot, q));
+    v = _mm512_add_epi16(v,
+                         _mm512_and_si512(_mm512_srai_epi16(v, 15), q));
+    __m512i reduced = _mm512_sub_epi16(v, q);
+    v = _mm512_add_epi16(
+        reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+    _mm512_storeu_si512((void *)(f + i), v);
+  }
+}
+
+static void run_ntt_head_l7_l4_mont_lazy_raw_avx512(poly256 f) {
+  int k = 0;
+  for (int log2len = 7; log2len > 4; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m512i zeta_lo = bench_ntt_mont_head_zeta_lo_avx512[k];
+      __m512i zeta_hi = bench_ntt_mont_head_zeta_hi_avx512[k++];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i t =
+            bench_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+        _mm512_storeu_si512((void *)(f + start + j),
+                            _mm512_add_epi16(a, t));
+        _mm512_storeu_si512((void *)(f + start + length + j),
+                            _mm512_sub_epi16(a, t));
+      }
+    }
+  }
+
+  for (int start = 0; start < N; start += 32) {
+    __m256i zeta_lo =
+        _mm512_castsi512_si256(bench_ntt_mont_head_zeta_lo_avx512[k]);
+    __m256i zeta_hi =
+        _mm512_castsi512_si256(bench_ntt_mont_head_zeta_hi_avx512[k++]);
+    __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
+    __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
+    __m256i t =
+        bench_mont_mul_precomp_i16x16_avx512(b, zeta_lo, zeta_hi);
+    _mm256_storeu_si256((__m256i *)(f + start), _mm256_add_epi16(a, t));
+    _mm256_storeu_si256((__m256i *)(f + start + 16),
+                         _mm256_sub_epi16(a, t));
+  }
+}
+
+static void run_ntt_head_l7_l4_mont_lazy_canon_avx512(poly256 f) {
+  run_ntt_head_l7_l4_mont_lazy_raw_avx512(f);
+  bench_canonicalize_mont_avx512(f);
+}
+
+static void ntt_mont_head_avx512_diag(const poly256 f_in, poly256 f_out) {
+  if (f_in != f_out) memcpy(f_out, f_in, sizeof(poly256));
+  run_ntt_head_l7_l4_mont_lazy_canon_avx512(f_out);
+  ntt_tail_avx2(f_out);
+}
+#endif
+
 static inline int16_t bench_canon_signed_cbd_i16(int16_t v) {
   return (int16_t)(v < 0 ? v + Q : v);
 }
@@ -1487,6 +1596,20 @@ static void validate_ntt_helpers(void) {
   run_ntt_head_l7_l4(got);
   ntt_tail_avx2(got);
   check_equal(got, tmp, "forward ntt head/tail split");
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  prepare_ntt_mont_head_zetas_avx512();
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    memcpy(want, bench_a0[lane], sizeof(poly256));
+    run_ntt_head_l7_l4(want);
+    memcpy(got, bench_a0[lane], sizeof(poly256));
+    run_ntt_head_l7_l4_mont_lazy_canon_avx512(got);
+    check_equal(got, want, "AVX512 forward NTT Montgomery lazy head");
+
+    ntt(bench_a0[lane], tmp);
+    ntt_mont_head_avx512_diag(bench_a0[lane], got);
+    check_equal(got, tmp, "AVX512 forward NTT Montgomery head full");
+  }
+#endif
 
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   prepare_ntt_mont_zetas();
@@ -2452,6 +2575,58 @@ static uint64_t bench_ntt_head_l7_l4_mont_lazy_canon(size_t iters) {
 }
 #endif
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t bench_ntt_head_l7_l4_mont_lazy_canon_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  prepare_ntt_mont_head_zetas_avx512();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_head_l7_l4_mont_lazy_canon_avx512(
+        bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 503u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_head_l7_l4_current_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    ntt_head_avx512(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 509u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_mont_head_full_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  prepare_ntt_split_inputs();
+  prepare_ntt_mont_head_zetas_avx512();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    run_ntt_head_l7_l4_mont_lazy_canon_avx512(
+        bench_ntt_head_work[lane]);
+    ntt_tail_avx2(bench_ntt_head_work[lane]);
+    acc += (uint16_t)bench_ntt_head_work[lane][(i * 521u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_ntt_head_l7_l4_cbd_canon_copy(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -3130,6 +3305,14 @@ int main(int argc, char **argv) {
                bench_ntt6_pack_ntt_unpack_tile2x4_plus2(iters), iters);
 #if defined(__AVX2__)
   print_metric("mlkem_ntt_head_l7_l4", bench_ntt_head_l7_l4(iters), iters);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  print_metric("mlkem_ntt_head_l7_l4_mont_lazy_canon_avx512",
+               bench_ntt_head_l7_l4_mont_lazy_canon_avx512(iters), iters);
+  print_metric("mlkem_ntt_head_l7_l4_current_avx512",
+               bench_ntt_head_l7_l4_current_avx512(iters), iters);
+  print_metric("mlkem_ntt_mont_head_full_avx512",
+               bench_ntt_mont_head_full_avx512(iters), iters);
+#endif
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_ntt_head_l7_l4_mont_lazy_canon",
                bench_ntt_head_l7_l4_mont_lazy_canon(iters), iters);
