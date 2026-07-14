@@ -301,6 +301,17 @@ regressed from `901.88` to `905.22 ns` for the complete sampler (`0.9963x`),
 memory-backed deferred parity; carrying another state lane is useful only if a
 parity accumulator can be removed without rescanning output state.
 
+Loop-control compression also failed. Indexing round constants from an end
+pointer with `rax=-768` merged the constant-pointer increment and loop decrement,
+reducing the full loop from 213 to 212 instructions and from 214 to 213 uops.
+The model improved from `35.7` to `35.5 cycles`, and exact validation passed,
+but the base-plus-index load regressed the Clang permutation median from
+`772.09` to `775.01 ns` (`0.9962x`, 0/11 wins) and the store row from `784.87`
+to `786.95 ns` (`0.9974x`, 1/11 wins). Zen 4 models `loop` as one uop, but its
+rel8 displacement cannot span the 1245-byte round body; a trampoline would add
+a second taken branch. Decision: retain the base-only constant pointer and
+`dec`/`jne` loop.
+
 Eleven same-binary runs of 30000 iterations on CPU 0 show a compiler split:
 
 | Compiler / metric | C lane-zero median ns/op | Fixed-register asm median ns/op | Median ratio | Paired median | Wins |
