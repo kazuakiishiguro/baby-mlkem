@@ -31,6 +31,13 @@ mlkem_bench_keccakf4_mem_parity_avx2_asm:
   vpor \dst, \dst, ymm15
 .endm
 
+.macro LOAD_ROT1 dst, offset, delta
+  vpxor \dst, \delta, YMMWORD PTR [r8 + \offset]
+  vpaddq ymm15, \dst, \dst
+  vpsrlq \dst, \dst, 63
+  vpor \dst, \dst, ymm15
+.endm
+
 .macro LOAD_ROT8 dst, offset, delta
   vpxor \dst, \delta, YMMWORD PTR [r8 + \offset]
   vpshufb \dst, \dst, YMMWORD PTR [rip + .Lrotl8_mask]
@@ -99,7 +106,7 @@ mlkem_bench_keccakf4_mem_parity_avx2_asm:
   CHI_INIT 288, ymm4, ymm14, ymm10, ymm11
 
   /* Row 2. */
-  LOAD_ROT ymm10, 32,  ymm6, 1
+  LOAD_ROT1 ymm10, 32,  ymm6
   LOAD_ROT ymm11, 224, ymm7, 6
   LOAD_ROT ymm12, 416, ymm8, 25
   LOAD_ROT8 ymm13, 608, ymm9
