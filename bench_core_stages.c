@@ -357,6 +357,7 @@ static void validate_keygen_noise_ntt_shat_headtail_encode_avx2(void);
 static void validate_sample_ntt4_scalar_refill_avx2(void);
 static void validate_sample_ntt4_persistent_parity_avx2(void);
 static void validate_sample_ntt4_lane0_carry_avx2(void);
+static void validate_sample_ntt4_inplace_lane01_avx2(void);
 static void validate_sample_ntt4_final_store_fused_split_avx2(void);
 static void validate_sample_ntt4_interleaved_parse_avx2(void);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -1676,6 +1677,7 @@ static void validate_core_stage_helpers(void) {
   validate_sample_ntt4_scalar_refill_avx2();
   validate_sample_ntt4_persistent_parity_avx2();
   validate_sample_ntt4_lane0_carry_avx2();
+  validate_sample_ntt4_inplace_lane01_avx2();
   validate_sample_ntt4_final_store_fused_split_avx2();
   validate_sample_ntt4_interleaved_parse_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -3501,6 +3503,235 @@ static MLKEM_ALWAYS_INLINE void stage_keccakf4_mem_parity_lane0_carry(
   parity[3] = c3;
   parity[4] = c4;
 }
+static MLKEM_ALWAYS_INLINE void
+stage_keccakf4_mem_parity_inplace_lane01(__m256i st[25],
+                                         __m256i parity[5]) {
+  __m256i lane0 = st[0];
+  __m256i lane1 = st[1];
+  __m256i c0 = parity[0];
+  __m256i c1 = parity[1];
+  __m256i c2 = parity[2];
+  __m256i c3 = parity[3];
+  __m256i c4 = parity[4];
+
+#define LOAD_SLOT(i, d)                                                       \
+  _mm256_xor_si256((i) == 0 ? lane0 : ((i) == 1 ? lane1 : st[(i)]), (d))
+#if defined(__AVX512VL__) && defined(__AVX512F__)
+#define CHIX4(x, y, z) _mm256_ternarylogic_epi64((x), (y), (z), 0xd2)
+#else
+#define CHIX4(x, y, z) _mm256_xor_si256((x), _mm256_andnot_si256((y), (z)))
+#endif
+#define WRITE_SLOT(i, value)                                                 \
+  do {                                                                        \
+    if ((i) == 0) {                                                           \
+      lane0 = (value);                                                        \
+    } else if ((i) == 1) {                                                    \
+      lane1 = (value);                                                        \
+    } else {                                                                  \
+      st[(i)] = (value);                                                      \
+    }                                                                         \
+  } while (0)
+#define STORE_INIT(i, expr, n)                                                \
+  do {                                                                        \
+    __m256i v_ = (expr);                                                      \
+    WRITE_SLOT((i), v_);                                                      \
+    (n) = v_;                                                                 \
+  } while (0)
+#define STORE_ACC(i, expr, n)                                                 \
+  do {                                                                        \
+    __m256i v_ = (expr);                                                      \
+    WRITE_SLOT((i), v_);                                                      \
+    (n) = _mm256_xor_si256((n), v_);                                          \
+  } while (0)
+#define ROW0(STORE, s0, s1, s2, s3, s4, o0, o1, o2, o3, o4)                 \
+  do {                                                                        \
+    b0 = LOAD_SLOT((s0), d0);                                                 \
+    b1 = rotl64x4(LOAD_SLOT((s1), d1), 44);                                   \
+    b2 = rotl64x4(LOAD_SLOT((s2), d2), 43);                                   \
+    b3 = rotl64x4(LOAD_SLOT((s3), d3), 21);                                   \
+    b4 = rotl64x4(LOAD_SLOT((s4), d4), 14);                                   \
+    STORE((o0), CHIX4(b0, b1, b2), n0);                                      \
+    STORE((o1), CHIX4(b1, b2, b3), n1);                                      \
+    STORE((o2), CHIX4(b2, b3, b4), n2);                                      \
+    STORE((o3), CHIX4(b3, b4, b0), n3);                                      \
+    STORE((o4), CHIX4(b4, b0, b1), n4);                                      \
+  } while (0)
+#define ROW1(STORE, s0, s1, s2, s3, s4, o0, o1, o2, o3, o4)                 \
+  do {                                                                        \
+    b0 = rotl64x4(LOAD_SLOT((s0), d3), 28);                                   \
+    b1 = rotl64x4(LOAD_SLOT((s1), d4), 20);                                   \
+    b2 = rotl64x4(LOAD_SLOT((s2), d0), 3);                                    \
+    b3 = rotl64x4(LOAD_SLOT((s3), d1), 45);                                   \
+    b4 = rotl64x4(LOAD_SLOT((s4), d2), 61);                                   \
+    STORE((o0), CHIX4(b0, b1, b2), n0);                                      \
+    STORE((o1), CHIX4(b1, b2, b3), n1);                                      \
+    STORE((o2), CHIX4(b2, b3, b4), n2);                                      \
+    STORE((o3), CHIX4(b3, b4, b0), n3);                                      \
+    STORE((o4), CHIX4(b4, b0, b1), n4);                                      \
+  } while (0)
+#define ROW2(STORE, s0, s1, s2, s3, s4, o0, o1, o2, o3, o4)                 \
+  do {                                                                        \
+    b0 = rotl64x4(LOAD_SLOT((s0), d1), 1);                                    \
+    b1 = rotl64x4(LOAD_SLOT((s1), d2), 6);                                    \
+    b2 = rotl64x4(LOAD_SLOT((s2), d3), 25);                                   \
+    b3 = rotl64x4(LOAD_SLOT((s3), d4), 8);                                    \
+    b4 = rotl64x4(LOAD_SLOT((s4), d0), 18);                                   \
+    STORE((o0), CHIX4(b0, b1, b2), n0);                                      \
+    STORE((o1), CHIX4(b1, b2, b3), n1);                                      \
+    STORE((o2), CHIX4(b2, b3, b4), n2);                                      \
+    STORE((o3), CHIX4(b3, b4, b0), n3);                                      \
+    STORE((o4), CHIX4(b4, b0, b1), n4);                                      \
+  } while (0)
+#define ROW3(STORE, s0, s1, s2, s3, s4, o0, o1, o2, o3, o4)                 \
+  do {                                                                        \
+    b0 = rotl64x4(LOAD_SLOT((s0), d4), 27);                                   \
+    b1 = rotl64x4(LOAD_SLOT((s1), d0), 36);                                   \
+    b2 = rotl64x4(LOAD_SLOT((s2), d1), 10);                                   \
+    b3 = rotl64x4(LOAD_SLOT((s3), d2), 15);                                   \
+    b4 = rotl64x4(LOAD_SLOT((s4), d3), 56);                                   \
+    STORE((o0), CHIX4(b0, b1, b2), n0);                                      \
+    STORE((o1), CHIX4(b1, b2, b3), n1);                                      \
+    STORE((o2), CHIX4(b2, b3, b4), n2);                                      \
+    STORE((o3), CHIX4(b3, b4, b0), n3);                                      \
+    STORE((o4), CHIX4(b4, b0, b1), n4);                                      \
+  } while (0)
+#define ROW4(STORE, s0, s1, s2, s3, s4, o0, o1, o2, o3, o4)                 \
+  do {                                                                        \
+    b0 = rotl64x4(LOAD_SLOT((s0), d2), 62);                                   \
+    b1 = rotl64x4(LOAD_SLOT((s1), d3), 55);                                   \
+    b2 = rotl64x4(LOAD_SLOT((s2), d4), 39);                                   \
+    b3 = rotl64x4(LOAD_SLOT((s3), d0), 41);                                   \
+    b4 = rotl64x4(LOAD_SLOT((s4), d1), 2);                                    \
+    STORE((o0), CHIX4(b0, b1, b2), n0);                                      \
+    STORE((o1), CHIX4(b1, b2, b3), n1);                                      \
+    STORE((o2), CHIX4(b2, b3, b4), n2);                                      \
+    STORE((o3), CHIX4(b3, b4, b0), n3);                                      \
+    STORE((o4), CHIX4(b4, b0, b1), n4);                                      \
+  } while (0)
+
+  for (int group = 0; group < 6; group++) {
+    {
+      int round = group * 4 + 0;
+      __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
+      __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
+      __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
+      __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
+      __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+      __m256i n0, n1, n2, n3, n4;
+      __m256i b0, b1, b2, b3, b4;
+
+      ROW2(STORE_INIT, 1, 7, 13, 19, 20, 20, 1, 7, 13, 19);
+      ROW1(STORE_ACC, 3, 9, 10, 16, 22, 10, 16, 22, 3, 9);
+      ROW3(STORE_ACC, 4, 5, 11, 17, 23, 5, 11, 17, 23, 4);
+      ROW4(STORE_ACC, 2, 8, 14, 15, 21, 15, 21, 2, 8, 14);
+      ROW0(STORE_ACC, 0, 6, 12, 18, 24, 0, 6, 12, 18, 24);
+
+      __m256i rcv = _mm256_set1_epi64x((long long)rc[round]);
+      lane0 = _mm256_xor_si256(lane0, rcv);
+      n0 = _mm256_xor_si256(n0, rcv);
+      c0 = n0;
+      c1 = n1;
+      c2 = n2;
+      c3 = n3;
+      c4 = n4;
+    }
+    {
+      int round = group * 4 + 1;
+      __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
+      __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
+      __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
+      __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
+      __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+      __m256i n0, n1, n2, n3, n4;
+      __m256i b0, b1, b2, b3, b4;
+
+      ROW3(STORE_INIT, 24, 10, 1, 17, 8, 10, 1, 17, 8, 24);
+      ROW1(STORE_ACC, 18, 9, 20, 11, 2, 20, 11, 2, 18, 9);
+      ROW2(STORE_ACC, 6, 22, 13, 4, 15, 15, 6, 22, 13, 4);
+      ROW4(STORE_ACC, 12, 3, 19, 5, 21, 5, 21, 12, 3, 19);
+      ROW0(STORE_ACC, 0, 16, 7, 23, 14, 0, 16, 7, 23, 14);
+
+      __m256i rcv = _mm256_set1_epi64x((long long)rc[round]);
+      lane0 = _mm256_xor_si256(lane0, rcv);
+      n0 = _mm256_xor_si256(n0, rcv);
+      c0 = n0;
+      c1 = n1;
+      c2 = n2;
+      c3 = n3;
+      c4 = n4;
+    }
+    {
+      int round = group * 4 + 2;
+      __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
+      __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
+      __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
+      __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
+      __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+      __m256i n0, n1, n2, n3, n4;
+      __m256i b0, b1, b2, b3, b4;
+
+      ROW1(STORE_INIT, 23, 9, 15, 1, 12, 15, 1, 12, 23, 9);
+      ROW2(STORE_ACC, 16, 2, 13, 24, 5, 5, 16, 2, 13, 24);
+      ROW3(STORE_ACC, 14, 20, 6, 17, 3, 20, 6, 17, 3, 14);
+      ROW4(STORE_ACC, 7, 18, 4, 10, 21, 10, 21, 7, 18, 4);
+      ROW0(STORE_ACC, 0, 11, 22, 8, 19, 0, 11, 22, 8, 19);
+
+      __m256i rcv = _mm256_set1_epi64x((long long)rc[round]);
+      lane0 = _mm256_xor_si256(lane0, rcv);
+      n0 = _mm256_xor_si256(n0, rcv);
+      c0 = n0;
+      c1 = n1;
+      c2 = n2;
+      c3 = n3;
+      c4 = n4;
+    }
+    {
+      int round = group * 4 + 3;
+      __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
+      __m256i d1 = _mm256_xor_si256(c0, rotl64x4(c2, 1));
+      __m256i d2 = _mm256_xor_si256(c1, rotl64x4(c3, 1));
+      __m256i d3 = _mm256_xor_si256(c2, rotl64x4(c4, 1));
+      __m256i d4 = _mm256_xor_si256(c3, rotl64x4(c0, 1));
+      __m256i n0, n1, n2, n3, n4;
+      __m256i b0, b1, b2, b3, b4;
+
+      ROW1(STORE_INIT, 8, 9, 5, 6, 7, 5, 6, 7, 8, 9);
+      ROW2(STORE_ACC, 11, 12, 13, 14, 10, 10, 11, 12, 13, 14);
+      ROW3(STORE_ACC, 19, 15, 16, 17, 18, 15, 16, 17, 18, 19);
+      ROW4(STORE_ACC, 22, 23, 24, 20, 21, 20, 21, 22, 23, 24);
+      ROW0(STORE_ACC, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4);
+
+      __m256i rcv = _mm256_set1_epi64x((long long)rc[round]);
+      lane0 = _mm256_xor_si256(lane0, rcv);
+      n0 = _mm256_xor_si256(n0, rcv);
+      c0 = n0;
+      c1 = n1;
+      c2 = n2;
+      c3 = n3;
+      c4 = n4;
+    }
+  }
+
+#undef ROW4
+#undef ROW3
+#undef ROW2
+#undef ROW1
+#undef ROW0
+#undef STORE_ACC
+#undef STORE_INIT
+#undef WRITE_SLOT
+#undef CHIX4
+#undef LOAD_SLOT
+
+  st[0] = lane0;
+  st[1] = lane1;
+  parity[0] = c0;
+  parity[1] = c1;
+  parity[2] = c2;
+  parity[3] = c3;
+  parity[4] = c4;
+}
+
 static MLKEM_ALWAYS_INLINE void stage_keccakf4_mem_parity_rounds23(
     __m256i st[25], __m256i scratch[25], __m256i parity[5]) {
   __m256i *src = st;
@@ -3859,6 +4090,48 @@ static void stage_sample_ntt4_lane0_carry_avx2(
   stage_sample_ntt4_init_parity(seed, row, col, st, parity);
   for (int block = 0; block < 3; block++) {
     stage_keccakf4_mem_parity_lane0_carry(st, parity);
+    sample_ntt4_store_block(stream, (size_t)block * 168, st);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count[4];
+  int need_more = 0;
+  for (int lane = 0; lane < 4; lane++) {
+    count[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream[lane], sizeof(stream[lane]), outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+
+  if (need_more) {
+    uint64_t scalar_st[25];
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] >= N) continue;
+      for (int word = 0; word < 25; word++) {
+        uint64_t words[4];
+        _mm256_storeu_si256((__m256i *)(void *)words, st[word]);
+        scalar_st[word] = words[lane];
+      }
+      while (count[lane] < N) {
+        keccakf(scalar_st);
+        count[lane] = sample_ntt_parse_stream_avx2_ready(
+            (const uint8_t *)(const void *)scalar_st, 168, outs[lane],
+            count[lane]);
+      }
+    }
+  }
+}
+
+static void stage_sample_ntt4_inplace_lane01_avx2(
+    const uint8_t *seed, const uint8_t row[4], const uint8_t col[4],
+    poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
+  __m256i st[25];
+  __m256i parity[5];
+  static uint8_t stream[4][504];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+
+  stage_sample_ntt4_init_parity(seed, row, col, st, parity);
+  for (int block = 0; block < 3; block++) {
+    stage_keccakf4_mem_parity_inplace_lane01(st, parity);
     sample_ntt4_store_block(stream, (size_t)block * 168, st);
   }
 
@@ -4316,6 +4589,65 @@ static void validate_sample_ntt4_lane0_carry_avx2(void) {
   }
 }
 
+static void validate_sample_ntt4_inplace_lane01_avx2(void) {
+  static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
+  static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
+
+  for (size_t fixture = 0; fixture < STAGE_BENCH_LANES; fixture++) {
+    for (int batch = 0; batch < 2; batch++) {
+      __m256i base_st[25];
+      __m256i got_st[25];
+      __m256i parity[5];
+      poly256 got[4];
+      poly256 want[4];
+
+      stage_sample_ntt4_init(stage_rho[fixture], rows[batch], cols[batch],
+                             base_st);
+      stage_sample_ntt4_init_parity(stage_rho[fixture], rows[batch],
+                                    cols[batch], got_st, parity);
+      for (int checkpoint = 0; checkpoint <= 3; checkpoint++) {
+        if (memcmp(got_st, base_st, sizeof(base_st)) != 0) {
+          fprintf(stderr,
+                  "sample_ntt4 inplace-lane01 state mismatch at "
+                  "%zu,%d,%d\n",
+                  fixture, batch, checkpoint);
+          exit(EXIT_FAILURE);
+        }
+        for (int column = 0; column < 5; column++) {
+          __m256i expected =
+              stage_keccakf4_state_column_parity(got_st, column);
+          if (memcmp(&parity[column], &expected, sizeof(expected)) != 0) {
+            fprintf(stderr,
+                    "sample_ntt4 inplace-lane01 value mismatch at "
+                    "%zu,%d,%d,%d\n",
+                    fixture, batch, checkpoint, column);
+            exit(EXIT_FAILURE);
+          }
+        }
+        if (checkpoint < 3) {
+          keccakf4_mem(base_st);
+          stage_keccakf4_mem_parity_inplace_lane01(got_st, parity);
+        }
+      }
+
+      stage_sample_ntt4_inplace_lane01_avx2(
+          stage_rho[fixture], rows[batch], cols[batch], got[0], got[1],
+          got[2], got[3]);
+      for (int lane = 0; lane < 4; lane++) {
+        sample_ntt(stage_rho[fixture], rows[batch][lane], cols[batch][lane],
+                   want[lane]);
+        if (memcmp(got[lane], want[lane], sizeof(poly256)) != 0) {
+          fprintf(stderr,
+                  "sample_ntt4 inplace-lane01 full mismatch at "
+                  "%zu,%d,%d\n",
+                  fixture, batch, lane);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static void validate_sample_ntt4_interleaved_parse_avx2(void) {
   static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
   static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
@@ -4494,6 +4826,30 @@ static uint64_t bench_sample_ntt4_lane0_carry_full_raw(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_sample_ntt4_lane0_carry_avx2(
+        stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0]);
+    switch (i & 3u) {
+      case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
+      case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
+      case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
+      default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_inplace_lane01_full_raw(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_ntt4_inplace_lane01_avx2(
         stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
         stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
         stage_tmp_ahat[lane][1][0]);
@@ -5374,6 +5730,53 @@ static uint64_t bench_sample_ntt4_lane0_carry_keccak_store3(
     stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
     for (int block = 0; block < 3; block++) {
       stage_keccakf4_mem_parity_lane0_carry(st, parity);
+      sample_ntt4_store_block(stage_tmp_sample_stream[lane],
+                              (size_t)block * 168, st);
+    }
+    acc ^= stage_tmp_sample_stream[lane][i & 3u][(i * 17u) % 504u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_inplace_lane01_keccak3_only(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    __m256i parity[5];
+    stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
+    for (int block = 0; block < 3; block++) {
+      stage_keccakf4_mem_parity_inplace_lane01(st, parity);
+    }
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 3u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_inplace_lane01_keccak_store3(
+    size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    __m256i parity[5];
+    stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
+    for (int block = 0; block < 3; block++) {
+      stage_keccakf4_mem_parity_inplace_lane01(st, parity);
       sample_ntt4_store_block(stage_tmp_sample_stream[lane],
                               (size_t)block * 168, st);
     }
@@ -10168,6 +10571,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_persistent_parity_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane0_carry_full_raw",
                bench_sample_ntt4_lane0_carry_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_full_raw",
+               bench_sample_ntt4_inplace_lane01_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw",
                bench_sample_ntt4_final_store_fused_split_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw",
@@ -10206,6 +10611,8 @@ int main(int argc, char **argv) {
                iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only",
                bench_sample_ntt4_lane0_carry_keccak3_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_keccak3_only",
+               bench_sample_ntt4_inplace_lane01_keccak3_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_keccak_store3",
                bench_sample_ntt4_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3",
@@ -10213,6 +10620,8 @@ int main(int argc, char **argv) {
                iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3",
                bench_sample_ntt4_lane0_carry_keccak_store3(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_keccak_store3",
+               bench_sample_ntt4_inplace_lane01_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3",
                bench_sample_ntt4_final_store_fused_split_keccak_store3(iters),
                iters);
