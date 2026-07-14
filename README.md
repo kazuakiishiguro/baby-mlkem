@@ -274,21 +274,32 @@ An exact validator compares all 25 state vectors and five column-parity vectors
 after each of three permutations with the independent register-oriented C
 implementation, then compares all four sampled polynomials with scalar
 `sample_ntt()`. Clang and GCC AVX2-only builds both pass. Replacing rotate-left
-8 and 56 shift/or triples with `vpshufb` improves the assembly's three-permutation
-median from `784.98` to `775.33 ns` (`1.0124x`). The linked function is 1354
-bytes and has 279 static instructions; its round loop does not address YMM spills
-through `rsp`.
+8 and 56 shift/or triples with `vpshufb` improves the three-permutation median
+from `784.98` to `775.33 ns` (`1.0124x`). A row-zero-first store schedule was
+then rejected: its Clang medians regressed from `901.94` to `906.42 ns` for the
+complete sampler, `775.33` to `777.21 ns` for the three permutations, and
+`787.11` to `788.59 ns` with stores.
+
+Commit `c402f67` instead implements rotate-left 1 as `vpaddq x, x` plus the
+right-shift/or pair. The Zen 4 `llvm-mca` model reports reciprocal
+throughputs of 0.25 cycles for packed add and 0.5 cycles for an immediate vector shift. On hardware, the Clang
+three-permutation median improved from `775.33` to `772.09 ns` (`1.0042x`) and
+GCC from `780.18` to `777.87 ns` (`1.0030x`); permutations plus stores improved
+by `1.0029x` and `1.0036x`, respectively. Exact validation still passes under
+both compilers. The change shortens the function from 1377 to 1376 bytes; it has
+279 static instructions and its round loop does not address YMM spills through
+`rsp`.
 
 Eleven same-binary runs of 30000 iterations on CPU 0 show a compiler split:
 
 | Compiler / metric | C lane-zero median ns/op | Fixed-register asm median ns/op | Median ratio | Paired median | Wins |
 |---|---:|---:|---:|---:|---:|
-| Clang complete sampler | 962.45 | 901.94 | 1.0671x | 1.0651x | 11/11 |
-| Clang three permutations | 764.22 | 775.33 | 0.9857x | 0.9853x | 0/11 |
-| Clang permutations plus stores | 778.15 | 787.11 | 0.9886x | 0.9888x | 0/11 |
-| GCC complete sampler | 970.32 | 966.74 | 1.0037x | 1.0033x | 10/11 |
-| GCC three permutations | 784.66 | 780.18 | 1.0057x | 1.0060x | 10/11 |
-| GCC permutations plus stores | 798.74 | 789.72 | 1.0114x | 1.0124x | 11/11 |
+| Clang complete sampler | 955.26 | 901.88 | 1.0592x | 1.0578x | 11/11 |
+| Clang three permutations | 761.48 | 772.09 | 0.9863x | 0.9863x | 0/11 |
+| Clang permutations plus stores | 775.65 | 784.87 | 0.9883x | 0.9888x | 0/11 |
+| GCC complete sampler | 968.07 | 963.24 | 1.0050x | 1.0049x | 9/11 |
+| GCC three permutations | 780.52 | 777.87 | 1.0034x | 1.0033x | 11/11 |
+| GCC permutations plus stores | 795.11 | 786.88 | 1.0105x | 1.0108x | 11/11 |
 
 The Clang complete-sampler gain is not sufficient evidence: the isolated Clang
 Keccak rows lose every run. A production routing experiment therefore used
