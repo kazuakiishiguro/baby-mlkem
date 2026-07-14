@@ -1154,9 +1154,13 @@ static __m256i ZETA_NTT_INV_MONT_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_SCALE_HI;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI;
+#else
+static __m256i ZETA_NTT_TAIL_MONT_LO[3][8];
+static __m256i ZETA_NTT_TAIL_MONT_HI[3][8];
 #endif
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-static __m512i ZETA_NTT_HEAD_AVX512[15];
+static __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15];
+static __m512i ZETA_NTT_HEAD_MONT_HI_AVX512[15];
 static __m512i ZETA_NTT_INV_TAIL_AVX512[15];
 static __m512i ZETA_NTT_TAIL_L3X2[8];
 static __m512i ZETA_NTT_TAIL_L2X2[8];
@@ -1229,6 +1233,15 @@ static inline void store_i16x8_pair(int16_t *a0, int16_t *a1, __m256i v) {
 
 static void ntt_inv_head_avx2(poly256 f);
 
+/* zeta_lo = zeta_hi * QINV mod 2^16 makes the correction one mulhi. */
+static inline __m256i ntt_mont_mul_precomp_i16x16(
+    __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
+  __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
+  return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
+}
+
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static inline __m512i mod_q_reduce_ntt_u32x16(__m512i x) {
   const __m512i mul = _mm512_set1_epi32(315);
@@ -1279,17 +1292,70 @@ static inline void ntt_butterfly8x2_avx512(int16_t *a0, int16_t *b0,
                    _mm512_cvtusepi32_epi16(mod_q_sub_i32x16(a, t)));
 }
 
-static void ntt_head_avx512(poly256 f) {
+/* zeta_lo = zeta_hi * QINV mod 2^16 makes the correction one mulhi. */
+static inline __m512i ntt_mont_mul_precomp_i16x32_avx512(
+    __m512i b, __m512i zeta_lo, __m512i zeta_hi) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i lo = _mm512_mullo_epi16(b, zeta_lo);
+  __m512i hi = _mm512_mulhi_epi16(b, zeta_hi);
+  return _mm512_sub_epi16(hi, _mm512_mulhi_epi16(lo, q));
+}
+
+static void ntt_canonicalize_signed_avx512(poly256 f) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i barrett = _mm512_set1_epi16(20159);
+  for (int i = 0; i < N; i += 32) {
+    __m512i v = _mm512_loadu_si512((const void *)(f + i));
+    __m512i quot = _mm512_srai_epi16(_mm512_mulhi_epi16(v, barrett), 10);
+    v = _mm512_sub_epi16(v, _mm512_mullo_epi16(quot, q));
+    v = _mm512_add_epi16(v,
+                         _mm512_and_si512(_mm512_srai_epi16(v, 15), q));
+    __m512i reduced = _mm512_sub_epi16(v, q);
+    v = _mm512_add_epi16(
+        reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+    _mm512_storeu_si512((void *)(f + i), v);
+  }
+}
+
+static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
   int k = 0;
-  for (int log2len = 7; log2len > 3; log2len--) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      __m512i zeta = ZETA_NTT_HEAD_AVX512[k++];
-      for (int j = 0; j < length; j += 16) {
-        ntt_butterfly16_avx512(f + start + j, f + start + j + length, zeta);
+  for (int log2len = 7; log2len > 4; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m512i zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[k];
+      __m512i zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[k++];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i t =
+            ntt_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+        _mm512_storeu_si512((void *)(f + start + j),
+                            _mm512_add_epi16(a, t));
+        _mm512_storeu_si512((void *)(f + start + length + j),
+                            _mm512_sub_epi16(a, t));
       }
     }
   }
+
+  for (int start = 0; start < N; start += 32) {
+    __m256i zeta_lo =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_LO_AVX512[k]);
+    __m256i zeta_hi =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_HI_AVX512[k++]);
+    __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
+    __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
+    __m256i t =
+        ntt_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+    _mm256_storeu_si256((__m256i *)(f + start), _mm256_add_epi16(a, t));
+    _mm256_storeu_si256((__m256i *)(f + start + 16),
+                         _mm256_sub_epi16(a, t));
+  }
+}
+
+static void ntt_head_avx512(poly256 f) {
+  ntt_head_mont_lazy_raw_avx512(f);
+  ntt_canonicalize_signed_avx512(f);
 }
 
 static inline void ntt_inv_butterfly16_avx512(int16_t *a_ptr,
@@ -1824,8 +1890,7 @@ static inline uint16_t modexp(uint16_t base, uint16_t exp) {
   return (uint16_t)result;
 }
 
-#if defined(__AVX2__) && \
-    !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
 static void ntt_mont_factor(uint16_t zeta_normal, int16_t *zeta_lo,
                             int16_t *zeta_hi) {
   const uint32_t mont = 65536u % Q;
@@ -1858,6 +1923,7 @@ static void init_ntt_roots(void) {
     ZETA_NTT_HEAD_MONT_LO[i] = _mm256_set1_epi16(zeta_lo);
     ZETA_NTT_HEAD_MONT_HI[i] = _mm256_set1_epi16(zeta_hi);
   }
+#endif
   for (int level = 0; level < 3; level++) {
     int base = 16 << level;
     int repeat = 8 >> level;
@@ -1874,6 +1940,7 @@ static void init_ntt_roots(void) {
           _mm256_loadu_si256((const __m256i *)(const void *)hi);
     }
   }
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
   for (int level = 0; level < 3; level++) {
     int base = 127 >> level;
     int repeat = 2 << level;
@@ -1939,7 +2006,10 @@ static void init_ntt_roots(void) {
   }
 #if defined(__AVX512F__) && defined(__AVX512BW__)
   for (int i = 0; i < 15; i++) {
-    ZETA_NTT_HEAD_AVX512[i] = _mm512_set1_epi32(ZETA[1 + i]);
+    int16_t zeta_lo, zeta_hi;
+    ntt_mont_factor(ZETA[i + 1], &zeta_lo, &zeta_hi);
+    ZETA_NTT_HEAD_MONT_LO_AVX512[i] = _mm512_set1_epi16(zeta_lo);
+    ZETA_NTT_HEAD_MONT_HI_AVX512[i] = _mm512_set1_epi16(zeta_hi);
     ZETA_NTT_INV_TAIL_AVX512[i] = _mm512_set1_epi32(ZETA[15 - i]);
   }
   for (int i = 0; i < 8; i++) {
@@ -2002,17 +2072,7 @@ static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
   }
 }
 
-#if defined(__AVX2__) && \
-    !(defined(__AVX512F__) && defined(__AVX512BW__))
-/* zeta_lo = zeta_hi * QINV mod 2^16 makes the correction one mulhi. */
-static inline __m256i ntt_mont_mul_precomp_i16x16(
-    __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
-  __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
-  return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
-}
-
+#if defined(__AVX2__)
 static void ntt_canonicalize_signed_avx2(poly256 f) {
   const __m256i q = _mm256_set1_epi16(Q);
   const __m256i barrett = _mm256_set1_epi16(20159);
@@ -2028,6 +2088,7 @@ static void ntt_canonicalize_signed_avx2(poly256 f) {
   }
 }
 
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void ntt_head_mont_lazy_raw_avx2(poly256 f) {
   int k = 0;
   for (int log2len = 7; log2len > 3; log2len--) {
@@ -2049,6 +2110,7 @@ static void ntt_head_mont_lazy_raw_avx2(poly256 f) {
     }
   }
 }
+#endif
 
 static inline __m256i load_i16x4_quad_avx2(const int16_t *a0,
                                             const int16_t *a1,
@@ -2126,9 +2188,15 @@ static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
 
 static void ntt_mont_lazy_avx2(poly256 f) {
   /* Seven lazy stages stay in (-7Q,8Q), within int16_t. */
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_head_mont_lazy_raw_avx512(f);
+  ntt_tail_mont_lazy_raw_avx2(f);
+  ntt_canonicalize_signed_avx512(f);
+#else
   ntt_head_mont_lazy_raw_avx2(f);
   ntt_tail_mont_lazy_raw_avx2(f);
   ntt_canonicalize_signed_avx2(f);
+#endif
 }
 #endif
 
@@ -2332,10 +2400,7 @@ static void ntt(const poly256 f_in, poly256 f_out) {
   if (f_in != f_out) {
     memcpy(f_out, f_in, sizeof(poly256));
   }
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_head_avx512(f_out);
-  ntt_tail_avx2(f_out);
-#elif defined(__AVX2__)
+#if defined(__AVX2__)
   ntt_mont_lazy_avx2(f_out);
 #else
   int k = 1;
