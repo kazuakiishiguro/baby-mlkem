@@ -22,6 +22,12 @@ Neither path adds an external library or object dependency, but neither design
 is claimed as independently invented by baby-mlkem. See
 `THIRD_PARTY_NOTICES.md` for the sources and licenses.
 
+The memory-resident x4 sampler permutation remains repository-local AVX2
+intrinsics code. Its carried-theta and plane-scheduling work is informed by the
+Keccak Team implementation literature, but production does not compile, link,
+or call the reference KeccakP times4 object. The separate vendor benchmark is
+reference-only.
+
 The repository still keeps in-tree comparator backends. Set
 `AVX2_BACKEND=upstream` to use the vendored upstream Kyber AVX2 sources under
 `include/kyber_upstream/avx2`, or `AVX2_BACKEND=pqclean` to use the vendored
@@ -48,28 +54,28 @@ RUNS=9 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
 
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 4382.00 | 4311.37 | largest integrated cache-miss encryption row |
-| `mlkem_core_stage_kpke_keygen_full` | 3854.75 | 3814.05 | keygen still dominated by matrix sampling plus six NTTs |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4049.27 | 4044.67 | public-key d12 decode + matrix sampling + H(pk) |
-| `mlkem_core_stage_sample_matrix` | 2643.91 | 2637.10 | largest standalone public-work target |
-| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2705.92 | 2686.04 | seed word reuse is a rejected sampler-neighbor check |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2026.47 | 1972.69 | cached encapsulation arithmetic/noise target |
-| `mlkem_core_stage_keygen_noise_ntt` | 1221.06 | 1220.84 | keygen PRF/CBD plus six forward NTTs |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 823.54 | 822.85 | six forward NTTs plus secret d12 encode |
-| `mlkem_core_stage_encrypt_noise_lazy` | 995.47 | 995.59 | production-aligned encrypt PRF/CBD plus lazy r NTT |
-| `mlkem_core_stage_encrypt_accum_inv` | 1266.24 | 1264.60 | K=3 accumulation plus inverse-add |
-| `mlkem_core_stage_encrypt_inv_add_u_raw` | 563.98 | 563.89 | production-adjacent three-u inverse-add diagnostic |
-| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 594.14 | 592.94 | three-polynomial inverse-add scheduling remains diagnostic only |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.85 | 325.78 | tail/final chain is the larger inverse-add subtarget |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 328.38 | 328.50 | level-by-level three-u tail/final batching is rejected |
-| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3` | 784.49 | 783.72 | production x4 sampler Keccak/state/store cost |
-| `mlkem_core_stage_sample_ntt4_init_only` | 6.33 | 6.39 | x4 sampler initialization is too small to be the next target |
-| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only` | 775.85 | 774.66 | production x4 sampler Keccak permutations dominate stream setup |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 132.14 | 118.09 | parser bookkeeping is not the main sampler cost |
-| `mlkem_core_stage_sample_ntt4_full_raw` | 900.24 | 899.58 | complete production x4 sampler including rejection parsing |
-| `mlkem_core_stage_keygen_accum_only` | 438.29 | 437.70 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
-| `mlkem_core_stage_keygen_add_only` | 201.78 | 201.80 | vector add is smaller than accumulation and NTT work |
-| `mlkem_core_stage_ciphertext_compress_encode` | 51.28 | 50.52 | d10/d4 packing is too small for the next target |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4331.77 | 4294.66 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 3812.22 | 3800.62 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4046.03 | 4033.64 | public-key d12 decode + matrix sampling + H(pk) |
+| `mlkem_core_stage_sample_matrix` | 2626.77 | 2625.81 | largest standalone public-work target |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2678.04 | 2678.98 | seed word reuse is a rejected sampler-neighbor check |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1974.30 | 1973.62 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1234.09 | 1222.87 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 837.33 | 826.20 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise_lazy` | 1002.59 | 997.83 | production-aligned encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1280.63 | 1268.10 | K=3 accumulation plus inverse-add |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 575.30 | 564.17 | production-adjacent three-u inverse-add diagnostic |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 587.58 | 586.90 | three-polynomial inverse-add scheduling remains diagnostic only |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.15 | 325.81 | tail/final chain is the larger inverse-add subtarget |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 335.91 | 334.65 | level-by-level three-u tail/final batching is rejected |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3` | 780.35 | 779.91 | production x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.33 | 6.22 | x4 sampler initialization is too small to be the next target |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only` | 765.66 | 765.64 | production x4 sampler Keccak permutations dominate stream setup |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 117.45 | 117.35 | parser bookkeeping is not the main sampler cost |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 891.37 | 891.54 | complete production x4 sampler including rejection parsing |
+| `mlkem_core_stage_keygen_accum_only` | 441.35 | 441.22 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 201.77 | 201.73 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 51.49 | 50.56 | d10/d4 packing is too small for the next target |
 
 Near-term target selection:
 
@@ -78,7 +84,7 @@ Near-term target selection:
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
-| Common `sample_ntt4()` / `sample_matrix()` layout | Cross-permutation theta parity accepted; larger redesign is next | Production `sample_ntt4()` now initializes five column-parity vectors from its sparse SHAKE state and carries them across all three `keccakf4_mem_parity()` calls, avoiding three 25-lane parity reconstructions. Together with the prior in-round parity carry, `(2,1)` scalar matrix tail, and rare-refill cleanup, this is a local core dataflow improvement. Production A/B improved `sample_ntt4_full_raw` and `sample_matrix` by `1.0073x` and `1.0055x` median; the refreshed production parity Keccak/store row is `783.72 ns` median. A paired 504-byte parser schedule remains rejected. The next attempt needs a larger x4 Keccak/state or producer/consumer representation change. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; rotating nonzero-lane mapping is next | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. The next attempt must address the 24-lane nonzero Rho/Pi cycle or the state/parser boundary, not repeat closed parser or final-round fusion work. |
 | Final-round x4 Keccak/rate-store fusion | Closed | Peeling round 24 and transposing rate words directly reduced the isolated final epilogue, but expanded the preceding 23-round body through register pressure. Inline and split/noinline forms regress complete sampler medians to `0.9934x` and `0.9804x`; production remains unchanged. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
@@ -91,21 +97,125 @@ Near-term target selection:
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The latest accepted sampler change leaves the broad profile order unchanged. A
-post-change `-pg` profile at 500000 iterations puts `sample_ntt4` first at
-`21.51%` self time, followed by fixed public-key SHA3 (`12.49%`), the canonical
-single-state Keccak permutation (`12.25%`), prepared encryption (`12.01%`),
-inverse NTT (`9.50%`), and forward NTT (`7.79%`).
+The latest accepted sampler schedule preserves the broad profile order. The
+previous post-persistent-parity profile put `sample_ntt4` first at `21.51%` self
+time. After rolling lane zero through the round loop, the refreshed direct rows
+are `765.64 ns` for three x4 permutations, `779.91 ns` including the three rate
+stores, `891.54 ns` for the complete x4 sampler, and `2625.81 ns` for
+`sample_matrix()`.
 
-The next independent target therefore remains the common x4 sampler:
-`sample_ntt4` is the largest standalone symbol and `sample_matrix` remains the
-largest stage-level public-work row at `2637.10 ns` median. Persistent theta
-parity removes repeated work around the permutation, but the 24-round x4
-Keccak body and its state/materialization boundary still dominate. Seed-load
-hoisting, lane regrouping, scalar refill tweaks, and two-stream interleaving of
-the existing parser are already closed by their recorded A/B results.
-Final-round peeling and direct rate-store fusion are also closed: the saved
-state reloads lose to a larger 23-round body and noinline boundary traffic.
+The next independent target therefore remains the common x4 sampler. The
+remaining 24 nonzero lanes form the Rho/Pi cycle and still ping-pong through
+memory every round. Seed-load hoisting, lane regrouping, scalar refill tweaks,
+two-stream parser interleaving, and final-round/rate-store fusion are already
+closed by recorded A/B results. The next defensible experiment is a
+round-dependent in-place lane mapping or a small rotating plane window that
+removes more state traffic without recreating the spills seen in the full
+register-resident and final-round-fused forms.
+
+### Latest Core Optimization A/B (2026-07-14, rolling lane-zero x4 Keccak)
+
+The memory-resident x4 permutation previously loaded and stored all 25 SIMD
+lanes in every round. A full 25-register implementation is not viable on AVX2:
+round temporaries and theta parity exceed the architectural register set and
+spill. The accepted middle ground keeps only lane `(0,0)` in a YMM register for
+all 24 rounds. Rows 1 through 4 are emitted first; row 0 is emitted last, so the
+old lane-zero value is consumed immediately before the same register receives
+new lane zero. Only the final value is written back to `st[0]`.
+
+This uses the plane-oriented scheduling and early-parity principles described in
+the Keccak Team's [implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf)
+and [software optimization paper](https://keccak.team/files/KeccakSoftware.pdf).
+It is a local schedule rewrite, not imported code. Bit interleaving targets
+narrower machines and is not useful for 64-bit AVX2 lanes; lane complementing
+has little expected value because AVX2 already provides `vpandn`; and the
+reference-only [XKCP](https://github.com/XKCP/XKCP) times4 object is not linked
+into production.
+
+The bench-only validator compared every one of the 25 state vectors and all five
+carried parity vectors after each of the three common permutations. It then
+compared all four output polynomials with scalar `sample_ntt()` results. All
+checks passed under Clang and GCC AVX2 builds.
+
+Eleven same-binary runs of 40000 iterations on CPU 0 showed the isolated effect:
+
+| Metric | Baseline avg ns/op | Lane-zero avg ns/op | Avg speedup | Baseline median ns/op | Lane-zero median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| complete production x4 sampler | 900.65 | 892.25 | 1.0094x | 900.52 | 891.64 | 1.0100x |
+| three persistent-parity permutations | 775.07 | 765.04 | 1.0131x | 774.99 | 765.22 | 1.0128x |
+| three permutations plus rate stores | 784.43 | 778.87 | 1.0071x | 784.72 | 778.91 | 1.0075x |
+
+Disassembly confirms that the gain is state traffic rather than omitted work:
+
+| Compiled property | Persistent parity | Rolling lane zero | Change |
+|---|---:|---:|---:|
+| static round-body instructions | 228 | 223 | -5 |
+| round-body `vmov*` instructions | 37 | 32 | -5 |
+| round-body `rsp` references | 14 | 12 | -2 |
+| full function instructions | 692 | 686 | -6 |
+| allocated function bytes | `0xf7e` | `0xf7e` | unchanged |
+
+The production placement was then measured with alternating run order so a
+sub-percent result could not be explained by running every candidate after every
+baseline:
+
+```bash
+RUN_ORDER=alternating RUNS=12 WARMUP_RUNS=2 SUITES=stage \
+  STAGE_ITERS=50000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh 82878cd
+```
+
+| Metric | Paired geometric speedup | Paired median speedup | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `sample_ntt4_full_raw` | 1.0123x | 1.0111x | 12/12 | 1.0118x | 1.0109x |
+| `sample_ntt4_full_raw_batch1` | 1.0132x | 1.0120x | 12/12 | 1.0120x | 1.0116x |
+| `sample_matrix_x4_batch0` | 1.0133x | 1.0052x | 12/12 | 1.0084x | 1.0049x |
+| `sample_matrix_x4_batch1` | 1.0085x | 1.0045x | 11/12 | 1.0069x | 1.0040x |
+| `sample_matrix` | 1.0073x | 1.0053x | 12/12 | 1.0103x | 1.0052x |
+| `kpke_keygen_full` | 1.0055x | 1.0043x | 11/12 | 1.0046x | 1.0039x |
+| `kpke_encrypt_uncached` | 1.0066x | 1.0037x | 9/12 | 1.0031x | 1.0037x |
+
+A separate KEM-only confirmation used 16 alternating pairs and 70000 iterations:
+
+```bash
+RUN_ORDER=alternating RUNS=16 WARMUP_RUNS=4 SUITES=kem \
+  KEM_ITERS=70000 C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh 82878cd
+```
+
+| Core metric | Paired geometric speedup | Paired median speedup | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_keygen_core` | 1.0055x | 1.0023x | 10/16 | 1.0023x | 1.0004x |
+| `mlkem_encaps_core` | 1.0127x | 1.0083x | 12/16 | 1.0150x | 1.0014x |
+| `mlkem_decaps_core` | 1.0128x | 1.0062x | 15/16 | 1.0109x | 1.0046x |
+| `mlkem_roundtrip_core` | 1.0099x | 1.0095x | 12/16 | 1.0112x | 1.0046x |
+
+Both execution orders remain positive for every cache-disabled KEM row. The
+cache-enabled encaps/decaps rows, which can bypass public-matrix work, were flat
+or noisy and are not the acceptance signal for this core sampler change.
+
+The reference-only KeccakP times4 comparison was also refreshed with 11 runs of
+200000 iterations:
+
+| Permutation row | Avg ns/op | Median ns/op | Readout |
+|---|---:|---:|---|
+| local register-heavy `keccakf4` | 287.78 | 287.77 | local comparison path |
+| local memory-resident `keccakf4_mem` | 257.73 | 257.75 | production round shape |
+| vendored KeccakP times4 reference | 274.23 | 262.57 | reference-only; average contains an outlier |
+
+By median, the local memory-resident permutation is now `1.0187x` faster than
+the reference KeccakP times4 row under this bounded harness. This reverses the
+historical pre-PrepareTheta gap, but it does not claim that the complete
+baby-mlkem KEM is faster than the upstream Kyber backend: state setup, sampling,
+NTT, packing, and API behavior remain separate comparison dimensions.
+
+Correctness passed exact intermediate state/parity and scalar-sampler
+validation, Clang explicit AVX2, Clang native, Clang non-AVX2, GCC explicit
+AVX2, and `git diff --check`. Decision: accept. The retained diagnostic is
+commit `82878cd`, production is `1fccb50`, the refreshed frontier target list is
+`4b78a19`, and reproducible alternating A/B support is `858ee24`.
 
 ### Latest Core Optimization A/B (2026-07-14, persistent x4 Keccak theta parity)
 
@@ -2852,7 +2962,8 @@ stage metrics.
 | `mlkem_core_stage_keygen_matrix_noise_tail02` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(0,2)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_keygen_matrix_noise_tail10` | AVX2-only diagnostic: keygen matrix/noise co-schedule using `(1,0)` as the PRF/CBD tail lane and sampling the other eight matrix entries in two x4 batches |
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
-| `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only accepted-path diagnostic: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent after commit `0f9613f` |
+| `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only historical accepted-path baseline: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent at commit `0f9613f` before rolling lane zero |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_full_raw` | AVX2-only accepted-path diagnostic: complete persistent-parity x4 sampler carrying lane `(0,0)` in a YMM register across all 24 rounds; production-equivalent after commit `1fccb50` |
 | `mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw` | AVX2-only diagnostic: complete x4 sampler with 23 inline rounds and a noinline final-round plus rate-store epilogue |
 | `mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw` | AVX2-only diagnostic: full x4 sampler using two interleaved 504-byte parser pairs for the initial four streams |
 | `mlkem_core_stage_sample_ntt4_full_raw_batch1` | AVX2-only x4 sampler call for the second public-matrix batch tuple, with the same lightweight sink as `sample_ntt4_full_raw` |
@@ -2867,9 +2978,11 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_store_rate` | AVX2-only x4 sampler 168-byte-rate state transpose/store cost |
 | `mlkem_core_stage_sample_ntt4_lane_store_rate` | AVX2-only diagnostic: 168-byte-rate materialization by storing each Keccak state word and extracting lanes into four streams |
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only legacy baseline: three self-contained `keccakf4_mem()` calls that rebuild theta parity at each boundary, excluding stream stores |
-| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only` | AVX2-only production-aligned initial three x4 Keccak permutations with theta parity carried across call boundaries, excluding stream stores |
+| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only` | AVX2-only historical baseline: initial three x4 Keccak permutations with theta parity carried across call boundaries but all 25 lanes memory-resident, excluding stream stores |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only` | AVX2-only production-aligned initial three x4 Keccak permutations with persistent theta parity and lane `(0,0)` carried across all rounds, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only legacy baseline: three self-contained `keccakf4_mem()` calls that rebuild theta parity at each boundary, plus stream stores |
-| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3` | AVX2-only production-aligned initial three x4 Keccak permutations with persistent theta parity plus stream stores |
+| `mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3` | AVX2-only historical baseline: initial three all-memory-lane x4 permutations with persistent theta parity plus stream stores |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3` | AVX2-only production-aligned initial three x4 permutations with persistent theta parity, rolling lane zero, and stream stores |
 | `mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3` | AVX2-only diagnostic: three persistent-parity x4 permutations whose final round and rate transpose are isolated behind a noinline boundary |
 | `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | AVX2-only legacy-parity diagnostic: three self-contained `keccakf4_mem()` calls plus lane-extract stream materialization |
 | `mlkem_core_stage_sample_ntt4_parse_504` | AVX2-only x4 sampler parse of four 504-byte rejection streams |
@@ -4059,11 +4172,22 @@ SUITES=ntt,keccak RUNS=3 ./scripts/bench_core_ab.sh HEAD
 ```
 
 Supported suites are `kem`, `stage`, `ntt`, and `keccak`. Environment variables
-`C_COMPILER`, `ARCH_CFLAGS`, `PIN_CPU`, `RUNS`, `WARMUP_RUNS`, `KEM_ITERS`,
-`STAGE_ITERS`, `NTT_ITERS`, and `KECCAK_ITERS` control the run. `ARCH_CFLAGS`
-is forwarded to both the baseline and candidate builds when set; leave it unset
-to use the Makefile default `-march=native`. Use this local A/B output as the
-first filter before documenting an optimization as an independent-core speedup.
+`C_COMPILER`, `ARCH_CFLAGS`, `PIN_CPU`, `RUNS`, `WARMUP_RUNS`, `RUN_ORDER`,
+`KEM_ITERS`, `STAGE_ITERS`, `NTT_ITERS`, and `KECCAK_ITERS` control the run.
+`ARCH_CFLAGS` is forwarded to both the baseline and candidate builds when set;
+leave it unset to use the Makefile default `-march=native`. Use this local A/B
+output as the first filter before documenting an optimization as an
+independent-core speedup.
+
+`RUN_ORDER=grouped` remains the default. For sub-percent candidates, use
+`RUN_ORDER=alternating`: odd pairs run baseline then candidate, even pairs run
+candidate then baseline. The runner then reports paired geometric and median
+speedups, win counts, and a separate median for each order:
+
+```bash
+RUN_ORDER=alternating RUNS=12 WARMUP_RUNS=2 SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 ./scripts/bench_core_ab.sh HEAD
+```
 
 For example, force an AVX2-only comparison without AVX512 by overriding the
 architecture flags for both sides:
