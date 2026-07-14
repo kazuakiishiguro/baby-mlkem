@@ -2786,6 +2786,110 @@ static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
   }
 }
 
+#if defined(__AVX2__) && \
+    !(defined(__AVX512F__) && defined(__AVX512BW__))
+/* Exact over the full +/-6*(Q-1)*(Q/2) range of a K=3 pair sum. */
+static inline __m256i ntt_acc4_madd_reduce_i32x8(__m256i x) {
+  const __m256i reciprocal = _mm256_set1_epi32(315);
+  const __m256i q = _mm256_set1_epi32(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi32(Q - 1);
+  const __m256i zero = _mm256_setzero_si256();
+  /* 315 / 2^20 approximates 1/Q; pre-shifting keeps the multiply in i32. */
+  __m256i quot = _mm256_srai_epi32(
+      _mm256_mullo_epi32(_mm256_srai_epi32(x, 3), reciprocal), 17);
+  __m256i reduced = _mm256_sub_epi32(x, _mm256_mullo_epi32(quot, q));
+  __m256i negative = _mm256_cmpgt_epi32(zero, reduced);
+  reduced = _mm256_add_epi32(reduced, _mm256_and_si256(negative, q));
+  __m256i ge_q = _mm256_cmpgt_epi32(reduced, q_minus_1);
+  return _mm256_sub_epi32(reduced, _mm256_and_si256(ge_q, q));
+}
+
+static inline void ntt_acc4_madd_block_avx2(
+    const poly256 a0, const poly256 a1, const poly256 a2, int offset,
+    __m256i y0, __m256i y1, __m256i y2,
+    __m256i y0_odd, __m256i y1_odd, __m256i y2_odd,
+    __m256i pair_swap, __m256i gamma, poly256 out) {
+  __m256i x = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(a0 + offset));
+  __m256i sum = _mm256_madd_epi16(x, y0);
+  __m256i odd = _mm256_madd_epi16(x, y0_odd);
+  __m256i c1 = _mm256_madd_epi16(
+      x, _mm256_shuffle_epi8(y0, pair_swap));
+
+  x = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(a1 + offset));
+  sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, y1));
+  odd = _mm256_add_epi32(odd, _mm256_madd_epi16(x, y1_odd));
+  c1 = _mm256_add_epi32(
+      c1, _mm256_madd_epi16(x, _mm256_shuffle_epi8(y1, pair_swap)));
+
+  x = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(a2 + offset));
+  sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, y2));
+  odd = _mm256_add_epi32(odd, _mm256_madd_epi16(x, y2_odd));
+  c1 = _mm256_add_epi32(
+      c1, _mm256_madd_epi16(x, _mm256_shuffle_epi8(y2, pair_swap)));
+
+  __m256i even = _mm256_sub_epi32(sum, odd);
+  odd = ntt_acc4_madd_reduce_i32x8(odd);
+  __m256i c0 = _mm256_add_epi32(
+      even, _mm256_mullo_epi32(odd, gamma));
+  c0 = ntt_acc4_madd_reduce_i32x8(c0);
+  c1 = ntt_acc4_madd_reduce_i32x8(c1);
+  __m128i c0_16 = pack_i32x8_to_i16x8(c0);
+  __m128i c1_16 = pack_i32x8_to_i16x8(c1);
+  _mm_storeu_si128((__m128i *)(void *)(out + offset),
+                   _mm_unpacklo_epi16(c0_16, c1_16));
+  _mm_storeu_si128((__m128i *)(void *)(out + offset + 8),
+                   _mm_unpackhi_epi16(c0_16, c1_16));
+}
+
+static void ntt_mul_acc4_madd_avx2(
+    const poly256 ahat[K][K], const poly256 that[K],
+    const poly256 b[K], poly256 out[K], poly256 outv) {
+  const __m256i pair_swap = _mm256_setr_epi8(
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+  const __m256i even_mask = _mm256_set1_epi32(0xffff);
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i half_q = _mm256_set1_epi16(Q / 2);
+
+  for (int offset = 0, pair = 0; offset < N; offset += 16, pair += 8) {
+    __m256i y0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b[0] + offset));
+    __m256i y1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b[1] + offset));
+    __m256i y2 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b[2] + offset));
+    /* Center canonical NTT inputs so signed vpmaddwd cannot overflow. */
+    y0 = _mm256_sub_epi16(
+        y0, _mm256_and_si256(_mm256_cmpgt_epi16(y0, half_q), q));
+    y1 = _mm256_sub_epi16(
+        y1, _mm256_and_si256(_mm256_cmpgt_epi16(y1, half_q), q));
+    y2 = _mm256_sub_epi16(
+        y2, _mm256_and_si256(_mm256_cmpgt_epi16(y2, half_q), q));
+    __m256i y0_odd = _mm256_andnot_si256(even_mask, y0);
+    __m256i y1_odd = _mm256_andnot_si256(even_mask, y1);
+    __m256i y2_odd = _mm256_andnot_si256(even_mask, y2);
+    __m256i gamma = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(const void *)(GAMMA + pair)));
+
+    ntt_acc4_madd_block_avx2(
+        ahat[0][0], ahat[0][1], ahat[0][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[0]);
+    ntt_acc4_madd_block_avx2(
+        ahat[1][0], ahat[1][1], ahat[1][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[1]);
+    ntt_acc4_madd_block_avx2(
+        ahat[2][0], ahat[2][1], ahat[2][2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, out[2]);
+    ntt_acc4_madd_block_avx2(
+        that[0], that[1], that[2], offset,
+        y0, y1, y2, y0_odd, y1_odd, y2_odd, pair_swap, gamma, outv);
+  }
+}
+#endif
+
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
 static void ntt_before_final_l1_avx512(poly256 f) {
   ntt_head_avx512(f);
@@ -5096,13 +5200,18 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
       kpke_public_cache_that[1], kpke_public_cache_that[2], rhat[0], rhat[1],
       rhat[2], u[0], u[1], u[2], v);
   ntt_inv_add3_inplace(e1[0], e1[1], e1[2], u[0], u[1], u[2]);
+#elif defined(__AVX2__)
+  for (int i = 0; i < K; i++) {
+    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
+  }
+  ntt_mul_acc4_madd_avx2(kpke_public_cache_ahat, kpke_public_cache_that,
+                          rhat, u, v);
+  for (int i = 0; i < K; i++) {
+    ntt_inv_add_inplace(e1[i], u[i]);
+  }
 #else
   for (int i = 0; i < K; i++) {
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
-    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
-#else
     ntt(rhat[i], rhat[i]);
-#endif
   }
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
@@ -5158,15 +5267,11 @@ static inline void kpke_encrypt_prepared_public_with_noise_avx2(
   for (int i = 0; i < K; i++) {
     ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
   }
+  ntt_mul_acc4_madd_avx2(kpke_public_cache_ahat, kpke_public_cache_that,
+                          rhat, u, v);
   for (int i = 0; i < K; i++) {
-    ntt_mul_acc3(kpke_public_cache_ahat[i][0], rhat[0],
-                 kpke_public_cache_ahat[i][1], rhat[1],
-                 kpke_public_cache_ahat[i][2], rhat[2], u[i]);
     ntt_inv_add_inplace(e1[i], u[i]);
   }
-  ntt_mul_acc3(kpke_public_cache_that[0], rhat[0],
-               kpke_public_cache_that[1], rhat[1],
-               kpke_public_cache_that[2], rhat[2], v);
 
   if (mlen == 32) {
     mlkem_add_message_to_poly(m, e2);
