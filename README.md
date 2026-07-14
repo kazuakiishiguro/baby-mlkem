@@ -88,6 +88,7 @@ Near-term target selection:
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
+| Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
 | Four-round in-place x4 Keccak mapping | Closed for production; bench-only diagnostic retained | The Keccak Team's order-four plane mapping improved the Clang direct full-sampler paired median by `1.0214x` and won 11/11 runs, but GCC regressed to `0.9760x`. Clang production integration also exposed instruction-footprint costs: a parser-split stage A/B kept `sample_ntt4` at `1.0084x` yet put uncached encryption at `0.9935x`, while a fully separated keygen-only form ended at `0.9981x` paired median over 10 long runs. Production remains on rolling lane zero. |
@@ -258,6 +259,65 @@ a diagnostic. The extra live YMM value increases spill traffic on AVX2's
 16-register file. Reopen this direction only with controlled assembly/register
 allocation or a schedule that first reduces the simultaneous parity, theta,
 Chi, and output-parity live set.
+
+### Independent Core Optimization Diagnostic (2026-07-14, fixed-register x4 Keccak assembly)
+
+Commit `9a795d2` reopens the second-lane result at the assembly level. The local
+AVX2 function fixes column parity in `ymm0..4`, Theta D in `ymm5..9`, the active
+Chi row in `ymm10..14`, and one rotate/Chi temporary in `ymm15`. State alternates
+between the caller buffer and a 32-byte-aligned 800-byte scratch buffer. Thus the
+round loop has no compiler-created YMM spill, while preserving the Keccak Team's
+[plane-oriented early-parity schedule](https://keccak.team/files/Keccak-implementation-3.2.pdf).
+The implementation is repository-local and links no external Keccak object.
+
+An exact validator compares all 25 state vectors and five column-parity vectors
+after each of three permutations with the independent register-oriented C
+implementation, then compares all four sampled polynomials with scalar
+`sample_ntt()`. Clang and GCC AVX2-only builds both pass. Replacing rotate-left
+8 and 56 shift/or triples with `vpshufb` improves the assembly's three-permutation
+median from `784.98` to `775.33 ns` (`1.0124x`). The linked function is 1354
+bytes and has 279 static instructions; its round loop does not address YMM spills
+through `rsp`.
+
+Eleven same-binary runs of 30000 iterations on CPU 0 show a compiler split:
+
+| Compiler / metric | C lane-zero median ns/op | Fixed-register asm median ns/op | Median ratio | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| Clang complete sampler | 962.45 | 901.94 | 1.0671x | 1.0651x | 11/11 |
+| Clang three permutations | 764.22 | 775.33 | 0.9857x | 0.9853x | 0/11 |
+| Clang permutations plus stores | 778.15 | 787.11 | 0.9886x | 0.9888x | 0/11 |
+| GCC complete sampler | 970.32 | 966.74 | 1.0037x | 1.0033x | 10/11 |
+| GCC three permutations | 784.66 | 780.18 | 1.0057x | 1.0060x | 10/11 |
+| GCC permutations plus stores | 798.74 | 789.72 | 1.0114x | 1.0124x | 11/11 |
+
+The Clang complete-sampler gain is not sufficient evidence: the isolated Clang
+Keccak rows lose every run. A production routing experiment therefore used
+alternating order against `9a795d2`, 11 runs, two warmups, CPU 0, and 30000
+iterations for both KEM and stage suites. Keygen and roundtrip happened to improve
+by `1.0059x` and `1.0113x` paired median, but the direct production gates moved
+in the opposite direction:
+
+| Production gate | Paired median | Wins | Decision signal |
+|---|---:|---:|---|
+| `sample_ntt4_full_raw` | 0.9946x | 1/11 | reject |
+| `sample_matrix` | 0.9973x | 1/11 | reject |
+| `sample_ntt4_keccak_store3` | 0.9932x | 0/11 | reject |
+
+Two follow-ups did not repair the core loss. A two-round expansion changed the
+three-permutation median by only `1.0004x` and the complete sampler by `1.0000x`,
+while increasing assembly text from 1354 to 2598 bytes. A fused mode then kept
+parity in YMM registers across all three permutations and transposed all
+`4 * 504` output bytes inside one call. Its isolated assembly permutation median
+improved from `775.33` to `769.95 ns`, but a fresh nine-run production A/B still
+put `sample_ntt4_full_raw` at `0.9955x`, `sample_matrix` at `0.9978x`, and the
+current matrix/noise stage at `0.9977x` paired median.
+
+Decision: retain the exact fixed-register implementation as a bench-only
+research artifact and do not route production through it. Production remains on
+the rolling-lane-zero C implementation and links no x4 Keccak assembly object.
+Reopen assembly only after the isolated Clang round body beats C, or after a new
+state representation reduces the simultaneous parity, Theta, Chi, and output
+parity live set rather than merely moving its spill boundary.
 
 ### Latest Core Optimization A/B (2026-07-14, rolling lane-zero x4 Keccak)
 
