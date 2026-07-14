@@ -115,6 +115,7 @@ Near-term target selection:
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
 | AVX2 x4 byte-aligned Rho rotations | Accepted only in memory-resident path | The 8/56-bit rotations in `keccakf4_mem_parity()` use one `vpshufb` on AVX2-only builds, removing 96 GCC instructions per permutation while leaving generic `rotl64x4()` and AVX512 `vprolq` unchanged. Clang already generated the shuffle and stays neutral; GCC `keccakf4_mem` improves `1.0069x` paired median and KEM medians remain neutral-to-positive. |
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
+| Pairwise x4 next-parity reduction | Bench retained; production closed | Materializing two output rows before completing next-round parity shortens the XOR dependency chain, but reloads ten output vectors. Clang improves the full sampler by only `1.0032x` paired median while GCC regresses to `0.9943x`; the Clang round probe grows from 13 to 28 stack references. The compiler split does not justify a production branch. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
@@ -831,9 +832,11 @@ the Keccak Team's [implementation overview](https://keccak.team/files/Keccak-imp
 and [software optimization paper](https://keccak.team/files/KeccakSoftware.pdf).
 It is a local schedule rewrite, not imported code. Bit interleaving targets
 narrower machines and is not useful for 64-bit AVX2 lanes; lane complementing
-has little expected value because AVX2 already provides `vpandn`; and the
-reference-only [XKCP](https://github.com/XKCP/XKCP) times4 object is not linked
-into production.
+is closed for this schedule because its AVX2 Chi already emits 25 `vpandn` plus
+25 `vpxor` instructions per round, while the complemented formulas do not
+reduce the two-instruction cases and add a third operation in four cases; and
+the reference-only [XKCP](https://github.com/XKCP/XKCP) times4 object is not
+linked into production.
 
 The bench-only validator compared every one of the 25 state vectors and all five
 carried parity vectors after each of the three common permutations. It then
@@ -919,6 +922,59 @@ validation, Clang explicit AVX2, Clang native, Clang non-AVX2, GCC explicit
 AVX2, and `git diff --check`. Decision: accept. The retained diagnostic is
 commit `82878cd`, production is `1fccb50`, the refreshed frontier target list is
 `4b78a19`, and reproducible alternating A/B support is `858ee24`.
+
+### Independent Core Optimization Diagnostic (2026-07-14, pairwise x4 next-parity reduction)
+
+The rolling-lane-zero round accumulates each next-round theta parity vector as
+its five Chi outputs are emitted. That minimizes output reloads, but places four
+XORs on one dependency chain per column. The bench-only pairwise schedule emits
+rows 1 and 2 without updating parity, accumulates rows 3, 4, and 0 into five
+three-value partials, then reloads the first two rows to finish parity. It keeps
+the arithmetic count unchanged and shortens the dependent reduction at the cost
+of ten output-vector reloads per round.
+
+This tests the early-parity and plane-scheduling guidance in the Keccak Team's
+[implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf)
+and [software optimization paper](https://keccak.team/files/KeccakSoftware.pdf)
+without changing Keccak, SHAKE, the sampler, or the wire format. Lane
+complementing was also reviewed at the formula and generated-instruction level
+before implementation. The current AVX2 Chi already computes all 25 outputs
+with 25 `vpandn` and 25 `vpxor` instructions. Most complemented formulas still
+need two vector operations and four need three, so lane complementing cannot
+reduce this AVX2 Chi and was not carried into a benchmark candidate.
+
+The exact validator checks both production x4 lane tuples over all four fixture
+seeds. At checkpoints 0 through 3 it compares all 25 state vectors and all five
+carried parity vectors with the production path, then compares all four output
+polynomials with scalar `sample_ntt()`. It passed Clang and GCC explicit-AVX2
+builds and a Clang native AVX-512 build.
+
+Nine same-binary runs of 30000 iterations were pinned to CPU 0. Ratios are
+baseline divided by candidate, so values above one favor pairwise reduction:
+
+| Compiler / metric | Lane-zero avg ns/op | Pairwise avg ns/op | Paired median | Wins |
+|---|---:|---:|---:|---:|
+| Clang complete sampler | 904.86 | 901.62 | 1.0032x | 8/9 |
+| Clang three permutations | 777.24 | 768.99 | 1.0070x | 9/9 |
+| Clang permutations plus stores | 789.20 | 784.69 | 1.0061x | 9/9 |
+| GCC complete sampler | 934.76 | 939.92 | 0.9943x | 0/9 |
+| GCC three permutations | 787.50 | 801.98 | 0.9818x | 0/9 |
+| GCC permutations plus stores | 801.89 | 817.52 | 0.9808x | 0/9 |
+
+A Clang one-round assembly probe explains the split. Both schedules retain the
+same vector arithmetic counts, including 76 `vpxor` and 25 `vpandn`, but the
+pairwise wrapper grows from `0x72b` to `0x78a` bytes and its YMM stack references
+rise from 13 to 28. Clang can trade those reloads for a shorter dependency chain;
+GCC cannot. A follow-up that explicitly spilled five partial parity vectors
+reduced Clang's pairwise stack references to 18, but only produced full/direct
+medians of `1.0025x`/`1.0026x` while GCC fell to `0.9827x`/`0.9671x`.
+
+Decision: retain the exact pairwise schedule as a bench-only diagnostic and keep
+production on rolling lane zero. A compiler-specific branch for a `0.32%` full
+sampler median is not justified when the other supported compiler loses `0.57%`
+on the same row and about `1.8-1.9%` in the isolated Keccak rows. The next
+experiment must remove real round work or memory traffic rather than exchange a
+dependency chain for spills.
 
 ### Independent Core Optimization Diagnostic (2026-07-14, four-round in-place x4 Keccak)
 
@@ -3902,6 +3958,7 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only historical accepted-path baseline: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent at commit `0f9613f` before rolling lane zero |
 | `mlkem_core_stage_sample_ntt4_lane0_carry_full_raw` | AVX2-only accepted-path diagnostic: complete persistent-parity x4 sampler carrying lane `(0,0)` in a YMM register across all 24 rounds; production-equivalent after commit `1fccb50` |
+| `mlkem_core_stage_sample_ntt4_lane0_pairwise_full_raw` | AVX2-only rejected diagnostic: complete rolling-lane-zero x4 sampler that materializes two Chi rows before pairwise completion of next-round parity |
 | `mlkem_core_stage_sample_ntt4_lane03_carry_full_raw` | AVX2-only rejected diagnostic: complete x4 sampler carrying physical lanes 0 and 3 across the round loop |
 | `mlkem_core_stage_sample_ntt4_lane03_carry_keccak3_only` | AVX2-only rejected diagnostic: three lane0+lane3-carried x4 permutations without rate stores or parsing |
 | `mlkem_core_stage_sample_ntt4_lane03_carry_keccak_store3` | AVX2-only rejected diagnostic: three lane0+lane3-carried x4 permutations plus rate stores |
@@ -3922,10 +3979,12 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_keccak3_only` | AVX2-only legacy baseline: three self-contained `keccakf4_mem()` calls that rebuild theta parity at each boundary, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only` | AVX2-only historical baseline: initial three x4 Keccak permutations with theta parity carried across call boundaries but all 25 lanes memory-resident, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only` | AVX2-only production-aligned initial three x4 Keccak permutations with persistent theta parity and lane `(0,0)` carried across all rounds, excluding stream stores |
+| `mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak3_only` | AVX2-only rejected diagnostic: three rolling-lane-zero x4 permutations with pairwise next-parity completion, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_inplace_lane01_keccak3_only` | AVX2-only initial three x4 Keccak permutations using the four-round in-place plane mapping, excluding stream stores |
 | `mlkem_core_stage_sample_ntt4_keccak_store3` | AVX2-only legacy baseline: three self-contained `keccakf4_mem()` calls that rebuild theta parity at each boundary, plus stream stores |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3` | AVX2-only historical baseline: initial three all-memory-lane x4 permutations with persistent theta parity plus stream stores |
 | `mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3` | AVX2-only production-aligned initial three x4 permutations with persistent theta parity, rolling lane zero, and stream stores |
+| `mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak_store3` | AVX2-only rejected diagnostic: three rolling-lane-zero x4 permutations with pairwise next-parity completion plus production rate stores |
 | `mlkem_core_stage_sample_ntt4_inplace_lane01_keccak_store3` | AVX2-only three in-place-mapped x4 permutations plus production rate stores |
 | `mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3` | AVX2-only diagnostic: three persistent-parity x4 permutations whose final round and rate transpose are isolated behind a noinline boundary |
 | `mlkem_core_stage_sample_ntt4_lane_store_keccak_store3` | AVX2-only legacy-parity diagnostic: three self-contained `keccakf4_mem()` calls plus lane-extract stream materialization |
