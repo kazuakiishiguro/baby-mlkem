@@ -124,7 +124,8 @@ Near-term target selection:
 |---|---|---|
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery path accepted | ZMM handles `l7`..`l5`, YMM handles `l4`, and the existing local YMM lazy tail handles `l3`..`l1`; one final ZMM Barrett pass restores canonical coefficients. GCC/Clang in-place medians improve `2.4952x`/`2.4623x`, and all eight 50k KEM rows win 15/15 under both compilers. It is repository-local intrinsics code with no external object, library, cache, or wire-format dependency; the Montgomery/Harvey arithmetic is inherited from the disclosed local AVX2 design rather than claimed as new mathematics. |
-| Native AVX512 inverse-NTT representation | Full seven-stage 16-bit YMM Montgomery path accepted | The six pre-final levels now stay in signed 16-bit YMM lanes even on AVX512-capable targets; level seven fuses scale and output handling. GCC/Clang plain inverse medians improve `2.0362x`/`1.8715x`; 15-pair encaps medians improve `1.1816x`/`1.1509x`, and decaps improves `1.1666x`/`1.1329x`. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
+| Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
+| Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
@@ -4820,6 +4821,100 @@ Native `testc` text shrinks from 81814 to 77526 bytes under GCC (-4288) and
 from 165852 to 164000 bytes under Clang (-1852). Data is unchanged. BSS grows
 from 34368 to 35072 bytes under GCC (+704) and from 33928 to 34664 under Clang
 (+736) for the inverse Montgomery factors retained by each compiler.
+
+### Independent Core Optimization A/B (2026-07-15, native AVX512 register-fused inverse NTT)
+
+The profile after adopting the YMM Montgomery inverse still attributed 5.41%
+self time to `ntt_inv_mont_before_final_avx2()` and another 2.62% to
+`ntt_inv_add_mont_final_avx2()`. Inspection of the generated native code also
+showed that the first four inverse levels repeatedly crossed the register/memory
+boundary for small coefficient groups. This made the next target data movement
+inside the inverse NTT, not a different modular-arithmetic formula.
+
+The accepted AVX512 path loads each contiguous 32-coefficient block into one
+ZMM register and keeps it resident through inverse lengths 2, 4, 8, and 16.
+Lane rotations/permutations form the butterfly partners, masks select the
+twiddle-product halves, and `vpmullw`/`vpmulhw` retain the same signed 16-bit
+Montgomery representation. Lengths 32 and 64 and the final scale/output step
+also use 16-bit ZMM lanes. Plain, add, add2, three-add, subtract, and fused
+decrypt-recovery callers use this route; range-aware final add/subtract helpers
+need only one modular correction.
+
+This differs materially from the rejected older 32-bit AVX512 inverse: a
+16-bit ZMM holds 32 coefficients rather than 16 and avoids widening, packing,
+and intermediate stores. Diagnostic commit `909d6d0` validated every
+intermediate level and final result against the accepted YMM implementation.
+Production commit `1cc45a6` routes only native AVX512 callers to the new path
+and removes native use of the YMM inverse tables; explicit AVX2-only builds keep
+the byte-identical YMM implementation.
+
+Direct NTT acceptance used CPU 0, one warmup, nine alternating pairs, and
+300000 iterations per run against `909d6d0`:
+
+```bash
+RUNS=9 WARMUP_RUNS=1 RUN_ORDER=alternating SUITES=ntt NTT_ITERS=300000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 909d6d0
+RUNS=9 WARMUP_RUNS=1 RUN_ORDER=alternating SUITES=ntt NTT_ITERS=300000 \
+  PIN_CPU=0 C_COMPILER=clang ./scripts/bench_core_ab.sh 909d6d0
+```
+
+| Compiler | Metric | Baseline median ns/op | Candidate median ns/op | Median speedup | Wins |
+|---|---|---:|---:|---:|---:|
+| GCC | `mlkem_ntt_inv` | 96.69 | 88.02 | 1.0985x | 9/9 |
+| GCC | `mlkem_ntt_inv_add` | 112.92 | 92.81 | 1.2167x | 9/9 |
+| GCC | `mlkem_ntt_inv_add2` | 115.49 | 98.47 | 1.1728x | 9/9 |
+| GCC | `mlkem_ntt_inv_sub_from` | 114.83 | 93.22 | 1.2318x | 9/9 |
+| Clang | `mlkem_ntt_inv` | 90.99 | 79.58 | 1.1434x | 9/9 |
+| Clang | `mlkem_ntt_inv_add` | 109.18 | 84.87 | 1.2864x | 9/9 |
+| Clang | `mlkem_ntt_inv_add2` | 108.20 | 90.65 | 1.1936x | 9/9 |
+| Clang | `mlkem_ntt_inv_sub_from` | 107.52 | 84.31 | 1.2753x | 9/9 |
+
+The integrated stage gate used seven alternating pairs and 30000 iterations:
+
+| Stage metric | GCC paired median speedup | GCC wins | Clang paired median speedup | Clang wins |
+|---|---:|---:|---:|---:|
+| `mlkem_core_stage_encrypt_inv_add_u_only` | 1.1426x | 7/7 | 1.1615x | 7/7 |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 1.1910x | 7/7 | 1.2556x | 7/7 |
+| `mlkem_core_stage_encrypt_accum_inv` | 1.0219x | 7/7 | 1.0898x | 7/7 |
+| `mlkem_core_stage_encrypt_accum_inv_u` | 1.0250x | 7/7 | 1.1041x | 7/7 |
+| `mlkem_core_stage_encrypt_accum_inv_v` | 1.0149x | 7/7 | 1.0627x | 7/7 |
+| `mlkem_core_stage_decrypt_inv_sub_from` | 1.0732x | 7/7 | 1.0580x | 7/7 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 1.0135x | 7/7 | 1.0604x | 7/7 |
+
+Full-KEM confirmation used 50000 iterations, two warmups, and fifteen
+alternating pairs per compiler:
+
+| KEM metric | GCC paired median speedup | GCC wins | Clang paired median speedup | Clang wins |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 0.9979x | 2/15 | 0.9996x | 6/15 |
+| `mlkem_keygen_core` | 0.9975x | 3/15 | 1.0001x | 8/15 |
+| `mlkem_encaps` | 1.0446x | 15/15 | 1.0579x | 15/15 |
+| `mlkem_encaps_core` | 1.0171x | 15/15 | 1.0228x | 14/15 |
+| `mlkem_decaps` | 1.0390x | 15/15 | 1.0615x | 15/15 |
+| `mlkem_decaps_core` | 1.0295x | 15/15 | 1.0360x | 15/15 |
+| `mlkem_roundtrip` | 1.0197x | 15/15 | 1.0277x | 15/15 |
+| `mlkem_roundtrip_core` | 1.0132x | 15/15 | 1.0155x | 14/15 |
+
+Keygen is a control row because it does not call an inverse NTT. Its GCC
+`0.21%`/`0.25%` paired-median changes and the neutral keygen stage rows are not
+attributed to this optimization. The operation-level gains instead survive in
+every encaps, decaps, and roundtrip row under both compilers.
+
+GCC and Clang native, explicit AVX2-only, and scalar tests pass. The AVX2-only
+`testc` and `bench_nttc` outputs are byte-identical to `909d6d0` under both
+compilers. Clang ASan+UBSan passes native and AVX2-only builds, and native stage
+range validators pass. Native `testc` text shrinks from 77526 to 77142 bytes
+under GCC (-384) and from 164000 to 162736 bytes under Clang (-1264). Data is
+unchanged; ZMM factor layouts increase BSS from 35072 to 38272 bytes under GCC
+(+3200) and from 34664 to 37896 bytes under Clang (+3232).
+
+The implementation is repository-local C intrinsics code. It neither calls nor
+links vendored Kyber, PQClean, or another external crypto object and adds no
+cross-operation cache or wire-format dependency. Its Montgomery butterfly and
+twiddle-factor arithmetic remain inherited from and attributed to upstream
+Kyber; the 32-coefficient ZMM mapping, register-resident schedule, and local
+representation-boundary removal are implementation work in baby-mlkem, not a
+claim of new NTT mathematics.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
