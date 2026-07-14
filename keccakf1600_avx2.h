@@ -423,12 +423,18 @@ mlkem_keccakf1600_avx2_store(uint64_t st[25],
   st[24] = (uint64_t)_mm256_extract_epi64(state->x6, 3);
 }
 
+#if defined(MLKEM_ENABLE_KECCAK_AVX512VL_ASM) && defined(__x86_64__) && \
+    defined(__ELF__) && defined(__AVX512F__) && defined(__AVX512VL__)
+extern void mlkem_keccakf1600_avx512vl(uint64_t st[25]);
+#define mlkem_keccakf1600_avx2 mlkem_keccakf1600_avx512vl
+#else
 static MLKEM_KECCAKF1_NOINLINE void mlkem_keccakf1600_avx2(uint64_t st[25]) {
   mlkem_keccakf1600_avx2_state state;
   mlkem_keccakf1600_avx2_load(&state, st);
   mlkem_keccakf1600_avx2_permute(&state);
   mlkem_keccakf1600_avx2_store(st, &state);
 }
+#endif
 
 #undef MLKEM_KECCAKF1_ALWAYS_INLINE
 #undef MLKEM_KECCAKF1_NOINLINE

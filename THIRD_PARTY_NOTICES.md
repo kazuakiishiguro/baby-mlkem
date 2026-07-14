@@ -70,7 +70,7 @@ For XKCP/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s and XKCP/lib/low/KeccakP-
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-## Fixed-length AVX512VL SHA3-256
+## Single-state AVX512VL Keccak and fixed-length SHA3-256
 
 The repository-local `sha3_256_1184_avx512vl.S` implementation adapts the
 register-per-lane Keccak round schedule from Intel's AVX512VL implementation
@@ -78,9 +78,10 @@ contributed to liboqs in pull request 2167:
 
 https://github.com/open-quantum-safe/liboqs/blob/3dca9c939c779c58ffa540f3f47ca099a1fa4b94/src/common/sha3/avx512vl_low/KeccakP-1600-AVX512VL.S
 
-baby-mlkem does not link liboqs or an Intel object. The local file specializes
-the absorb and padding path for the 1184-byte ML-KEM-768 public key and narrows
-the single-state round body from YMM to XMM registers. The derived round
+baby-mlkem does not link liboqs or an Intel object. The local file narrows the
+single-state round body from YMM to XMM registers, exposes a canonical-state
+permutation wrapper, and specializes the absorb and padding path for the
+1184-byte ML-KEM-768 public key. The derived round
 schedule remains covered by Intel's MIT license:
 
     Copyright (c) 2025 Intel Corporation

@@ -1,9 +1,9 @@
-# Fixed-shape AVX512VL SHA3-256 for the 1184-byte ML-KEM-768 public key.
+# Register-per-lane AVX512VL Keccak and fixed-shape SHA3-256.
 #
-# The register-per-lane permutation is adapted from Intel's liboqs AVX512VL
-# Keccak implementation. The local integration narrows the round body to XMM,
-# keeps one state in registers across all nine permutations, and specializes
-# absorption and padding for exactly 1184 input bytes.
+# The permutation is adapted from Intel's liboqs AVX512VL Keccak
+# implementation. The local integration narrows the round body to XMM, exposes
+# a canonical single-state wrapper, and keeps the fixed 1184-byte ML-KEM-768
+# public-key hash in registers across all nine permutations.
 #
 # Copyright (c) 2025 Intel Corporation
 # SPDX-License-Identifier: MIT
@@ -104,6 +104,74 @@
     vmovq    88(\input), %xmm31
     vpxorq  %xmm31, %xmm11, %xmm11
 .endm
+
+# Canonical single-state wrapper sharing the register-per-lane round core.
+# void mlkem_keccakf1600_avx512vl(uint64_t state[25]);
+.globl mlkem_keccakf1600_avx512vl
+.type mlkem_keccakf1600_avx512vl,@function
+.hidden mlkem_keccakf1600_avx512vl
+.balign 32
+mlkem_keccakf1600_avx512vl:
+    pushq %r13
+    pushq %r14
+    subq $8, %rsp
+    vmovq   (8*0)(%rdi), %xmm0
+    vmovq   (8*1)(%rdi), %xmm1
+    vmovq   (8*2)(%rdi), %xmm2
+    vmovq   (8*3)(%rdi), %xmm3
+    vmovq   (8*4)(%rdi), %xmm4
+    vmovq   (8*5)(%rdi), %xmm5
+    vmovq   (8*6)(%rdi), %xmm6
+    vmovq   (8*7)(%rdi), %xmm7
+    vmovq   (8*8)(%rdi), %xmm8
+    vmovq   (8*9)(%rdi), %xmm9
+    vmovq   (8*10)(%rdi), %xmm10
+    vmovq   (8*11)(%rdi), %xmm11
+    vmovq   (8*12)(%rdi), %xmm12
+    vmovq   (8*13)(%rdi), %xmm13
+    vmovq   (8*14)(%rdi), %xmm14
+    vmovq   (8*15)(%rdi), %xmm15
+    vmovq   (8*16)(%rdi), %xmm16
+    vmovq   (8*17)(%rdi), %xmm17
+    vmovq   (8*18)(%rdi), %xmm18
+    vmovq   (8*19)(%rdi), %xmm19
+    vmovq   (8*20)(%rdi), %xmm20
+    vmovq   (8*21)(%rdi), %xmm21
+    vmovq   (8*22)(%rdi), %xmm22
+    vmovq   (8*23)(%rdi), %xmm23
+    vmovq   (8*24)(%rdi), %xmm24
+    call .Lmlkem_keccakf1600_avx512vl_permute
+    vmovq   %xmm0, (8*0)(%rdi)
+    vmovq   %xmm1, (8*1)(%rdi)
+    vmovq   %xmm2, (8*2)(%rdi)
+    vmovq   %xmm3, (8*3)(%rdi)
+    vmovq   %xmm4, (8*4)(%rdi)
+    vmovq   %xmm5, (8*5)(%rdi)
+    vmovq   %xmm6, (8*6)(%rdi)
+    vmovq   %xmm7, (8*7)(%rdi)
+    vmovq   %xmm8, (8*8)(%rdi)
+    vmovq   %xmm9, (8*9)(%rdi)
+    vmovq   %xmm10, (8*10)(%rdi)
+    vmovq   %xmm11, (8*11)(%rdi)
+    vmovq   %xmm12, (8*12)(%rdi)
+    vmovq   %xmm13, (8*13)(%rdi)
+    vmovq   %xmm14, (8*14)(%rdi)
+    vmovq   %xmm15, (8*15)(%rdi)
+    vmovq   %xmm16, (8*16)(%rdi)
+    vmovq   %xmm17, (8*17)(%rdi)
+    vmovq   %xmm18, (8*18)(%rdi)
+    vmovq   %xmm19, (8*19)(%rdi)
+    vmovq   %xmm20, (8*20)(%rdi)
+    vmovq   %xmm21, (8*21)(%rdi)
+    vmovq   %xmm22, (8*22)(%rdi)
+    vmovq   %xmm23, (8*23)(%rdi)
+    vmovq   %xmm24, (8*24)(%rdi)
+    vzeroupper
+    addq $8, %rsp
+    popq %r14
+    popq %r13
+    ret
+.size mlkem_keccakf1600_avx512vl,.-mlkem_keccakf1600_avx512vl
 
 # void mlkem_sha3_256_1184_avx512vl(const uint8_t *in, uint8_t *out);
 .globl mlkem_sha3_256_1184_avx512vl

@@ -1262,7 +1262,7 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
 }
 
 #if defined(__AVX2__)
-#if defined(MLKEM_ENABLE_SHA3_256_1184_AVX512VL) &&                  \
+#if defined(MLKEM_ENABLE_KECCAK_AVX512VL_ASM) &&                    \
     defined(__x86_64__) && defined(__ELF__) && defined(__AVX512F__) && \
     defined(__AVX512VL__)
 #define MLKEM_HAVE_SHA3_256_1184_AVX512VL 1

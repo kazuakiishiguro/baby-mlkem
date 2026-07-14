@@ -78,7 +78,7 @@ BENCH_STAGES_ITERS ?= 20000
 CORE_AVX512VL_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__AVX512F__/ { f = 1 } /__AVX512VL__/ { v = 1 } END { if (x && e && f && v) print "yes" }')
 ifeq ($(CORE_AVX512VL_ENABLED),yes)
 CORE_ASM_SRCS = sha3_256_1184_avx512vl.S
-CORE_ASM_DEF = -DMLKEM_ENABLE_SHA3_256_1184_AVX512VL
+CORE_ASM_DEF = -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM
 else
 CORE_ASM_SRCS =
 CORE_ASM_DEF =
