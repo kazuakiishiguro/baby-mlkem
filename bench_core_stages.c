@@ -4849,8 +4849,9 @@ static void validate_ntt_lazy_mul_input3_level_batch_avx2(void) {
         stage_r_raw[lane][0], stage_r_raw[lane][1], stage_r_raw[lane][2],
         batch[0], batch[1], batch[2]);
     for (int j = 0; j < K; j++) {
-      if (memcmp(split[j], batch[j], sizeof(poly256)) != 0) {
-        fprintf(stderr, "lazy NTT level-batch r mismatch at %zu,%d\n", lane,
+      if (!stage_poly_equal_mod_q(split[j], batch[j])) {
+        fprintf(stderr,
+                "lazy NTT level-batch r mod-q mismatch at %zu,%d\n", lane,
                 j);
         exit(EXIT_FAILURE);
       }
@@ -4863,8 +4864,9 @@ static void validate_ntt_lazy_mul_input3_level_batch_avx2(void) {
         stage_u[lane][0], stage_u[lane][1], stage_u[lane][2], batch[0],
         batch[1], batch[2]);
     for (int j = 0; j < K; j++) {
-      if (memcmp(split[j], batch[j], sizeof(poly256)) != 0) {
-        fprintf(stderr, "lazy NTT level-batch u mismatch at %zu,%d\n", lane,
+      if (!stage_poly_equal_mod_q(split[j], batch[j])) {
+        fprintf(stderr,
+                "lazy NTT level-batch u mod-q mismatch at %zu,%d\n", lane,
                 j);
         exit(EXIT_FAILURE);
       }
