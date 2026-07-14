@@ -229,12 +229,13 @@ A balanced twelve-pair GCC KEM run independently confirms the integrated win:
 | `mlkem_encaps_core` | 0.9974x | 1.0038x | 11/12 |
 | `mlkem_decaps_core` | 1.0086x | 1.0029x | 9/12 |
 
-An adjacent post-acceptance diagnostic replaced the full-width mask-and-merge
-lane resets with low-half `vinserti128` overwrites. It remained exact over the
-same 256 fixtures. Clang improved by `1.0043x` median with 10/11 wins, but GCC
-regressed to `0.9978x` median with only 3/7 wins. Production keeps the
-full-width mask form: a compiler-specific sub-0.5% gain does not justify the GCC
-regression or partial-lane dependency risk.
+Two adjacent post-acceptance diagnostics tried to replace the full-width
+mask-and-merge lane resets. Low-half `vinserti128` overwrites improved Clang by
+`1.0043x` median with 10/11 wins, but regressed GCC to `0.9978x` median with
+3/7 wins. Full-width `vpblendd` avoided the partial-lane dependency and improved
+Clang by `1.0057x` with 7/7 wins, but regressed GCC to `0.9963x` with only 1/7
+wins. Both remained exact over the same 256 fixtures. Production keeps the
+mask-and-merge form because neither compiler-specific gain passes the GCC gate.
 
 The final Clang benchmark text grows from 73121 to 76353 bytes (`+3232`); GCC
 grows from 64353 to 67457 bytes (`+3104`). Correctness passed Clang and GCC
