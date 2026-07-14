@@ -290,6 +290,17 @@ both compilers. The change shortens the function from 1377 to 1376 bytes; it has
 279 static instructions and its round loop does not address YMM spills through
 `rsp`.
 
+A subsequent register-lifetime redesign carried state lane zero in `ymm15` and
+freed `ymm0` by deferring parity column zero until the end of each round. This
+reduced the round body from 209 to 208 instructions and from 25 to 24 stores,
+but replacing the lane-zero load with four parity-fold loads increased total
+round loads from 28 to 31. The exact validator passed, yet eleven Clang runs
+regressed from `901.88` to `905.22 ns` for the complete sampler (`0.9963x`),
+`772.09` to `775.71 ns` for three permutations (`0.9953x`, 0/11 wins), and
+`784.87` to `788.70 ns` with stores (`0.9951x`, 0/11 wins). Decision: reject
+memory-backed deferred parity; carrying another state lane is useful only if a
+parity accumulator can be removed without rescanning output state.
+
 Eleven same-binary runs of 30000 iterations on CPU 0 show a compiler split:
 
 | Compiler / metric | C lane-zero median ns/op | Fixed-register asm median ns/op | Median ratio | Paired median | Wins |
