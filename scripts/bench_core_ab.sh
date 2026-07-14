@@ -11,6 +11,7 @@ STAGE_ITERS="${STAGE_ITERS:-10000}"
 NTT_ITERS="${NTT_ITERS:-200000}"
 KECCAK_ITERS="${KECCAK_ITERS:-200000}"
 WARMUP_RUNS="${WARMUP_RUNS:-1}"
+RUN_ORDER="${RUN_ORDER:-grouped}"
 
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
@@ -50,6 +51,15 @@ check_positive_int STAGE_ITERS "$STAGE_ITERS"
 check_positive_int NTT_ITERS "$NTT_ITERS"
 check_positive_int KECCAK_ITERS "$KECCAK_ITERS"
 check_nonnegative_int WARMUP_RUNS "$WARMUP_RUNS"
+
+case "$RUN_ORDER" in
+  grouped|alternating)
+    ;;
+  *)
+    echo "invalid RUN_ORDER: $RUN_ORDER (expected grouped or alternating)" >&2
+    exit 1
+    ;;
+esac
 
 IFS=',' read -r -a SUITE_LIST <<< "$SUITES"
 
@@ -113,8 +123,8 @@ if [ "${ARCH_CFLAGS+x}" ]; then
   make_args+=(ARCH_CFLAGS="$ARCH_CFLAGS")
 fi
 
-printf "compiler=%s avx2_backend=core suites=%s runs=%s warmup_runs=%s pin_cpu=%s\n" \
-  "$C_COMPILER" "$SUITES" "$RUNS" "$WARMUP_RUNS" "${PIN_CPU:-<unset>}"
+printf "compiler=%s avx2_backend=core suites=%s runs=%s warmup_runs=%s pin_cpu=%s run_order=%s\n" \
+  "$C_COMPILER" "$SUITES" "$RUNS" "$WARMUP_RUNS" "${PIN_CPU:-<unset>}" "$RUN_ORDER"
 printf "arch_cflags=%s\n" "${ARCH_CFLAGS:-<make default>}"
 printf "iters: kem=%s stage=%s ntt=%s keccak=%s\n" \
   "$KEM_ITERS" "$STAGE_ITERS" "$NTT_ITERS" "$KECCAK_ITERS"
@@ -126,40 +136,96 @@ make -C "$ROOT_DIR" clean "${make_args[@]}" >/dev/null
 make -C "$BASE_DIR" "${build_targets[@]}" "${make_args[@]}" >/dev/null
 make -C "$ROOT_DIR" "${build_targets[@]}" "${make_args[@]}" >/dev/null
 
+run_suite_once() {
+  local label="$1"
+  local bin="$2"
+  local iters="$3"
+  local output="${4:-}"
+  local root
+  if [ "$label" = base ]; then
+    root="$BASE_DIR"
+  else
+    root="$ROOT_DIR"
+  fi
+  if [ -n "$output" ]; then
+    (cd "$root" && run_cmd "$bin" "$iters") > "$output"
+  else
+    (cd "$root" && run_cmd "$bin" "$iters") >/dev/null
+  fi
+}
+
 for suite in "${SUITE_LIST[@]}"; do
   suite="${suite//[[:space:]]/}"
   [ -n "$suite" ] || continue
   bin="$(suite_bin "$suite")"
   iters="$(suite_iters "$suite")"
-  for label in base cand; do
-    if [ "$label" = base ]; then
-      root="$BASE_DIR"
-    else
-      root="$ROOT_DIR"
-    fi
+  if [ "$RUN_ORDER" = grouped ]; then
+    for label in base cand; do
+      for run in $(seq 1 "$WARMUP_RUNS"); do
+        run_suite_once "$label" "$bin" "$iters"
+      done
+      for run in $(seq 1 "$RUNS"); do
+        run_suite_once "$label" "$bin" "$iters" \
+          "$WORK_DIR/${suite}_${label}_${run}.txt"
+      done
+    done
+  else
     for run in $(seq 1 "$WARMUP_RUNS"); do
-      (cd "$root" && run_cmd "$bin" "$iters") >/dev/null
+      if (( run % 2 == 1 )); then
+        labels=(base cand)
+      else
+        labels=(cand base)
+      fi
+      for label in "${labels[@]}"; do
+        run_suite_once "$label" "$bin" "$iters"
+      done
     done
     for run in $(seq 1 "$RUNS"); do
-      (cd "$root" && run_cmd "$bin" "$iters") > "$WORK_DIR/${suite}_${label}_${run}.txt"
+      if (( run % 2 == 1 )); then
+        labels=(base cand)
+      else
+        labels=(cand base)
+      fi
+      for label in "${labels[@]}"; do
+        run_suite_once "$label" "$bin" "$iters" \
+          "$WORK_DIR/${suite}_${label}_${run}.txt"
+      done
     done
-  done
+  fi
 done
 
-AB_WORK_DIR="$WORK_DIR" AB_SUITES="$SUITES" python3 - <<'PY'
+AB_WORK_DIR="$WORK_DIR" AB_SUITES="$SUITES" AB_RUN_ORDER="$RUN_ORDER" python3 - <<'PY'
 import glob
+import math
 import os
 import re
 import statistics
 
 work_dir = os.environ["AB_WORK_DIR"]
 suites = [s.strip() for s in os.environ["AB_SUITES"].split(",") if s.strip()]
+run_order = os.environ["AB_RUN_ORDER"]
 pattern = re.compile(r"^(.+)_ns_per_op=([0-9.]+)$")
+run_pattern = re.compile(r"_(\d+)\.txt$")
+
+
+def run_number(path):
+    match = run_pattern.search(path)
+    if not match:
+        raise ValueError(f"missing run number in {path}")
+    return int(match.group(1))
+
+
+def format_median(values):
+    if not values:
+        return "n/a"
+    return f"{statistics.median(values):.4f}x"
+
 
 for suite in suites:
     values = {"base": {}, "cand": {}}
     for label in ("base", "cand"):
-        for path in sorted(glob.glob(os.path.join(work_dir, f"{suite}_{label}_*.txt"))):
+        paths = glob.glob(os.path.join(work_dir, f"{suite}_{label}_*.txt"))
+        for path in sorted(paths, key=run_number):
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
                     m = pattern.match(line.strip())
@@ -183,4 +249,23 @@ for suite in suites:
             f"{metric} {base_avg:.2f} {cand_avg:.2f} {base_avg / cand_avg:.4f}x "
             f"{base_med:.2f} {cand_med:.2f} {base_med / cand_med:.4f}x"
         )
+
+    if run_order == "alternating":
+        print()
+        print("paired_metric gmean median wins base_first_median cand_first_median")
+        for metric in metrics:
+            base = values["base"][metric]
+            cand = values["cand"][metric]
+            if not base or len(base) != len(cand):
+                continue
+            ratios = [b / c for b, c in zip(base, cand)]
+            base_first = ratios[0::2]
+            cand_first = ratios[1::2]
+            gmean = math.exp(statistics.mean(math.log(r) for r in ratios))
+            print(
+                f"{metric} {gmean:.4f}x {statistics.median(ratios):.4f}x "
+                f"{sum(r > 1.0 for r in ratios)}/{len(ratios)} "
+                f"{format_median(base_first)} "
+                f"{format_median(cand_first)}"
+            )
 PY
