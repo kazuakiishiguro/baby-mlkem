@@ -123,6 +123,7 @@ Near-term target selection:
 | Candidate family | Status | Reason |
 |---|---|---|
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
+| Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery path accepted | ZMM handles `l7`..`l5`, YMM handles `l4`, and the existing local YMM lazy tail handles `l3`..`l1`; one final ZMM Barrett pass restores canonical coefficients. GCC/Clang in-place medians improve `2.4952x`/`2.4623x`, and all eight 50k KEM rows win 15/15 under both compilers. It is repository-local intrinsics code with no external object, library, cache, or wire-format dependency; the Montgomery/Harvey arithmetic is inherited from the disclosed local AVX2 design rather than claimed as new mathematics. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
@@ -132,7 +133,7 @@ Near-term target selection:
 | Pairwise x4 next-parity reduction | Bench retained; production closed | Materializing two output rows before completing next-round parity shortens the XOR dependency chain, but reloads ten output vectors. Clang improves the full sampler by only `1.0032x` paired median while GCC regresses to `0.9943x`; the Clang round probe grows from 13 to 28 stack references. The compiler split does not justify a production branch. |
 | Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up completed | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The live GCC AVX512 x8 follow-up below confirms the specialization on the real path. |
 | Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
-| Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now maps directly to the AVX512F immediate rotate intrinsic instead of expressing each rotation as two shifts plus OR. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15, including keygen/encaps/decaps/roundtrip-core at `1.0711x`/`1.0449x`/`1.0295x`/`1.0758x`. Clang native and GCC AVX2-only binaries remain byte-identical to baseline. |
+| Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now exposes AVX512F immediate rotates directly. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15. Corrected native validation shows Clang `testc`/`benchc` and GCC AVX2-only binaries remain byte-identical; the Clang stage diagnostic differs only through inline-TU layout. |
 | Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
 | AVX512 x8 Theta D/state ternary fusion | Closed | Direct `state XOR Cprev XOR ROL(Cnext)` lowers the GCC round body by five instructions, stack references from 37 to 21, and function size from 1,564 to 1,455 bytes. That static win does not survive integration: complete x8 sampling/matrix medians regress to `0.9958x`/`0.9961x`, and high-iteration decaps-core/roundtrip-core end at `0.9965x`/`0.9981x`. Keep the explicit shared D values. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
@@ -4586,11 +4587,18 @@ RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating C_COMPILER=gcc PIN_CPU=0 \
 | `mlkem_roundtrip` | 1.0534x | 15/15 |
 | `mlkem_roundtrip_core` | 1.0758x | 15/15 |
 
-Clang 18 already folded the old shift/OR expression into a packed rotate. Final
-Clang native and GCC AVX2-only `testc`, `benchc`, and `bench_core_stagesc`
-binaries are therefore byte-identical to baseline `38dcc49`. GCC native KEM
-and exact stage validation pass, as does a GCC native UBSan stage run. Combined
-ASan+UBSan still faults in `test_ntts()` at the existing AVX512 `ntt_inv()`
+Clang 18 already folded the old shift/OR expression into a packed rotate. The
+initial helper spelling hid the rotate count behind an `int` parameter and did
+not compile in a true native Clang build because the intrinsic requires an
+immediate. Commit `e8663fb` changed it to a macro so every call-site constant is
+visible. An earlier byte-identity check had accidentally passed
+`ARCH_CFLAGS=""`, disabling AVX512; the corrected native check passes. Final
+Clang native `testc` and `benchc` are byte-identical to baseline `38dcc49`;
+`bench_core_stagesc` differs because this diagnostic translation unit has a
+different inline layout, while its direct x8 permutation was already using
+packed rotates. GCC AVX2-only production and diagnostic binaries remain
+byte-identical. GCC native KEM and exact stage validation pass, as does a GCC
+native UBSan stage run. Combined ASan+UBSan still faults in `test_ntts()` at the existing AVX512 `ntt_inv()`
 copy before any Keccak test; the same command and fault reproduce on baseline
 `38dcc49`, so it is not a rotate-change regression.
 
@@ -4629,6 +4637,91 @@ static instruction count and code size are not sufficient acceptance evidence.
 This is repository-local ISA selection, not an imported permutation schedule.
 It adds no external object, library, precomputed table, cross-operation cache,
 or wire-format dependency.
+
+### Independent Core Optimization A/B (2026-07-15, native AVX512 16-bit Montgomery forward NTT)
+
+The post-rotate native profile still placed the AVX512 forward-NTT head at
+9.59% self time. The old native transform widened 16-bit coefficients to
+32-bit lanes, multiplied by normal-domain twiddles, and performed reciprocal
+reduction at each butterfly. A first diagnostic changed only upper levels
+`l7` through `l4` to precomputed low/high Montgomery factors. That made the
+canonicalized head much faster, but immediately converting back to `[0,Q)`
+and entering the old 32-bit `l3`..`l1` tail left the complete transform
+slower than the existing AVX2-only lazy path.
+
+The accepted route removes that representation boundary. Levels `l7`..`l5`
+use 32 signed 16-bit ZMM lanes, `l4` uses sixteen YMM lanes, and the already
+local `ntt_tail_mont_lazy_raw_avx2()` carries the same representation through
+`l3`, `l2`, and `l1`. All seven stages remain in `(-7Q,8Q)`, inside
+`int16_t`, and one final ZMM Barrett pass restores the public `[0,Q)`
+contract. Partial transforms used by the fused AVX512 accumulation keep a
+separate canonicalizing head wrapper because their existing lower-level
+consumer still requires canonical coefficients.
+
+The diagnostic source was retained in commit `c8653bf`; production is commit
+`416e67f`. The row named `mlkem_ntt_mont_head_full_avx512` deliberately
+still joins the diagnostic head to the legacy 32-bit tail and is not the final
+production transform. The production rows are `mlkem_ntt_copy` and
+`mlkem_ntt_inplace`.
+
+NTT acceptance used CPU 0, native flags, two warmups, nine alternating pairs,
+and 200000 iterations per run:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating C_COMPILER=gcc PIN_CPU=0 \
+  SUITES=ntt NTT_ITERS=200000 ./scripts/bench_core_ab.sh c8653bf
+
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating C_COMPILER=clang PIN_CPU=0 \
+  SUITES=ntt NTT_ITERS=200000 ./scripts/bench_core_ab.sh c8653bf
+```
+
+| Compiler | Metric | Baseline median ns/op | Candidate median ns/op | Median speedup | Wins |
+|---|---|---:|---:|---:|---:|
+| GCC | canonicalized `l7`..`l4` head | 79.99 | 32.80 | 2.4387x | 9/9 |
+| GCC | `mlkem_ntt_copy` | 196.12 | 79.31 | 2.4728x | 9/9 |
+| GCC | `mlkem_ntt_inplace` | 195.20 | 78.23 | 2.4952x | 9/9 |
+| Clang | canonicalized `l7`..`l4` head | 77.95 | 25.51 | 3.0557x | 9/9 |
+| Clang | `mlkem_ntt_copy` | 174.95 | 71.81 | 2.4363x | 9/9 |
+| Clang | `mlkem_ntt_inplace` | 173.47 | 70.45 | 2.4623x | 9/9 |
+
+Full-KEM confirmation used 50000 iterations, two warmups, and fifteen
+alternating pairs for each compiler:
+
+```bash
+RUNS=15 WARMUP_RUNS=2 RUN_ORDER=alternating C_COMPILER=gcc PIN_CPU=0 \
+  SUITES=kem KEM_ITERS=50000 ./scripts/bench_core_ab.sh c8653bf
+
+RUNS=15 WARMUP_RUNS=2 RUN_ORDER=alternating C_COMPILER=clang PIN_CPU=0 \
+  SUITES=kem KEM_ITERS=50000 ./scripts/bench_core_ab.sh c8653bf
+```
+
+| KEM metric | GCC median speedup | GCC wins | Clang median speedup | Clang wins |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.1354x | 15/15 | 1.1289x | 15/15 |
+| `mlkem_keygen_core` | 1.1353x | 15/15 | 1.1299x | 15/15 |
+| `mlkem_encaps` | 1.0619x | 15/15 | 1.0706x | 15/15 |
+| `mlkem_encaps_core` | 1.0242x | 15/15 | 1.0293x | 15/15 |
+| `mlkem_decaps` | 1.0946x | 15/15 | 1.1139x | 15/15 |
+| `mlkem_decaps_core` | 1.0623x | 15/15 | 1.0728x | 15/15 |
+| `mlkem_roundtrip` | 1.1074x | 15/15 | 1.1133x | 15/15 |
+| `mlkem_roundtrip_core` | 1.0714x | 15/15 | 1.0771x | 15/15 |
+
+Exact NTT equivalence and KEM tests pass under GCC and Clang native builds.
+Clang and GCC AVX2-only `testc` and `bench_nttc` are byte-identical to
+`c8653bf`, confirming that the preprocessor-disabled path did not move.
+The Clang scalar fallback passes, as does an ASan+UBSan AVX2-only KEM build.
+The native stage validator reports zero coefficients outside `[0,Q)` in all
+six tracked ranges and retains sink `14791310925642790902`.
+
+On GCC native `testc`, text grows from 78022 to 81814 bytes (+3792), BSS from
+31872 to 34368 bytes (+2496), and data remains 720 bytes. The added BSS is the
+second ZMM head-factor table and the YMM low/high tail factors now enabled for
+native builds. This is repository-local C intrinsics code: it does not call or
+link the vendored Kyber or PQClean NTT objects and adds no runtime library,
+cross-operation cache, or wire-format dependency. The Montgomery/Harvey
+arithmetic and low/high twiddle decomposition are inherited from the already
+disclosed upstream-derived local AVX2 design; the AVX512 mapping and boundary
+removal are local implementation work, not a claim of new NTT mathematics.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
