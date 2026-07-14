@@ -15,8 +15,8 @@ This default is the baseline for true core optimization work.
 
 There are two important source-provenance qualifications. The repository-local
 single-state AVX2 Keccak implementation in `keccakf1600_avx2.h` adapts the
-seven-vector layout and round schedule of XKCP/CRYPTOGAMS. The AVX2 forward-NTT
-head uses a local intrinsics implementation of the Montgomery/Harvey arithmetic
+seven-vector layout and round schedule of XKCP/CRYPTOGAMS. The AVX2 forward
+NTT uses a local intrinsics implementation of the Montgomery/Harvey arithmetic
 and precomputed low/high twiddle-factor decomposition used by upstream Kyber.
 Neither path adds an external library or object dependency, but neither design
 is claimed as independently invented by baby-mlkem. See
@@ -48,62 +48,143 @@ RUNS=9 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
 
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 4478.69 | 4455.99 | largest integrated cache-miss encryption row |
-| `mlkem_core_stage_kpke_keygen_full` | 4155.53 | 4154.41 | keygen still dominated by matrix sampling plus six NTTs |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4181.68 | 4049.65 | public-key d12 decode + matrix sampling + H(pk) |
-| `mlkem_core_stage_sample_matrix` | 2705.93 | 2703.50 | largest standalone public-work target |
-| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2695.31 | 2686.43 | seed word reuse remains a rejected sampler-neighbor check |
-| `mlkem_core_stage_kpke_encrypt_cached` | 2154.98 | 2128.35 | cached encapsulation arithmetic/noise target |
-| `mlkem_core_stage_keygen_noise_ntt` | 1552.90 | 1549.82 | keygen PRF/CBD plus six forward NTTs |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 1149.67 | 1147.84 | six forward NTTs plus secret d12 encode |
-| `mlkem_core_stage_encrypt_noise_lazy` | 1146.57 | 1143.51 | production-aligned encrypt PRF/CBD plus lazy r NTT |
-| `mlkem_core_stage_encrypt_accum_inv` | 1266.03 | 1264.32 | K=3 accumulation plus fused inverse-add |
-| `mlkem_core_stage_encrypt_inv_add_u_raw` | 563.80 | 563.39 | production-adjacent three-u inverse-add diagnostic after l4-l6 fusion |
-| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 580.45 | 580.18 | three-polynomial inverse-add scheduling remains diagnostic only |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 327.01 | 326.30 | tail/final chain remains visible, but production now fuses l4-l6 before final |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 335.78 | 335.31 | level-by-level three-u tail/final batching is rejected |
-| `mlkem_core_stage_sample_ntt4_keccak_store3` | 792.08 | 790.24 | common x4 sampler Keccak/state/store cost |
-| `mlkem_core_stage_sample_ntt4_init_only` | 6.32 | 6.22 | x4 sampler initialization is too small to be the next target |
-| `mlkem_core_stage_sample_ntt4_keccak3_only` | 776.72 | 776.01 | common x4 sampler Keccak permutations dominate stream setup |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 130.72 | 119.41 | parser bookkeeping is not the main sampler cost |
-| `mlkem_core_stage_sample_ntt4_common3_step` | 923.60 | 911.39 | common first three-rate sampler step including parse/bookkeeping |
-| `mlkem_core_stage_keygen_accum_only` | 438.76 | 438.00 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
-| `mlkem_core_stage_keygen_add_only` | 202.32 | 202.25 | vector add is smaller than accumulation and NTT work |
-| `mlkem_core_stage_ciphertext_compress_encode` | 51.03 | 50.41 | d10/d4 packing is too small for the next target |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 4408.86 | 4318.92 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 3827.23 | 3818.58 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4065.96 | 4053.50 | public-key d12 decode + matrix sampling + H(pk) |
+| `mlkem_core_stage_sample_matrix` | 2654.76 | 2649.35 | largest standalone public-work target |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2740.04 | 2734.49 | seed word reuse remains a rejected sampler-neighbor check |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2014.09 | 1965.70 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1228.15 | 1220.82 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 830.33 | 821.88 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise_lazy` | 996.79 | 992.35 | production-aligned encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 1270.89 | 1261.03 | K=3 accumulation plus fused inverse-add |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 568.89 | 562.55 | production-adjacent three-u inverse-add diagnostic after l4-l6 fusion |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 587.47 | 587.31 | three-polynomial inverse-add scheduling remains diagnostic only |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.66 | 326.09 | tail/final chain remains visible, but production now fuses l4-l6 before final |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 334.54 | 334.06 | level-by-level three-u tail/final batching is rejected |
+| `mlkem_core_stage_sample_ntt4_keccak_store3` | 797.74 | 791.93 | common x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.36 | 6.39 | x4 sampler initialization is too small to be the next target |
+| `mlkem_core_stage_sample_ntt4_keccak3_only` | 783.00 | 775.70 | common x4 sampler Keccak permutations dominate stream setup |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 172.75 | 172.77 | parser bookkeeping is not the main sampler cost |
+| `mlkem_core_stage_sample_ntt4_common3_step` | 927.50 | 926.71 | common first three-rate sampler step including parse/bookkeeping |
+| `mlkem_core_stage_keygen_accum_only` | 439.21 | 437.63 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 202.52 | 202.69 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 50.55 | 50.46 | d10/d4 packing is too small for the next target |
 
 Near-term target selection:
 
 | Candidate family | Status | Reason |
 |---|---|---|
-| AVX2 forward-NTT upper representation | 16-bit Montgomery/Harvey head accepted; lower-tail extension open | The upper four stages now use 16-bit precomputed Montgomery twiddle products, defer stage-local reductions, and canonicalize once before the existing tail. The direct head median improved `97.35 -> 25.96 ns` (`3.7500x`), full in-place NTT improved `190.94 -> 120.43 ns` (`1.5855x`), and nine-run KEM medians improved keygen/encaps/decaps/roundtrip by `1.0676x`/`1.0906x`/`1.1383x`/`1.0942x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
+| AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
-| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign is next | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `790.24 ns` median and `sample_matrix` at `2703.50 ns` median. Remaining gains need a new x4 Keccak/state representation, parser dataflow, or broader matrix/public-cache redesign. |
+| Common `sample_ntt4()` / `sample_matrix()` layout | Two local core rewrites plus one rare-refill cleanup accepted; larger redesign is next | Production `keccakf4_mem()` now carries next-round theta parity, AVX2 `sample_matrix()` uses `(2,1)` as the scalar tail, and `sample_ntt4()` scalar-continues only lanes that miss after the first 504 bytes. The refill cleanup is bounded by the measured rare path (`3.384%` x4 groups, `0.856%` lanes), so it is not a broad KEM speedup claim. The refreshed frontier has `sample_ntt4_keccak_store3` at `791.93 ns` median and `sample_matrix` at `2649.35 ns` median. Remaining gains need a new x4 Keccak/state representation, parser dataflow, or broader matrix/public-cache redesign. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
 | AVX2 inverse-add tail representation | l4-l6 full-tail fusion accepted | The AVX2 non-AVX512 `ntt_inv_before_final_avx2()` path now fuses inverse-tail levels `l4`, `l5`, and `l6` after the AVX2 head, while keeping the existing final scale/add. Bench-only tail/final was `1.0638x` faster on median, stage/KEM A/B kept `encrypt_inv_add_u_raw` at `1.0378x`, `kpke_encrypt_cached` at `1.0178x`, and `mlkem_encaps` at `1.0130x`, and the higher-iteration KEM-only confirmation kept all KEM medians non-negative. Adjacent `l4/l5`, `l5/l6`, `l6/final`, and three-`u` batching remain rejected as standalone changes. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.30 ns median, and matrix-level seed word reuse regressed in earlier checks versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed | Head `l2+l3` fusion measured 0.8314x median versus the production-aligned split; tail `l4+l5` and `l5+l6` fusions are also slower. Store/load removal alone is losing to live-vector and constant pressure. |
 | Public-matrix x4 lane grouping | Closed | Column-major x4 batches measured 0.9994x median versus current row-major production; regrouping lanes without changing Keccak/state work is not enough. |
-| Broad lazy/signed range contract | Upper four NTT stages accepted; producer boundary still open only end-to-end | The accepted Montgomery head proves that a wider range contract wins when it removes four stages of 32-bit reduction. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins the full transform/accumulation pipeline. |
+| Broad lazy/signed range contract | Full forward NTT accepted; producer boundary still open only end-to-end | The full Montgomery transform proves that a wider range contract wins when it removes all stage-local 32-bit reductions. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins sampling, the transform, and accumulation together. |
 | Local K=3 scalar accumulation rewrites | Mostly closed | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, AVX2 product-vectorization, and multi-output coalescing all failed direct or integrated gates. |
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
-The accepted Montgomery head changes the immediate NTT frontier. The historical
-32-bit upper four stages cost `97.35 ns` median, while the new 16-bit head costs
-`25.96 ns`; the unchanged lower `l3`..`l1` tail is now roughly three quarters of
-the `120.43 ns` forward transform. The next NTT diagnostic should therefore
-extend the same 16-bit representation through the lower stages and canonicalize
-once at the end. This is distinct from the rejected per-block tail fusion, which
-kept the old 32-bit reduction arithmetic.
+The full seven-stage Montgomery path closes the immediate forward-NTT
+representation target. A post-change `-pg` profile at 500000 iterations now puts
+`ntt_mont_lazy_avx2` at `7.00%` self time, down behind `sample_ntt4` (`21.51%`),
+the canonical single-state Keccak permutation (`13.96%`), fixed public-key SHA3
+(`10.84%`), prepared encryption (`10.39%`), and inverse NTT (`10.05%`).
 
-Outside NTT, the common x4 sampler remains the largest independent arithmetic
-target: `sample_ntt4_keccak3_only` is `776.01 ns` median and `sample_matrix` is
-`2703.50 ns`. Seed-load hoisting, public-matrix lane regrouping, adjacent inverse
-level fusion, three-polynomial inverse scheduling, local accumulation-to-inverse
-fusion, and isolated signed-CBD input changes remain closed by their recorded
-A/B results.
+The next independent arithmetic target is therefore the common x4 sampler:
+`sample_ntt4` is the largest standalone symbol and `sample_matrix` remains the
+largest stage-level public-work row at `2649.35 ns` median. The useful direction
+must change x4 Keccak/state/parser dataflow; seed-load hoisting, lane regrouping,
+and scalar refill tweaks are already closed by their recorded A/B results.
+
+### Latest Core Optimization A/B (2026-07-14, full 16-bit Montgomery forward NTT)
+
+The accepted four-stage Montgomery head has been extended through lower levels
+`l3`, `l2`, and `l1`. The lower stages keep the stage-by-stage schedule that
+clang handled well, but group 32 coefficients into sixteen signed lanes with
+8-, 4-, and 2-coefficient butterfly layouts. This is not the earlier rejected
+per-block tail fusion: that candidate serialized three dependent stages while
+retaining the old 32-bit reduction arithmetic.
+
+All seven stages now remain lazy in signed `int16_t`. Canonical input plus seven
+Montgomery products stays in `(-7Q,8Q)`, inside the 16-bit range, and one final
+vector Barrett pass restores `[0,Q)`. The internal
+`ntt_lazy_mul_input_avx2()` output is now canonical, which is a valid subset of
+its prior `[0,2Q)` consumer contract.
+
+Direct diagnostic, CPU 0, `clang`, AVX2-only, nine `100000`-iteration runs:
+
+| Boundary | Baseline avg ns/op | Candidate avg ns/op | Avg speedup | Baseline median ns/op | Candidate median ns/op | Median speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| lower `l3`..`l1` tail | 93.83 | 53.20 | 1.7637x | 93.85 | 53.21 | 1.7638x |
+| full in-place NTT from four-stage production | 121.62 | 70.67 | 1.7209x | 120.55 | 70.74 | 1.7041x |
+
+After production placement, nine more runs measured `mlkem_ntt_inplace` at
+`67.52 ns` average and `66.84 ns` median. Relative to the historical 32-bit
+`190.94 ns` median, the complete two-step NTT redesign is `2.8567x` faster.
+
+Production A/B used baseline commit `ab2b3bb`, nine runs, two warmups, CPU 0,
+`clang`, and AVX2-only flags. Selected stage medians:
+
+| Metric | Four-stage median ns/op | Seven-stage median ns/op | Median speedup |
+|---|---:|---:|---:|
+| `mlkem_core_stage_keygen_noise_ntt_only` | 1103.18 | 781.24 | 1.4121x |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 1145.41 | 821.88 | 1.3936x |
+| `mlkem_core_stage_encrypt_noise_ntt_lazy` | 539.04 | 393.87 | 1.3686x |
+| `mlkem_core_stage_decrypt_u_ntt_lazy` | 542.36 | 392.03 | 1.3835x |
+| `mlkem_core_stage_kpke_keygen_full` | 4149.80 | 3818.58 | 1.0867x |
+| `mlkem_core_stage_kpke_encrypt_cached` | 2118.99 | 1965.70 | 1.0780x |
+| `mlkem_core_stage_kpke_decrypt_cached` | 669.77 | 520.01 | 1.2880x |
+
+A higher-iteration KEM-only confirmation used thirteen runs and `50000`
+iterations:
+
+| Metric | Four-stage median ns/op | Seven-stage median ns/op | Median speedup |
+|---|---:|---:|---:|
+| keygen | 6090.13 | 5759.94 | 1.0573x |
+| encaps | 2381.89 | 2224.34 | 1.0708x |
+| decaps | 3068.45 | 2774.11 | 1.1061x |
+| roundtrip | 11611.84 | 10840.07 | 1.0712x |
+| keygen_core | 6071.42 | 5740.57 | 1.0576x |
+| encaps_core | 6466.12 | 6322.83 | 1.0227x |
+| decaps_core | 5364.67 | 5061.99 | 1.0598x |
+| roundtrip_core | 18144.85 | 17351.14 | 1.0457x |
+
+`encaps_core` had one large candidate-side outlier, leaving its average at
+`0.9918x`; its median, direct encrypt stages, normal encaps average/median, and
+all other KEM rows remained positive. Correctness passed Clang AVX2-only,
+native, and non-AVX2 builds, GCC AVX2, NTT helper equivalence, and stage
+validation. The production implementation is commit `cbab975`.
+
+Post-change profile command:
+
+```bash
+MAKEFLAGS=-e ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" PIN_CPU=0 \
+  C_COMPILER=clang AVX2_BACKEND=core KEEP_PROFILE_ARTIFACTS=1 \
+  PROFILE_BENCH_ITERS=500000 ./scripts/profile_kyber_gprof.sh 500000
+```
+
+Post-change 500000-iteration flat profile:
+
+| Symbol | Self time | Calls |
+|---|---:|---:|
+| `sample_ntt4` | 21.51% | 8,000,036 |
+| `mlkem_keccakf1600_avx2` | 13.96% | 18,719,717 |
+| `sha3_256_1184_avx2` | 10.84% | 2,000,018 |
+| `kpke_encrypt_prepared_public` | 10.39% | 3,500,031 |
+| `ntt_inv_before_final_avx2` | 10.05% | 20,000,144 |
+| `ntt_mont_lazy_avx2` | 7.00% | 31,500,246 |
+| `mlkem_prf_cbd_eta2x4_32` | 6.66% | 6,500,049 |
+| `sample_ntt_parse_stream_avx2_ready` | 5.69% | 38,024,914 |
+
+The retained `sample_ntt4` and parser entries make the x4 sampler the next
+profile-backed target. The full report for this run was generated at
+`/tmp/baby-mlkem-gprof.l67RAu/gprof.txt`.
 
 ### Latest Core Optimization A/B (2026-07-14, 16-bit Montgomery forward-NTT head)
 
@@ -1645,7 +1726,8 @@ helpers:
 |---|---|
 | `mlkem_ntt_copy` | `ntt(in, out)` including the out-of-place copy |
 | `mlkem_ntt_inplace` | `ntt(in, in)` without the initial copy |
-| `mlkem_ntt_inplace_mont_head` | AVX2-only diagnostic full NTT using the 16-bit Montgomery upper head; after productionization this should match `mlkem_ntt_inplace` |
+| `mlkem_ntt_inplace_mont_head` | AVX2-only historical diagnostic combining the 16-bit upper head with the old 32-bit lower tail |
+| `mlkem_ntt_inplace_mont_full` | AVX2-only diagnostic full seven-stage 16-bit Montgomery NTT; after productionization this should track `mlkem_ntt_inplace` |
 | `mlkem_ntt_copy_lazy_mul_input` | AVX2-only: production `ntt_lazy_mul_input_avx2(in, out)` including its initial copy, matching the out-of-place stage diagnostic shape |
 | `mlkem_ntt_inplace_lazy_mul_input` | AVX2-only: production lazy multiply-input NTT in-place body; scratch inputs are restored outside the timed window so each transform starts from canonical input |
 | `mlkem_ntt_copy_fused_tail` | AVX2-only diagnostic full forward NTT using a fused `l3 -> l2 -> lazy l1` tail block order plus canonicalization |
@@ -1683,7 +1765,8 @@ helpers:
 | `mlkem_ntt_cbd_canon_copy` | AVX2-only diagnostic: copy a CBD-like canonical `[0,Q)` fixture, then run a full in-place forward NTT |
 | `mlkem_ntt_signed_input_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, run the signed-input upper stages, then the current AVX2 tail |
 | `mlkem_ntt_signed_precanon_copy` | AVX2-only diagnostic: copy a signed `{-2..2}` fixture, vector-canonicalize the whole polynomial, then run a full in-place forward NTT |
-| `mlkem_ntt_tail_avx2` | AVX2 build only: current forward-NTT lower stages `l3`..`l1` |
+| `mlkem_ntt_tail_avx2` | AVX2-only historical 32-bit lower stages `l3`..`l1`, retained for comparison |
+| `mlkem_ntt_tail_avx2_mont_lazy_canon` | AVX2-only full 16-bit Montgomery lower stages plus one canonicalization pass |
 | `mlkem_ntt_tail_avx2_fused_l3_l1` | AVX2-only diagnostic lower tail using one loop that completes `l3`, `l2`, and lazy `l1` per 16-coefficient block |
 | `mlkem_ntt_tail_avx2_l3` .. `mlkem_ntt_tail_avx2_l1` | AVX2 build only: one prepared lower-stage helper from the actual tail path |
 | `mlkem_ntt_tail_avx2_l2_block` | AVX2-only diagnostic: forward NTT tail `l2` using two contiguous 128-bit block loads/stores instead of the production pair-load helper |
@@ -1703,35 +1786,33 @@ NTT change, preferably pinned to one CPU. These numbers are microbenchmarks for
 core arithmetic direction-finding, not ML-KEM KEM throughput results. The
 forward- and inverse-level metrics mutate a prepared input state for a single
 level; use them to rank implementation targets, not as additive replacements for
-full `ntt()` or `ntt_inv()`. The AVX2 forward split rows now retain both
-implementations: the
-`head_l7_l4` row is the historical 32-bit baseline, while
-`head_l7_l4_mont_lazy_canon` is the production-equivalent upper head followed by
-the unchanged self-contained AVX2 tail. The scalar forward-level `l2`/`l1`
-rows are kept only
-for direction finding and are not the implementation used by full AVX2 `ntt()`.
+full `ntt()` or `ntt_inv()`. The AVX2 forward rows retain historical
+32-bit head/tail baselines and the intermediate four-stage Montgomery design.
+`inplace_mont_full` mirrors the complete seven-stage arithmetic; the isolated
+`head_l7_l4_mont_lazy_canon` row includes a boundary canonicalization that final
+production no longer performs. Scalar forward-level rows are kept only for
+direction finding and are not the implementation used by full AVX2 `ntt()`.
 The inverse-level rows also time scalar level kernels for direction finding;
 the current full inverse NTT already uses a self-contained AVX2 head for
 `l1`..`l3`.
 
-Current AVX2 forward split snapshot, pinned to CPU 0, `clang`,
-`AVX2_BACKEND=core`; head/full values are medians of nine `100000`-iteration
-runs and tail values are the preceding seven-run snapshot:
+Current AVX2 forward snapshot, pinned to CPU 0, `clang`,
+`AVX2_BACKEND=core`, medians of nine `100000`-iteration runs:
 
 | Metric | Median ns/op |
 |---|---:|
-| `mlkem_ntt_inplace` | 120.43 |
-| `mlkem_ntt_inplace_mont_head` | 120.43 |
+| `mlkem_ntt_inplace` | 66.84 |
+| `mlkem_ntt_inplace_mont_full` | 70.80 |
+| `mlkem_ntt_inplace_mont_head` | 121.13 |
 | `mlkem_ntt_head_l7_l4` | 97.35 |
 | `mlkem_ntt_head_l7_l4_mont_lazy_canon` | 25.96 |
-| `mlkem_ntt_tail_avx2` | 93.66 |
-| `mlkem_ntt_tail_avx2_l3` | 26.49 |
-| `mlkem_ntt_tail_avx2_l2` | 28.98 |
-| `mlkem_ntt_tail_avx2_l1` | 41.81 |
+| `mlkem_ntt_tail_avx2` | 94.06 |
+| `mlkem_ntt_tail_avx2_mont_lazy_canon` | 53.32 |
 
-The 16-bit upper head is no longer balanced with the lower tail: `l3`..`l1` now
-dominates forward-NTT time. The next useful diagnostic is a lower-tail extension
-of the same Montgomery representation, not another isolated 32-bit stage swap.
+The production full transform is faster than the duplicate diagnostic helper
+because of final source placement and compiler layout. Both historical 32-bit
+head/tail rows remain only as comparison baselines; production uses the full
+seven-stage Montgomery path and one final canonicalization pass.
 
 A follow-up tested the direct multi-stage fusion idea by changing only the AVX2
 lower-tail schedule in the bench harness: instead of three full-array passes for
