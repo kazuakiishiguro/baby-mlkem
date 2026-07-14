@@ -6979,10 +6979,10 @@ sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]) {
 
   for (int block = 0; block < 8; block++) {
     sha3_256_1184_absorb_rate(&state, in + (size_t)block * 136);
-    mlkem_keccakf1600_avx2_permute(&state);
+    mlkem_keccakf1600_avx2_permute_native_rotate(&state);
   }
   sha3_256_1184_absorb_tail(&state, in + 8 * 136);
-  mlkem_keccakf1600_avx2_permute(&state);
+  mlkem_keccakf1600_avx2_permute_native_rotate(&state);
 
   uint64_t lane0 = (uint64_t)_mm256_extract_epi64(state.x0, 0);
   memcpy(out, &lane0, sizeof(lane0));
