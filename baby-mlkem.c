@@ -4778,7 +4778,7 @@ static void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
                              (long long)(0x80ULL << 56));
   st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
 
-  keccakf4(st);
+  keccakf4_mem(st);
 
   for (int lane = 0; lane < 16; lane++) {
     __m128i hi = _mm256_extracti128_si256(st[lane], 1);
