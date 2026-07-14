@@ -5513,7 +5513,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
                              (long long)(0x80ULL << 56));
   st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
 
-  keccakf4(st);
+  keccakf4_mem(st);
 
   for (int lane = 0; lane < 16; lane++) {
     sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
