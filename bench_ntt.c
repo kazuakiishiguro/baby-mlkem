@@ -1059,6 +1059,13 @@ static void ntt_mont_full_avx2(const poly256 f_in, poly256 f_out) {
 static __m512i bench_ntt_mont_head_zeta_lo_avx512[15];
 static __m512i bench_ntt_mont_head_zeta_hi_avx512[15];
 static int bench_ntt_mont_head_zetas_ready_avx512;
+static __m512i bench_ntt_inv_mont_zeta_lo_avx512[6][8];
+static __m512i bench_ntt_inv_mont_zeta_hi_avx512[6][8];
+static __m512i bench_ntt_inv_mont_scale_lo_avx512;
+static __m512i bench_ntt_inv_mont_scale_hi_avx512;
+static __m512i bench_ntt_inv_mont_zeta_scale_lo_avx512;
+static __m512i bench_ntt_inv_mont_zeta_scale_hi_avx512;
+static int bench_ntt_inv_mont_zetas_ready_avx512;
 
 static void bench_ntt_mont_factor_avx512(uint16_t zeta_normal,
                                          int16_t *zeta_lo,
@@ -1070,6 +1077,56 @@ static void bench_ntt_mont_factor_avx512(uint16_t zeta_normal,
   *zeta_lo =
       (int16_t)(uint16_t)((uint32_t)(uint16_t)zeta * (uint32_t)qinv);
   *zeta_hi = (int16_t)zeta;
+}
+
+static void prepare_ntt_inv_mont_zetas_avx512(void) {
+  if (bench_ntt_inv_mont_zetas_ready_avx512) return;
+  ensure_ntt_roots();
+
+  for (int level = 0; level < 4; level++) {
+    int length = 2 << level;
+    int groups_per_block = 32 / (2 * length);
+    int base = 127 >> level;
+    for (int block = 0; block < 8; block++) {
+      int16_t lo[32], hi[32];
+      for (int lane = 0; lane < 32; lane++) {
+        int zeta_idx =
+            base - block * groups_per_block - lane / (2 * length);
+        bench_ntt_mont_factor_avx512(ZETA[zeta_idx], &lo[lane], &hi[lane]);
+      }
+      bench_ntt_inv_mont_zeta_lo_avx512[level][block] =
+          _mm512_loadu_si512((const void *)lo);
+      bench_ntt_inv_mont_zeta_hi_avx512[level][block] =
+          _mm512_loadu_si512((const void *)hi);
+    }
+  }
+
+  for (int level = 4; level < 6; level++) {
+    int base = 127 >> level;
+    int count = 1 << (6 - level);
+    for (int i = 0; i < count; i++) {
+      int16_t zeta_lo, zeta_hi;
+      bench_ntt_mont_factor_avx512(ZETA[base - i], &zeta_lo, &zeta_hi);
+      bench_ntt_inv_mont_zeta_lo_avx512[level][i] =
+          _mm512_set1_epi16(zeta_lo);
+      bench_ntt_inv_mont_zeta_hi_avx512[level][i] =
+          _mm512_set1_epi16(zeta_hi);
+    }
+  }
+
+  int16_t scale_lo, scale_hi, zeta_scale_lo, zeta_scale_hi;
+  uint16_t zeta_scale =
+      mod_q_reduce_ntt_u32((uint32_t)ZETA[1] * 3303u);
+  bench_ntt_mont_factor_avx512(3303, &scale_lo, &scale_hi);
+  bench_ntt_mont_factor_avx512(
+      zeta_scale, &zeta_scale_lo, &zeta_scale_hi);
+  bench_ntt_inv_mont_scale_lo_avx512 = _mm512_set1_epi16(scale_lo);
+  bench_ntt_inv_mont_scale_hi_avx512 = _mm512_set1_epi16(scale_hi);
+  bench_ntt_inv_mont_zeta_scale_lo_avx512 =
+      _mm512_set1_epi16(zeta_scale_lo);
+  bench_ntt_inv_mont_zeta_scale_hi_avx512 =
+      _mm512_set1_epi16(zeta_scale_hi);
+  bench_ntt_inv_mont_zetas_ready_avx512 = 1;
 }
 
 static void prepare_ntt_mont_head_zetas_avx512(void) {
@@ -1114,6 +1171,225 @@ static void bench_canonicalize_mont_avx512(poly256 f) {
         reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
     _mm512_storeu_si512((void *)(f + i), v);
   }
+}
+
+static inline __m512i bench_barrett_reduce_i16x32_avx512(__m512i v) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i barrett = _mm512_set1_epi16(20159);
+  __m512i quot = _mm512_srai_epi16(_mm512_mulhi_epi16(v, barrett), 10);
+  return _mm512_sub_epi16(v, _mm512_mullo_epi16(quot, q));
+}
+
+static inline __m512i bench_canonicalize_i16x32_avx512(__m512i v) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  v = bench_barrett_reduce_i16x32_avx512(v);
+  v = _mm512_add_epi16(v,
+                       _mm512_and_si512(_mm512_srai_epi16(v, 15), q));
+  __m512i reduced = _mm512_sub_epi16(v, q);
+  return _mm512_add_epi16(
+      reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+}
+
+static inline __m512i bench_ntt_inv_mont_level_i16x32_avx512(
+    __m512i x, __m512i partner, __m512i zeta_lo, __m512i zeta_hi,
+    __mmask32 product_mask) {
+  __m512i sum =
+      bench_barrett_reduce_i16x32_avx512(_mm512_add_epi16(x, partner));
+  __m512i product = bench_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(x, partner), zeta_lo, zeta_hi);
+  return _mm512_mask_mov_epi16(sum, product_mask, product);
+}
+
+static inline void bench_ntt_inv_mont_pair_i16x32_avx512(
+    __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
+    __m512i *sum, __m512i *product) {
+  *sum = bench_barrett_reduce_i16x32_avx512(_mm512_add_epi16(a, b));
+  *product = bench_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(b, a), zeta_lo, zeta_hi);
+}
+
+static void bench_ntt_inv_mont_before_final_avx512(poly256 f) {
+  const __m512i swap_qword_pairs =
+      _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
+  const __m512i swap_qword_quads =
+      _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+  const __m512i swap_halves =
+      _mm512_setr_epi64(4, 5, 6, 7, 0, 1, 2, 3);
+
+  /* Keep each 32-coefficient block in registers through lengths 2..16. */
+  for (int block = 0; block < 8; block++) {
+    __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
+    __m512i partner = _mm512_rol_epi64(x, 32);
+    x = bench_ntt_inv_mont_level_i16x32_avx512(
+        x, partner, bench_ntt_inv_mont_zeta_lo_avx512[0][block],
+        bench_ntt_inv_mont_zeta_hi_avx512[0][block],
+        (__mmask32)0xccccccccu);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
+    x = bench_ntt_inv_mont_level_i16x32_avx512(
+        x, partner, bench_ntt_inv_mont_zeta_lo_avx512[1][block],
+        bench_ntt_inv_mont_zeta_hi_avx512[1][block],
+        (__mmask32)0xf0f0f0f0u);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
+    x = bench_ntt_inv_mont_level_i16x32_avx512(
+        x, partner, bench_ntt_inv_mont_zeta_lo_avx512[2][block],
+        bench_ntt_inv_mont_zeta_hi_avx512[2][block],
+        (__mmask32)0xff00ff00u);
+
+    partner = _mm512_permutexvar_epi64(swap_halves, x);
+    x = bench_ntt_inv_mont_level_i16x32_avx512(
+        x, partner, bench_ntt_inv_mont_zeta_lo_avx512[3][block],
+        bench_ntt_inv_mont_zeta_hi_avx512[3][block],
+        (__mmask32)0xffff0000u);
+    _mm512_storeu_si512((void *)(f + 32 * block), x);
+  }
+
+  for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
+    int i = 0;
+    for (int start = 0; start < N; start += 2 * length, i++) {
+      __m512i zeta_lo = bench_ntt_inv_mont_zeta_lo_avx512[level][i];
+      __m512i zeta_hi = bench_ntt_inv_mont_zeta_hi_avx512[level][i];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i sum, product;
+        bench_ntt_inv_mont_pair_i16x32_avx512(
+            a, b, zeta_lo, zeta_hi, &sum, &product);
+        _mm512_storeu_si512((void *)(f + start + j), sum);
+        _mm512_storeu_si512((void *)(f + start + length + j), product);
+      }
+    }
+  }
+}
+
+static inline void bench_ntt_inv_mont_scale_pair_i16x32_avx512(
+    __m512i a, __m512i b, __m512i *scaled0, __m512i *scaled1) {
+  *scaled0 = bench_canonicalize_i16x32_avx512(
+      bench_mont_mul_precomp_i16x32_avx512(
+          _mm512_add_epi16(a, b), bench_ntt_inv_mont_scale_lo_avx512,
+          bench_ntt_inv_mont_scale_hi_avx512));
+  *scaled1 = bench_canonicalize_i16x32_avx512(
+      bench_mont_mul_precomp_i16x32_avx512(
+          _mm512_sub_epi16(b, a),
+          bench_ntt_inv_mont_zeta_scale_lo_avx512,
+          bench_ntt_inv_mont_zeta_scale_hi_avx512));
+}
+
+static void bench_ntt_inv_mont_final_avx512(poly256 out) {
+  bench_ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x32_avx512(
+        a, b, &scaled0, &scaled1);
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static inline __m512i bench_add_mod_q_i16x32_avx512(
+    __m512i a, __m512i b) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i reduced = _mm512_sub_epi16(_mm512_add_epi16(a, b), q);
+  return _mm512_add_epi16(
+      reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+}
+
+static inline __m512i bench_sub_mod_q_i16x32_avx512(
+    __m512i a, __m512i b) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i diff = _mm512_sub_epi16(a, b);
+  return _mm512_add_epi16(
+      diff, _mm512_and_si512(_mm512_srai_epi16(diff, 15), q));
+}
+
+static void bench_ntt_inv_add_mont_final_avx512(
+    const poly256 add, poly256 out) {
+  bench_ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x32_avx512(
+        a, b, &scaled0, &scaled1);
+    scaled0 = bench_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add + j)));
+    scaled1 = bench_add_mod_q_i16x32_avx512(
+        scaled1, _mm512_loadu_si512((const void *)(add + N / 2 + j)));
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_add2_mont_final_avx512(
+    const poly256 add0, const poly256 add1, poly256 out) {
+  bench_ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x32_avx512(
+        a, b, &scaled0, &scaled1);
+    scaled0 = bench_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add0 + j)));
+    scaled0 = bench_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add1 + j)));
+    scaled1 = bench_add_mod_q_i16x32_avx512(
+        scaled1,
+        _mm512_loadu_si512((const void *)(add0 + N / 2 + j)));
+    scaled1 = bench_add_mod_q_i16x32_avx512(
+        scaled1,
+        _mm512_loadu_si512((const void *)(add1 + N / 2 + j)));
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_sub_from_mont_final_avx512(
+    const poly256 minuend, poly256 out) {
+  bench_ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x32_avx512(
+        a, b, &scaled0, &scaled1);
+    scaled0 = bench_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + j)), scaled0);
+    scaled1 = bench_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + N / 2 + j)),
+        scaled1);
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_mont_eval_avx512(
+    const poly256 f_in, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_mont_final_avx512(out);
+}
+
+static void bench_ntt_inv_add_mont_eval_avx512(
+    const poly256 f_in, const poly256 add, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add_mont_final_avx512(add, out);
+}
+
+static void bench_ntt_inv_add2_mont_eval_avx512(
+    const poly256 f_in, const poly256 add0, const poly256 add1,
+    poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add2_mont_final_avx512(add0, add1, out);
+}
+
+static void bench_ntt_inv_sub_from_mont_eval_avx512(
+    const poly256 minuend, const poly256 f_in, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_sub_from_mont_final_avx512(minuend, out);
 }
 
 static void run_ntt_head_l7_l4_mont_lazy_raw_avx512(poly256 f) {
@@ -1748,6 +2024,9 @@ static void validate_ntt_helpers(void) {
 
 #if defined(__AVX2__)
   prepare_ntt_mont_zetas();
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  prepare_ntt_inv_mont_zetas_avx512();
+#endif
   for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
     ntt(bench_a0[lane], tmp);
     memcpy(got, tmp, sizeof(poly256));
@@ -1762,6 +2041,33 @@ static void validate_ntt_helpers(void) {
     check_equal(got, want, "ntt_inv Montgomery i16 first six levels");
     bench_ntt_inv_mont_eval(tmp, got);
     check_equal(got, bench_a0[lane], "ntt_inv Montgomery i16");
+
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    memcpy(got, tmp, sizeof(poly256));
+    bench_ntt_inv_mont_before_final_avx512(got);
+    bench_canonicalize_mont_avx512(got);
+    memcpy(want, tmp, sizeof(poly256));
+    bench_ntt_inv_mont_before_final_avx2(want);
+    bench_canonicalize_mont_avx2(want);
+    check_equal(got, want, "ntt_inv Montgomery AVX512 fused first six");
+    bench_ntt_inv_mont_eval_avx512(tmp, got);
+    check_equal(got, bench_a0[lane], "ntt_inv Montgomery AVX512 fused");
+    ntt_inv_add(tmp, bench_add0[lane], want);
+    bench_ntt_inv_add_mont_eval_avx512(
+        tmp, bench_add0[lane], got);
+    check_equal(got, want, "ntt_inv_add Montgomery AVX512 fused");
+
+    ntt_inv_add2(
+        tmp, bench_add0[lane], bench_add1[lane], want);
+    bench_ntt_inv_add2_mont_eval_avx512(
+        tmp, bench_add0[lane], bench_add1[lane], got);
+    check_equal(got, want, "ntt_inv_add2 Montgomery AVX512 fused");
+
+    ntt_inv_sub_from(bench_add1[lane], tmp, want);
+    bench_ntt_inv_sub_from_mont_eval_avx512(
+        bench_add1[lane], tmp, got);
+    check_equal(got, want, "ntt_inv_sub_from Montgomery AVX512 fused");
+#endif
 
     ntt_inv_add(tmp, bench_add0[lane], want);
     bench_ntt_inv_add_mont_eval(tmp, bench_add0[lane], got);
@@ -3078,6 +3384,82 @@ static uint64_t bench_ntt_inv_sub_from_mont_i16(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t bench_ntt_inv_mont_i16_avx512_fused4(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_inv_mont_zetas_avx512();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_mont_eval_avx512(bench_a0[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 547u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+static uint64_t bench_ntt_inv_add_mont_i16_avx512_fused4(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_inv_mont_zetas_avx512();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add_mont_eval_avx512(
+        bench_a0[lane], bench_add0[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 557u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_add2_mont_i16_avx512_fused4(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_inv_mont_zetas_avx512();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add2_mont_eval_avx512(
+        bench_a0[lane], bench_add0[lane], bench_add1[lane],
+        bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 563u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_sub_from_mont_i16_avx512_fused4(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_inv_mont_zetas_avx512();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_sub_from_mont_eval_avx512(
+        bench_add1[lane], bench_a0[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 569u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 #endif
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -3389,6 +3771,16 @@ int main(int argc, char **argv) {
                bench_ntt_inv_add2_mont_i16(iters), iters);
   print_metric("mlkem_ntt_inv_sub_from_mont_i16",
                bench_ntt_inv_sub_from_mont_i16(iters), iters);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  print_metric("mlkem_ntt_inv_mont_i16_avx512_fused4",
+               bench_ntt_inv_mont_i16_avx512_fused4(iters), iters);
+  print_metric("mlkem_ntt_inv_add_mont_i16_avx512_fused4",
+               bench_ntt_inv_add_mont_i16_avx512_fused4(iters), iters);
+  print_metric("mlkem_ntt_inv_add2_mont_i16_avx512_fused4",
+               bench_ntt_inv_add2_mont_i16_avx512_fused4(iters), iters);
+  print_metric("mlkem_ntt_inv_sub_from_mont_i16_avx512_fused4",
+               bench_ntt_inv_sub_from_mont_i16_avx512_fused4(iters), iters);
+#endif
 #endif
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_ntt_inv_add_lazy_final",
