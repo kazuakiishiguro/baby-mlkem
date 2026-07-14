@@ -601,7 +601,7 @@ static void run_ntt_head_l7_l4(poly256 f) {
   }
 }
 
-#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+/* Keep the YMM Montgomery candidates available for native AVX512 A/B. */
 static __m256i bench_ntt_mont_head_zeta_lo[15];
 static __m256i bench_ntt_mont_head_zeta_hi[15];
 static __m256i bench_ntt_mont_tail_zeta_lo[3][8];
@@ -1054,7 +1054,6 @@ static void ntt_mont_full_avx2(const poly256 f_in, poly256 f_out) {
   run_ntt_tail_l3_l1_mont_lazy_raw_avx2(f_out);
   bench_canonicalize_mont_avx2(f_out);
 }
-#endif
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static __m512i bench_ntt_mont_head_zeta_lo_avx512[15];
@@ -1747,14 +1746,19 @@ static void validate_ntt_helpers(void) {
   ntt_inv(tmp, got);
   check_equal(got, bench_a0[0], "ntt_inv(ntt(x))");
 
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
+  prepare_ntt_mont_zetas();
   for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
     ntt(bench_a0[lane], tmp);
     memcpy(got, tmp, sizeof(poly256));
     bench_ntt_inv_mont_before_final_avx2(got);
     bench_canonicalize_mont_avx2(got);
     memcpy(want, tmp, sizeof(poly256));
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    ntt_inv_before_final_avx512(want);
+#else
     ntt_inv_before_final_avx2(want);
+#endif
     check_equal(got, want, "ntt_inv Montgomery i16 first six levels");
     bench_ntt_inv_mont_eval(tmp, got);
     check_equal(got, bench_a0[lane], "ntt_inv Montgomery i16");
@@ -3002,7 +3006,7 @@ static uint64_t bench_ntt_inv_sub_from(size_t iters) {
   return t1 - t0;
 }
 
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
 static uint64_t bench_ntt_inv_mont_i16(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -3074,6 +3078,9 @@ static uint64_t bench_ntt_inv_sub_from_mont_i16(size_t iters) {
   return t1 - t0;
 }
 
+#endif
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static uint64_t bench_ntt_inv_add_lazy_final(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -3373,7 +3380,7 @@ int main(int argc, char **argv) {
   print_metric("mlkem_ntt_inv_add", bench_ntt_inv_add(iters), iters);
   print_metric("mlkem_ntt_inv_add2", bench_ntt_inv_add2(iters), iters);
   print_metric("mlkem_ntt_inv_sub_from", bench_ntt_inv_sub_from(iters), iters);
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
   print_metric("mlkem_ntt_inv_mont_i16",
                bench_ntt_inv_mont_i16(iters), iters);
   print_metric("mlkem_ntt_inv_add_mont_i16",
@@ -3382,6 +3389,8 @@ int main(int argc, char **argv) {
                bench_ntt_inv_add2_mont_i16(iters), iters);
   print_metric("mlkem_ntt_inv_sub_from_mont_i16",
                bench_ntt_inv_sub_from_mont_i16(iters), iters);
+#endif
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_ntt_inv_add_lazy_final",
                bench_ntt_inv_add_lazy_final(iters), iters);
   print_metric("mlkem_ntt_inv_add2_lazy_final",
