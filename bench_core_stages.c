@@ -69,6 +69,15 @@ static poly256 stage_that[STAGE_BENCH_LANES][K];
 static poly256 stage_rhat[STAGE_BENCH_LANES][K];
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static poly256 stage_rhat_lazy[STAGE_BENCH_LANES][K];
+static poly256 stage_rhat_centered[STAGE_BENCH_LANES][K];
+typedef struct {
+  poly256 c0;
+  poly256 c1;
+} stage_acc3_madd_factors;
+
+static stage_acc3_madd_factors
+    stage_ahat_madd[STAGE_BENCH_LANES][K][K];
+static stage_acc3_madd_factors stage_that_madd[STAGE_BENCH_LANES][K];
 #endif
 static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
@@ -210,6 +219,94 @@ static uint64_t checksum_poly(const poly256 p) {
 }
 
 #if defined(__AVX2__)
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+static inline int16_t stage_acc3_center(uint16_t value) {
+  return (int16_t)(value > Q / 2 ? (int32_t)value - Q : value);
+}
+
+static void stage_acc3_madd_prepare(const poly256 a,
+                                    stage_acc3_madd_factors *factors) {
+  for (int pair = 0; pair < N / 2; pair++) {
+    int even = 2 * pair;
+    int odd = even + 1;
+    uint16_t weighted = (uint16_t)mod_q_reduce_ntt_u32(
+        (uint32_t)(uint16_t)a[odd] * (uint32_t)GAMMA[pair]);
+    factors->c0[even] = stage_acc3_center((uint16_t)a[even]);
+    factors->c0[odd] = stage_acc3_center(weighted);
+    factors->c1[even] = stage_acc3_center((uint16_t)a[even]);
+    factors->c1[odd] = stage_acc3_center((uint16_t)a[odd]);
+  }
+}
+
+/* Exact for the full +/-6*(q/2)^2 range of a K=3 pair sum. */
+static inline __m256i stage_acc3_reduce_i32x8(__m256i x) {
+  const __m256i reciprocal = _mm256_set1_epi32(315);
+  const __m256i q = _mm256_set1_epi32(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi32(Q - 1);
+  const __m256i zero = _mm256_setzero_si256();
+  __m256i quot = _mm256_srai_epi32(
+      _mm256_mullo_epi32(_mm256_srai_epi32(x, 2), reciprocal), 18);
+  __m256i reduced = _mm256_sub_epi32(x, _mm256_mullo_epi32(quot, q));
+  __m256i negative = _mm256_cmpgt_epi32(zero, reduced);
+  reduced = _mm256_add_epi32(reduced, _mm256_and_si256(negative, q));
+  __m256i ge_q = _mm256_cmpgt_epi32(reduced, q_minus_1);
+  return _mm256_sub_epi32(reduced, _mm256_and_si256(ge_q, q));
+}
+
+static void stage_ntt_mul_acc3_madd_avx2(
+    const stage_acc3_madd_factors *a0, const poly256 b0,
+    const stage_acc3_madd_factors *a1, const poly256 b1,
+    const stage_acc3_madd_factors *a2, const poly256 b2, poly256 out) {
+  const __m256i pair_swap = _mm256_setr_epi8(
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+
+  for (int i = 0; i < N; i += 16) {
+    __m256i y0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b0 + i));
+    __m256i y1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b1 + i));
+    __m256i y2 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(b2 + i));
+    __m256i c0 = _mm256_madd_epi16(
+        _mm256_loadu_si256((const __m256i *)(const void *)(a0->c0 + i)), y0);
+    c0 = _mm256_add_epi32(
+        c0, _mm256_madd_epi16(
+                _mm256_loadu_si256(
+                    (const __m256i *)(const void *)(a1->c0 + i)),
+                y1));
+    c0 = _mm256_add_epi32(
+        c0, _mm256_madd_epi16(
+                _mm256_loadu_si256(
+                    (const __m256i *)(const void *)(a2->c0 + i)),
+                y2));
+
+    y0 = _mm256_shuffle_epi8(y0, pair_swap);
+    y1 = _mm256_shuffle_epi8(y1, pair_swap);
+    y2 = _mm256_shuffle_epi8(y2, pair_swap);
+    __m256i c1 = _mm256_madd_epi16(
+        _mm256_loadu_si256((const __m256i *)(const void *)(a0->c1 + i)), y0);
+    c1 = _mm256_add_epi32(
+        c1, _mm256_madd_epi16(
+                _mm256_loadu_si256(
+                    (const __m256i *)(const void *)(a1->c1 + i)),
+                y1));
+    c1 = _mm256_add_epi32(
+        c1, _mm256_madd_epi16(
+                _mm256_loadu_si256(
+                    (const __m256i *)(const void *)(a2->c1 + i)),
+                y2));
+
+    __m128i c0_16 = pack_i32x8_to_i16x8(stage_acc3_reduce_i32x8(c0));
+    __m128i c1_16 = pack_i32x8_to_i16x8(stage_acc3_reduce_i32x8(c1));
+    _mm_storeu_si128((__m128i *)(void *)(out + i),
+                     _mm_unpacklo_epi16(c0_16, c1_16));
+    _mm_storeu_si128((__m128i *)(void *)(out + i + 8),
+                     _mm_unpackhi_epi16(c0_16, c1_16));
+  }
+}
+#endif
+
 static void stage_ntt_mul_acc3_canonical_avx2(
     const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
     const poly256 a2, const poly256 b2, poly256 out) {
@@ -1197,6 +1294,41 @@ static void validate_ntt_mul_acc3_canonical_avx2(void) {
   }
 }
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static void validate_ntt_mul_acc3_madd_avx2(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int row = 0; row < K; row++) {
+      poly256 scalar, madd;
+      ntt_mul_acc3(stage_ahat[lane][row][0], stage_rhat[lane][0],
+                   stage_ahat[lane][row][1], stage_rhat[lane][1],
+                   stage_ahat[lane][row][2], stage_rhat[lane][2], scalar);
+      stage_ntt_mul_acc3_madd_avx2(
+          &stage_ahat_madd[lane][row][0], stage_rhat_centered[lane][0],
+          &stage_ahat_madd[lane][row][1], stage_rhat_centered[lane][1],
+          &stage_ahat_madd[lane][row][2], stage_rhat_centered[lane][2], madd);
+      if (memcmp(scalar, madd, sizeof(poly256)) != 0) {
+        fprintf(stderr, "acc3 madd avx2 mismatch at %zu,%d\n", lane, row);
+        exit(EXIT_FAILURE);
+      }
+    }
+    {
+      poly256 scalar, madd;
+      ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0],
+                   stage_that[lane][1], stage_rhat[lane][1],
+                   stage_that[lane][2], stage_rhat[lane][2], scalar);
+      stage_ntt_mul_acc3_madd_avx2(
+          &stage_that_madd[lane][0], stage_rhat_centered[lane][0],
+          &stage_that_madd[lane][1], stage_rhat_centered[lane][1],
+          &stage_that_madd[lane][2], stage_rhat_centered[lane][2], madd);
+      if (memcmp(scalar, madd, sizeof(poly256)) != 0) {
+        fprintf(stderr, "acc3 madd that avx2 mismatch at %zu\n", lane);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 static void stage_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
     poly256 r0, poly256 r1, poly256 r2, poly256 e10,
@@ -1641,7 +1773,25 @@ static void prepare_inputs(void) {
     fill_bytes(stage_msg[lane], sizeof(stage_msg[lane]),
                0x3000u + (uint64_t)lane);
     derive_keygen_lane(lane);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        stage_acc3_madd_prepare(stage_ahat[lane][row][col],
+                                &stage_ahat_madd[lane][row][col]);
+      }
+      stage_acc3_madd_prepare(stage_that[lane][row],
+                              &stage_that_madd[lane][row]);
+    }
+#endif
     derive_encrypt_lane(lane);
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+    for (int col = 0; col < K; col++) {
+      for (int coeff = 0; coeff < N; coeff++) {
+        stage_rhat_centered[lane][col][coeff] =
+            stage_acc3_center((uint16_t)stage_rhat[lane][col][coeff]);
+      }
+    }
+#endif
   }
 
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -1676,6 +1826,9 @@ static void validate_core_stage_helpers(void) {
   validate_kpke_prepare_public_no_cache_tail21_avx2();
 #endif
   validate_ntt_mul_acc3_canonical_avx2();
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  validate_ntt_mul_acc3_madd_avx2();
+#endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
   validate_sample_ntt4_scalar_refill_avx2();
@@ -7928,6 +8081,27 @@ static uint64_t bench_ntt_mul_acc3_canonical_avx2(size_t iters) {
 }
 #endif
 
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_mul_acc3_madd_avx2(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int row = (int)(i % K);
+    stage_ntt_mul_acc3_madd_avx2(
+        &stage_ahat_madd[lane][row][0], stage_rhat_centered[lane][0],
+        &stage_ahat_madd[lane][row][1], stage_rhat_centered[lane][1],
+        &stage_ahat_madd[lane][row][2], stage_rhat_centered[lane][2],
+        stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_inv_add_u_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -11253,6 +11427,10 @@ int main(int argc, char **argv) {
                bench_ntt_mul_acc3_canonical_scalar(iters), iters);
   print_metric("mlkem_core_stage_ntt_mul_acc3_canonical_avx2",
                bench_ntt_mul_acc3_canonical_avx2(iters), iters);
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_core_stage_ntt_mul_acc3_madd_avx2",
+               bench_ntt_mul_acc3_madd_avx2(iters), iters);
+#endif
 #endif
   print_metric("mlkem_core_stage_encrypt_inv_add_u_only",
                bench_encrypt_inv_add_u_only(iters), iters);
