@@ -709,6 +709,126 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
 }
 
 #if defined(__AVX512F__)
+#if defined(__GNUC__) && !defined(__clang__)
+/*
+ * Four-round lane mapping adapted from XKCP's CC0 AVX512 times8 core by
+ * Ronny Van Keer. The mapping removes explicit Rho/Pi copies; this is not a
+ * new Keccak schedule.
+ * https://github.com/XKCP/XKCP/tree/master/lib/low/KeccakP-1600-times8/AVX512
+ */
+#define MLKEM_KECCAKF8_XOR3(a, b, c) \
+  _mm512_ternarylogic_epi64((a), (b), (c), 0x96)
+#define MLKEM_KECCAKF8_XOR5(a, b, c, d, e) \
+  MLKEM_KECCAKF8_XOR3(MLKEM_KECCAKF8_XOR3((a), (b), (c)), (d), (e))
+#define MLKEM_KECCAKF8_CHI(a, b, c) \
+  _mm512_ternarylogic_epi64((a), (b), (c), 0xd2)
+
+#define MLKEM_KECCAKF8_ROW(L1, L2, L3, L4, L5, B1, B2, B3, B4, B5, \
+                           R1, R2, R3, R4, R5)                       \
+  do {                                                               \
+    (B1) = _mm512_xor_si512((L1), Da);                               \
+    (B2) = _mm512_xor_si512((L2), De);                               \
+    (B3) = _mm512_xor_si512((L3), Di);                               \
+    (B4) = _mm512_xor_si512((L4), Do);                               \
+    (B5) = _mm512_xor_si512((L5), Du);                               \
+    if ((R1) != 0) (B1) = rotl64x8((B1), (R1));                      \
+    (B2) = rotl64x8((B2), (R2));                                     \
+    (B3) = rotl64x8((B3), (R3));                                     \
+    (B4) = rotl64x8((B4), (R4));                                     \
+    (B5) = rotl64x8((B5), (R5));                                     \
+    (L1) = MLKEM_KECCAKF8_CHI(Ba, Be, Bi);                           \
+    (L2) = MLKEM_KECCAKF8_CHI(Be, Bi, Bo);                           \
+    (L3) = MLKEM_KECCAKF8_CHI(Bi, Bo, Bu);                           \
+    (L4) = MLKEM_KECCAKF8_CHI(Bo, Bu, Ba);                           \
+    (L5) = MLKEM_KECCAKF8_CHI(Bu, Ba, Be);                           \
+  } while (0)
+
+#define MLKEM_KECCAKF8_ROUND0(L1, L2, L3, L4, L5, round)            \
+  do {                                                               \
+    Ba = MLKEM_KECCAKF8_XOR5(ba, ga, ka, ma, sa);                    \
+    Be = MLKEM_KECCAKF8_XOR5(be, ge, ke, me, se);                    \
+    Bi = MLKEM_KECCAKF8_XOR5(bi, gi, ki, mi, si);                    \
+    Bo = MLKEM_KECCAKF8_XOR5(bo, go, ko, mo, so);                    \
+    Bu = MLKEM_KECCAKF8_XOR5(bu, gu, ku, mu, su);                    \
+    Da = _mm512_xor_si512(rotl64x8(Be, 1), Bu);                       \
+    De = _mm512_xor_si512(rotl64x8(Bi, 1), Ba);                       \
+    Di = _mm512_xor_si512(rotl64x8(Bo, 1), Be);                       \
+    Do = _mm512_xor_si512(rotl64x8(Bu, 1), Bi);                       \
+    Du = _mm512_xor_si512(rotl64x8(Ba, 1), Bo);                       \
+    MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Ba, Be, Bi, Bo, \
+                       Bu, 0, 44, 43, 21, 14);                       \
+    (L1) = _mm512_xor_si512(                                         \
+        (L1), _mm512_set1_epi64((long long)rc[(round)]));            \
+  } while (0)
+
+#define MLKEM_KECCAKF8_ROW1(L1, L2, L3, L4, L5)                     \
+  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bi, Bo, Bu, Ba,  \
+                     Be, 3, 45, 61, 28, 20)
+#define MLKEM_KECCAKF8_ROW2(L1, L2, L3, L4, L5)                     \
+  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bu, Ba, Be, Bi,  \
+                     Bo, 18, 1, 6, 25, 8)
+#define MLKEM_KECCAKF8_ROW3(L1, L2, L3, L4, L5)                     \
+  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Be, Bi, Bo, Bu,  \
+                     Ba, 36, 10, 15, 56, 27)
+#define MLKEM_KECCAKF8_ROW4(L1, L2, L3, L4, L5)                     \
+  MLKEM_KECCAKF8_ROW((L1), (L2), (L3), (L4), (L5), Bo, Bu, Ba, Be,  \
+                     Bi, 41, 2, 62, 55, 39)
+
+#define MLKEM_KECCAKF8_FOUR_ROUNDS(i)                                \
+  do {                                                               \
+    MLKEM_KECCAKF8_ROUND0(ba, ge, ki, mo, su, (i));                  \
+    MLKEM_KECCAKF8_ROW1(ka, me, si, bo, gu);                         \
+    MLKEM_KECCAKF8_ROW2(sa, be, gi, ko, mu);                         \
+    MLKEM_KECCAKF8_ROW3(ga, ke, mi, so, bu);                         \
+    MLKEM_KECCAKF8_ROW4(ma, se, bi, go, ku);                         \
+    MLKEM_KECCAKF8_ROUND0(ba, me, gi, so, ku, (i) + 1);              \
+    MLKEM_KECCAKF8_ROW1(sa, ke, bi, mo, gu);                         \
+    MLKEM_KECCAKF8_ROW2(ma, ge, si, ko, bu);                         \
+    MLKEM_KECCAKF8_ROW3(ka, be, mi, go, su);                         \
+    MLKEM_KECCAKF8_ROW4(ga, se, ki, bo, mu);                         \
+    MLKEM_KECCAKF8_ROUND0(ba, ke, si, go, mu, (i) + 2);              \
+    MLKEM_KECCAKF8_ROW1(ma, be, ki, so, gu);                         \
+    MLKEM_KECCAKF8_ROW2(ga, me, bi, ko, su);                         \
+    MLKEM_KECCAKF8_ROW3(sa, ge, mi, bo, ku);                         \
+    MLKEM_KECCAKF8_ROW4(ka, se, gi, mo, bu);                         \
+    MLKEM_KECCAKF8_ROUND0(ba, be, bi, bo, bu, (i) + 3);              \
+    MLKEM_KECCAKF8_ROW1(ga, ge, gi, go, gu);                         \
+    MLKEM_KECCAKF8_ROW2(ka, ke, ki, ko, ku);                         \
+    MLKEM_KECCAKF8_ROW3(ma, me, mi, mo, mu);                         \
+    MLKEM_KECCAKF8_ROW4(sa, se, si, so, su);                         \
+  } while (0)
+
+static void keccakf8(__m512i st[25]) {
+  __m512i Ba, Be, Bi, Bo, Bu, Da, De, Di, Do, Du;
+  __m512i ba = st[0], be = st[1], bi = st[2], bo = st[3], bu = st[4];
+  __m512i ga = st[5], ge = st[6], gi = st[7], go = st[8], gu = st[9];
+  __m512i ka = st[10], ke = st[11], ki = st[12], ko = st[13];
+  __m512i ku = st[14], ma = st[15], me = st[16], mi = st[17];
+  __m512i mo = st[18], mu = st[19], sa = st[20], se = st[21];
+  __m512i si = st[22], so = st[23], su = st[24];
+
+  for (int round = 0; round < 24; round += 4) {
+    MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+  }
+
+  st[0] = ba;    st[1] = be;    st[2] = bi;    st[3] = bo;    st[4] = bu;
+  st[5] = ga;    st[6] = ge;    st[7] = gi;    st[8] = go;    st[9] = gu;
+  st[10] = ka;   st[11] = ke;   st[12] = ki;   st[13] = ko;   st[14] = ku;
+  st[15] = ma;   st[16] = me;   st[17] = mi;   st[18] = mo;   st[19] = mu;
+  st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
+}
+
+#undef MLKEM_KECCAKF8_FOUR_ROUNDS
+#undef MLKEM_KECCAKF8_ROW4
+#undef MLKEM_KECCAKF8_ROW3
+#undef MLKEM_KECCAKF8_ROW2
+#undef MLKEM_KECCAKF8_ROW1
+#undef MLKEM_KECCAKF8_ROUND0
+#undef MLKEM_KECCAKF8_ROW
+#undef MLKEM_KECCAKF8_CHI
+#undef MLKEM_KECCAKF8_XOR5
+#undef MLKEM_KECCAKF8_XOR3
+#else
 static void keccakf8(__m512i st[25]) {
   __m512i a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
   __m512i a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
@@ -812,7 +932,9 @@ static void keccakf8(__m512i st[25]) {
   st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
   st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
-#endif
+#endif /* defined(__GNUC__) && !defined(__clang__) */
+#endif /* defined(__AVX512F__) */
+
 
 #endif
 
