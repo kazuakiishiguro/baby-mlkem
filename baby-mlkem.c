@@ -4129,6 +4129,120 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
   memcpy(h, hst, 32);
 }
 
+static inline void hash_matrix_x3_init_group(
+    __m256i st[25], const uint8_t *seed, uint8_t row) {
+  const __m256i hash_lane = _mm256_set_epi64x(0, 0, 0, -1LL);
+  const uint64_t pad = 0x80ULL << 56;
+
+  if (row != 0) {
+    for (int i = 0; i < 25; i++) {
+      st[i] = _mm256_and_si256(st[i], hash_lane);
+    }
+  }
+  for (int i = 0; i < 4; i++) {
+    uint64_t word = load64_le(seed + 8 * i);
+    st[i] = _mm256_or_si256(
+        st[i], _mm256_set_epi64x((long long)word, (long long)word,
+                                 (long long)word, 0));
+  }
+  st[4] = _mm256_or_si256(
+      st[4], _mm256_set_epi64x(
+                 (long long)((uint64_t)row | (2ULL << 8) | (0x1FULL << 16)),
+                 (long long)((uint64_t)row | (1ULL << 8) | (0x1FULL << 16)),
+                 (long long)((uint64_t)row | (0x1FULL << 16)), 0));
+  st[20] = _mm256_or_si256(
+      st[20], _mm256_set_epi64x((long long)pad, (long long)pad,
+                                (long long)pad, 0));
+}
+
+static inline void hash_matrix_x3_absorb_hash(
+    __m256i st[25], const uint8_t *pk, int block) {
+  if (block < 8) {
+    const uint8_t *p = pk + (size_t)block * 136;
+    for (int lane = 0; lane < 17; lane++) {
+      st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(p + 8 * lane));
+    }
+    return;
+  }
+
+  const uint8_t *tail = pk + 8 * 136;
+  for (int lane = 0; lane < 12; lane++) {
+    st[lane] = keccak_xor_lane0_u64(st[lane], load64_le(tail + 8 * lane));
+  }
+  st[12] = keccak_xor_lane0_u64(st[12], 0x06u);
+  st[16] = keccak_xor_lane0_u64(st[16], 0x8000000000000000ULL);
+}
+
+static inline void hash_matrix_x3_store_block(
+    uint64_t stream[3][63], int block, const __m256i st[25]) {
+  for (int word = 0; word < 21; word++) {
+    uint64_t lanes[4];
+    _mm256_storeu_si256((__m256i *)(void *)lanes, st[word]);
+    for (int lane = 0; lane < 3; lane++) {
+      stream[lane][(size_t)block * 21 + (size_t)word] = lanes[lane + 1];
+    }
+  }
+}
+
+static void hash_matrix_x3_parse_group(const __m256i st[25],
+                                       uint64_t stream[3][63],
+                                       poly256 out0, poly256 out1,
+                                       poly256 out2) {
+  int16_t *outs[3] = {out0, out1, out2};
+
+  for (int lane = 0; lane < 3; lane++) {
+    int count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)(const void *)stream[lane], sizeof(stream[lane]),
+        outs[lane], 0);
+    if (count >= N) continue;
+
+    /* A refill must not advance the already co-scheduled hash lane. */
+    uint64_t scalar_st[25];
+    for (int word = 0; word < 25; word++) {
+      uint64_t lanes[4];
+      _mm256_storeu_si256((__m256i *)(void *)lanes, st[word]);
+      scalar_st[word] = lanes[lane + 1];
+    }
+    while (count < N) {
+      uint64_t extra[21];
+      keccakf(scalar_st);
+      memcpy(extra, scalar_st, sizeof(extra));
+      count = sample_ntt_parse_stream_avx2_ready(
+          (const uint8_t *)(const void *)extra, sizeof(extra), outs[lane],
+          count);
+    }
+  }
+}
+
+/* Nine x4 permutations cover all nine H(pk) blocks while lanes 1..3
+ * squeeze three blocks for each of the three matrix rows. */
+static void sha3_256_sample_matrix_x3_avx2(
+    const uint8_t *pk, const uint8_t *rho, poly256 out[K][K], uint8_t h[32]) {
+  __m256i st[25];
+  uint64_t stream[3][63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  sample_ntt_parse_init_avx2();
+
+  for (int row = 0; row < K; row++) {
+    hash_matrix_x3_init_group(st, rho, (uint8_t)row);
+    for (int block = 0; block < 3; block++) {
+      hash_matrix_x3_absorb_hash(st, pk, 3 * row + block);
+      keccakf4_mem(st);
+      hash_matrix_x3_store_block(stream, block, st);
+    }
+    hash_matrix_x3_parse_group(st, stream, out[row][0], out[row][1],
+                               out[row][2]);
+  }
+
+  for (int word = 0; word < 4; word++) {
+    uint64_t value = keccak_lane0_u64(st[word]);
+    memcpy(h + 8 * word, &value, sizeof(value));
+  }
+}
+
 static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
                                           const uint8_t *in1,
                                           const uint8_t *rho,
@@ -4851,8 +4965,9 @@ static void mlkem_ek_hash_cache_store(const uint8_t *ek,
   mlkem_ek_hash_cache_generation = mlkem_next_cache_generation();
 }
 
-static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
-                                         uint8_t h[32]) {
+/* Keep cold public-key preparation out of cache-hit encapsulation. */
+static MLKEM_NOINLINE void kpke_prepare_public_no_cache(
+    const uint8_t *ek_pke, uint8_t h[32]) {
   const uint8_t *rho = ek_pke + K * 384;
   for (int i = 0; i < K; i++) {
     byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
@@ -4868,19 +4983,12 @@ static void kpke_prepare_public_no_cache(const uint8_t *ek_pke,
                      kpke_public_cache_ahat[1][2],
                      kpke_public_cache_ahat[2][0],
                      kpke_public_cache_ahat[2][1]);
+  sha3_256_sample_ntt_tail_avx2(
+      ek_pke, rho, kpke_public_cache_ahat[2][2], h);
 #else
-  const uint8_t r0[4] = {0, 0, 0, 1};
-  const uint8_t c0[4] = {0, 1, 2, 0};
-  const uint8_t r1[4] = {1, 1, 2, 2};
-  const uint8_t c1[4] = {1, 2, 0, 1};
-  sample_ntt4(rho, r0, c0, kpke_public_cache_ahat[0][0],
-              kpke_public_cache_ahat[0][1], kpke_public_cache_ahat[0][2],
-              kpke_public_cache_ahat[1][0]);
-  sample_ntt4(rho, r1, c1, kpke_public_cache_ahat[1][1],
-              kpke_public_cache_ahat[1][2], kpke_public_cache_ahat[2][0],
-              kpke_public_cache_ahat[2][1]);
+  sha3_256_sample_matrix_x3_avx2(
+      ek_pke, rho, kpke_public_cache_ahat, h);
 #endif
-  sha3_256_sample_ntt_tail_avx2(ek_pke, rho, kpke_public_cache_ahat[2][2], h);
 #else
   sha3_256(ek_pke, K * 384 + 32, h);
   sample_matrix(rho, kpke_public_cache_ahat);
