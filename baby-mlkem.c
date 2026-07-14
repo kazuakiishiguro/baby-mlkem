@@ -193,8 +193,7 @@ static inline void keccak_xor_lanes12_avx512(uint64_t st[25],
 }
 
 static inline __m512i rotl64x8(__m512i x, int s) {
-  return _mm512_or_si512(_mm512_slli_epi64(x, s),
-                         _mm512_srli_epi64(x, 64 - s));
+  return _mm512_rol_epi64(x, s);
 }
 #endif
 
