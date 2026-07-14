@@ -1146,6 +1146,7 @@ static __m256i ZETA_NTT_INV_HEAD_L1[16];
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static __m256i ZETA_NTT_HEAD_MONT_LO[15];
 static __m256i ZETA_NTT_HEAD_MONT_HI[15];
+#endif
 static __m256i ZETA_NTT_TAIL_MONT_LO[3][8];
 static __m256i ZETA_NTT_TAIL_MONT_HI[3][8];
 static __m256i ZETA_NTT_INV_MONT_LO[6][8];
@@ -1154,10 +1155,6 @@ static __m256i ZETA_NTT_INV_MONT_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_SCALE_HI;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI;
-#else
-static __m256i ZETA_NTT_TAIL_MONT_LO[3][8];
-static __m256i ZETA_NTT_TAIL_MONT_HI[3][8];
-#endif
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15];
 static __m512i ZETA_NTT_HEAD_MONT_HI_AVX512[15];
@@ -1940,7 +1937,6 @@ static void init_ntt_roots(void) {
           _mm256_loadu_si256((const __m256i *)(const void *)hi);
     }
   }
-#if !(defined(__AVX512F__) && defined(__AVX512BW__))
   for (int level = 0; level < 3; level++) {
     int base = 127 >> level;
     int repeat = 2 << level;
@@ -1978,7 +1974,6 @@ static void init_ntt_roots(void) {
   ZETA_NTT_INV_MONT_SCALE_HI = _mm256_set1_epi16(scale_hi);
   ZETA_NTT_INV_MONT_ZETA_SCALE_LO = _mm256_set1_epi16(zeta_scale_lo);
   ZETA_NTT_INV_MONT_ZETA_SCALE_HI = _mm256_set1_epi16(zeta_scale_hi);
-#endif
   for (int i = 0; i < 16; i++) {
     ZETA_NTT_TAIL_L3[i] = _mm256_set1_epi32(ZETA[16 + i]);
     int k2 = 32 + 2 * i;
@@ -2200,7 +2195,8 @@ static void ntt_mont_lazy_avx2(poly256 f) {
 }
 #endif
 
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+/* YMM Montgomery butterflies beat widening to 32-bit AVX512 lanes. */
+#if defined(__AVX2__)
 static inline __m256i ntt_barrett_reduce_i16x16(__m256i v) {
   const __m256i q = _mm256_set1_epi16(Q);
   const __m256i barrett = _mm256_set1_epi16(20159);
@@ -2658,6 +2654,9 @@ static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
   }
 }
 
+#endif
+
+#if defined(__AVX2__)
 static inline uint8_t recover_bits_i32x8_avx2(__m256i v) {
   const __m256i half_q = _mm256_set1_epi32((Q + 1) / 2);
   const __m256i quarter_q = _mm256_set1_epi32((Q + 1) / 4);
@@ -2712,45 +2711,33 @@ static inline void ntt_inv_scale(poly256 out) {
 }
 
 static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
   ntt_inv_add_mont_final_avx2(add, out);
 #else
   ntt_inv_butterflies_inplace(out);
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_add_scale_avx512(add, out);
-#else
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     out[i] = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add[i]);
   }
 #endif
-#endif
 }
 
 static inline void ntt_inv_add_v_inplace(const poly256 add, poly256 out) {
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_add_fused_final_single_avx512(add, out);
-#else
   ntt_inv_add_inplace(add, out);
-#endif
 }
 
 static inline void ntt_inv_add2_inplace(const poly256 add0,
                                         const poly256 add1,
                                         poly256 out) {
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
   ntt_inv_add2_mont_final_avx2(add0, add1, out);
 #else
   ntt_inv_butterflies_inplace(out);
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_add2_scale_avx512(add0, add1, out);
-#else
   for (int i = 0; i < N; i++) {
     uint32_t tmp = (uint32_t)(uint16_t)out[i] * 3303u;
     int16_t sum = mod_q_add_i16(mod_q_reduce_ntt_u32(tmp), add0[i]);
     out[i] = mod_q_add_i16(sum, add1[i]);
   }
-#endif
 #endif
 }
 
@@ -2760,38 +2747,14 @@ static inline void ntt_inv_add3_inplace(const poly256 add0,
                                         poly256 out0,
                                         poly256 out1,
                                         poly256 out2) {
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_head_avx2(out0);
-  ntt_inv_head_avx2(out1);
-  ntt_inv_head_avx2(out2);
-
-  int k = 0;
-  for (int log2len = 4; log2len <= 6; log2len++) {
-    int length = (1 << log2len);
-    for (int start = 0; start < N; start += (2 * length)) {
-      __m512i zeta = ZETA_NTT_INV_TAIL_AVX512[k++];
-      for (int j = 0; j < length; j += 16) {
-        int off0 = start + j;
-        int off1 = off0 + length;
-        ntt_inv_butterfly16_avx512(out0 + off0, out0 + off1, zeta);
-        ntt_inv_butterfly16_avx512(out1 + off0, out1 + off1, zeta);
-        ntt_inv_butterfly16_avx512(out2 + off0, out2 + off1, zeta);
-      }
-    }
-  }
-  ntt_inv_add3_fused_final_avx512(add0, add1, add2, out0, out1, out2);
-#else
   ntt_inv_add_inplace(add0, out0);
   ntt_inv_add_inplace(add1, out1);
   ntt_inv_add_inplace(add2, out2);
-#endif
 }
 
 static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
                                             poly256 out) {
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_sub_from_fused_final_avx512(minuend, out);
-#elif defined(__AVX2__)
+#if defined(__AVX2__)
   ntt_inv_sub_from_mont_final_avx2(minuend, out);
 #else
   ntt_inv_butterflies_inplace(out);
@@ -2804,7 +2767,7 @@ static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
 
 static void ntt_inv(const poly256 f_in, poly256 f_out) {
   memcpy(f_out, f_in, sizeof(poly256));
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
   ntt_inv_mont_final_avx2(f_out);
 #else
   ntt_inv_butterflies_inplace(f_out);
@@ -6009,7 +5972,7 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 #endif
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
-#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(__AVX2__)
   ntt_inv_sub_recover_from_inplace_avx2(v, w, out_m);
 #else
   ntt_inv_sub_from_inplace(v, w);
