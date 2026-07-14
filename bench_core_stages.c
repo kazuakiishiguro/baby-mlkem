@@ -358,6 +358,9 @@ static void validate_sample_ntt4_scalar_refill_avx2(void);
 static void validate_sample_ntt4_persistent_parity_avx2(void);
 static void validate_sample_ntt4_lane0_carry_avx2(void);
 static void validate_sample_ntt4_lane03_carry_avx2(void);
+void mlkem_bench_keccakf4_mem_parity_avx2_asm(__m256i st[25],
+                                              __m256i parity[5]);
+static void validate_sample_ntt4_asm16_avx2(void);
 static void validate_sample_ntt4_inplace_lane01_avx2(void);
 static void validate_sample_ntt4_final_store_fused_split_avx2(void);
 static void validate_sample_ntt4_interleaved_parse_avx2(void);
@@ -1679,6 +1682,7 @@ static void validate_core_stage_helpers(void) {
   validate_sample_ntt4_persistent_parity_avx2();
   validate_sample_ntt4_lane0_carry_avx2();
   validate_sample_ntt4_lane03_carry_avx2();
+  validate_sample_ntt4_asm16_avx2();
   validate_sample_ntt4_inplace_lane01_avx2();
   validate_sample_ntt4_final_store_fused_split_avx2();
   validate_sample_ntt4_interleaved_parse_avx2();
@@ -4290,6 +4294,48 @@ static void stage_sample_ntt4_lane03_carry_avx2(
   }
 }
 
+static void stage_sample_ntt4_asm16_avx2(
+    const uint8_t *seed, const uint8_t row[4], const uint8_t col[4],
+    poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
+  __m256i st[25];
+  __m256i parity[5];
+  static uint8_t stream[4][504];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+
+  stage_sample_ntt4_init_parity(seed, row, col, st, parity);
+  for (int block = 0; block < 3; block++) {
+    mlkem_bench_keccakf4_mem_parity_avx2_asm(st, parity);
+    sample_ntt4_store_block(stream, (size_t)block * 168, st);
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count[4];
+  int need_more = 0;
+  for (int lane = 0; lane < 4; lane++) {
+    count[lane] = sample_ntt_parse_stream_avx2_ready(
+        stream[lane], sizeof(stream[lane]), outs[lane], 0);
+    need_more |= count[lane] < N;
+  }
+
+  if (need_more) {
+    uint64_t scalar_st[25];
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] >= N) continue;
+      for (int word = 0; word < 25; word++) {
+        uint64_t words[4];
+        _mm256_storeu_si256((__m256i *)(void *)words, st[word]);
+        scalar_st[word] = words[lane];
+      }
+      while (count[lane] < N) {
+        keccakf(scalar_st);
+        count[lane] = sample_ntt_parse_stream_avx2_ready(
+            (const uint8_t *)(const void *)scalar_st, 168, outs[lane],
+            count[lane]);
+      }
+    }
+  }
+}
+
 static void stage_sample_ntt4_inplace_lane01_avx2(
     const uint8_t *seed, const uint8_t row[4], const uint8_t col[4],
     poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
@@ -4817,6 +4863,65 @@ static void validate_sample_ntt4_lane03_carry_avx2(void) {
   }
 }
 
+static void validate_sample_ntt4_asm16_avx2(void) {
+  static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
+  static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
+
+  for (size_t fixture = 0; fixture < STAGE_BENCH_LANES; fixture++) {
+    for (int batch = 0; batch < 2; batch++) {
+      __m256i base_st[25];
+      __m256i got_st[25];
+      __m256i parity[5];
+      poly256 got[4];
+      poly256 want[4];
+
+      stage_sample_ntt4_init(stage_rho[fixture], rows[batch], cols[batch],
+                             base_st);
+      stage_sample_ntt4_init_parity(stage_rho[fixture], rows[batch],
+                                    cols[batch], got_st, parity);
+      for (int checkpoint = 0; checkpoint <= 3; checkpoint++) {
+        if (memcmp(got_st, base_st, sizeof(base_st)) != 0) {
+          fprintf(stderr,
+                  "sample_ntt4 asm16 state mismatch at "
+                  "%zu,%d,%d\n",
+                  fixture, batch, checkpoint);
+          exit(EXIT_FAILURE);
+        }
+        for (int column = 0; column < 5; column++) {
+          __m256i expected =
+              stage_keccakf4_state_column_parity(got_st, column);
+          if (memcmp(&parity[column], &expected, sizeof(expected)) != 0) {
+            fprintf(stderr,
+                    "sample_ntt4 asm16 value mismatch at "
+                    "%zu,%d,%d,%d\n",
+                    fixture, batch, checkpoint, column);
+            exit(EXIT_FAILURE);
+          }
+        }
+        if (checkpoint < 3) {
+          keccakf4_mem(base_st);
+          mlkem_bench_keccakf4_mem_parity_avx2_asm(got_st, parity);
+        }
+      }
+
+      stage_sample_ntt4_asm16_avx2(
+          stage_rho[fixture], rows[batch], cols[batch], got[0], got[1],
+          got[2], got[3]);
+      for (int lane = 0; lane < 4; lane++) {
+        sample_ntt(stage_rho[fixture], rows[batch][lane], cols[batch][lane],
+                   want[lane]);
+        if (memcmp(got[lane], want[lane], sizeof(poly256)) != 0) {
+          fprintf(stderr,
+                  "sample_ntt4 asm16 full mismatch at "
+                  "%zu,%d,%d\n",
+                  fixture, batch, lane);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static void validate_sample_ntt4_inplace_lane01_avx2(void) {
   static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
   static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
@@ -5078,6 +5183,30 @@ static uint64_t bench_sample_ntt4_lane03_carry_full_raw(size_t iters) {
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     stage_sample_ntt4_lane03_carry_avx2(
+        stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0]);
+    switch (i & 3u) {
+      case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
+      case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
+      case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
+      default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_asm16_full_raw(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_ntt4_asm16_avx2(
         stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
         stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
         stage_tmp_ahat[lane][1][0]);
@@ -6029,6 +6158,53 @@ static uint64_t bench_sample_ntt4_lane03_carry_keccak_store3(
     stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
     for (int block = 0; block < 3; block++) {
       stage_keccakf4_mem_parity_lane03_carry(st, parity);
+      sample_ntt4_store_block(stage_tmp_sample_stream[lane],
+                              (size_t)block * 168, st);
+    }
+    acc ^= stage_tmp_sample_stream[lane][i & 3u][(i * 17u) % 504u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_asm16_keccak3_only(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    __m256i parity[5];
+    stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
+    for (int block = 0; block < 3; block++) {
+      mlkem_bench_keccakf4_mem_parity_avx2_asm(st, parity);
+    }
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[(i * 7u) % 25u]);
+    acc ^= words[i & 3u];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_asm16_keccak_store3(
+    size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    __m256i st[25];
+    __m256i parity[5];
+    stage_sample_ntt4_init_parity(stage_rho[lane], row, col, st, parity);
+    for (int block = 0; block < 3; block++) {
+      mlkem_bench_keccakf4_mem_parity_avx2_asm(st, parity);
       sample_ntt4_store_block(stage_tmp_sample_stream[lane],
                               (size_t)block * 168, st);
     }
@@ -10872,6 +11048,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_lane0_carry_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane03_carry_full_raw",
                bench_sample_ntt4_lane03_carry_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_asm16_full_raw",
+               bench_sample_ntt4_asm16_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_full_raw",
                bench_sample_ntt4_inplace_lane01_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw",
@@ -10914,6 +11092,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_lane0_carry_keccak3_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane03_carry_keccak3_only",
                bench_sample_ntt4_lane03_carry_keccak3_only(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_asm16_keccak3_only",
+               bench_sample_ntt4_asm16_keccak3_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_keccak3_only",
                bench_sample_ntt4_inplace_lane01_keccak3_only(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_keccak_store3",
@@ -10925,6 +11105,8 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_lane0_carry_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_lane03_carry_keccak_store3",
                bench_sample_ntt4_lane03_carry_keccak_store3(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_asm16_keccak_store3",
+               bench_sample_ntt4_asm16_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_inplace_lane01_keccak_store3",
                bench_sample_ntt4_inplace_lane01_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3",
