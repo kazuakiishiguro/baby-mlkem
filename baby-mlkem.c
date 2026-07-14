@@ -2939,7 +2939,7 @@ static MLKEM_NOINLINE void mlkem_prf_cbd_eta2x2_32(const uint8_t seed[32],
   }
 }
 
-static void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
+static MLKEM_NOINLINE void mlkem_prf_cbd_eta2x3_32(const uint8_t seed[32],
                                     const uint8_t nonce[4],
                                     poly256 out0,
                                     poly256 out1,
