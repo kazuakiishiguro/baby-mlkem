@@ -137,6 +137,29 @@ static inline __m256i rotl64x4(__m256i x, int s) {
                          _mm256_srli_epi64(x, 64 - s));
 }
 
+/* AVX2 lacks vector 64-bit rotate; byte-aligned rotates need one shuffle. */
+static inline __m256i rotl64x4_8(__m256i x) {
+#if defined(__AVX512VL__) && defined(__AVX512F__)
+  return rotl64x4(x, 8);
+#else
+  const __m256i mask = _mm256_setr_epi8(
+      7, 0, 1, 2, 3, 4, 5, 6, 15, 8, 9, 10, 11, 12, 13, 14,
+      23, 16, 17, 18, 19, 20, 21, 22, 31, 24, 25, 26, 27, 28, 29, 30);
+  return _mm256_shuffle_epi8(x, mask);
+#endif
+}
+
+static inline __m256i rotl64x4_56(__m256i x) {
+#if defined(__AVX512VL__) && defined(__AVX512F__)
+  return rotl64x4(x, 56);
+#else
+  const __m256i mask = _mm256_setr_epi8(
+      1, 2, 3, 4, 5, 6, 7, 0, 9, 10, 11, 12, 13, 14, 15, 8,
+      17, 18, 19, 20, 21, 22, 23, 16, 25, 26, 27, 28, 29, 30, 31, 24);
+  return _mm256_shuffle_epi8(x, mask);
+#endif
+}
+
 static inline void keccak_xor_lanes16_avx2(uint64_t st[25],
                                            const uint8_t *in) {
   for (int lane = 0; lane < 16; lane += 4) {
@@ -608,7 +631,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     b0 = rotl64x4(AX4(1, d1), 1);
     b1 = rotl64x4(AX4(7, d2), 6);
     b2 = rotl64x4(AX4(13, d3), 25);
-    b3 = rotl64x4(AX4(19, d4), 8);
+    b3 = rotl64x4_8(AX4(19, d4));
     b4 = rotl64x4(AX4(20, d0), 18);
     STORE_ACC(10, CHIX4(b0, b1, b2), n0);
     STORE_ACC(11, CHIX4(b1, b2, b3), n1);
@@ -620,7 +643,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     b1 = rotl64x4(AX4(5, d0), 36);
     b2 = rotl64x4(AX4(11, d1), 10);
     b3 = rotl64x4(AX4(17, d2), 15);
-    b4 = rotl64x4(AX4(23, d3), 56);
+    b4 = rotl64x4_56(AX4(23, d3));
     STORE_ACC(15, CHIX4(b0, b1, b2), n0);
     STORE_ACC(16, CHIX4(b1, b2, b3), n1);
     STORE_ACC(17, CHIX4(b2, b3, b4), n2);
