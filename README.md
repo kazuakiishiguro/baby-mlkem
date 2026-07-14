@@ -106,6 +106,7 @@ Near-term target selection:
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
+| AVX2 x4 byte-aligned Rho rotations | Accepted only in memory-resident path | The 8/56-bit rotations in `keccakf4_mem_parity()` use one `vpshufb` on AVX2-only builds, removing 96 GCC instructions per permutation while leaving generic `rotl64x4()` and AVX512 `vprolq` unchanged. Clang already generated the shuffle and stays neutral; GCC `keccakf4_mem` improves `1.0069x` paired median and KEM medians remain neutral-to-positive. |
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
@@ -152,6 +153,98 @@ results. A new attempt must use a compact rotating plane window, controlled
 assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization A/B (2026-07-14, scoped AVX2 x4 Keccak byte rotations)
+
+The memory-resident x4 Keccak round now uses one `vpshufb` for its 8-bit and
+56-bit Rho rotations on AVX2-only builds. A generic AVX2 64-bit rotate needs
+`vpsllq`, `vpsrlq`, and `vpor`; these two byte-aligned rotations can instead be
+expressed by one lane-local byte shuffle. There are two such rotations per
+round, so GCC removes four instructions per round and 96 instructions per
+24-round permutation. Clang 18 already recognizes the old constant shift/or
+idiom and emits the same shuffles, so its expected result is neutral.
+
+This is the byte-aligned rotation specialization used by the official
+[XKCP](https://github.com/XKCP/XKCP) AVX2 times4 implementation and is consistent
+with the [Keccak implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf).
+Production still uses repository-local intrinsics code and links no XKCP,
+PQClean, or upstream Kyber object. The wire format, cache behavior, Keccak state
+layout, and rejection parser are unchanged.
+
+The scope is deliberately narrower than the rejected 2026-07-02 diagnostic.
+That earlier candidate changed the generic `rotl64x4()` shape used by the then
+register-resident x4 path and did not survive its Clang KEM gate. The accepted
+change leaves `rotl64x4()` unchanged and specializes only the two byte-aligned
+calls in the later memory-resident `keccakf4_mem_parity()` path. AVX512VL builds
+keep the existing `vprolq` route, avoiding an unnecessary shuffle-port tradeoff.
+
+A same-translation-unit validator compared the candidate, the preserved
+shift/or lane-zero implementation, and scalar SHAKE128 sampling for 256
+deterministic seeds, both production four-lane groups, and all eight streams per
+seed. All outputs matched. The generated explicit-AVX2 round body contains two
+`vpshufb` instructions under both Clang and GCC; GCC's shift counts fall by two
+left shifts and two right shifts per round body.
+
+The separate-binary Keccak gate compared committed baseline `c5f6ad4` with core
+commit `8563349`, pinned CPU 0, explicit AVX2 without AVX-512, one warmup, seven
+alternating-order pairs, and 20000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=1 RUN_ORDER=alternating SUITES=keccak \
+  KECCAK_ITERS=20000 PIN_CPU=0 C_COMPILER=<clang-or-gcc> \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f \
+  -mno-avx512vl -mno-avx512bw -mno-avx512dq" \
+  ./scripts/bench_core_ab.sh c5f6ad4
+```
+
+| Compiler metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| Clang `mlkem_keccakf4_mem` | 1.0450x | 0.9990x | 2/7 |
+| Clang `mlkem_sample_ntt_full` | 1.0275x | 1.0015x | 4/7 |
+| GCC `mlkem_keccakf4_mem` | 1.0063x | 1.0069x | 6/7 |
+| GCC `mlkem_sample_ntt_full` | 1.0115x | 1.0005x | 4/7 |
+
+The large Clang geometric means come from run outliers; its medians and generated
+instructions are the relevant neutral result. GCC's direct memory-resident
+permutation is the positive local signal. A same-binary sampler check separately
+measured GCC's Keccak-plus-three-rate-store row at `1.0195x` paired median with
+11/11 wins and its full sampler at `1.0108x` with 11/11 wins; separate binaries
+show that the full-sampler effect is smaller and should not be overstated.
+
+The KEM regression gate used the same baseline, flags, CPU, and alternating
+order with eleven pairs and 10000 iterations:
+
+| Compiler metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| Clang `mlkem_keygen` | 0.9957x | 0.9990x | 2/11 |
+| Clang `mlkem_keygen_core` | 1.0057x | 0.9997x | 5/11 |
+| Clang `mlkem_roundtrip` | 1.0012x | 1.0005x | 7/11 |
+| Clang `mlkem_roundtrip_core` | 1.0059x | 0.9992x | 5/11 |
+| GCC `mlkem_keygen` | 1.0003x | 1.0005x | 7/11 |
+| GCC `mlkem_keygen_core` | 0.9942x | 1.0015x | 7/11 |
+| GCC `mlkem_roundtrip` | 1.0000x | 1.0002x | 7/11 |
+| GCC `mlkem_roundtrip_core` | 1.0004x | 1.0020x | 8/11 |
+
+A longer targeted keygen confirmation reused the production benchmark loops but
+omitted unrelated encaps/decaps rows so higher iteration counts fit the run
+budget. Clang used 17 alternating pairs at 50000 iterations: `keygen` was
+`0.9997x` paired median with 8/17 wins and `keygen_core` was `1.0005x` with
+9/17 wins. GCC used its production `-O2 -flto` flags, 15 alternating pairs,
+and 40000 iterations: `keygen` improved `1.0029x` with 15/15 wins and
+`keygen_core` improved `1.0034x` with 14/15 wins. This confirms the expected
+compiler split: Clang is neutral while GCC carries the instruction reduction
+into full key generation.
+
+Decision: accept the scoped memory-path specialization as a GCC code-generation
+cleanup, not as a new large KEM speedup. Clang stays neutral because it already
+performed the transform; GCC improves the target permutation and remains
+neutral-to-positive on keygen and roundtrip medians. The next material x4
+sampler target remains state traffic or a compact Rho/Pi representation, not
+another byte-rotate tweak.
+
+Correctness passed Clang and GCC explicit-AVX2 builds, Clang scalar and native
+AVX512 builds, and Clang ASan+UBSan. The implementation adds no external runtime
+or link dependency.
 
 ### Latest Core Optimization A/B (2026-07-14, AVX2 keygen matrix/noise x4x2x3)
 
