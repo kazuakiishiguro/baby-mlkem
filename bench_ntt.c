@@ -606,6 +606,12 @@ static __m256i bench_ntt_mont_head_zeta_lo[15];
 static __m256i bench_ntt_mont_head_zeta_hi[15];
 static __m256i bench_ntt_mont_tail_zeta_lo[3][8];
 static __m256i bench_ntt_mont_tail_zeta_hi[3][8];
+static __m256i bench_ntt_inv_mont_zeta_lo[6][8];
+static __m256i bench_ntt_inv_mont_zeta_hi[6][8];
+static __m256i bench_ntt_inv_mont_scale_lo;
+static __m256i bench_ntt_inv_mont_scale_hi;
+static __m256i bench_ntt_inv_mont_zeta_scale_lo;
+static __m256i bench_ntt_inv_mont_zeta_scale_hi;
 static int bench_ntt_mont_zetas_ready;
 
 static void bench_ntt_mont_factor(uint16_t zeta_normal, int16_t *zeta_lo,
@@ -645,6 +651,46 @@ static void prepare_ntt_mont_zetas(void) {
           _mm256_loadu_si256((const __m256i *)(const void *)hi);
     }
   }
+
+  for (int level = 0; level < 3; level++) {
+    int base = 127 >> level;
+    int repeat = 2 << level;
+    int zetas_per_vector = 8 >> level;
+    for (int i = 0; i < 8; i++) {
+      int16_t lo[16], hi[16];
+      for (int lane = 0; lane < 16; lane++) {
+        int zeta_idx = base - i * zetas_per_vector - lane / repeat;
+        bench_ntt_mont_factor(ZETA[zeta_idx], &lo[lane], &hi[lane]);
+      }
+      bench_ntt_inv_mont_zeta_lo[level][i] =
+          _mm256_loadu_si256((const __m256i *)(const void *)lo);
+      bench_ntt_inv_mont_zeta_hi[level][i] =
+          _mm256_loadu_si256((const __m256i *)(const void *)hi);
+    }
+  }
+
+  for (int level = 3; level < 6; level++) {
+    int base = 15 >> (level - 3);
+    int count = 8 >> (level - 3);
+    for (int i = 0; i < count; i++) {
+      int16_t zeta_lo, zeta_hi;
+      bench_ntt_mont_factor(ZETA[base - i], &zeta_lo, &zeta_hi);
+      bench_ntt_inv_mont_zeta_lo[level][i] =
+          _mm256_set1_epi16(zeta_lo);
+      bench_ntt_inv_mont_zeta_hi[level][i] =
+          _mm256_set1_epi16(zeta_hi);
+    }
+  }
+
+  int16_t scale_lo, scale_hi, zeta_scale_lo, zeta_scale_hi;
+  uint16_t zeta_scale =
+      mod_q_reduce_ntt_u32((uint32_t)ZETA[1] * 3303u);
+  bench_ntt_mont_factor(3303, &scale_lo, &scale_hi);
+  bench_ntt_mont_factor(zeta_scale, &zeta_scale_lo, &zeta_scale_hi);
+  bench_ntt_inv_mont_scale_lo = _mm256_set1_epi16(scale_lo);
+  bench_ntt_inv_mont_scale_hi = _mm256_set1_epi16(scale_hi);
+  bench_ntt_inv_mont_zeta_scale_lo = _mm256_set1_epi16(zeta_scale_lo);
+  bench_ntt_inv_mont_zeta_scale_hi = _mm256_set1_epi16(zeta_scale_hi);
   bench_ntt_mont_zetas_ready = 1;
 }
 
@@ -778,6 +824,222 @@ static void run_ntt_tail_l3_l1_mont_lazy_raw_avx2(poly256 f) {
 static void run_ntt_tail_l3_l1_mont_lazy_canon_avx2(poly256 f) {
   run_ntt_tail_l3_l1_mont_lazy_raw_avx2(f);
   bench_canonicalize_mont_avx2(f);
+}
+
+static inline __m256i bench_barrett_reduce_i16x16(__m256i v) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i barrett = _mm256_set1_epi16(20159);
+  __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
+  return _mm256_sub_epi16(v, _mm256_mullo_epi16(quot, q));
+}
+
+static inline __m256i bench_canonicalize_i16x16(__m256i v) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  v = bench_barrett_reduce_i16x16(v);
+  v = _mm256_add_epi16(v,
+                       _mm256_and_si256(_mm256_srai_epi16(v, 15), q));
+  __m256i reduced = _mm256_sub_epi16(v, q);
+  return _mm256_add_epi16(
+      reduced, _mm256_and_si256(_mm256_srai_epi16(reduced, 15), q));
+}
+
+static inline void bench_ntt_inv_mont_pair_i16x16(
+    __m256i a, __m256i b, __m256i zeta_lo, __m256i zeta_hi,
+    __m256i *sum, __m256i *product) {
+  *sum = bench_barrett_reduce_i16x16(_mm256_add_epi16(a, b));
+  *product = bench_mont_mul_precomp_i16x16(
+      _mm256_sub_epi16(b, a), zeta_lo, zeta_hi);
+}
+
+static void bench_ntt_inv_mont_before_final_avx2(poly256 f) {
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    __m256i a = bench_load_i16x2_oct(
+        f + start, f + start + 4, f + start + 8, f + start + 12,
+        f + start + 16, f + start + 20, f + start + 24, f + start + 28);
+    __m256i b = bench_load_i16x2_oct(
+        f + start + 2, f + start + 6, f + start + 10, f + start + 14,
+        f + start + 18, f + start + 22, f + start + 26, f + start + 30);
+    __m256i sum, product;
+    bench_ntt_inv_mont_pair_i16x16(
+        a, b, bench_ntt_inv_mont_zeta_lo[0][i],
+        bench_ntt_inv_mont_zeta_hi[0][i], &sum, &product);
+    bench_store_i16x2_oct(
+        f + start, f + start + 4, f + start + 8, f + start + 12,
+        f + start + 16, f + start + 20, f + start + 24, f + start + 28,
+        sum);
+    bench_store_i16x2_oct(
+        f + start + 2, f + start + 6, f + start + 10, f + start + 14,
+        f + start + 18, f + start + 22, f + start + 26, f + start + 30,
+        product);
+  }
+
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    __m256i a = bench_load_i16x4_quad(
+        f + start, f + start + 8, f + start + 16, f + start + 24);
+    __m256i b = bench_load_i16x4_quad(f + start + 4, f + start + 12,
+                                      f + start + 20, f + start + 28);
+    __m256i sum, product;
+    bench_ntt_inv_mont_pair_i16x16(
+        a, b, bench_ntt_inv_mont_zeta_lo[1][i],
+        bench_ntt_inv_mont_zeta_hi[1][i], &sum, &product);
+    bench_store_i16x4_quad(f + start, f + start + 8, f + start + 16,
+                           f + start + 24, sum);
+    bench_store_i16x4_quad(f + start + 4, f + start + 12, f + start + 20,
+                           f + start + 28, product);
+  }
+
+  for (int start = 0, i = 0; start < N; start += 32, i++) {
+    __m256i a = load_i16x8_pair(f + start, f + start + 16);
+    __m256i b = load_i16x8_pair(f + start + 8, f + start + 24);
+    __m256i sum, product;
+    bench_ntt_inv_mont_pair_i16x16(
+        a, b, bench_ntt_inv_mont_zeta_lo[2][i],
+        bench_ntt_inv_mont_zeta_hi[2][i], &sum, &product);
+    store_i16x8_pair(f + start, f + start + 16, sum);
+    store_i16x8_pair(f + start + 8, f + start + 24, product);
+  }
+
+  for (int level = 3, length = 16; level < 6; level++, length <<= 1) {
+    int i = 0;
+    for (int start = 0; start < N; start += 2 * length, i++) {
+      __m256i zeta_lo = bench_ntt_inv_mont_zeta_lo[level][i];
+      __m256i zeta_hi = bench_ntt_inv_mont_zeta_hi[level][i];
+      for (int j = 0; j < length; j += 16) {
+        __m256i a = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + j));
+        __m256i b = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(f + start + length + j));
+        __m256i sum, product;
+        bench_ntt_inv_mont_pair_i16x16(a, b, zeta_lo, zeta_hi,
+                                       &sum, &product);
+        _mm256_storeu_si256((__m256i *)(void *)(f + start + j), sum);
+        _mm256_storeu_si256(
+            (__m256i *)(void *)(f + start + length + j), product);
+      }
+    }
+  }
+}
+
+static inline void bench_ntt_inv_mont_scale_pair_i16x16(
+    __m256i a, __m256i b, __m256i *scaled0, __m256i *scaled1) {
+  *scaled0 = bench_canonicalize_i16x16(
+      bench_mont_mul_precomp_i16x16(
+          _mm256_add_epi16(a, b), bench_ntt_inv_mont_scale_lo,
+          bench_ntt_inv_mont_scale_hi));
+  *scaled1 = bench_canonicalize_i16x16(
+      bench_mont_mul_precomp_i16x16(
+          _mm256_sub_epi16(b, a), bench_ntt_inv_mont_zeta_scale_lo,
+          bench_ntt_inv_mont_zeta_scale_hi));
+}
+
+static void bench_ntt_inv_mont_final_avx2(poly256 out) {
+  bench_ntt_inv_mont_before_final_avx2(out);
+  for (int j = 0; j < N / 2; j += 16) {
+    __m256i a = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + j));
+    __m256i b = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + N / 2 + j));
+    __m256i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_add_mont_final_avx2(const poly256 add,
+                                               poly256 out) {
+  bench_ntt_inv_mont_before_final_avx2(out);
+  for (int j = 0; j < N / 2; j += 16) {
+    __m256i a = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + j));
+    __m256i b = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + N / 2 + j));
+    __m256i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+    __m256i add0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add + j));
+    __m256i add1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add + N / 2 + j));
+    scaled0 = bench_canonicalize_i16x16(_mm256_add_epi16(scaled0, add0));
+    scaled1 = bench_canonicalize_i16x16(_mm256_add_epi16(scaled1, add1));
+    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_add2_mont_final_avx2(
+    const poly256 add0, const poly256 add1, poly256 out) {
+  bench_ntt_inv_mont_before_final_avx2(out);
+  for (int j = 0; j < N / 2; j += 16) {
+    __m256i a = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + j));
+    __m256i b = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + N / 2 + j));
+    __m256i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+    __m256i add00 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add0 + j));
+    __m256i add01 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add0 + N / 2 + j));
+    __m256i add10 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add1 + j));
+    __m256i add11 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add1 + N / 2 + j));
+    scaled0 = bench_canonicalize_i16x16(
+        _mm256_add_epi16(_mm256_add_epi16(scaled0, add00), add10));
+    scaled1 = bench_canonicalize_i16x16(
+        _mm256_add_epi16(_mm256_add_epi16(scaled1, add01), add11));
+    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_sub_from_mont_final_avx2(
+    const poly256 minuend, poly256 out) {
+  bench_ntt_inv_mont_before_final_avx2(out);
+  for (int j = 0; j < N / 2; j += 16) {
+    __m256i a = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + j));
+    __m256i b = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + N / 2 + j));
+    __m256i scaled0, scaled1;
+    bench_ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+    __m256i minuend0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(minuend + j));
+    __m256i minuend1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(minuend + N / 2 + j));
+    scaled0 = bench_canonicalize_i16x16(
+        _mm256_sub_epi16(minuend0, scaled0));
+    scaled1 = bench_canonicalize_i16x16(
+        _mm256_sub_epi16(minuend1, scaled1));
+    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void bench_ntt_inv_mont_eval(const poly256 f_in, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_mont_final_avx2(out);
+}
+
+static void bench_ntt_inv_add_mont_eval(const poly256 f_in,
+                                         const poly256 add, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add_mont_final_avx2(add, out);
+}
+
+static void bench_ntt_inv_add2_mont_eval(const poly256 f_in,
+                                          const poly256 add0,
+                                          const poly256 add1, poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_add2_mont_final_avx2(add0, add1, out);
+}
+
+static void bench_ntt_inv_sub_from_mont_eval(const poly256 minuend,
+                                              const poly256 f_in,
+                                              poly256 out) {
+  memcpy(out, f_in, sizeof(poly256));
+  bench_ntt_inv_sub_from_mont_final_avx2(minuend, out);
 }
 
 static void ntt_mont_head_avx2(const poly256 f_in, poly256 f_out) {
@@ -1361,6 +1623,32 @@ static void validate_ntt_helpers(void) {
   ntt(bench_a0[0], tmp);
   ntt_inv(tmp, got);
   check_equal(got, bench_a0[0], "ntt_inv(ntt(x))");
+
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  for (int lane = 0; lane < NTT_BENCH_LANES; lane++) {
+    ntt(bench_a0[lane], tmp);
+    memcpy(got, tmp, sizeof(poly256));
+    bench_ntt_inv_mont_before_final_avx2(got);
+    bench_canonicalize_mont_avx2(got);
+    memcpy(want, tmp, sizeof(poly256));
+    ntt_inv_before_final_avx2(want);
+    check_equal(got, want, "ntt_inv Montgomery i16 first six levels");
+    bench_ntt_inv_mont_eval(tmp, got);
+    check_equal(got, bench_a0[lane], "ntt_inv Montgomery i16");
+
+    ntt_inv_add(tmp, bench_add0[lane], want);
+    bench_ntt_inv_add_mont_eval(tmp, bench_add0[lane], got);
+    check_equal(got, want, "ntt_inv_add Montgomery i16");
+
+    ntt_inv_add2(tmp, bench_add0[lane], bench_add1[lane], want);
+    bench_ntt_inv_add2_mont_eval(tmp, bench_add0[lane], bench_add1[lane], got);
+    check_equal(got, want, "ntt_inv_add2 Montgomery i16");
+
+    ntt_inv_sub_from(bench_add1[lane], tmp, want);
+    bench_ntt_inv_sub_from_mont_eval(bench_add1[lane], tmp, got);
+    check_equal(got, want, "ntt_inv_sub_from Montgomery i16");
+  }
+#endif
 
   ntt_inv_add(tmp, bench_add0[0], got);
   ntt_inv(tmp, inv);
@@ -2540,6 +2828,77 @@ static uint64_t bench_ntt_inv_sub_from(size_t iters) {
 }
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+static uint64_t bench_ntt_inv_mont_i16(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_mont_zetas();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_mont_eval(bench_a0[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 509u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_add_mont_i16(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_mont_zetas();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add_mont_eval(bench_a0[lane], bench_add0[lane],
+                                bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 521u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_add2_mont_i16(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_mont_zetas();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_add2_mont_eval(bench_a0[lane], bench_add0[lane],
+                                 bench_add1[lane], bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 523u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_ntt_inv_sub_from_mont_i16(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  ensure_ntt_roots();
+  prepare_ntt_mont_zetas();
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (NTT_BENCH_LANES - 1);
+    bench_ntt_inv_sub_from_mont_eval(bench_add1[lane], bench_a0[lane],
+                                     bench_out[lane]);
+    acc += (uint16_t)bench_out[lane][(i * 541u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_ntt_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_ntt_inv_add_lazy_final(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -2832,6 +3191,14 @@ int main(int argc, char **argv) {
   print_metric("mlkem_ntt_inv_add2", bench_ntt_inv_add2(iters), iters);
   print_metric("mlkem_ntt_inv_sub_from", bench_ntt_inv_sub_from(iters), iters);
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  print_metric("mlkem_ntt_inv_mont_i16",
+               bench_ntt_inv_mont_i16(iters), iters);
+  print_metric("mlkem_ntt_inv_add_mont_i16",
+               bench_ntt_inv_add_mont_i16(iters), iters);
+  print_metric("mlkem_ntt_inv_add2_mont_i16",
+               bench_ntt_inv_add2_mont_i16(iters), iters);
+  print_metric("mlkem_ntt_inv_sub_from_mont_i16",
+               bench_ntt_inv_sub_from_mont_i16(iters), iters);
   print_metric("mlkem_ntt_inv_add_lazy_final",
                bench_ntt_inv_add_lazy_final(iters), iters);
   print_metric("mlkem_ntt_inv_add2_lazy_final",
