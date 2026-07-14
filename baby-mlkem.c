@@ -192,9 +192,7 @@ static inline void keccak_xor_lanes12_avx512(uint64_t st[25],
   _mm256_storeu_si256((__m256i *)(st + 8), _mm256_xor_si256(s1, x1));
 }
 
-static inline __m512i rotl64x8(__m512i x, int s) {
-  return _mm512_rol_epi64(x, s);
-}
+#define rotl64x8(x, s) _mm512_rol_epi64((x), (s))
 #endif
 
 #if !defined(__AVX2__)
