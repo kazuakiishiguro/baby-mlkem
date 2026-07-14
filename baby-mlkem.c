@@ -560,7 +560,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
   __m256i e[25];
   __m256i *src = st;
   __m256i *dst = e;
-  /* Carry next-round column parity while storing each round output. */
+  __m256i lane0 = st[0];
   __m256i c0 = parity[0];
   __m256i c1 = parity[1];
   __m256i c2 = parity[2];
@@ -593,29 +593,17 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     (n) = _mm256_xor_si256((n), v_);                                          \
   } while (0)
 
-    __m256i b0 = AX4(0, d0);
-    __m256i b1 = rotl64x4(AX4(6, d1), 44);
-    __m256i b2 = rotl64x4(AX4(12, d2), 43);
-    __m256i b3 = rotl64x4(AX4(18, d3), 21);
-    __m256i b4 = rotl64x4(AX4(24, d4), 14);
-    STORE_INIT(0, _mm256_xor_si256(CHIX4(b0, b1, b2),
-                                   _mm256_set1_epi64x((long long)rc[round])),
-               n0);
-    STORE_INIT(1, CHIX4(b1, b2, b3), n1);
-    STORE_INIT(2, CHIX4(b2, b3, b4), n2);
-    STORE_INIT(3, CHIX4(b3, b4, b0), n3);
-    STORE_INIT(4, CHIX4(b4, b0, b1), n4);
-
-    b0 = rotl64x4(AX4(3, d3), 28);
-    b1 = rotl64x4(AX4(9, d4), 20);
-    b2 = rotl64x4(AX4(10, d0), 3);
-    b3 = rotl64x4(AX4(16, d1), 45);
-    b4 = rotl64x4(AX4(22, d2), 61);
-    STORE_ACC(5, CHIX4(b0, b1, b2), n0);
-    STORE_ACC(6, CHIX4(b1, b2, b3), n1);
-    STORE_ACC(7, CHIX4(b2, b3, b4), n2);
-    STORE_ACC(8, CHIX4(b3, b4, b0), n3);
-    STORE_ACC(9, CHIX4(b4, b0, b1), n4);
+    /* Consume rows 1..4 first so old lane 0 dies before new lane 0 is born. */
+    __m256i b0 = rotl64x4(AX4(3, d3), 28);
+    __m256i b1 = rotl64x4(AX4(9, d4), 20);
+    __m256i b2 = rotl64x4(AX4(10, d0), 3);
+    __m256i b3 = rotl64x4(AX4(16, d1), 45);
+    __m256i b4 = rotl64x4(AX4(22, d2), 61);
+    STORE_INIT(5, CHIX4(b0, b1, b2), n0);
+    STORE_INIT(6, CHIX4(b1, b2, b3), n1);
+    STORE_INIT(7, CHIX4(b2, b3, b4), n2);
+    STORE_INIT(8, CHIX4(b3, b4, b0), n3);
+    STORE_INIT(9, CHIX4(b4, b0, b1), n4);
 
     b0 = rotl64x4(AX4(1, d1), 1);
     b1 = rotl64x4(AX4(7, d2), 6);
@@ -650,6 +638,20 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     STORE_ACC(23, CHIX4(b3, b4, b0), n3);
     STORE_ACC(24, CHIX4(b4, b0, b1), n4);
 
+    b0 = _mm256_xor_si256(lane0, d0);
+    b1 = rotl64x4(AX4(6, d1), 44);
+    b2 = rotl64x4(AX4(12, d2), 43);
+    b3 = rotl64x4(AX4(18, d3), 21);
+    b4 = rotl64x4(AX4(24, d4), 14);
+    lane0 = _mm256_xor_si256(
+        CHIX4(b0, b1, b2),
+        _mm256_set1_epi64x((long long)rc[round]));
+    n0 = _mm256_xor_si256(n0, lane0);
+    STORE_ACC(1, CHIX4(b1, b2, b3), n1);
+    STORE_ACC(2, CHIX4(b2, b3, b4), n2);
+    STORE_ACC(3, CHIX4(b3, b4, b0), n3);
+    STORE_ACC(4, CHIX4(b4, b0, b1), n4);
+
     c0 = n0;
     c1 = n1;
     c2 = n2;
@@ -665,13 +667,14 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     src = dst;
     dst = tmp;
   }
+
+  st[0] = lane0;
   parity[0] = c0;
   parity[1] = c1;
   parity[2] = c2;
   parity[3] = c3;
   parity[4] = c4;
 }
-
 /* Generic callers retain the self-contained parity reconstruction. */
 static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
   __m256i parity[5];
