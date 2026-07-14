@@ -87,6 +87,7 @@ Near-term target selection:
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
+| Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
 | Four-round in-place x4 Keccak mapping | Closed for production; bench-only diagnostic retained | The Keccak Team's order-four plane mapping improved the Clang direct full-sampler paired median by `1.0214x` and won 11/11 runs, but GCC regressed to `0.9760x`. Clang production integration also exposed instruction-footprint costs: a parser-split stage A/B kept `sample_ntt4` at `1.0084x` yet put uncached encryption at `0.9935x`, while a fully separated keygen-only form ended at `0.9981x` paired median over 10 long runs. Production remains on rolling lane zero. |
@@ -200,6 +201,63 @@ decapsulation, and complete roundtrips improve consistently. The explicit text
 and BSS growth is accepted for the broad hot-path gain. The next independent
 optimization target remains x4 public-matrix sampling rather than another local
 inverse-level fusion.
+
+### Independent Core Optimization Diagnostic (2026-07-14, second carried x4 Keccak lane)
+
+A post-inverse-NTT gprof run confirms that the optimization frontier moved as
+intended. The new inverse core fell from about `9.9%` in the preceding profile
+to `5.09%` self time, while `sample_ntt4()` is again first:
+
+```bash
+MAKEFLAGS=-e PIN_CPU=0 C_COMPILER=clang AVX2_BACKEND=core \
+  KEEP_PROFILE_ARTIFACTS=1 PROFILE_BENCH_ITERS=500000 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
+  ./scripts/profile_kyber_gprof.sh 500000
+```
+
+| Flat-profile function | Self time | Calls | Readout |
+|---|---:|---:|---|
+| `sample_ntt4` | 23.08% | 8000036 | largest function; includes the inlined x4 permutation body |
+| `sha3_256_1184_avx2` | 13.52% | 2000018 | fixed public-key hash |
+| `mlkem_keccakf1600_avx2` | 13.19% | 18719717 | single-state Keccak callers |
+| `ntt_mont_lazy_avx2` | 7.69% | 31500246 | forward NTT |
+| `ntt_inv_mont_before_final_avx2` | 5.09% | 20000144 | no longer a leading target |
+
+The accepted x4 permutation carries lane 0 across the 24-round loop. A second
+bench-only candidate also carries physical lane 3. With the current plane order,
+lane 3 is consumed in the first emitted row and recreated in the final row, so
+the source-level expectation was one fewer load and store per round without the
+four-round code expansion. This applies the Keccak Team's
+[plane-oriented early-parity schedule](https://keccak.team/files/Keccak-implementation-3.2.pdf)
+to a local register-lifetime experiment; no external object is linked.
+
+The validator compared all 25 state vectors and five parity vectors after each
+of three permutations, then compared all four sampled polynomials with scalar
+`sample_ntt()`. It passed under Clang and GCC explicit AVX2 builds. Eleven
+same-binary runs of 30000 iterations on CPU 0 gave:
+
+| Metric | Lane 0 avg ns/op | Lane 0+3 avg ns/op | Avg ratio | Lane 0 median ns/op | Lane 0+3 median ns/op | Median ratio | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| complete x4 sampler | 905.29 | 901.53 | 1.0042x | 904.57 | 900.96 | 1.0040x | 1.0023x | 8/11 |
+| three x4 permutations | 767.77 | 773.54 | 0.9925x | 767.05 | 769.73 | 0.9965x | 0.9962x | 0/11 |
+| three permutations plus rate stores | 782.27 | 801.29 | 0.9763x | 781.10 | 799.27 | 0.9773x | 0.9771x | 0/11 |
+
+The complete row's small apparent gain is not a core signal: both isolated
+permutation rows lose every run. Disassembly explains why the intended memory
+saving did not materialize:
+
+| Compiled property | Lane 0 | Lane 0+3 | Change |
+|---|---:|---:|---:|
+| round-loop instructions | 273 | 286 | +13 |
+| round-loop `vmov*` instructions | 32 | 39 | +7 |
+| round-loop `rsp` references | 12 | 17 | +5 |
+| complete sampler helper bytes | `0xf7e` | `0xfbe` | +64 |
+
+Decision: reject a second loop-carried lane in C and retain commit `ee91c5a` as
+a diagnostic. The extra live YMM value increases spill traffic on AVX2's
+16-register file. Reopen this direction only with controlled assembly/register
+allocation or a schedule that first reduces the simultaneous parity, theta,
+Chi, and output-parity live set.
 
 ### Latest Core Optimization A/B (2026-07-14, rolling lane-zero x4 Keccak)
 
@@ -3286,6 +3344,9 @@ stage metrics.
 | `mlkem_core_stage_sample_ntt4_full_raw` | AVX2-only x4 sampler call with a lightweight sink, excluding full-polynomial checksum overhead |
 | `mlkem_core_stage_sample_ntt4_persistent_parity_full_raw` | AVX2-only historical accepted-path baseline: complete x4 sampler carrying theta parity across the first three permutations; production-equivalent at commit `0f9613f` before rolling lane zero |
 | `mlkem_core_stage_sample_ntt4_lane0_carry_full_raw` | AVX2-only accepted-path diagnostic: complete persistent-parity x4 sampler carrying lane `(0,0)` in a YMM register across all 24 rounds; production-equivalent after commit `1fccb50` |
+| `mlkem_core_stage_sample_ntt4_lane03_carry_full_raw` | AVX2-only rejected diagnostic: complete x4 sampler carrying physical lanes 0 and 3 across the round loop |
+| `mlkem_core_stage_sample_ntt4_lane03_carry_keccak3_only` | AVX2-only rejected diagnostic: three lane0+lane3-carried x4 permutations without rate stores or parsing |
+| `mlkem_core_stage_sample_ntt4_lane03_carry_keccak_store3` | AVX2-only rejected diagnostic: three lane0+lane3-carried x4 permutations plus rate stores |
 | `mlkem_core_stage_sample_ntt4_inplace_lane01_full_raw` | AVX2-only diagnostic: complete x4 sampler using the four-round in-place plane mapping while carrying physical slots 0 and 1 in YMM registers |
 | `mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw` | AVX2-only diagnostic: complete x4 sampler with 23 inline rounds and a noinline final-round plus rate-store epilogue |
 | `mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw` | AVX2-only diagnostic: full x4 sampler using two interleaved 504-byte parser pairs for the initial four streams |
