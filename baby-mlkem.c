@@ -2905,7 +2905,7 @@ static void mlkem_prf_cbd_eta2x4_32(const uint8_t seed[32],
       (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
   st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
 
-  keccakf4(st);
+  keccakf4_mem(st);
 
   sample_poly_cbd_eta2x4_state_avx2(st, out0, out1, out2, out3);
 }
