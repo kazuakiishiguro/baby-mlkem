@@ -134,6 +134,7 @@ Near-term target selection:
 | Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
 | Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now maps directly to the AVX512F immediate rotate intrinsic instead of expressing each rotation as two shifts plus OR. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15, including keygen/encaps/decaps/roundtrip-core at `1.0711x`/`1.0449x`/`1.0295x`/`1.0758x`. Clang native and GCC AVX2-only binaries remain byte-identical to baseline. |
 | Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
+| AVX512 x8 Theta D/state ternary fusion | Closed | Direct `state XOR Cprev XOR ROL(Cnext)` lowers the GCC round body by five instructions, stack references from 37 to 21, and function size from 1,564 to 1,455 bytes. That static win does not survive integration: complete x8 sampling/matrix medians regress to `0.9958x`/`0.9961x`, and high-iteration decaps-core/roundtrip-core end at `0.9965x`/`0.9981x`. Keep the explicit shared D values. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
@@ -4608,6 +4609,22 @@ three-permutation Keccak at `1.0005x` and the complete x4 sampler at only
 `0.9906x`, complete K-PKE keygen at `0.9887x`, and public preparation at
 `0.9914x`. The source experiment was reverted; the explicit intrinsic is not
 an optimization when the compiler has already selected the same instruction.
+
+A distinct x8 Theta D/state ternary fusion was also rejected. This was not the
+earlier five-input parity-source experiment: GCC already maps those parity
+trees to ten `vpternlog` instructions. The new candidate instead replaced five
+shared `D = Cprev XOR ROL(Cnext, 1)` values plus 25 state XORs with 25 direct
+`state XOR Cprev XOR ROL(Cnext, 1)` ternary operations. It objectively reduced
+the generated round by five instructions, cut static stack references from 37
+to 21, and shrank `keccakf8` from 1,564 to 1,455 bytes.
+
+That smaller loop did not survive the boundaries around it. Nine-pair GCC stage
+A/B against `ec5dcc5` improved generic and sparse-first three-permutation rows
+by `1.0026x` and `1.0050x`, both 9/9, but one permutation fell to `0.9982x`,
+complete x8 sampling to `0.9958x`, and complete matrix sampling to `0.9961x`.
+The 15-pair, 50,000-iteration KEM gate put decaps-core at `0.9965x`, encaps at
+`0.9995x`, and roundtrip-core at `0.9981x`. The source candidate was reverted;
+static instruction count and code size are not sufficient acceptance evidence.
 
 This is repository-local ISA selection, not an imported permutation schedule.
 It adds no external object, library, precomputed table, cross-operation cache,
