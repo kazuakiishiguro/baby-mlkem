@@ -132,6 +132,7 @@ Near-term target selection:
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Native AVX512VL fixed H(pk) rotates | Accepted for GCC AVX512; Clang and AVX2-only paths unchanged | The fixed 1184-byte public-key hash uses native 256-bit variable rotates while preserving its seven-YMM state across all nine permutations. GCC direct H(pk)/copy+hash paired medians improve `1.0481x`/`1.0479x`; 14-pair keygen/keygen-core improve `1.0187x`/`1.0173x`, both with 14/14 wins. Clang already emitted `vprolvq`; its native Keccak benchmark and both compilers' AVX2-only test/Keccak binaries remain byte-identical. No external object, cache, or wire-format dependency is added. |
+| Native AVX512VL register-per-lane fixed H(pk) | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The 1184-byte public-key hash now keeps all 25 Keccak lanes in XMM0..24 across nine permutations and uses `VPTERNLOGQ` for Theta/Chi. GCC/Clang direct H(pk) paired medians improve `1.1742x`/`1.0539x`; GCC keygen/keygen-core improve `1.0484x`/`1.0472x` with 14/14 wins, and Clang improves `1.0135x`/`1.0129x`. The round schedule is explicitly adapted from Intel's MIT-licensed liboqs AVX512VL implementation, not claimed as independently invented. The build links only the repository-local `.S` object, never liboqs or an Intel binary; non-AVX512 and standalone builds retain the prior fallback. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
 | AVX2 x4 byte-aligned Rho rotations | Accepted only in memory-resident path | The 8/56-bit rotations in `keccakf4_mem_parity()` use one `vpshufb` on AVX2-only builds, removing 96 GCC instructions per permutation while leaving generic `rotl64x4()` and AVX512 `vprolq` unchanged. Clang already generated the shuffle and stays neutral; GCC `keccakf4_mem` improves `1.0069x` paired median and KEM medians remain neutral-to-positive. |
@@ -5466,6 +5467,111 @@ PQClean, or other external object, no matrix or transformed-key cache, and no
 wire-format change. The four-round lane mapping remains explicitly attributed
 to XKCP; this result claims only fresh-state construction, selective output,
 and local schedule sharing.
+
+### Local Core Optimization A/B (2026-07-15, register-per-lane fixed public hash)
+
+A fresh GCC native profile at `ea9cd23` put `sha3_256_1184_avx2()` first at
+`14.85%` self time (`3.37 s` over `2,000,018` calls). This is the fixed
+SHA3-256 computation of the 1184-byte ML-KEM-768 public key. The accepted
+seven-YMM path already preserved state across all nine permutations and used
+native AVX512VL rotates, but packing 25 logical Keccak lanes into seven vectors
+still required lane permutations and blends in every round.
+
+Intel's [AVX-512 Keccak technology guide](https://builders.intel.com/docs/networkbuilders/post-quantum-cryptography-accelerating-open-quantum-safe-library-with-intel-avx-512-keccak-1600-implementation-1762253806.pdf)
+describes a different register-per-lane design using AVX512VL ternary logic.
+A reference-only build of the corresponding liboqs code measured about
+`1.16x` faster than the GCC seven-YMM fixed hash on this Zen 4 host, which was
+enough headroom to justify a fixed-shape local implementation.
+
+Commit `a2dbc80` adds `sha3_256_1184_avx512vl.S`. Its permutation schedule is
+adapted from Intel's MIT-licensed
+[liboqs AVX512VL Keccak source](https://github.com/open-quantum-safe/liboqs/blob/3dca9c939c779c58ffa540f3f47ca099a1fa4b94/src/common/sha3/avx512vl_low/KeccakP-1600-AVX512VL.S),
+with the license retained in `THIRD_PARTY_NOTICES.md`. The local fixed-shape
+integration differs in four material ways:
+
+- one logical state lane occupies each of XMM0..XMM24, while XMM25..XMM31 are
+  temporary registers;
+- the round body is narrowed from the upstream four-state YMM form to a
+  single-state XMM form, and Iota uses a scalar round-constant load;
+- the first 136-byte block initializes lanes directly, then seven full blocks
+  and the 96-byte padded tail are absorbed without spilling state; and
+- all block and round counts are fixed, with no data-dependent branches.
+
+The build probes the effective compiler target and links the local assembly
+object only when x86-64 ELF, AVX512F, and AVX512VL are all enabled. An explicit
+Makefile definition selects it in `baby-mlkem.c`; compiling the C file without
+that object keeps the previous seven-YMM implementation, even on an AVX512
+host.
+
+Direct acceptance used CPU 0, three warmups, nine alternating pairs, and
+200,000 iterations against `ea9cd23`:
+
+```bash
+RUNS=9 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=keccak \
+  KECCAK_ITERS=200000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh ea9cd23
+```
+
+| Direct metric | Compiler | Baseline median ns/op | Candidate median ns/op | Paired median speedup | Wins |
+|---|---|---:|---:|---:|---:|
+| `mlkem_sha3_256_public_key` | GCC | 1638.01 | 1395.01 | 1.1742x | 9/9 |
+| `mlkem_sha3_256_copy_public_key` | GCC | 1646.63 | 1403.06 | 1.1737x | 9/9 |
+| `mlkem_sha3_256_public_key` | Clang | 1469.85 | 1394.49 | 1.0539x | 9/9 |
+| `mlkem_sha3_256_copy_public_key` | Clang | 1474.16 | 1402.81 | 1.0509x | 9/9 |
+
+The generic single-state permutation, x4 permutation, short SHA3-256, and
+SHA3-512 control rows remain around `1.000x` under both compilers. Native public
+preparation is also intentionally unaffected: it computes H(pk) together with
+the ninth matrix polynomial in `sha3_256_sample_ntt_tail_avx2()`, rather than
+calling this serial fixed hash. The stage `kpke_prepare_public_no_cache` paired
+median was `1.0000x`; `kpke_keygen_full` is PKE key generation and does not hash
+the completed public key.
+
+GCC KEM acceptance used 100,000 iterations, three warmups, and fourteen
+alternating pairs. Clang used the same iteration and warmup counts with ten
+pairs:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh ea9cd23
+```
+
+| KEM metric | GCC paired median | GCC wins | Clang paired median | Clang wins |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.0484x | 14/14 | 1.0135x | 8/10 |
+| `mlkem_keygen_core` | 1.0472x | 14/14 | 1.0129x | 9/10 |
+| `mlkem_encaps` | 0.9982x | 5/14 | 1.0000x | 5/10 |
+| `mlkem_encaps_core` | 1.0009x | 9/14 | 0.9978x | 3/10 |
+| `mlkem_decaps` | 1.0011x | 10/14 | 1.0042x | 6/10 |
+| `mlkem_decaps_core` | 1.0008x | 10/14 | 0.9968x | 2/10 |
+| `mlkem_roundtrip` | 1.0276x | 14/14 | 1.0057x | 9/10 |
+| `mlkem_roundtrip_core` | 1.0181x | 13/14 | 1.0017x | 6/10 |
+
+Encapsulation and decapsulation do not normally call the new fixed path, so
+their sub-percent changes are controls and are not credited as speedups. The
+measured gain is the serial copy-plus-H(pk) work in key generation, which also
+carries into roundtrip workloads.
+
+GCC native `benchc` text decreases from 81,321 to 81,212 bytes (-109); data and
+BSS stay at 708 and 35,584 bytes. The old fixed function was `0x707` bytes. The
+new exported fixed wrapper is `0x2d6` bytes and its complete local assembly
+object, including the shared local round body and constants, contains 1,909
+text bytes.
+
+GCC and Clang native KEM tests pass, as do native ASan+UBSan tests under both
+compilers. Explicit AVX2-only GCC/Clang `testc` and `bench_keccakc` binaries are
+byte-identical to `ea9cd23`. Scalar GCC/Clang `testc`, `benchc`, and
+`bench_keccakc` are also byte-identical. A direct standalone native compile of
+`test.c` without the assembly object passes by selecting the seven-YMM
+fallback.
+
+This change does not link liboqs, XKCP, or an Intel binary and adds no runtime
+library, cache, or wire-format dependency. Native AVX512VL Makefile builds do
+link the repository-local assembly object. The register-per-lane round schedule
+is externally derived from Intel/liboqs and is not claimed as a new
+baby-mlkem Keccak schedule; the baby-mlkem work claimed here is the XMM
+single-state specialization, fixed 1184-byte absorb/padding integration,
+compile-time fallback boundary, and measured KEM integration.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
