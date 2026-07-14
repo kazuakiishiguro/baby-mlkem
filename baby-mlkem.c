@@ -1262,7 +1262,16 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
 }
 
 #if defined(__AVX2__)
+#if defined(MLKEM_ENABLE_SHA3_256_1184_AVX512VL) &&                  \
+    defined(__x86_64__) && defined(__ELF__) && defined(__AVX512F__) && \
+    defined(__AVX512VL__)
+#define MLKEM_HAVE_SHA3_256_1184_AVX512VL 1
+extern void mlkem_sha3_256_1184_avx512vl(const uint8_t in[1184],
+                                          uint8_t out[32]);
+#define sha3_256_1184_avx2 mlkem_sha3_256_1184_avx512vl
+#else
 static void sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]);
+#endif
 #endif
 
 static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
@@ -7055,7 +7064,7 @@ static void mlkem_keygen_matrix_noise_avx2(
 }
 #endif
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) && !defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
 static MLKEM_ALWAYS_INLINE void
 sha3_256_1184_state_zero(mlkem_keccakf1600_avx2_state *state) {
   state->x0 = _mm256_setzero_si256();

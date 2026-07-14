@@ -75,6 +75,16 @@ BENCH_CT_STRIDE ?= 1088
 BENCH_NTT_ITERS ?= 200000
 BENCH_KECCAK_ITERS ?= 200000
 BENCH_STAGES_ITERS ?= 20000
+CORE_AVX512VL_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__AVX512F__/ { f = 1 } /__AVX512VL__/ { v = 1 } END { if (x && e && f && v) print "yes" }')
+ifeq ($(CORE_AVX512VL_ENABLED),yes)
+CORE_ASM_SRCS = sha3_256_1184_avx512vl.S
+CORE_ASM_DEF = -DMLKEM_ENABLE_SHA3_256_1184_AVX512VL
+else
+CORE_ASM_SRCS =
+CORE_ASM_DEF =
+endif
+CORE_ASM_OBJS := $(CORE_ASM_SRCS:.S=.o)
+CORE_ASM_CLEAN_OBJS = sha3_256_1184_avx512vl.o
 ifeq ($(origin KYBER_FIPS202_CFLAGS), undefined)
 ifneq ($(findstring clang,$(notdir $(CC))),)
 KYBER_FIPS202_CFLAGS := -O3 -fno-vectorize -fno-slp-vectorize
@@ -115,15 +125,21 @@ BENCH_SRCS = bench.c $(BENCH_FIPS_SRCS) $(AVX2_BACKEND_SRCS)
 BENCH_NTT_SRCS = bench_ntt.c
 BENCH_KECCAK_SRCS = bench_keccak.c
 BENCH_KECCAK_VENDOR_OBJS = bench_keccak_vendor.o $(PQ_AVX2_KECCAK_DIR)/KeccakP-1600-times4-SIMD256.o
+BENCH_KECCAK_VENDOR_OBJS += $(CORE_ASM_OBJS)
 BENCH_STAGES_SRCS = bench_core_stages.c bench_keccakf4_avx2.S
 TEST_OBJS := $(TEST_SRCS:.c=.o)
 TEST_OBJS := $(TEST_OBJS:.S=.o)
+TEST_OBJS += $(CORE_ASM_OBJS)
 BENCH_OBJS := $(BENCH_SRCS:.c=.o)
 BENCH_OBJS := $(BENCH_OBJS:.S=.o)
+BENCH_OBJS += $(CORE_ASM_OBJS)
 BENCH_NTT_OBJS := $(BENCH_NTT_SRCS:.c=.o)
+BENCH_NTT_OBJS += $(CORE_ASM_OBJS)
 BENCH_KECCAK_OBJS := $(BENCH_KECCAK_SRCS:.c=.o)
+BENCH_KECCAK_OBJS += $(CORE_ASM_OBJS)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_SRCS:.c=.o)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_OBJS:.S=.o)
+BENCH_STAGES_OBJS += $(CORE_ASM_OBJS)
 OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS))
 TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET)
 
@@ -171,6 +187,7 @@ bench.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
 bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += -Wno-unused-function
+test.o bench.o bench_ntt.o bench_keccak.o bench_keccak_vendor.o bench_core_stages.o: CFLAGS += $(CORE_ASM_DEF)
 test.o: baby-mlkem.c keccakf1600_avx2.h
 bench.o: baby-mlkem.c keccakf1600_avx2.h
 bench_ntt.o: baby-mlkem.c keccakf1600_avx2.h
@@ -206,7 +223,7 @@ $(BENCH_STAGES_TARGET): $(BENCH_STAGES_OBJS)
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(ASFLAGS)
 
 clean:
-	rm -f $(OBJS) $(TARGETS)
+	rm -f $(OBJS) $(CORE_ASM_CLEAN_OBJS) $(TARGETS)
 
 test: $(TARGET)
 	./$(TARGET)

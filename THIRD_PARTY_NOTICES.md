@@ -69,3 +69,36 @@ For XKCP/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s and XKCP/lib/low/KeccakP-
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Fixed-length AVX512VL SHA3-256
+
+The repository-local `sha3_256_1184_avx512vl.S` implementation adapts the
+register-per-lane Keccak round schedule from Intel's AVX512VL implementation
+contributed to liboqs in pull request 2167:
+
+https://github.com/open-quantum-safe/liboqs/blob/3dca9c939c779c58ffa540f3f47ca099a1fa4b94/src/common/sha3/avx512vl_low/KeccakP-1600-AVX512VL.S
+
+baby-mlkem does not link liboqs or an Intel object. The local file specializes
+the absorb and padding path for the 1184-byte ML-KEM-768 public key and narrows
+the single-state round body from YMM to XMM registers. The derived round
+schedule remains covered by Intel's MIT license:
+
+    Copyright (c) 2025 Intel Corporation
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
