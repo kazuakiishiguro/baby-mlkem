@@ -5981,21 +5981,163 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
   sample_ntt_tail_lane2_accum3_parse_avx2(st, tail);
 }
 
+static inline void mlkem_keygen_noise2_matrix2_set_noise_avx2(
+    __m256i st[25], __m256i parity[5], const uint8_t sigma[32],
+    uint8_t nonce) {
+  const __m256i matrix_lanes = _mm256_set_epi64x(-1LL, -1LL, 0, 0);
+
+  for (int word = 0; word < 25; word++) {
+    st[word] = _mm256_and_si256(st[word], matrix_lanes);
+  }
+  for (int column = 0; column < 5; column++) {
+    parity[column] = _mm256_and_si256(parity[column], matrix_lanes);
+  }
+  for (int word = 0; word < 4; word++) {
+    uint64_t seed_word = load64_le(sigma + 8 * word);
+    st[word] = _mm256_or_si256(
+        st[word], _mm256_set_epi64x(0, 0, (long long)seed_word,
+                                    (long long)seed_word));
+  }
+  st[4] = _mm256_or_si256(
+      st[4], _mm256_set_epi64x(
+                 0, 0,
+                 (long long)((uint64_t)(nonce + 1) | (0x1FULL << 8)),
+                 (long long)((uint64_t)nonce | (0x1FULL << 8))));
+  st[16] = _mm256_or_si256(
+      st[16], _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56),
+                                (long long)(0x80ULL << 56)));
+
+  uint64_t seed0 = load64_le(sigma + 0);
+  uint64_t seed1 = load64_le(sigma + 8) ^ (0x80ULL << 56);
+  uint64_t seed2 = load64_le(sigma + 16);
+  uint64_t seed3 = load64_le(sigma + 24);
+  parity[0] = _mm256_or_si256(
+      parity[0], _mm256_set_epi64x(0, 0, (long long)seed0,
+                                   (long long)seed0));
+  parity[1] = _mm256_or_si256(
+      parity[1], _mm256_set_epi64x(0, 0, (long long)seed1,
+                                   (long long)seed1));
+  parity[2] = _mm256_or_si256(
+      parity[2], _mm256_set_epi64x(0, 0, (long long)seed2,
+                                   (long long)seed2));
+  parity[3] = _mm256_or_si256(
+      parity[3], _mm256_set_epi64x(0, 0, (long long)seed3,
+                                   (long long)seed3));
+  parity[4] = _mm256_or_si256(
+      parity[4], _mm256_set_epi64x(
+                     0, 0,
+                     (long long)((uint64_t)(nonce + 1) | (0x1FULL << 8)),
+                     (long long)((uint64_t)nonce | (0x1FULL << 8))));
+}
+
+static MLKEM_NOINLINE void mlkem_keygen_noise2_sample_matrix2_avx2(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 out0,
+    poly256 out1, poly256 shat[K], poly256 ehat[K]) {
+  __m256i st[25];
+  __m256i parity[5];
+  uint64_t stream0[63];
+  uint64_t stream1[63];
+  int16_t *noise[6] = {
+      shat[0], shat[1], shat[2], ehat[0], ehat[1], ehat[2]};
+
+  for (int word = 0; word < 25; word++) {
+    st[word] = _mm256_setzero_si256();
+  }
+  for (int word = 0; word < 4; word++) {
+    uint64_t seed_word = load64_le(rho + 8 * word);
+    st[word] = _mm256_set_epi64x(
+        (long long)seed_word, (long long)seed_word, 0, 0);
+  }
+  st[4] = _mm256_set_epi64x(0x1f0201LL, 0x1f0101LL, 0, 0);
+  st[20] = _mm256_set_epi64x((long long)(0x80ULL << 56),
+                             (long long)(0x80ULL << 56), 0, 0);
+  parity[0] = _mm256_xor_si256(st[0], st[20]);
+  parity[1] = st[1];
+  parity[2] = st[2];
+  parity[3] = st[3];
+  parity[4] = st[4];
+
+  for (int block = 0; block < 3; block++) {
+    int nonce = 2 * block;
+    mlkem_keygen_noise2_matrix2_set_noise_avx2(
+        st, parity, sigma, (uint8_t)nonce);
+    keccakf4_mem_parity(st, parity);
+    for (int word = 0; word < 16; word++) {
+      sample_poly_cbd_eta2_store2_avx2(
+          _mm256_castsi256_si128(st[word]),
+          noise[nonce] + 16 * word, noise[nonce + 1] + 16 * word);
+    }
+    for (int word = 0; word < 21; word++) {
+      __m128i matrix = _mm256_extracti128_si256(st[word], 1);
+      stream0[(size_t)block * 21 + (size_t)word] =
+          (uint64_t)_mm_cvtsi128_si64(matrix);
+      stream1[(size_t)block * 21 + (size_t)word] =
+          (uint64_t)_mm_extract_epi64(matrix, 1);
+    }
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count[2];
+  int16_t *out[2] = {out0, out1};
+  count[0] = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)(const void *)stream0, sizeof(stream0), out0, 0);
+  count[1] = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)(const void *)stream1, sizeof(stream1), out1, 0);
+  for (int lane = 0; lane < 2; lane++) {
+    if (count[lane] >= N) continue;
+    uint64_t scalar_st[25];
+    for (int word = 0; word < 25; word++) {
+      __m128i matrix = _mm256_extracti128_si256(st[word], 1);
+      scalar_st[word] = lane == 0
+                            ? (uint64_t)_mm_cvtsi128_si64(matrix)
+                            : (uint64_t)_mm_extract_epi64(matrix, 1);
+    }
+    while (count[lane] < N) {
+      keccakf(scalar_st);
+      count[lane] = sample_ntt_parse_stream_avx2_ready(
+          (const uint8_t *)(const void *)scalar_st, 168, out[lane],
+          count[lane]);
+    }
+  }
+}
+
+static MLKEM_NOINLINE void mlkem_sample_ntt3_row2_mem_parity_avx2(
+    const uint8_t rho[32], poly256 out0, poly256 out1, poly256 out2) {
+  __m256i st[25];
+  __m256i parity[5];
+  uint64_t stream[3][63];
+
+  for (int word = 0; word < 25; word++) {
+    st[word] = _mm256_setzero_si256();
+  }
+  hash_matrix_x3_init_group(st, rho, 2);
+  parity[0] = _mm256_xor_si256(st[0], st[20]);
+  parity[1] = st[1];
+  parity[2] = st[2];
+  parity[3] = st[3];
+  parity[4] = st[4];
+
+  for (int block = 0; block < 3; block++) {
+    keccakf4_mem_parity(st, parity);
+    hash_matrix_x3_store_block(stream, block, st);
+  }
+
+  sample_ntt_parse_init_avx2();
+  hash_matrix_x3_parse_group(st, stream, out0, out1, out2);
+}
+
 static void mlkem_keygen_matrix_noise_avx2(
     const uint8_t sigma[32], const uint8_t rho[32],
     poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]) {
-  const uint8_t r0[4] = {0, 0, 0, 1};
-  const uint8_t c0[4] = {0, 1, 2, 0};
-  const uint8_t r1[4] = {1, 1, 2, 2};
-  const uint8_t c1[4] = {1, 2, 0, 2};
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
 
-  sample_ntt4(rho, r0, c0, ahat[0][0], ahat[0][1], ahat[0][2],
+  sample_ntt4(rho, row, col, ahat[0][0], ahat[0][1], ahat[0][2],
               ahat[1][0]);
-  mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
-      sigma, rho, ahat[2][1], shat[0], shat[1], shat[2],
-      ehat[0], ehat[1], ehat[2]);
-  sample_ntt4(rho, r1, c1, ahat[1][1], ahat[1][2], ahat[2][0],
-              ahat[2][2]);
+  mlkem_keygen_noise2_sample_matrix2_avx2(
+      sigma, rho, ahat[1][1], ahat[1][2], shat, ehat);
+  mlkem_sample_ntt3_row2_mem_parity_avx2(
+      rho, ahat[2][0], ahat[2][1], ahat[2][2]);
 }
 #endif
 
