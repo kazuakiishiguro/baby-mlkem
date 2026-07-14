@@ -124,6 +124,7 @@ Near-term target selection:
 |---|---|---|
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery path accepted | ZMM handles `l7`..`l5`, YMM handles `l4`, and the existing local YMM lazy tail handles `l3`..`l1`; one final ZMM Barrett pass restores canonical coefficients. GCC/Clang in-place medians improve `2.4952x`/`2.4623x`, and all eight 50k KEM rows win 15/15 under both compilers. It is repository-local intrinsics code with no external object, library, cache, or wire-format dependency; the Montgomery/Harvey arithmetic is inherited from the disclosed local AVX2 design rather than claimed as new mathematics. |
+| Native AVX512 partial forward-NTT boundary | Accepted for GCC and Clang native; AVX2-only unchanged | The fused K=3 consumers now carry the forward transform through `l2` in signed 16-bit Montgomery form and canonicalize once before their unchanged unsigned final `l1`. This removes the old head canonicalization plus two levels of 32-bit widening, reciprocal reduction, and per-butterfly correction. Production-aligned GCC/Clang encryption stage medians improve `1.1303x`/`1.1395x`; decrypt NTT+accum improves `1.0756x`/`1.2593x`. GCC 100k KEM paired medians improve encaps/decaps/roundtrip by `1.0724x`/`1.1137x`/`1.0432x`, all 14/14. No external object, runtime library, cache, or wire-format dependency is added; the Montgomery arithmetic remains attributed to the existing upstream-derived local design. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
 | Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
@@ -5140,6 +5141,89 @@ This follow-up adds no external object, runtime library, cache, or wire-format
 dependency. The four-round lane mapping remains attributed to XKCP; the
 one-D-at-a-time Theta application and cyclic in-place Chi schedules are the
 repository-local implementation work measured here.
+
+### Independent Core Optimization A/B (2026-07-15, lazy partial forward NTT through l2)
+
+The post-x8 profile put `ntt_before_final_l1_avx512()` at `6.30%` self time,
+with about 19.5 million calls in the 500000-iteration workload. The old partial
+transform used the accepted signed 16-bit Montgomery head for `l7` through
+`l4`, immediately canonicalized all 256 coefficients, then processed `l3` and
+`l2` with the legacy unsigned AVX512 butterflies. Those lower butterflies
+widened 16-bit coefficients to 32 bits, multiplied by normal-domain twiddles,
+performed reciprocal reduction, corrected add/sub results modulo `Q`, and
+packed back to 16 bits at every stored boundary.
+
+Commit `d11d728` removes that representation round trip. It splits the first
+two levels from the existing local `ntt_tail_mont_lazy_raw_avx2()` helper, so
+the partial transform now runs the ZMM/YMM Montgomery head, the YMM Montgomery
+`l3` and `l2` levels, and one ZMM signed Barrett canonicalization. The unchanged
+final `l1` consumers still receive their required `[0,Q)` inputs. Six lazy
+levels remain within signed 16-bit range; no public range contract changes.
+
+This is a representation-boundary optimization, not new NTT mathematics. The
+precomputed Montgomery low/high factor arithmetic is part of the already
+disclosed upstream-Kyber-derived local design. Selecting its existing lazy
+path for the partial transform, splitting it before `l1`, and placing the one
+canonicalization at the actual unsigned consumer boundary are repository-local
+integration work. The core calls no vendored Kyber or PQClean arithmetic
+object and adds no runtime library, cross-operation cache, or wire-format
+dependency.
+
+The direct stage gate used CPU 0, two warmups, seven alternating pairs, and
+40000 iterations against `4b84d9f`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=40000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 4b84d9f
+
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=40000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 4b84d9f
+```
+
+Production-aligned direct results:
+
+| Compiler | Stage metric | Baseline avg ns/op | Candidate avg ns/op | Paired median speedup | Wins |
+|---|---|---:|---:|---:|---:|
+| GCC | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512` | 1068.64 | 937.06 | 1.1303x | 7/7 |
+| GCC | `mlkem_core_stage_decrypt_ntt_accum_only` | 1762.77 | 1639.61 | 1.0756x | 7/7 |
+| Clang | `mlkem_core_stage_encrypt_rhat_acc4_fused_scalar_avx512` | 1031.37 | 899.54 | 1.1395x | 7/7 |
+| Clang | `mlkem_core_stage_decrypt_ntt_accum_only` | 575.61 | 456.56 | 1.2593x | 7/7 |
+
+The final GCC KEM confirmation used 100000 iterations, three warmups, and
+fourteen alternating pairs:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 4b84d9f
+```
+
+| KEM metric | GCC paired median speedup | GCC wins | Interpretation |
+|---|---:|---:|---|
+| `mlkem_keygen` | 1.0018x | 10/14 | expected neutral; no partial fused NTT |
+| `mlkem_keygen_core` | 1.0017x | 11/14 | expected neutral |
+| `mlkem_encaps` | 1.0724x | 14/14 | positive |
+| `mlkem_encaps_core` | 1.0249x | 14/14 | positive |
+| `mlkem_decaps` | 1.1137x | 14/14 | positive |
+| `mlkem_decaps_core` | 1.0687x | 14/14 | positive |
+| `mlkem_roundtrip` | 1.0432x | 14/14 | positive |
+| `mlkem_roundtrip_core` | 1.0252x | 14/14 | positive |
+
+An independent Clang confirmation used 30000 iterations, two warmups, and nine
+alternating pairs. Encaps/decaps/roundtrip paired medians improved
+`1.0940x`/`1.1249x`/`1.0479x`, each with 9/9 wins; encaps-core,
+decaps-core, and roundtrip-core improved `1.0244x`, `1.0678x`, and `1.0410x`,
+also 9/9. Keygen stayed neutral as expected.
+
+The exact differential validator compared the old and new partial transforms
+under GCC and Clang over 16384 canonical fixtures, or 4194304 coefficients.
+It included all-zero, all-`Q-1`, alternating-extreme, sequential, and
+deterministic random `[0,Q)` inputs; every output coefficient matched exactly.
+Native Clang/GCC, explicit AVX2-only Clang/GCC, and scalar Clang/GCC tests pass,
+as does GCC native ASan+UBSan. The GCC and Clang AVX2-only `testc`, `benchc`,
+`bench_nttc`, and `bench_core_stagesc` binaries are byte-identical to
+`4b84d9f`.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
