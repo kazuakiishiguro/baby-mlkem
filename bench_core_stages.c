@@ -355,6 +355,7 @@ static void validate_keygen_matrix_noise_tail21_avx2(void);
 static void validate_keygen_noise_ntt_headtail_batch_avx2(void);
 static void validate_keygen_noise_ntt_shat_headtail_encode_avx2(void);
 static void validate_sample_ntt4_scalar_refill_avx2(void);
+static void validate_sample_ntt4_interleaved_parse_avx2(void);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void validate_ntt_lazy_mul_input3_level_batch_avx2(void);
 static void validate_ntt_inv_add3_tail_final_pragma_avx2(void);
@@ -1670,6 +1671,7 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
   validate_sample_ntt4_scalar_refill_avx2();
+  validate_sample_ntt4_interleaved_parse_avx2();
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
   validate_ntt_lazy_mul_input3_level_batch_avx2();
   validate_ntt_inv_add3_tail_final_pragma_avx2();
@@ -3246,6 +3248,147 @@ static void stage_sample_ntt4_init(const uint8_t *seed,
   st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
 }
 
+/* Decode two independent streams before their count-dependent compaction. */
+static MLKEM_NOINLINE void
+stage_sample_ntt_parse2_504_interleaved_avx2_ready(
+    const uint8_t stream0[504], const uint8_t stream1[504],
+    poly256 out0, poly256 out1, int counts[2]) {
+  size_t pos = 0;
+  int count0 = 0;
+  int count1 = 0;
+  const __m256i bound = _mm256_set1_epi16(Q);
+  const __m256i ones = _mm256_set1_epi8(1);
+  const __m256i mask = _mm256_set1_epi16(0x0fff);
+  const __m256i idx8 = _mm256_set_epi8(
+      15, 14, 14, 13, 12, 11, 11, 10,
+       9,  8,  8,  7,  6,  5,  5,  4,
+      11, 10, 10,  9,  8,  7,  7,  6,
+       5,  4,  4,  3,  2,  1,  1,  0);
+
+  while (count0 <= N - 32 && count1 <= N - 32 && pos + 56 <= 504) {
+    __m256i a0, a1, b0, b1;
+    uint32_t good0, good1;
+
+#define STAGE_PARSE_DECODE_48(f0_, f1_, good_, stream_)                       \
+    do {                                                                      \
+      (f0_) = _mm256_loadu_si256(                                             \
+          (const __m256i *)((stream_) + pos));                                \
+      (f1_) = _mm256_loadu_si256(                                             \
+          (const __m256i *)((stream_) + pos + 24));                           \
+      (f0_) = _mm256_permute4x64_epi64((f0_), 0x94);                          \
+      (f1_) = _mm256_permute4x64_epi64((f1_), 0x94);                          \
+      (f0_) = _mm256_shuffle_epi8((f0_), idx8);                               \
+      (f1_) = _mm256_shuffle_epi8((f1_), idx8);                               \
+      __m256i t0_ = _mm256_srli_epi16((f0_), 4);                              \
+      __m256i t1_ = _mm256_srli_epi16((f1_), 4);                              \
+      (f0_) = _mm256_and_si256(                                               \
+          _mm256_blend_epi16((f0_), t0_, 0xaa), mask);                        \
+      (f1_) = _mm256_and_si256(                                               \
+          _mm256_blend_epi16((f1_), t1_, 0xaa), mask);                        \
+      t0_ = _mm256_cmpgt_epi16(bound, (f0_));                                 \
+      t1_ = _mm256_cmpgt_epi16(bound, (f1_));                                 \
+      (good_) = (uint32_t)_mm256_movemask_epi8(                               \
+          _mm256_packs_epi16(t0_, t1_));                                      \
+    } while (0)
+
+    STAGE_PARSE_DECODE_48(a0, a1, good0, stream0);
+    STAGE_PARSE_DECODE_48(b0, b1, good1, stream1);
+
+#undef STAGE_PARSE_DECODE_48
+#define STAGE_PARSE_COMPACT_32(f0_, f1_, good_, out_, count_)                 \
+    do {                                                                      \
+      __m256i p0_ = _mm256_castsi128_si256(_mm_loadl_epi64(                   \
+          (const __m128i *)sample_ntt_parse_idx_avx2[((good_) >> 0) & 0xff]));\
+      __m256i p1_ = _mm256_castsi128_si256(_mm_loadl_epi64(                   \
+          (const __m128i *)sample_ntt_parse_idx_avx2[((good_) >> 8) & 0xff]));\
+      p0_ = _mm256_inserti128_si256(                                          \
+          p0_, _mm_loadl_epi64((const __m128i *)sample_ntt_parse_idx_avx2     \
+                                   [((good_) >> 16) & 0xff]),                 \
+          1);                                                                 \
+      p1_ = _mm256_inserti128_si256(                                          \
+          p1_, _mm_loadl_epi64((const __m128i *)sample_ntt_parse_idx_avx2     \
+                                   [((good_) >> 24) & 0xff]),                 \
+          1);                                                                 \
+      __m256i p2_ = _mm256_add_epi8(p0_, ones);                               \
+      __m256i p3_ = _mm256_add_epi8(p1_, ones);                               \
+      p0_ = _mm256_unpacklo_epi8(p0_, p2_);                                   \
+      p1_ = _mm256_unpacklo_epi8(p1_, p3_);                                   \
+      (f0_) = _mm256_shuffle_epi8((f0_), p0_);                                \
+      (f1_) = _mm256_shuffle_epi8((f1_), p1_);                                \
+      _mm_storeu_si128((__m128i *)((out_) + (count_)),                        \
+                       _mm256_castsi256_si128((f0_)));                         \
+      (count_) += __builtin_popcount(((good_) >> 0) & 0xffu);                 \
+      _mm_storeu_si128((__m128i *)((out_) + (count_)),                        \
+                       _mm256_extracti128_si256((f0_), 1));                    \
+      (count_) += __builtin_popcount(((good_) >> 16) & 0xffu);                \
+      _mm_storeu_si128((__m128i *)((out_) + (count_)),                        \
+                       _mm256_castsi256_si128((f1_)));                         \
+      (count_) += __builtin_popcount(((good_) >> 8) & 0xffu);                 \
+      _mm_storeu_si128((__m128i *)((out_) + (count_)),                        \
+                       _mm256_extracti128_si256((f1_), 1));                    \
+      (count_) += __builtin_popcount(((good_) >> 24) & 0xffu);                \
+    } while (0)
+
+    STAGE_PARSE_COMPACT_32(a0, a1, good0, out0, count0);
+    STAGE_PARSE_COMPACT_32(b0, b1, good1, out1, count1);
+
+#undef STAGE_PARSE_COMPACT_32
+    pos += 48;
+  }
+
+  counts[0] = sample_ntt_parse_stream_avx2_ready(
+      stream0 + pos, 504 - pos, out0, count0);
+  counts[1] = sample_ntt_parse_stream_avx2_ready(
+      stream1 + pos, 504 - pos, out1, count1);
+}
+
+static void stage_sample_ntt_parse4_504_interleaved_avx2_ready(
+    uint8_t stream[4][504], int16_t *outs[4], int counts[4]) {
+  stage_sample_ntt_parse2_504_interleaved_avx2_ready(
+      stream[0], stream[1], outs[0], outs[1], counts + 0);
+  stage_sample_ntt_parse2_504_interleaved_avx2_ready(
+      stream[2], stream[3], outs[2], outs[3], counts + 2);
+}
+
+static void stage_sample_ntt4_interleaved_parse_avx2(
+    const uint8_t *seed, const uint8_t row[4], const uint8_t col[4],
+    poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
+  __m256i st[25];
+  static uint8_t stream[4][504];
+  int16_t *outs[4] = {out0, out1, out2, out3};
+  int count[4];
+  int need_more = 0;
+
+  stage_sample_ntt4_init(seed, row, col, st);
+  for (int block = 0; block < 3; block++) {
+    keccakf4_mem(st);
+    sample_ntt4_store_block(stream, (size_t)block * 168, st);
+  }
+
+  sample_ntt_parse_init_avx2();
+  stage_sample_ntt_parse4_504_interleaved_avx2_ready(stream, outs, count);
+  for (int lane = 0; lane < 4; lane++) {
+    need_more |= count[lane] < N;
+  }
+
+  if (need_more) {
+    uint64_t scalar_st[25];
+    for (int lane = 0; lane < 4; lane++) {
+      if (count[lane] >= N) continue;
+      for (int word = 0; word < 25; word++) {
+        uint64_t words[4];
+        _mm256_storeu_si256((__m256i *)(void *)words, st[word]);
+        scalar_st[word] = words[lane];
+      }
+      while (count[lane] < N) {
+        keccakf(scalar_st);
+        count[lane] = sample_ntt_parse_stream_avx2_ready(
+            (const uint8_t *)(const void *)scalar_st, 168, outs[lane],
+            count[lane]);
+      }
+    }
+  }
+}
 #if !(defined(__AVX512F__))
 static void stage_sample_ntt4_init_seed_words(
     const uint64_t seed_words[4], const uint8_t row[4],
@@ -3335,6 +3478,58 @@ static void stage_prepare_sample_ntt4_streams(void) {
   }
 }
 
+static void validate_sample_ntt4_interleaved_parse_avx2(void) {
+  static const uint8_t rows[2][4] = {{0, 0, 0, 1}, {1, 1, 2, 2}};
+  static const uint8_t cols[2][4] = {{0, 1, 2, 0}, {1, 2, 0, 2}};
+
+  stage_prepare_sample_ntt4_streams();
+  sample_ntt_parse_init_avx2();
+  for (size_t fixture = 0; fixture < STAGE_BENCH_LANES; fixture++) {
+    poly256 got[4];
+    poly256 want[4];
+    int16_t *got_outs[4] = {got[0], got[1], got[2], got[3]};
+    int got_count[4];
+    int want_count[4];
+
+    memset(got, 0, sizeof(got));
+    memset(want, 0, sizeof(want));
+    stage_sample_ntt_parse4_504_interleaved_avx2_ready(
+        stage_tmp_sample_stream[fixture], got_outs, got_count);
+    for (int lane = 0; lane < 4; lane++) {
+      want_count[lane] = sample_ntt_parse_stream_avx2_ready(
+          stage_tmp_sample_stream[fixture][lane], 504, want[lane], 0);
+      if (got_count[lane] != want_count[lane] ||
+          memcmp(got[lane], want[lane],
+                 (size_t)want_count[lane] * sizeof(int16_t)) != 0) {
+        fprintf(stderr,
+                "sample_ntt4 interleaved parser mismatch at %zu,%d\n",
+                fixture, lane);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+
+  for (size_t fixture = 0; fixture < STAGE_BENCH_LANES; fixture++) {
+    for (int batch = 0; batch < 2; batch++) {
+      poly256 got[4];
+      poly256 want[4];
+      stage_sample_ntt4_interleaved_parse_avx2(
+          stage_rho[fixture], rows[batch], cols[batch], got[0], got[1],
+          got[2], got[3]);
+      for (int lane = 0; lane < 4; lane++) {
+        sample_ntt(stage_rho[fixture], rows[batch][lane], cols[batch][lane],
+                   want[lane]);
+        if (memcmp(got[lane], want[lane], sizeof(poly256)) != 0) {
+          fprintf(stderr,
+                  "sample_ntt4 interleaved full mismatch at %zu,%d,%d\n",
+                  fixture, batch, lane);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static uint64_t bench_sample_ntt4_init_only(size_t iters) {
   const uint8_t row[4] = {0, 0, 0, 1};
   const uint8_t col[4] = {0, 1, 2, 0};
@@ -3365,6 +3560,30 @@ static uint64_t bench_sample_ntt4_full_raw(size_t iters) {
     sample_ntt4(stage_rho[lane], row, col,
                 stage_tmp_ahat[lane][0][0], stage_tmp_ahat[lane][0][1],
                 stage_tmp_ahat[lane][0][2], stage_tmp_ahat[lane][1][0]);
+    switch (i & 3u) {
+      case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
+      case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
+      case 2: acc ^= (uint16_t)stage_tmp_ahat[lane][0][2][i & 255u]; break;
+      default: acc ^= (uint16_t)stage_tmp_ahat[lane][1][0][i & 255u]; break;
+    }
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_interleaved_parse_full_raw(size_t iters) {
+  const uint8_t row[4] = {0, 0, 0, 1};
+  const uint8_t col[4] = {0, 1, 2, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_sample_ntt4_interleaved_parse_avx2(
+        stage_rho[lane], row, col, stage_tmp_ahat[lane][0][0],
+        stage_tmp_ahat[lane][0][1], stage_tmp_ahat[lane][0][2],
+        stage_tmp_ahat[lane][1][0]);
     switch (i & 3u) {
       case 0: acc ^= (uint16_t)stage_tmp_ahat[lane][0][0][i & 255u]; break;
       case 1: acc ^= (uint16_t)stage_tmp_ahat[lane][0][1][i & 255u]; break;
@@ -4156,6 +4375,30 @@ static uint64_t bench_sample_ntt4_parse_504(size_t iters) {
         stage_tmp_ahat[lane][1][0], 0);
     acc ^= (uint64_t)(count0 + 3 * count1 + 5 * count2 + 7 * count3);
     acc ^= (uint16_t)stage_tmp_ahat[lane][(i / K) % K][i % K][0];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_sample_ntt4_parse_504_interleaved(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  stage_prepare_sample_ntt4_streams();
+  sample_ntt_parse_init_avx2();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    int16_t *outs[4] = {stage_tmp_ahat[lane][0][0],
+                        stage_tmp_ahat[lane][0][1],
+                        stage_tmp_ahat[lane][0][2],
+                        stage_tmp_ahat[lane][1][0]};
+    int count[4];
+    stage_sample_ntt_parse4_504_interleaved_avx2_ready(
+        stage_tmp_sample_stream[lane], outs, count);
+    acc ^= (uint64_t)(count[0] + 3 * count[1] + 5 * count[2] +
+                      7 * count[3]);
+    acc ^= (uint16_t)outs[i & 3u][0];
   }
   t1 = now_ns();
   bench_stage_sink ^= acc;
@@ -8890,6 +9133,9 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_sample_ntt4_full_raw",
                bench_sample_ntt4_full_raw(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw",
+               bench_sample_ntt4_interleaved_parse_full_raw(iters),
+               iters);
   print_metric("mlkem_core_stage_sample_ntt4_scalar_refill_full_raw",
                bench_sample_ntt4_scalar_refill_full_raw(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_full_raw_batch1",
@@ -8924,6 +9170,9 @@ int main(int argc, char **argv) {
                bench_sample_ntt4_lane_store_keccak_store3(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_parse_504",
                bench_sample_ntt4_parse_504(iters), iters);
+  print_metric("mlkem_core_stage_sample_ntt4_parse_504_interleaved",
+               bench_sample_ntt4_parse_504_interleaved(iters),
+               iters);
   print_metric("mlkem_core_stage_sample_ntt4_common3_step",
                bench_sample_ntt4_common3_step(iters), iters);
   print_metric("mlkem_core_stage_sample_ntt4_refill_keccak_store1",
