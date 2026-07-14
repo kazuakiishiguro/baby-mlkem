@@ -5264,10 +5264,14 @@ static void stage_sample_ntt8_sparse_first_avx512(
 
   stage_sample_ntt8_sparse_first_init(seed, st);
   sample_ntt8_store_block(stream, 0, st);
+#if defined(__GNUC__) && !defined(__clang__)
+  keccakf8_2_store_blocks(st, stream);
+#else
   for (int block = 1; block < 3; block++) {
     keccakf8(st);
     sample_ntt8_store_block(stream, (size_t)block * 168, st);
   }
+#endif
 
   sample_ntt_parse_init_avx2();
   int count[8];
@@ -6882,6 +6886,32 @@ static void validate_sample_ntt8_sparse_first_avx512(void) {
     stage_sample_ntt8_init(stage_rho[fixture], base_st);
     keccakf8(base_st);
     stage_sample_ntt8_sparse_first_init(stage_rho[fixture], got_st);
+#if defined(__GNUC__) && !defined(__clang__)
+    {
+      __m512i pair_base[25];
+      __m512i pair_got[25];
+      __m512i pair_only[25];
+      uint8_t base_stream[8][504] = {{0}};
+      uint8_t got_stream[8][504] = {{0}};
+      memcpy(pair_base, base_st, sizeof(pair_base));
+      memcpy(pair_got, got_st, sizeof(pair_got));
+      memcpy(pair_only, got_st, sizeof(pair_only));
+      for (int block = 1; block < 3; block++) {
+        keccakf8(pair_base);
+        sample_ntt8_store_block(base_stream, (size_t)block * 168,
+                                pair_base);
+      }
+      keccakf8_2(pair_only);
+      keccakf8_2_store_blocks(pair_got, got_stream);
+      if (memcmp(pair_only, pair_base, sizeof(pair_base)) != 0 ||
+          memcmp(pair_got, pair_base, sizeof(pair_base)) != 0 ||
+          memcmp(got_stream, base_stream, sizeof(base_stream)) != 0) {
+        fprintf(stderr, "sample_ntt8 persistent-pair mismatch at %zu\n",
+                fixture);
+        exit(EXIT_FAILURE);
+      }
+    }
+#endif
     for (int checkpoint = 1; checkpoint <= 3; checkpoint++) {
       if (memcmp(got_st, base_st, sizeof(base_st)) != 0) {
         fprintf(stderr,
@@ -7488,9 +7518,13 @@ static uint64_t bench_sample_ntt8_sparse_first_keccak3_only(size_t iters) {
     __m512i st[25];
     uint64_t words[8];
     stage_sample_ntt8_sparse_first_init(stage_rho[lane], st);
+#if defined(__GNUC__) && !defined(__clang__)
+    keccakf8_2(st);
+#else
     for (int block = 1; block < 3; block++) {
       keccakf8(st);
     }
+#endif
     _mm512_storeu_si512((void *)words, st[(i * 7u) % 25u]);
     acc ^= words[i & 7u];
   }
@@ -7529,10 +7563,14 @@ static uint64_t bench_sample_ntt8_sparse_first_keccak_store3(size_t iters) {
     __m512i st[25];
     stage_sample_ntt8_sparse_first_init(stage_rho[lane], st);
     sample_ntt8_store_block(stream, 0, st);
+#if defined(__GNUC__) && !defined(__clang__)
+    keccakf8_2_store_blocks(st, stream);
+#else
     for (int block = 1; block < 3; block++) {
       keccakf8(st);
       sample_ntt8_store_block(stream, (size_t)block * 168, st);
     }
+#endif
     acc ^= stream[i & 7u][(i * 17u) % 504u];
   }
   t1 = now_ns();
