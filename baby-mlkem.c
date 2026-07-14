@@ -865,6 +865,53 @@ static void keccakf8(__m512i st[25]) {
   st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
 }
 
+/* Fresh x8 SHAKE states share the seed but differ in suffix and rate padding. */
+static MLKEM_NOINLINE void keccakf8_sparse_32(
+    const uint8_t seed[32], const uint8_t *nonce, __m512i *st) {
+  __m512i Ba, Be, Bi, Bo, Bu, D;
+  __m512i zero = _mm512_setzero_si512();
+  __m512i ba = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  __m512i be = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  __m512i bi = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  __m512i bo = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  __m512i bu, me = zero, sa = zero;
+  __m512i ga = zero, ge = zero, gi = zero, go = zero, gu = zero;
+  __m512i ka = zero, ke = zero, ki = zero, ko = zero, ku = zero;
+  __m512i ma = zero, mi = zero, mo = zero, mu = zero;
+  __m512i se = zero, si = zero, so = zero, su = zero;
+
+  if (nonce != NULL) {
+    bu = _mm512_set_epi64(
+        (long long)((uint64_t)nonce[7] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[6] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[5] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[4] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+        (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+    me = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  } else {
+    bu = _mm512_set_epi64(
+        0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+        0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+    sa = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  }
+
+  for (int round = 0; round < 24; round += 4) {
+    MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+  }
+
+  st[0] = ba;   st[1] = be;   st[2] = bi;   st[3] = bo;
+  st[4] = bu;   st[5] = ga;   st[6] = ge;   st[7] = gi;
+  st[8] = go;   st[9] = gu;   st[10] = ka;  st[11] = ke;
+  st[12] = ki;  st[13] = ko;  st[14] = ku;  st[15] = ma;
+  if (nonce == NULL) {
+    st[16] = me;  st[17] = mi;  st[18] = mo;  st[19] = mu;
+    st[20] = sa;  st[21] = se;  st[22] = si;  st[23] = so;  st[24] = su;
+  }
+}
+
 /* Diagnostic upper bound for keeping the x8 state live across a permutation
  * boundary. Production still needs to emit the rate between permutations. */
 static void keccakf8_2(__m512i st[25]) {
@@ -3896,7 +3943,7 @@ static void sample_poly_cbd_eta2x6_state_avx512(const __m512i st[25],
   }
 }
 
-static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[25],
+static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[16],
                                                 poly256 out0, poly256 out1,
                                                 poly256 out2, poly256 out3,
                                                 poly256 out4, poly256 out5,
@@ -3982,9 +4029,14 @@ static void mlkem_prf_cbd_eta2x7_32(const uint8_t seed[32],
                                     poly256 out2, poly256 out3,
                                     poly256 out4, poly256 out5,
                                     poly256 out6) {
+#if defined(__GNUC__) && !defined(__clang__)
+  __m512i st[16];
+  keccakf8_sparse_32(seed, nonce, st);
+#else
   __m512i st[25];
   mlkem_prf_cbd_eta2x8_init_32(seed, nonce, st);
   keccakf8(st);
+#endif
   sample_poly_cbd_eta2x7_state_avx512(st, out0, out1, out2, out3,
                                       out4, out5, out6);
 }
@@ -4578,197 +4630,6 @@ static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
                          stream[6] + off, stream[7] + off, st);
 }
 
-/* GCC keeps x8 Keccak out of line, so fuse initialization with round 0.
- * Clang auto-inlines the generic path and keeps the original schedule below. */
-#if defined(__GNUC__) && !defined(__clang__)
-static MLKEM_ALWAYS_INLINE void sample_ntt8_sparse_first_init(
-    const uint8_t *seed, __m512i st[25]) {
-  __m512i a0 = _mm512_set1_epi64((long long)load64_le(seed + 0));
-  __m512i a1 = _mm512_set1_epi64((long long)load64_le(seed + 8));
-  __m512i a2 = _mm512_set1_epi64((long long)load64_le(seed + 16));
-  __m512i a3 = _mm512_set1_epi64((long long)load64_le(seed + 24));
-  __m512i a4 = _mm512_set_epi64(
-      0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
-      0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
-  __m512i a5, a6, a7, a8, a9;
-  __m512i a10, a11, a12, a13, a14;
-  __m512i a15, a16, a17, a18, a19;
-  __m512i a20 = _mm512_set1_epi64((long long)(0x80ULL << 56));
-  __m512i a21, a22, a23, a24;
-  __m512i c0 = _mm512_xor_si512(a0, a20);
-  __m512i c1 = a1;
-  __m512i c2 = a2;
-  __m512i c3 = a3;
-  __m512i c4 = a4;
-  __m512i d0 = _mm512_xor_si512(c4, rotl64x8(c1, 1));
-  __m512i d1 = _mm512_xor_si512(c0, rotl64x8(c2, 1));
-  __m512i d2 = _mm512_xor_si512(c1, rotl64x8(c3, 1));
-  __m512i d3 = _mm512_xor_si512(c2, rotl64x8(c4, 1));
-  __m512i d4 = _mm512_xor_si512(c3, rotl64x8(c0, 1));
-
-  /* Round 0 consumes only lanes 0..4 and 20; all other inputs are zero. */
-#define CHIX8(x, y, z) _mm512_ternarylogic_epi64((x), (y), (z), 0xd2)
-  __m512i b0 = rotl64x8(_mm512_xor_si512(a3, d3), 28);
-  __m512i b1 = rotl64x8(d4, 20);
-  __m512i b2 = rotl64x8(d0, 3);
-  __m512i b3 = rotl64x8(d1, 45);
-  __m512i b4 = rotl64x8(d2, 61);
-  a5 = CHIX8(b0, b1, b2);
-  a6 = CHIX8(b1, b2, b3);
-  a7 = CHIX8(b2, b3, b4);
-  a8 = CHIX8(b3, b4, b0);
-  a9 = CHIX8(b4, b0, b1);
-
-  b0 = rotl64x8(_mm512_xor_si512(a1, d1), 1);
-  b1 = rotl64x8(d2, 6);
-  b2 = rotl64x8(d3, 25);
-  b3 = rotl64x8(d4, 8);
-  b4 = rotl64x8(_mm512_xor_si512(a20, d0), 18);
-  a10 = CHIX8(b0, b1, b2);
-  a11 = CHIX8(b1, b2, b3);
-  a12 = CHIX8(b2, b3, b4);
-  a13 = CHIX8(b3, b4, b0);
-  a14 = CHIX8(b4, b0, b1);
-
-  b0 = rotl64x8(_mm512_xor_si512(a4, d4), 27);
-  b1 = rotl64x8(d0, 36);
-  b2 = rotl64x8(d1, 10);
-  b3 = rotl64x8(d2, 15);
-  b4 = rotl64x8(d3, 56);
-  a15 = CHIX8(b0, b1, b2);
-  a16 = CHIX8(b1, b2, b3);
-  a17 = CHIX8(b2, b3, b4);
-  a18 = CHIX8(b3, b4, b0);
-  a19 = CHIX8(b4, b0, b1);
-
-  b0 = rotl64x8(_mm512_xor_si512(a2, d2), 62);
-  b1 = rotl64x8(d3, 55);
-  b2 = rotl64x8(d4, 39);
-  b3 = rotl64x8(d0, 41);
-  b4 = rotl64x8(d1, 2);
-  a20 = CHIX8(b0, b1, b2);
-  a21 = CHIX8(b1, b2, b3);
-  a22 = CHIX8(b2, b3, b4);
-  a23 = CHIX8(b3, b4, b0);
-  a24 = CHIX8(b4, b0, b1);
-
-  b0 = _mm512_xor_si512(a0, d0);
-  b1 = rotl64x8(d1, 44);
-  b2 = rotl64x8(d2, 43);
-  b3 = rotl64x8(d3, 21);
-  b4 = rotl64x8(d4, 14);
-  a0 = _mm512_xor_si512(CHIX8(b0, b1, b2),
-                        _mm512_set1_epi64((long long)rc[0]));
-  a1 = CHIX8(b1, b2, b3);
-  a2 = CHIX8(b2, b3, b4);
-  a3 = CHIX8(b3, b4, b0);
-  a4 = CHIX8(b4, b0, b1);
-#undef CHIX8
-
-  for (int round = 1; round < 24; round++) {
-    c0 = _mm512_xor_si512(
-        _mm512_xor_si512(_mm512_xor_si512(a0, a5),
-                         _mm512_xor_si512(a10, a15)), a20);
-    c1 = _mm512_xor_si512(
-        _mm512_xor_si512(_mm512_xor_si512(a1, a6),
-                         _mm512_xor_si512(a11, a16)), a21);
-    c2 = _mm512_xor_si512(
-        _mm512_xor_si512(_mm512_xor_si512(a2, a7),
-                         _mm512_xor_si512(a12, a17)), a22);
-    c3 = _mm512_xor_si512(
-        _mm512_xor_si512(_mm512_xor_si512(a3, a8),
-                         _mm512_xor_si512(a13, a18)), a23);
-    c4 = _mm512_xor_si512(
-        _mm512_xor_si512(_mm512_xor_si512(a4, a9),
-                         _mm512_xor_si512(a14, a19)), a24);
-    d0 = _mm512_xor_si512(c4, rotl64x8(c1, 1));
-    d1 = _mm512_xor_si512(c0, rotl64x8(c2, 1));
-    d2 = _mm512_xor_si512(c1, rotl64x8(c3, 1));
-    d3 = _mm512_xor_si512(c2, rotl64x8(c4, 1));
-    d4 = _mm512_xor_si512(c3, rotl64x8(c0, 1));
-
-    a0 = _mm512_xor_si512(a0, d0);   a5 = _mm512_xor_si512(a5, d0);
-    a10 = _mm512_xor_si512(a10, d0); a15 = _mm512_xor_si512(a15, d0);
-    a20 = _mm512_xor_si512(a20, d0);
-    a1 = _mm512_xor_si512(a1, d1);   a6 = _mm512_xor_si512(a6, d1);
-    a11 = _mm512_xor_si512(a11, d1); a16 = _mm512_xor_si512(a16, d1);
-    a21 = _mm512_xor_si512(a21, d1);
-    a2 = _mm512_xor_si512(a2, d2);   a7 = _mm512_xor_si512(a7, d2);
-    a12 = _mm512_xor_si512(a12, d2); a17 = _mm512_xor_si512(a17, d2);
-    a22 = _mm512_xor_si512(a22, d2);
-    a3 = _mm512_xor_si512(a3, d3);   a8 = _mm512_xor_si512(a8, d3);
-    a13 = _mm512_xor_si512(a13, d3); a18 = _mm512_xor_si512(a18, d3);
-    a23 = _mm512_xor_si512(a23, d3);
-    a4 = _mm512_xor_si512(a4, d4);   a9 = _mm512_xor_si512(a9, d4);
-    a14 = _mm512_xor_si512(a14, d4); a19 = _mm512_xor_si512(a19, d4);
-    a24 = _mm512_xor_si512(a24, d4);
-
-    b0 = a0;
-    b1 = rotl64x8(a6, 44);
-    b2 = rotl64x8(a12, 43);
-    b3 = rotl64x8(a18, 21);
-    b4 = rotl64x8(a24, 14);
-    __m512i b5 = rotl64x8(a3, 28);
-    __m512i b6 = rotl64x8(a9, 20);
-    __m512i b7 = rotl64x8(a10, 3);
-    __m512i b8 = rotl64x8(a16, 45);
-    __m512i b9 = rotl64x8(a22, 61);
-    __m512i b10 = rotl64x8(a1, 1);
-    __m512i b11 = rotl64x8(a7, 6);
-    __m512i b12 = rotl64x8(a13, 25);
-    __m512i b13 = rotl64x8(a19, 8);
-    __m512i b14 = rotl64x8(a20, 18);
-    __m512i b15 = rotl64x8(a4, 27);
-    __m512i b16 = rotl64x8(a5, 36);
-    __m512i b17 = rotl64x8(a11, 10);
-    __m512i b18 = rotl64x8(a17, 15);
-    __m512i b19 = rotl64x8(a23, 56);
-    __m512i b20 = rotl64x8(a2, 62);
-    __m512i b21 = rotl64x8(a8, 55);
-    __m512i b22 = rotl64x8(a14, 39);
-    __m512i b23 = rotl64x8(a15, 41);
-    __m512i b24 = rotl64x8(a21, 2);
-
-#define CHIX8(x, y, z) _mm512_ternarylogic_epi64((x), (y), (z), 0xd2)
-    a0 = CHIX8(b0, b1, b2);
-    a1 = CHIX8(b1, b2, b3);
-    a2 = CHIX8(b2, b3, b4);
-    a3 = CHIX8(b3, b4, b0);
-    a4 = CHIX8(b4, b0, b1);
-    a5 = CHIX8(b5, b6, b7);
-    a6 = CHIX8(b6, b7, b8);
-    a7 = CHIX8(b7, b8, b9);
-    a8 = CHIX8(b8, b9, b5);
-    a9 = CHIX8(b9, b5, b6);
-    a10 = CHIX8(b10, b11, b12);
-    a11 = CHIX8(b11, b12, b13);
-    a12 = CHIX8(b12, b13, b14);
-    a13 = CHIX8(b13, b14, b10);
-    a14 = CHIX8(b14, b10, b11);
-    a15 = CHIX8(b15, b16, b17);
-    a16 = CHIX8(b16, b17, b18);
-    a17 = CHIX8(b17, b18, b19);
-    a18 = CHIX8(b18, b19, b15);
-    a19 = CHIX8(b19, b15, b16);
-    a20 = CHIX8(b20, b21, b22);
-    a21 = CHIX8(b21, b22, b23);
-    a22 = CHIX8(b22, b23, b24);
-    a23 = CHIX8(b23, b24, b20);
-    a24 = CHIX8(b24, b20, b21);
-#undef CHIX8
-
-    a0 = _mm512_xor_si512(a0, _mm512_set1_epi64((long long)rc[round]));
-  }
-
-  st[0] = a0;    st[1] = a1;    st[2] = a2;    st[3] = a3;    st[4] = a4;
-  st[5] = a5;    st[6] = a6;    st[7] = a7;    st[8] = a8;    st[9] = a9;
-  st[10] = a10;  st[11] = a11;  st[12] = a12;  st[13] = a13;  st[14] = a14;
-  st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
-  st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
-}
-
-#endif
-
 static void sample_ntt8_matrix(const uint8_t *seed,
                                poly256 out0,
                                poly256 out1,
@@ -4783,7 +4644,7 @@ static void sample_ntt8_matrix(const uint8_t *seed,
   int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
 
 #if defined(__GNUC__) && !defined(__clang__)
-  sample_ntt8_sparse_first_init(seed, st);
+  keccakf8_sparse_32(seed, NULL, st);
   sample_ntt8_store_block(stream, 0, st);
   keccakf8_2_store_blocks(st, stream);
 #else
