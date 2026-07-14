@@ -157,6 +157,7 @@ Near-term target selection:
 | Broad lazy/signed range contract | Full forward and inverse NTTs accepted; producer boundary still open only end-to-end | The forward transform removes stage-local 32-bit reductions, while the inverse proves a narrower contract: reduce only sum branches per level and keep difference products in Montgomery lanes. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins sampling, the transform, and accumulation together. |
 | AVX2 four-output K=3 encryption accumulation | Accepted for non-AVX512 encryption | One centered `rhat` load feeds all three `u` rows and `v`; `vpmaddwd` computes even/odd and cross terms with a proved signed-32-bit reduction range. Eleven-pair A/B improves cached and uncached K-PKE medians by `1.0165x` and `1.0120x`; full encapsulation improves `1.0171x` with 11/11 wins. No external object, factor cache, or wire-format change is used. |
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; Clang keeps scalar fused-final | The final NTT l1 emits 32 centered coefficients directly into three ZMM `rhat` vectors shared by all three `u` rows and `v`; 16 base pairs are accumulated and exactly reduced per block. GCC high-iteration paired medians improve `encaps`/`decaps`/`roundtrip_core` by `1.0030x`/`1.0042x`/`1.0020x`. The Clang trial regressed cached encapsulation to `0.9962x`, so final Clang and GCC AVX2-only binaries remain byte-identical to baseline. |
+| Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
@@ -5224,6 +5225,62 @@ Native Clang/GCC, explicit AVX2-only Clang/GCC, and scalar Clang/GCC tests pass,
 as does GCC native ASan+UBSan. The GCC and Clang AVX2-only `testc`, `benchc`,
 `bench_nttc`, and `bench_core_stagesc` binaries are byte-identical to
 `4b84d9f`.
+
+### Independent Core Optimization Diagnostic (2026-07-15, native one-output decrypt SIMD accumulation)
+
+The post-partial-NTT profile left decrypt-side K=3 accumulation inside the
+large `mlkem_decaps()` self-time bucket. A compiler comparison made the local
+opportunity look unusually strong: GCC measured
+`mlkem_core_stage_decrypt_ntt_accum_only` at about 1639 ns, while Clang needed
+about 457 ns for the same scalar fused-final path. The diagnostic therefore
+reused the already proved encryption `vpmaddwd` arithmetic for the one-output
+decrypt product.
+
+The ZMM form processed 32 final-NTT coefficients and sixteen base pairs per
+block. It centered the three transformed `u` vectors, shared them across the
+even, odd, and cross products, and used the existing exact signed-32-bit K=3
+reciprocal reduction. Against `4ed4fd1`, CPU 0, two warmups, seven alternating
+pairs, and 40000 stage iterations produced:
+
+| ZMM stage metric | Paired median speedup | Wins |
+|---|---:|---:|
+| `mlkem_core_stage_decrypt_ntt_accum_only` | 3.0171x | 7/7 |
+| `mlkem_core_stage_decrypt_ntt_accum_recover` | 3.3146x | 7/7 |
+| `mlkem_core_stage_kpke_decrypt_cached` | 3.0684x | 7/7 |
+| `mlkem_core_stage_kpke_decrypt_uncached` | 3.0335x | 7/7 |
+
+That direct result did not survive complete KEM integration. With 30000
+iterations, two warmups, and nine alternating pairs, the inline canonical ZMM
+form put decaps/decaps-core at `0.9836x`/`0.9905x`, both 0/9. A GCC-only
+noinline boundary reduced caller expansion but made those medians
+`0.9801x`/`0.9794x`, again 0/9.
+
+A second ZMM form kept the partial forward NTT lazy through `l2`, completed
+`l1` with 16-bit Montgomery factors, and canonicalized plus centered each
+32-coefficient result in registers before accumulation. An initial raw-Barrett
+version was correctly rejected by the adversarial validator: on an all-`Q-1`
+fixture its output was modulo-equivalent but remained in `[10,3317]` rather
+than the required centered range. The corrected form passed 8192 old-vs-new
+canonical-input fixtures exactly. It removed the clear KEM regression, but did
+not create a gain: decaps was `0.9971x` with 2/9 wins and decaps-core was
+`1.0004x` with 6/9 wins.
+
+The YMM follow-up tested whether AVX512 width or transition pressure caused the
+integration failure. It used sixteen final-NTT coefficients, eight base pairs,
+and the existing AVX2 exact reduction. Its direct stage remained strong:
+decrypt NTT+accum improved `2.6688x`, cached K-PKE decrypt `2.7237x`, and both
+won 7/7. Its output also matched the old scalar path over the same 8192
+canonical fixtures. Complete KEM results were worse, however: inline
+decaps/decaps-core ended at `0.9531x`/`0.9665x`, and noinline ended at
+`0.9514x`/`0.9639x`, all 0/9.
+
+Decision: keep the scalar native one-output decrypt accumulation. The exact
+cause of the direct/integrated inversion is not isolated; LTO code shape,
+front-end footprint, and SIMD frequency effects are plausible contributors,
+but that is an inference rather than a measured attribution. The decisive
+evidence is that every complete-KEM form is neutral or negative despite large
+direct-stage wins. No candidate source is retained, and no external object,
+cache, or wire-format change was involved.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
