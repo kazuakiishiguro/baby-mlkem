@@ -133,6 +133,7 @@ Near-term target selection:
 | Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up completed | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The live GCC AVX512 x8 follow-up below confirms the specialization on the real path. |
 | Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
 | Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now maps directly to the AVX512F immediate rotate intrinsic instead of expressing each rotation as two shifts plus OR. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15, including keygen/encaps/decaps/roundtrip-core at `1.0711x`/`1.0449x`/`1.0295x`/`1.0758x`. Clang native and GCC AVX2-only binaries remain byte-identical to baseline. |
+| Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
 | Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Mixed ETA2/matrix-tail x4 permutations | Live keygen, cached-encrypt, and uncached-encrypt paths accepted; generic x2 closed | The generic x2 helper was locally faster but is dead-code eliminated from current K=3 keygen, so its attempted switch was reverted. Production now reuses `keccakf4_mem()` in the live keygen tail21 and uncached-encrypt tail co-schedules and in the cached x3 PRF/CBD helper; x3 stays noinline to avoid caller-layout regressions. Production-only paired medians improved keygen `1.0104x`, uncached K-PKE `1.0053x`, cached encapsulation `1.0120x`, and complete roundtrip `1.0075x`; final roundtrip text shrank 2296 bytes. |
@@ -4598,6 +4599,15 @@ It remains narrowly first, followed by prepared-public encryption at 14.87%,
 the fixed 1184-byte public-key hash at 12.66%, AVX512 forward-NTT heads at
 9.59%, and the single-state AVX2 Keccak permutation at 9.31%. The full accepted
 profile is `/tmp/baby-mlkem-gprof.3BAQ7C/gprof.txt`.
+
+The analogous explicit AVX512VL x4 rotate spelling was rejected. Unlike its
+512-bit behavior, GCC 13 already compiles the old 256-bit shift/OR expression
+to one `vprorq`. A seven-pair stage A/B against `03677b3` kept direct x4
+three-permutation Keccak at `1.0005x` and the complete x4 sampler at only
+`1.0033x`, while the changed inline shape put uncached K-PKE encryption at
+`0.9906x`, complete K-PKE keygen at `0.9887x`, and public preparation at
+`0.9914x`. The source experiment was reverted; the explicit intrinsic is not
+an optimization when the compiler has already selected the same instruction.
 
 This is repository-local ISA selection, not an imported permutation schedule.
 It adds no external object, library, precomputed table, cross-operation cache,
