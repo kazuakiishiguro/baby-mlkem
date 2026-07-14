@@ -35,6 +35,12 @@ the Keccak Team implementation literature, but production does not compile,
 link, or call the reference KeccakP times4 object. The separate vendor benchmark
 is reference-only.
 
+The cold non-AVX512 AVX2 public-key preparation schedule is also
+repository-local. It co-schedules the nine serial `H(pk)` permutation
+steps with three three-lane matrix rows in the existing x4 permutation.
+This is a core dataflow change, not a benchmark-cache optimization, and it adds
+no external object or library dependency.
+
 The repository still keeps in-tree comparator backends. Set
 `AVX2_BACKEND=upstream` to use the vendored upstream Kyber AVX2 sources under
 `include/kyber_upstream/avx2`, or `AVX2_BACKEND=pqclean` to use the vendored
@@ -61,28 +67,28 @@ RUNS=9 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
 
 | Metric | Avg ns/op | Median ns/op | Readout |
 |---|---:|---:|---|
-| `mlkem_core_stage_kpke_encrypt_uncached` | 3972.16 | 3912.32 | largest integrated cache-miss encryption row |
-| `mlkem_core_stage_kpke_keygen_full` | 3777.92 | 3770.09 | keygen still dominated by matrix sampling plus six NTTs |
-| `mlkem_core_stage_kpke_prepare_public_no_cache` | 4151.51 | 4044.26 | public-key d12 decode + matrix sampling + H(pk) |
-| `mlkem_core_stage_sample_matrix` | 2656.90 | 2632.53 | largest standalone public-work target |
-| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2702.51 | 2686.46 | seed word reuse is a rejected sampler-neighbor check |
-| `mlkem_core_stage_kpke_encrypt_cached` | 1702.59 | 1620.14 | cached encapsulation arithmetic/noise target |
-| `mlkem_core_stage_keygen_noise_ntt` | 1215.64 | 1214.95 | keygen PRF/CBD plus six forward NTTs |
-| `mlkem_core_stage_keygen_noise_ntt_encode` | 826.47 | 825.94 | six forward NTTs plus secret d12 encode |
-| `mlkem_core_stage_encrypt_noise_lazy` | 1021.08 | 975.76 | production-aligned encrypt PRF/CBD plus lazy r NTT |
-| `mlkem_core_stage_encrypt_accum_inv` | 937.54 | 936.31 | K=3 accumulation plus production 16-bit inverse-add |
-| `mlkem_core_stage_encrypt_inv_add_u_raw` | 311.94 | 311.77 | production 16-bit inverse-add across the three u rows |
-| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 583.41 | 583.54 | legacy three-polynomial level batching is slower than production |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 326.31 | 325.83 | legacy 32-bit tail/final diagnostic; no longer a production target |
-| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 339.12 | 336.37 | legacy level-by-level three-u tail/final batching is rejected |
-| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3` | 783.20 | 783.08 | production x4 sampler Keccak/state/store cost |
-| `mlkem_core_stage_sample_ntt4_init_only` | 6.35 | 6.38 | x4 sampler initialization is too small to be the next target |
-| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only` | 768.09 | 767.87 | production x4 sampler Keccak permutations dominate stream setup |
-| `mlkem_core_stage_sample_ntt4_parse_504` | 117.23 | 117.05 | parser bookkeeping is not the main sampler cost |
-| `mlkem_core_stage_sample_ntt4_full_raw` | 892.75 | 892.45 | complete production x4 sampler including rejection parsing |
-| `mlkem_core_stage_keygen_accum_only` | 450.66 | 439.15 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
-| `mlkem_core_stage_keygen_add_only` | 202.16 | 201.86 | vector add is smaller than accumulation and NTT work |
-| `mlkem_core_stage_ciphertext_compress_encode` | 50.28 | 50.20 | d10/d4 packing is too small for the next target |
+| `mlkem_core_stage_kpke_encrypt_uncached` | 3962.13 | 3944.19 | largest integrated cache-miss encryption row |
+| `mlkem_core_stage_kpke_keygen_full` | 3819.38 | 3810.65 | keygen still dominated by matrix sampling plus six NTTs |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 2795.19 | 2791.94 | d12 decode, matrix sampling, and H(pk) now share the matrix x4 permutations |
+| `mlkem_core_stage_sample_matrix` | 2653.15 | 2652.54 | largest standalone public-work target |
+| `mlkem_core_stage_sample_matrix_seed_init_hoist` | 2710.63 | 2710.48 | seed word reuse is a rejected sampler-neighbor check |
+| `mlkem_core_stage_kpke_encrypt_cached` | 1619.41 | 1607.74 | cached encapsulation arithmetic/noise target |
+| `mlkem_core_stage_keygen_noise_ntt` | 1226.99 | 1227.15 | keygen PRF/CBD plus six forward NTTs |
+| `mlkem_core_stage_keygen_noise_ntt_encode` | 834.33 | 834.29 | six forward NTTs plus secret d12 encode |
+| `mlkem_core_stage_encrypt_noise_lazy` | 984.92 | 984.81 | production-aligned encrypt PRF/CBD plus lazy r NTT |
+| `mlkem_core_stage_encrypt_accum_inv` | 953.27 | 941.17 | K=3 accumulation plus production 16-bit inverse-add |
+| `mlkem_core_stage_encrypt_inv_add_u_raw` | 314.30 | 314.42 | production 16-bit inverse-add across the three u rows |
+| `mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw` | 594.38 | 594.20 | legacy three-polynomial level batching is slower than production |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final_raw` | 329.53 | 329.52 | legacy 32-bit tail/final diagnostic; no longer a production target |
+| `mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw` | 332.73 | 332.56 | legacy level-by-level three-u tail/final batching is rejected |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3` | 790.06 | 789.08 | production x4 sampler Keccak/state/store cost |
+| `mlkem_core_stage_sample_ntt4_init_only` | 6.44 | 6.48 | x4 sampler initialization is too small to be the next target |
+| `mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only` | 775.18 | 774.02 | production x4 sampler Keccak permutations dominate stream setup |
+| `mlkem_core_stage_sample_ntt4_parse_504` | 117.99 | 117.99 | parser bookkeeping is not the main sampler cost |
+| `mlkem_core_stage_sample_ntt4_full_raw` | 902.05 | 901.27 | complete production x4 sampler including rejection parsing |
+| `mlkem_core_stage_keygen_accum_only` | 446.47 | 446.62 | A^T*s scalar accumulation is still meaningful but local rewrites failed |
+| `mlkem_core_stage_keygen_add_only` | 203.65 | 203.63 | vector add is smaller than accumulation and NTT work |
+| `mlkem_core_stage_ciphertext_compress_encode` | 50.51 | 50.50 | d10/d4 packing is too small for the next target |
 
 Near-term target selection:
 
@@ -91,6 +97,7 @@ Near-term target selection:
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
+| Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
 | Fixed-register x4 Keccak assembly | Bench retained; production closed on Clang | A 16-YMM hand schedule removes compiler spill traffic and passes exact Clang/GCC validation. `vpshufb` improves its isolated core by `1.0124x`, and GCC beats C, but Clang isolated permutations remain `0.9853x` paired median. Production routing puts `sample_ntt4`/`sample_matrix` at `0.9946x`/`0.9973x`; two-round and fused-three-permutation follow-ups do not recover the loss. |
@@ -112,18 +119,123 @@ Near-term target selection:
 
 The full 16-bit inverse NTT removes inverse arithmetic as a leading target: the
 plain transform median falls from `190.35 ns` to `87.41 ns`, while the refreshed
-frontier puts three production inverse-adds at `311.77 ns`. The same snapshot
-still puts three x4 sampler permutations at `767.87 ns`, a complete x4 sampler
-at `892.45 ns`, and `sample_matrix()` at `2632.53 ns`.
+frontier puts three production inverse-adds at `314.42 ns`. The same snapshot
+puts three x4 sampler permutations at `774.02 ns`, a complete x4 sampler at
+`901.27 ns`, and `sample_matrix()` at `2652.54 ns`.
 
-After the accepted four-output K=3 accumulation, the next independent target
-remains the common x4 sampler. Its remaining 24 nonzero lanes form the Rho/Pi cycle and still ping-pong through
-memory every round. Seed-load hoisting, lane regrouping, scalar refill tweaks,
-two-stream parser interleaving, final-round/rate-store fusion, and the expanded
-four-round in-place mapping are now closed by recorded A/B results. A new
-attempt must use a compact rotating plane window, controlled assembly/register
-allocation, or another representation that removes state traffic without
-recreating spill or instruction-cache pressure.
+After the accepted public hash/matrix-row co-schedule, cold public preparation
+falls from the preceding `4044.26 ns` frontier median to `2791.94 ns`. It is now
+only about 5.3% above standalone `sample_matrix()` at `2652.54 ns` despite also
+decoding the d12 public vector and completing `H(pk)`. The schedule removes six
+otherwise separate hash permutations; it does not make a matrix permutation or
+rejection parsing intrinsically faster.
+
+The next independent target therefore remains the common x4 sampler. Its 24
+nonzero lanes form the Rho/Pi cycle and still ping-pong through memory every
+round. Seed-load hoisting, lane regrouping, scalar refill tweaks, two-stream
+parser interleaving, final-round/rate-store fusion, expanded four-round
+in-place mapping, and a second carried lane in C are closed by recorded A/B
+results. A new attempt must use a compact rotating plane window, controlled
+assembly/register allocation, or another representation that removes state
+traffic without recreating spill or instruction-cache pressure. A sampler win
+would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization A/B (2026-07-14, public hash/matrix-row co-schedule)
+
+The non-AVX512 AVX2 cold public-key path used to generate eight matrix
+polynomials in two x4 batches, co-schedule the first three `H(pk)` permutations
+with the ninth polynomial, and then finish `H(pk)` with six single-state
+permutations. A 1184-byte ML-KEM-768 public key needs exactly nine SHA3-256
+permutations: eight complete 136-byte rate blocks and one padded tail. Each
+three-polynomial matrix row also starts with exactly three SHAKE128 squeezes.
+
+The accepted schedule gives lane 0 the serial `H(pk)` state and lanes 1..3 one
+matrix row. Three rows times three x4 permutations cover all nine hash blocks
+and all three initial squeeze blocks for each of the nine matrix streams. Matrix
+lanes are reset between rows while the hash lane is preserved. If rejection
+sampling rarely needs a fourth squeeze, the incomplete matrix lane is extracted
+and refilled with scalar `keccakf()`; the completed hash lane is never advanced.
+This removes the six leftover single-state hash permutations rather than hiding
+them behind a cache.
+
+This is repository-local Keccak dataflow scheduling over the existing local x4
+permutation. It links no external object or library, adds no transformed-key
+cache, and does not change the wire format. Diagnostic commit `ba533d4` added
+the exact validator and isolated candidate; production commit `1d1f054` routes
+only non-AVX512 AVX2 cold public preparation through it. Scalar and AVX512
+arithmetic paths are unchanged. The cold helper remains noinline so its large
+matrix/hash body cannot inflate cache-hit encapsulation.
+
+The production stage A/B used baseline `ba533d4`, CPU 0, Clang,
+`AVX2_BACKEND=core`, explicit `-mavx2 -mno-avx512f`, two warmups, eleven
+alternating-order pairs, and 10000 iterations:
+
+```bash
+C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mno-avx512f" \
+  SUITES="kem,stage" RUNS=11 WARMUP_RUNS=2 RUN_ORDER=alternating \
+  PIN_CPU=0 KEM_ITERS=10000 STAGE_ITERS=10000 \
+  ./scripts/bench_core_ab.sh ba533d4
+```
+
+| Clang stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `kpke_prepare_public_no_cache` | 4080.91 | 2789.34 | 1.4538x | 1.4624x | 11/11 |
+| `sample_matrix` | 2653.49 | 2653.44 | 0.9967x | 1.0000x | 6/11 |
+| `kpke_keygen_full` | 3800.59 | 3799.20 | 0.9936x | 0.9994x | 4/11 |
+| `kpke_encrypt_cached` | 1604.56 | 1601.69 | 0.9972x | 1.0023x | 8/11 |
+
+A longer final-boundary Clang KEM run used 30000 iterations and 17 alternating
+pairs. The no-cache work survives end to end, while the normal cache-hit route
+remains effectively neutral:
+
+| Clang KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_encaps_core` | 1.3043x | 1.2917x | 17/17 |
+| `mlkem_roundtrip_core` | 1.0797x | 1.0768x | 17/17 |
+| `mlkem_encaps` | 0.9986x | 1.0026x | 15/17 |
+| `mlkem_keygen_core` | 0.9992x | 1.0000x | 9/17 |
+| `mlkem_roundtrip` | 0.9971x | 0.9987x | 7/17 |
+
+GCC independently confirms the targeted win. Seven alternating pairs at 10000
+iterations gave:
+
+| GCC metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `kpke_prepare_public_no_cache` | 1.4966x | 1.4976x | 7/7 |
+| `mlkem_encaps_core` | 1.2978x | 1.2993x | 7/7 |
+| `mlkem_roundtrip_core` | 1.0640x | 1.0653x | 7/7 |
+| `kpke_keygen_full` | 0.9991x | 0.9994x | 2/7 |
+| `mlkem_keygen_core` | 0.9950x | 0.9947x | 0/7 |
+
+The GCC keygen row exposes a code-layout tradeoff rather than changed keygen
+arithmetic. Its keygen instruction sequence is identical to the baseline; LTO
+moves the large PRF/matrix helper off its prior alignment by 16 bytes and adds
+16 bytes of loop-alignment NOPs. The focused `kpke_keygen_full` stage stays
+neutral, but an 11-run, 30000-iteration grouped confirmation repeats a `0.9943x`
+keygen-core median. Forcing the helper to a 32-byte boundary made the paired
+keygen median worse (`0.9884x`), so that benchmark-layout fix was rejected. This
+cost is reported rather than masked; it is outweighed on the cache-disabled
+target by roughly 1.30x encaps-core and 1.06-1.08x roundtrip-core gains.
+
+Despite the new schedule, binary text does not grow in the measured KEM builds:
+Clang falls from 72961 to 72801 bytes and GCC from 65141 to 64257 bytes. Keeping
+the cold helper out of the cache-hit caller is responsible for much of that
+result.
+
+The validator compares `H(pk)`, all three decoded public-key polynomials, and
+all nine generated matrix polynomials against production for 256 deterministic
+public keys, covering 2304 matrix streams and exercising the same scalar refill
+logic whenever a three-block stream is short. Final KEM and stage validation
+passed with Clang and GCC AVX2-only builds, a Clang scalar build, a native AVX512
+build, and Clang ASan+UBSan.
+
+Two adjacent Keccak source-shape experiments remain closed. Reordering Theta D
+calculation to follow early output dependencies expanded the x4 helper by 128
+bytes and regressed `sample_ntt4`, `sample_matrix`, and uncached K-PKE medians to
+`0.9879x`, `0.9915x`, and `0.9953x`. Expressing rotate-left-one with packed add
+was canonicalized by Clang to a byte-identical binary. The next sampler attempt
+must therefore remove nonzero-lane state traffic or change the compact
+representation, not merely reorder source expressions.
 
 ### Latest Core Optimization A/B (2026-07-14, fused AVX2 K=3 encryption accumulation)
 
