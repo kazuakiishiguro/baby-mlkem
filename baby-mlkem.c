@@ -2592,7 +2592,7 @@ static inline void store_i16x2_oct_avx2(
   store_i16x2_quad(a4, a5, a6, a7, _mm256_extracti128_si256(v, 1));
 }
 
-static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
+static void ntt_tail_before_l1_mont_lazy_raw_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 32, i++) {
     __m256i a = load_i16x8_pair(f + start, f + start + 16);
     __m256i b = load_i16x8_pair(f + start + 8, f + start + 24);
@@ -2615,7 +2615,10 @@ static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
     store_i16x4_quad_avx2(f + start + 4, f + start + 12, f + start + 20,
                           f + start + 28, _mm256_sub_epi16(a, t));
   }
+}
 
+static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
+  ntt_tail_before_l1_mont_lazy_raw_avx2(f);
   for (int start = 0, i = 0; start < N; start += 32, i++) {
     __m256i a = load_i16x2_oct_avx2(
         f + start, f + start + 4, f + start + 8, f + start + 12,
@@ -3404,17 +3407,10 @@ static void ntt_mul_acc4_madd_avx2(
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
 static void ntt_before_final_l1_avx512(poly256 f) {
-  ntt_head_avx512(f);
-  for (int start = 0, i = 0; start < N; start += 32, i++) {
-    ntt_butterfly8x2_avx512(f + start, f + start + 8, f + start + 16,
-                            f + start + 24, ZETA_NTT_TAIL_L3X2[i]);
-  }
-  for (int start = 0, i = 0; start < N; start += 32, i++) {
-    ntt_butterfly4x4_avx512(f + start, f + start + 4, f + start + 8,
-                            f + start + 12, f + start + 16, f + start + 20,
-                            f + start + 24, f + start + 28,
-                            ZETA_NTT_TAIL_L2X2[i]);
-  }
+  /* Keep six levels lazy, then restore [0,Q) for the unsigned final l1. */
+  ntt_head_mont_lazy_raw_avx512(f);
+  ntt_tail_before_l1_mont_lazy_raw_avx2(f);
+  ntt_canonicalize_signed_avx512(f);
 }
 
 #if defined(__GNUC__) && !defined(__clang__)
