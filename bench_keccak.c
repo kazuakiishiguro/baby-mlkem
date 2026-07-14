@@ -461,6 +461,32 @@ static void bench_prf_cbd_eta2x2_direct_32(const uint8_t seed[32],
   }
 }
 
+static MLKEM_NOINLINE void bench_prf_cbd_eta2x2_mem_32(
+    const uint8_t seed[32], const uint8_t nonce[4], poly256 out0,
+    poly256 out1) {
+  __m256i st[25];
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4_mem(st);
+
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
+  }
+}
+
 static void bench_prf_cbd_eta2x3_direct_32(const uint8_t seed[32],
                                            const uint8_t nonce[4],
                                            poly256 out0, poly256 out1,
@@ -488,6 +514,52 @@ static void bench_prf_cbd_eta2x3_direct_32(const uint8_t seed[32],
     sample_poly_cbd_eta2_store1_avx2(_mm256_extracti128_si256(st[i], 1),
                                      out2 + 16 * i);
   }
+}
+
+static void bench_prf_cbd_eta2x3_mem_32(const uint8_t seed[32],
+                                        const uint8_t nonce[4],
+                                        poly256 out0, poly256 out1,
+                                        poly256 out2) {
+  __m256i st[25];
+#if defined(__AVX512F__)
+  uint8_t stream[3][128];
+#endif
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  st[0] = _mm256_set1_epi64x((long long)load64_le(seed + 0));
+  st[1] = _mm256_set1_epi64x((long long)load64_le(seed + 8));
+  st[2] = _mm256_set1_epi64x((long long)load64_le(seed + 16));
+  st[3] = _mm256_set1_epi64x((long long)load64_le(seed + 24));
+  st[4] = _mm256_set_epi64x(
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  st[16] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+
+  keccakf4_mem(st);
+
+#if defined(__AVX512F__)
+  for (int lane = 0; lane < 16; lane++) {
+    uint64_t words[4];
+    _mm256_storeu_si256((__m256i *)words, st[lane]);
+    memcpy(stream[0] + (size_t)lane * 8, &words[0], 8);
+    memcpy(stream[1] + (size_t)lane * 8, &words[1], 8);
+    memcpy(stream[2] + (size_t)lane * 8, &words[2], 8);
+  }
+  sample_poly_cbd_eta2_bytes(stream[0], out0);
+  sample_poly_cbd_eta2_bytes(stream[1], out1);
+  sample_poly_cbd_eta2_bytes(stream[2], out2);
+#else
+  for (int i = 0; i < 16; i++) {
+    sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[i]),
+                                     out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store1_avx2(_mm256_extracti128_si256(st[i], 1),
+                                     out2 + 16 * i);
+  }
+#endif
 }
 
 static void bench_prf_cbd_eta2x4_mem_32(
@@ -720,6 +792,13 @@ static void validate_prf_cbd_direct_matches_current(void) {
     exit(EXIT_FAILURE);
   }
 
+  bench_prf_cbd_eta2x2_mem_32(bench_seed32[0], nonce2, mem0, mem1);
+  if (memcmp(cur0, mem0, sizeof(poly256)) != 0 ||
+      memcmp(cur1, mem1, sizeof(poly256)) != 0) {
+    fprintf(stderr, "memory-resident PRF/CBD x2 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+
   mlkem_prf_cbd_eta2x3_32(bench_seed32[1], nonce3, cur0, cur1, cur2);
   bench_prf_cbd_eta2x3_direct_32(bench_seed32[1], nonce3, direct0, direct1,
                                  direct2);
@@ -727,6 +806,14 @@ static void validate_prf_cbd_direct_matches_current(void) {
       memcmp(cur1, direct1, sizeof(poly256)) != 0 ||
       memcmp(cur2, direct2, sizeof(poly256)) != 0) {
     fprintf(stderr, "direct PRF/CBD x3 mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+
+  bench_prf_cbd_eta2x3_mem_32(bench_seed32[1], nonce3, mem0, mem1, mem2);
+  if (memcmp(cur0, mem0, sizeof(poly256)) != 0 ||
+      memcmp(cur1, mem1, sizeof(poly256)) != 0 ||
+      memcmp(cur2, mem2, sizeof(poly256)) != 0) {
+    fprintf(stderr, "memory-resident PRF/CBD x3 mismatch\n");
     exit(EXIT_FAILURE);
   }
 
@@ -1164,6 +1251,25 @@ static uint64_t bench_prf_cbd_eta2x2_direct(size_t iters) {
   return t1 - t0;
 }
 
+static uint64_t bench_prf_cbd_eta2x2_mem(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 0, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_prf_cbd_eta2x2_mem_32(bench_seed32[lane], nonce,
+                                bench_poly3[lane][0],
+                                bench_poly3[lane][1]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 23u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 29u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
 static uint64_t bench_prf_cbd_eta2x3_current(size_t iters) {
   const uint8_t nonce[4] = {4, 5, 6, 0};
   uint64_t acc = 0;
@@ -1198,6 +1304,27 @@ static uint64_t bench_prf_cbd_eta2x3_direct(size_t iters) {
     acc ^= (uint16_t)bench_poly3[lane][0][(i * 53u) & (N - 1)];
     acc ^= (uint16_t)bench_poly3[lane][1][(i * 59u) & (N - 1)];
     acc ^= (uint16_t)bench_poly3[lane][2][(i * 61u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_keccak_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_prf_cbd_eta2x3_mem(size_t iters) {
+  const uint8_t nonce[4] = {4, 5, 6, 0};
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  init_inputs();
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (KECCAK_BENCH_LANES - 1);
+    bench_prf_cbd_eta2x3_mem_32(bench_seed32[lane], nonce,
+                                bench_poly3[lane][0],
+                                bench_poly3[lane][1],
+                                bench_poly3[lane][2]);
+    acc ^= (uint16_t)bench_poly3[lane][0][(i * 41u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][1][(i * 43u) & (N - 1)];
+    acc ^= (uint16_t)bench_poly3[lane][2][(i * 47u) & (N - 1)];
   }
   t1 = now_ns();
   bench_keccak_sink ^= acc;
@@ -1552,10 +1679,14 @@ int main(int argc, char **argv) {
                bench_prf_cbd_eta2x2_current(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x2_direct",
                bench_prf_cbd_eta2x2_direct(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x2_mem",
+               bench_prf_cbd_eta2x2_mem(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x3_current",
                bench_prf_cbd_eta2x3_current(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x3_direct",
                bench_prf_cbd_eta2x3_direct(iters), iters);
+  print_metric("mlkem_prf_cbd_eta2x3_mem",
+               bench_prf_cbd_eta2x3_mem(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x4_current",
                bench_prf_cbd_eta2x4_current(iters), iters);
   print_metric("mlkem_prf_cbd_eta2x4_mem",
