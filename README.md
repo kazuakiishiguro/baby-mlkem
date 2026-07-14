@@ -22,10 +22,11 @@ Neither path adds an external library or object dependency, but neither design
 is claimed as independently invented by baby-mlkem. See
 `THIRD_PARTY_NOTICES.md` for the sources and licenses.
 
-The memory-resident x4 sampler permutation remains repository-local AVX2
-intrinsics code. Its carried-theta and plane-scheduling work is informed by the
-Keccak Team implementation literature, but production does not compile, link,
-or call the reference KeccakP times4 object. The separate vendor benchmark is
+The memory-resident x4 permutation used by public-matrix sampling and the
+four-output ETA2 PRF/CBD helper remains repository-local AVX2 intrinsics code.
+Its carried-theta and plane-scheduling work is informed by the Keccak Team
+implementation literature, but production does not compile, link, or call the
+reference KeccakP times4 object. The separate vendor benchmark is
 reference-only.
 
 The repository still keeps in-tree comparator backends. Set
@@ -85,6 +86,7 @@ Near-term target selection:
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
+| Four-output ETA2 PRF/CBD permutation | Memory-resident rolling lane-zero path accepted | Reusing `keccakf4_mem()` in `mlkem_prf_cbd_eta2x4_32()` changes one call and leaves CBD decode unchanged. Direct paired medians improved `1.0424x` under Clang and `1.1116x` under GCC while generated helper size decreased. Stage A/B kept x4 PRF/CBD at `1.0404x`, keygen noise at `1.0114x`, and full keygen at `1.0026x`; 16-pair KEM roundtrip/roundtrip-core medians were `1.0030x`/`1.0032x`. |
 | Four-round in-place x4 Keccak mapping | Closed for production; bench-only diagnostic retained | The Keccak Team's order-four plane mapping improved the Clang direct full-sampler paired median by `1.0214x` and won 11/11 runs, but GCC regressed to `0.9760x`. Clang production integration also exposed instruction-footprint costs: a parser-split stage A/B kept `sample_ntt4` at `1.0084x` yet put uncached encryption at `0.9935x`, while a fully separated keygen-only form ended at `0.9981x` paired median over 10 long runs. Production remains on rolling lane zero. |
 | Final-round x4 Keccak/rate-store fusion | Closed | Peeling round 24 and transposing rate words directly reduced the isolated final epilogue, but expanded the preceding 23-round body through register pressure. Inline and split/noinline forms regress complete sampler medians to `0.9934x` and `0.9804x`; production remains unchanged. |
 | Keygen matrix/noise co-schedule | Keygen-only tail21 accepted | `mlkem_keygen_matrix_noise_avx2()` now samples `(2,1)` in the PRF/CBD tail lane and moves `(2,2)` into the second x4 public-matrix batch. Stage A/B showed `keygen_matrix_noise_current` at `1.0150x` median, and a 9-run KEM-only A/B kept `mlkem_keygen`/`mlkem_keygen_core` positive at `1.0014x`/`1.0021x`. Public-prepare and uncached-encrypt tail21 remain diagnostic-only because their direct stage medians were negative. |
@@ -264,6 +266,81 @@ The direct arithmetic schedule is faster under Clang; the production failure is
 the extra instruction footprint and compiler-specific code placement, not an
 incorrect permutation. Reopening this target requires a compact implementation
 whose integrated keygen and uncached-encryption medians both remain positive.
+
+### Latest Core Optimization A/B (2026-07-14, memory-resident x4 PRF/CBD)
+
+The accepted rolling-lane-zero permutation was initially used only by the
+SHAKE128 public-matrix sampler. The first four ETA2 noise polynomials in keygen
+and encryption still initialized the same sparse four-way Keccak state but ran
+the larger register-resident `keccakf4()`. The production change is one call in
+`mlkem_prf_cbd_eta2x4_32()`: use `keccakf4_mem()` and retain the existing direct
+four-lane CBD decode. The x2/x3 helpers, nonce layout, output representation,
+and permutation count are unchanged.
+
+The bench-only helper compares those two permutation shapes with identical
+initialization, decode, and sinks. It also checks all 1024 output coefficients
+against the production helper before timing. CPU-0 direct results were:
+
+| Compiler | Runs x iterations | Register avg ns/op | Memory avg ns/op | Avg speedup | Register median ns/op | Memory median ns/op | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Clang | 11 x 200000 | 328.51 | 308.24 | 1.0658x | 315.26 | 302.49 | 1.0424x | 11/11 |
+| GCC | 7 x 200000 | 336.74 | 302.99 | 1.1114x | 336.84 | 302.92 | 1.1116x | 7/7 |
+
+One Clang run slowed both rows, so its average overstates the gain; the paired
+median is the acceptance signal. The memory-resident helper also compiles
+smaller: Clang emitted `0x749` bytes versus `0x95e`, and GCC emitted `0x6b0`
+versus `0x98c`. This avoids the instruction-footprint failure of the rejected
+four-round in-place sampler.
+
+Eight alternating stage pairs at 20000 iterations against diagnostic commit
+`d50813f` showed the improvement propagating through noise generation:
+
+```bash
+RUNS=8 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=20000 \
+  RUN_ORDER=alternating C_COMPILER=clang PIN_CPU=0 \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt" \
+  ./scripts/bench_core_ab.sh d50813f
+```
+
+| Metric | Paired geometric speedup | Paired median speedup | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `encrypt_noise_prf_cbd_x4_raw` | 1.0412x | 1.0404x | 8/8 | 1.0410x | 1.0404x |
+| `encrypt_noise_prf_cbd_raw` | 1.0217x | 1.0217x | 8/8 | 1.0217x | 1.0212x |
+| `encrypt_noise` | 1.0078x | 1.0094x | 7/8 | 1.0086x | 1.0095x |
+| `keygen_noise_prf_cbd` | 1.0122x | 1.0114x | 8/8 | 1.0114x | 1.0117x |
+| `keygen_noise_ntt` | 1.0028x | 1.0062x | 7/8 | 1.0048x | 1.0062x |
+| `kpke_keygen_full` | 1.0025x | 1.0026x | 6/8 | 1.0024x | 1.0032x |
+| `kpke_encrypt_cached` | 0.9920x | 1.0037x | 5/8 | 1.0001x | 1.0051x |
+
+The final KEM gate used 16 alternating pairs, four warmups, and 70000
+iterations. Normal API medians were positive throughout. The cache-disabled
+`encaps_core` row was slightly negative, so it was not hidden or treated as a
+standalone acceptance signal:
+
+| Metric | Paired geometric speedup | Paired median speedup | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.0032x | 1.0017x | 11/16 | 1.0025x | 1.0000x |
+| `mlkem_keygen_core` | 1.0008x | 1.0009x | 9/16 | 1.0026x | 0.9964x |
+| `mlkem_encaps` | 1.0025x | 1.0042x | 13/16 | 1.0047x | 1.0042x |
+| `mlkem_encaps_core` | 1.0026x | 0.9987x | 8/16 | 0.9987x | 0.9941x |
+| `mlkem_decaps` | 1.0066x | 1.0034x | 10/16 | 1.0041x | 1.0030x |
+| `mlkem_decaps_core` | 1.0013x | 1.0001x | 8/16 | 1.0040x | 0.9988x |
+| `mlkem_roundtrip` | 1.0046x | 1.0030x | 11/16 | 1.0032x | 1.0030x |
+| `mlkem_roundtrip_core` | 1.0047x | 1.0032x | 10/16 | 1.0039x | 1.0023x |
+
+A production-only harness then removed the large stage/KEM diagnostic text and
+rotated four distinct public keys so uncached encryption regenerated the public
+matrix on every iteration. At 12 alternating pairs of 200000 iterations,
+keygen was `1.0093x` paired median with 11/12 wins and uncached K-PKE encryption
+was `1.0033x` with 8/12 wins. Candidate text shrank by 896 bytes in the keygen
+harness and 576 bytes in the uncached-encryption harness. The smaller text and
+positive production-only result make the isolated `encaps_core` dip consistent
+with harness/layout fluctuation rather than extra core work in the replacement.
+
+Correctness passed the exact x4 PRF/CBD validator, Clang explicit AVX2, GCC
+explicit AVX2, Clang native, Clang non-AVX2, and `git diff --check`. Decision:
+accept. The diagnostic is commit `d50813f`; production is `8e88e05`. The
+production core still links no external Keccak object.
 
 ### Latest Core Optimization A/B (2026-07-14, persistent x4 Keccak theta parity)
 
@@ -2646,6 +2723,7 @@ metrics isolate these helpers:
 | `mlkem_prf_cbd_eta2x3_current` | current AVX2 three-output PRF/CBD helper used by the second encryption noise batch |
 | `mlkem_prf_cbd_eta2x3_direct` | bench-only three-output PRF/CBD helper that decodes CBD directly from the Keccak-f4 state |
 | `mlkem_prf_cbd_eta2x4_current` | current AVX2 four-output PRF/CBD helper used by the first keygen/encrypt noise batch |
+| `mlkem_prf_cbd_eta2x4_mem` | bench-only four-output PRF/CBD helper using the rolling-lane-zero memory-resident x4 permutation; equivalent to production after commit `8e88e05` |
 | `mlkem_prf_cbd_eta2x4_direct_tile2x4` | bench-only four-output PRF/CBD helper that decodes directly from the Keccak-f4 state into the diagnostic K=4 tile2x4 layout |
 | `mlkem_cbd_eta2` | `sample_poly_cbd(ETA2)` over prepared PRF bytes |
 | `mlkem_cbd_eta2_signed` | AVX2-only bench lower bound: ETA2 CBD decoded into signed `{-2..2}` lanes, excluding downstream signed-aware NTT cost |
