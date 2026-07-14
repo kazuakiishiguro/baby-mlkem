@@ -1149,15 +1149,23 @@ static __m256i ZETA_NTT_HEAD_MONT_HI[15];
 #endif
 static __m256i ZETA_NTT_TAIL_MONT_LO[3][8];
 static __m256i ZETA_NTT_TAIL_MONT_HI[3][8];
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static __m256i ZETA_NTT_INV_MONT_LO[6][8];
 static __m256i ZETA_NTT_INV_MONT_HI[6][8];
 static __m256i ZETA_NTT_INV_MONT_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_SCALE_HI;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_LO;
 static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI;
+#endif
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15];
 static __m512i ZETA_NTT_HEAD_MONT_HI_AVX512[15];
+static __m512i ZETA_NTT_INV_MONT_LO_AVX512[6][8];
+static __m512i ZETA_NTT_INV_MONT_HI_AVX512[6][8];
+static __m512i ZETA_NTT_INV_MONT_SCALE_LO_AVX512;
+static __m512i ZETA_NTT_INV_MONT_SCALE_HI_AVX512;
+static __m512i ZETA_NTT_INV_MONT_ZETA_SCALE_LO_AVX512;
+static __m512i ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512;
 static __m512i ZETA_NTT_INV_TAIL_AVX512[15];
 static __m512i ZETA_NTT_TAIL_L3X2[8];
 static __m512i ZETA_NTT_TAIL_L2X2[8];
@@ -1311,6 +1319,237 @@ static void ntt_canonicalize_signed_avx512(poly256 f) {
     v = _mm512_add_epi16(
         reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
     _mm512_storeu_si512((void *)(f + i), v);
+  }
+}
+
+static inline __m512i ntt_barrett_reduce_i16x32_avx512(__m512i v) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i barrett = _mm512_set1_epi16(20159);
+  __m512i quot = _mm512_srai_epi16(_mm512_mulhi_epi16(v, barrett), 10);
+  return _mm512_sub_epi16(v, _mm512_mullo_epi16(quot, q));
+}
+
+static inline __m512i ntt_canonicalize_i16x32_avx512(__m512i v) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  v = ntt_barrett_reduce_i16x32_avx512(v);
+  v = _mm512_add_epi16(v,
+                       _mm512_and_si512(_mm512_srai_epi16(v, 15), q));
+  __m512i reduced = _mm512_sub_epi16(v, q);
+  return _mm512_add_epi16(
+      reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+}
+
+static inline __m512i ntt_inv_mont_level_i16x32_avx512(
+    __m512i x, __m512i partner, __m512i zeta_lo, __m512i zeta_hi,
+    __mmask32 product_mask) {
+  __m512i sum =
+      ntt_barrett_reduce_i16x32_avx512(_mm512_add_epi16(x, partner));
+  __m512i product = ntt_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(x, partner), zeta_lo, zeta_hi);
+  return _mm512_mask_mov_epi16(sum, product_mask, product);
+}
+
+static inline void ntt_inv_mont_pair_i16x32_avx512(
+    __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
+    __m512i *sum, __m512i *product) {
+  *sum = ntt_barrett_reduce_i16x32_avx512(_mm512_add_epi16(a, b));
+  *product = ntt_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(b, a), zeta_lo, zeta_hi);
+}
+
+static void ntt_inv_mont_before_final_avx512(poly256 f) {
+  const __m512i swap_qword_pairs =
+      _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
+  const __m512i swap_qword_quads =
+      _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+  const __m512i swap_halves =
+      _mm512_setr_epi64(4, 5, 6, 7, 0, 1, 2, 3);
+
+  /* Keep each 32-coefficient block in registers through lengths 2..16. */
+  for (int block = 0; block < 8; block++) {
+    __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
+    __m512i partner = _mm512_rol_epi64(x, 32);
+    x = ntt_inv_mont_level_i16x32_avx512(
+        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[0][block],
+        ZETA_NTT_INV_MONT_HI_AVX512[0][block],
+        (__mmask32)0xccccccccu);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
+    x = ntt_inv_mont_level_i16x32_avx512(
+        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[1][block],
+        ZETA_NTT_INV_MONT_HI_AVX512[1][block],
+        (__mmask32)0xf0f0f0f0u);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
+    x = ntt_inv_mont_level_i16x32_avx512(
+        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[2][block],
+        ZETA_NTT_INV_MONT_HI_AVX512[2][block],
+        (__mmask32)0xff00ff00u);
+
+    partner = _mm512_permutexvar_epi64(swap_halves, x);
+    x = ntt_inv_mont_level_i16x32_avx512(
+        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[3][block],
+        ZETA_NTT_INV_MONT_HI_AVX512[3][block],
+        (__mmask32)0xffff0000u);
+    _mm512_storeu_si512((void *)(f + 32 * block), x);
+  }
+
+  for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
+    int i = 0;
+    for (int start = 0; start < N; start += 2 * length, i++) {
+      __m512i zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[level][i];
+      __m512i zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[level][i];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i sum, product;
+        ntt_inv_mont_pair_i16x32_avx512(
+            a, b, zeta_lo, zeta_hi, &sum, &product);
+        _mm512_storeu_si512((void *)(f + start + j), sum);
+        _mm512_storeu_si512((void *)(f + start + length + j), product);
+      }
+    }
+  }
+}
+
+static inline void ntt_inv_mont_scale_pair_i16x32_avx512(
+    __m512i a, __m512i b, __m512i *scaled0, __m512i *scaled1) {
+  *scaled0 = ntt_canonicalize_i16x32_avx512(
+      ntt_mont_mul_precomp_i16x32_avx512(
+          _mm512_add_epi16(a, b), ZETA_NTT_INV_MONT_SCALE_LO_AVX512,
+          ZETA_NTT_INV_MONT_SCALE_HI_AVX512));
+  *scaled1 = ntt_canonicalize_i16x32_avx512(
+      ntt_mont_mul_precomp_i16x32_avx512(
+          _mm512_sub_epi16(b, a),
+          ZETA_NTT_INV_MONT_ZETA_SCALE_LO_AVX512,
+          ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512));
+}
+
+static inline __m512i ntt_add_mod_q_i16x32_avx512(
+    __m512i a, __m512i b) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i reduced = _mm512_sub_epi16(_mm512_add_epi16(a, b), q);
+  return _mm512_add_epi16(
+      reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
+}
+
+static inline __m512i ntt_sub_mod_q_i16x32_avx512(
+    __m512i a, __m512i b) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i diff = _mm512_sub_epi16(a, b);
+  return _mm512_add_epi16(
+      diff, _mm512_and_si512(_mm512_srai_epi16(diff, 15), q));
+}
+
+static void ntt_inv_mont_final_avx512(poly256 out) {
+  ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x32_avx512(a, b, &scaled0, &scaled1);
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void ntt_inv_add_mont_final_avx512(
+    const poly256 add, poly256 out) {
+  ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x32_avx512(a, b, &scaled0, &scaled1);
+    scaled0 = ntt_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add + j)));
+    scaled1 = ntt_add_mod_q_i16x32_avx512(
+        scaled1, _mm512_loadu_si512((const void *)(add + N / 2 + j)));
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void ntt_inv_add2_mont_final_avx512(
+    const poly256 add0, const poly256 add1, poly256 out) {
+  ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x32_avx512(a, b, &scaled0, &scaled1);
+    scaled0 = ntt_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add0 + j)));
+    scaled0 = ntt_add_mod_q_i16x32_avx512(
+        scaled0, _mm512_loadu_si512((const void *)(add1 + j)));
+    scaled1 = ntt_add_mod_q_i16x32_avx512(
+        scaled1,
+        _mm512_loadu_si512((const void *)(add0 + N / 2 + j)));
+    scaled1 = ntt_add_mod_q_i16x32_avx512(
+        scaled1,
+        _mm512_loadu_si512((const void *)(add1 + N / 2 + j)));
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static void ntt_inv_sub_from_mont_final_avx512(
+    const poly256 minuend, poly256 out) {
+  ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x32_avx512(a, b, &scaled0, &scaled1);
+    scaled0 = ntt_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + j)), scaled0);
+    scaled1 = ntt_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + N / 2 + j)),
+        scaled1);
+    _mm512_storeu_si512((void *)(out + j), scaled0);
+    _mm512_storeu_si512((void *)(out + N / 2 + j), scaled1);
+  }
+}
+
+static inline uint8_t ntt_recover_bits_i16x8_avx512(__m128i v16) {
+  const __m256i half_q = _mm256_set1_epi32((Q + 1) / 2);
+  const __m256i quarter_q = _mm256_set1_epi32((Q + 1) / 4);
+  __m256i v = _mm256_cvtepu16_epi32(v16);
+  __m256i diff = _mm256_abs_epi32(_mm256_sub_epi32(v, half_q));
+  __m256i is_one = _mm256_cmpgt_epi32(quarter_q, diff);
+  return (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(is_one));
+}
+
+static inline uint32_t ntt_recover_bits_i16x32_avx512(__m512i v) {
+  uint32_t bits = ntt_recover_bits_i16x8_avx512(
+      _mm512_castsi512_si128(v));
+  bits |= (uint32_t)ntt_recover_bits_i16x8_avx512(
+              _mm512_extracti32x4_epi32(v, 1)) << 8;
+  bits |= (uint32_t)ntt_recover_bits_i16x8_avx512(
+              _mm512_extracti32x4_epi32(v, 2)) << 16;
+  bits |= (uint32_t)ntt_recover_bits_i16x8_avx512(
+              _mm512_extracti32x4_epi32(v, 3)) << 24;
+  return bits;
+}
+
+static inline void ntt_inv_sub_recover_from_inplace_avx512(
+    const poly256 minuend, poly256 out, uint8_t msg[32]) {
+  ntt_inv_mont_before_final_avx512(out);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i a = _mm512_loadu_si512((const void *)(out + j));
+    __m512i b = _mm512_loadu_si512((const void *)(out + N / 2 + j));
+    __m512i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x32_avx512(a, b, &scaled0, &scaled1);
+    __m512i w0 = ntt_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + j)), scaled0);
+    __m512i w1 = ntt_sub_mod_q_i16x32_avx512(
+        _mm512_loadu_si512((const void *)(minuend + N / 2 + j)),
+        scaled1);
+    uint32_t bits0 = ntt_recover_bits_i16x32_avx512(w0);
+    uint32_t bits1 = ntt_recover_bits_i16x32_avx512(w1);
+    memcpy(msg + (size_t)j / 8, &bits0, sizeof(bits0));
+    memcpy(msg + 16 + (size_t)j / 8, &bits1, sizeof(bits1));
   }
 }
 
@@ -1937,6 +2176,7 @@ static void init_ntt_roots(void) {
           _mm256_loadu_si256((const __m256i *)(const void *)hi);
     }
   }
+#if !(defined(__AVX512F__) && defined(__AVX512BW__))
   for (int level = 0; level < 3; level++) {
     int base = 127 >> level;
     int repeat = 2 << level;
@@ -1974,6 +2214,7 @@ static void init_ntt_roots(void) {
   ZETA_NTT_INV_MONT_SCALE_HI = _mm256_set1_epi16(scale_hi);
   ZETA_NTT_INV_MONT_ZETA_SCALE_LO = _mm256_set1_epi16(zeta_scale_lo);
   ZETA_NTT_INV_MONT_ZETA_SCALE_HI = _mm256_set1_epi16(zeta_scale_hi);
+#endif
   for (int i = 0; i < 16; i++) {
     ZETA_NTT_TAIL_L3[i] = _mm256_set1_epi32(ZETA[16 + i]);
     int k2 = 32 + 2 * i;
@@ -2007,6 +2248,49 @@ static void init_ntt_roots(void) {
     ZETA_NTT_HEAD_MONT_HI_AVX512[i] = _mm512_set1_epi16(zeta_hi);
     ZETA_NTT_INV_TAIL_AVX512[i] = _mm512_set1_epi32(ZETA[15 - i]);
   }
+  for (int level = 0; level < 4; level++) {
+    int length = 2 << level;
+    int groups_per_block = 32 / (2 * length);
+    int base = 127 >> level;
+    for (int block = 0; block < 8; block++) {
+      int16_t lo[32], hi[32];
+      for (int lane = 0; lane < 32; lane++) {
+        int zeta_idx =
+            base - block * groups_per_block - lane / (2 * length);
+        ntt_mont_factor(ZETA[zeta_idx], &lo[lane], &hi[lane]);
+      }
+      ZETA_NTT_INV_MONT_LO_AVX512[level][block] =
+          _mm512_loadu_si512((const void *)lo);
+      ZETA_NTT_INV_MONT_HI_AVX512[level][block] =
+          _mm512_loadu_si512((const void *)hi);
+    }
+  }
+
+  for (int level = 4; level < 6; level++) {
+    int base = 127 >> level;
+    int count = 1 << (6 - level);
+    for (int i = 0; i < count; i++) {
+      int16_t zeta_lo, zeta_hi;
+      ntt_mont_factor(ZETA[base - i], &zeta_lo, &zeta_hi);
+      ZETA_NTT_INV_MONT_LO_AVX512[level][i] =
+          _mm512_set1_epi16(zeta_lo);
+      ZETA_NTT_INV_MONT_HI_AVX512[level][i] =
+          _mm512_set1_epi16(zeta_hi);
+    }
+  }
+
+  int16_t scale_lo, scale_hi, zeta_scale_lo, zeta_scale_hi;
+  uint16_t zeta_scale =
+      mod_q_reduce_ntt_u32((uint32_t)ZETA[1] * 3303u);
+  ntt_mont_factor(3303, &scale_lo, &scale_hi);
+  ntt_mont_factor(zeta_scale, &zeta_scale_lo, &zeta_scale_hi);
+  ZETA_NTT_INV_MONT_SCALE_LO_AVX512 = _mm512_set1_epi16(scale_lo);
+  ZETA_NTT_INV_MONT_SCALE_HI_AVX512 = _mm512_set1_epi16(scale_hi);
+  ZETA_NTT_INV_MONT_ZETA_SCALE_LO_AVX512 =
+      _mm512_set1_epi16(zeta_scale_lo);
+  ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512 =
+      _mm512_set1_epi16(zeta_scale_hi);
+
   for (int i = 0; i < 8; i++) {
     int k = 16 + 2 * i;
     ZETA_NTT_TAIL_L3X2[i] = _mm512_setr_epi32(
@@ -2195,8 +2479,8 @@ static void ntt_mont_lazy_avx2(poly256 f) {
 }
 #endif
 
-/* YMM Montgomery butterflies beat widening to 32-bit AVX512 lanes. */
-#if defined(__AVX2__)
+/* Keep the established YMM implementation for AVX2-only targets. */
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static inline __m256i ntt_barrett_reduce_i16x16(__m256i v) {
   const __m256i q = _mm256_set1_epi16(Q);
   const __m256i barrett = _mm256_set1_epi16(20159);
@@ -2656,7 +2940,7 @@ static inline void ntt_inv_sub_from_fused_final_avx2(const poly256 minuend,
 
 #endif
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static inline uint8_t recover_bits_i32x8_avx2(__m256i v) {
   const __m256i half_q = _mm256_set1_epi32((Q + 1) / 2);
   const __m256i quarter_q = _mm256_set1_epi32((Q + 1) / 4);
@@ -2711,7 +2995,9 @@ static inline void ntt_inv_scale(poly256 out) {
 }
 
 static inline void ntt_inv_add_inplace(const poly256 add, poly256 out) {
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_add_mont_final_avx512(add, out);
+#elif defined(__AVX2__)
   ntt_inv_add_mont_final_avx2(add, out);
 #else
   ntt_inv_butterflies_inplace(out);
@@ -2729,7 +3015,9 @@ static inline void ntt_inv_add_v_inplace(const poly256 add, poly256 out) {
 static inline void ntt_inv_add2_inplace(const poly256 add0,
                                         const poly256 add1,
                                         poly256 out) {
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_add2_mont_final_avx512(add0, add1, out);
+#elif defined(__AVX2__)
   ntt_inv_add2_mont_final_avx2(add0, add1, out);
 #else
   ntt_inv_butterflies_inplace(out);
@@ -2754,7 +3042,9 @@ static inline void ntt_inv_add3_inplace(const poly256 add0,
 
 static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
                                             poly256 out) {
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_sub_from_mont_final_avx512(minuend, out);
+#elif defined(__AVX2__)
   ntt_inv_sub_from_mont_final_avx2(minuend, out);
 #else
   ntt_inv_butterflies_inplace(out);
@@ -2767,7 +3057,9 @@ static inline void ntt_inv_sub_from_inplace(const poly256 minuend,
 
 static void ntt_inv(const poly256 f_in, poly256 f_out) {
   memcpy(f_out, f_in, sizeof(poly256));
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_mont_final_avx512(f_out);
+#elif defined(__AVX2__)
   ntt_inv_mont_final_avx2(f_out);
 #else
   ntt_inv_butterflies_inplace(f_out);
@@ -5972,7 +6264,9 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 #endif
 
   /* Recover message bits by nearest value to 0 or (Q+1)/2. */
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_inv_sub_recover_from_inplace_avx512(v, w, out_m);
+#elif defined(__AVX2__)
   ntt_inv_sub_recover_from_inplace_avx2(v, w, out_m);
 #else
   ntt_inv_sub_from_inplace(v, w);
