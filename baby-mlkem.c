@@ -555,31 +555,17 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
 
 /* sample_ntt4() benefits from a memory-resident permutation shape; direct
    PRF and Keccak callers keep the register-resident keccakf4() above. */
-static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
+static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
+    __m256i st[25], __m256i parity[5]) {
   __m256i e[25];
   __m256i *src = st;
   __m256i *dst = e;
   /* Carry next-round column parity while storing each round output. */
-  __m256i c0 = _mm256_xor_si256(
-      _mm256_xor_si256(_mm256_xor_si256(st[0], st[5]),
-                       _mm256_xor_si256(st[10], st[15])),
-      st[20]);
-  __m256i c1 = _mm256_xor_si256(
-      _mm256_xor_si256(_mm256_xor_si256(st[1], st[6]),
-                       _mm256_xor_si256(st[11], st[16])),
-      st[21]);
-  __m256i c2 = _mm256_xor_si256(
-      _mm256_xor_si256(_mm256_xor_si256(st[2], st[7]),
-                       _mm256_xor_si256(st[12], st[17])),
-      st[22]);
-  __m256i c3 = _mm256_xor_si256(
-      _mm256_xor_si256(_mm256_xor_si256(st[3], st[8]),
-                       _mm256_xor_si256(st[13], st[18])),
-      st[23]);
-  __m256i c4 = _mm256_xor_si256(
-      _mm256_xor_si256(_mm256_xor_si256(st[4], st[9]),
-                       _mm256_xor_si256(st[14], st[19])),
-      st[24]);
+  __m256i c0 = parity[0];
+  __m256i c1 = parity[1];
+  __m256i c2 = parity[2];
+  __m256i c3 = parity[3];
+  __m256i c4 = parity[4];
 
   for (int round = 0; round < 24; round++) {
     __m256i d0 = _mm256_xor_si256(c4, rotl64x4(c1, 1));
@@ -679,6 +665,24 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
     src = dst;
     dst = tmp;
   }
+  parity[0] = c0;
+  parity[1] = c1;
+  parity[2] = c2;
+  parity[3] = c3;
+  parity[4] = c4;
+}
+
+/* Generic callers retain the self-contained parity reconstruction. */
+static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
+  __m256i parity[5];
+  for (int column = 0; column < 5; column++) {
+    parity[column] = _mm256_xor_si256(
+        _mm256_xor_si256(
+            _mm256_xor_si256(st[column], st[column + 5]),
+            _mm256_xor_si256(st[column + 10], st[column + 15])),
+        st[column + 20]);
+  }
+  keccakf4_mem_parity(st, parity);
 }
 
 #if defined(__AVX512F__)
@@ -3361,6 +3365,7 @@ static void sample_ntt4(const uint8_t *seed,
                         poly256 out2,
                         poly256 out3) {
   __m256i st[25];
+  __m256i parity[5];
   /* Keep the x4 stream scratch off the stack; this file already uses global
      scratch/caches. */
   static uint8_t stream[4][504];
@@ -3379,9 +3384,14 @@ static void sample_ntt4(const uint8_t *seed,
       (long long)((uint64_t)row[1] | ((uint64_t)col[1] << 8) | (0x1FULL << 16)),
       (long long)((uint64_t)row[0] | ((uint64_t)col[0] << 8) | (0x1FULL << 16)));
   st[20] = _mm256_set1_epi64x((long long)(0x80ULL << 56));
+  parity[0] = _mm256_xor_si256(st[0], st[20]);
+  parity[1] = st[1];
+  parity[2] = st[2];
+  parity[3] = st[3];
+  parity[4] = st[4];
 
   for (int block = 0; block < 3; block++) {
-    keccakf4_mem(st);
+    keccakf4_mem_parity(st, parity);
     sample_ntt4_store_block(stream, (size_t)block * 168, st);
   }
 
