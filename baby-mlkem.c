@@ -1844,10 +1844,27 @@ static inline __m512i ntt_inv_mont_level_i16x32_avx512(
   return _mm512_mask_mov_epi16(sum, product_mask, product);
 }
 
+static inline __m512i ntt_inv_mont_level_lazy_i16x32_avx512(
+    __m512i x, __m512i partner, __m512i zeta_lo, __m512i zeta_hi,
+    __mmask32 product_mask) {
+  __m512i sum = _mm512_add_epi16(x, partner);
+  __m512i product = ntt_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(x, partner), zeta_lo, zeta_hi);
+  return _mm512_mask_mov_epi16(sum, product_mask, product);
+}
+
 static inline void ntt_inv_mont_pair_i16x32_avx512(
     __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
     __m512i *sum, __m512i *product) {
   *sum = ntt_barrett_reduce_i16x32_avx512(_mm512_add_epi16(a, b));
+  *product = ntt_mont_mul_precomp_i16x32_avx512(
+      _mm512_sub_epi16(b, a), zeta_lo, zeta_hi);
+}
+
+static inline void ntt_inv_mont_pair_lazy_i16x32_avx512(
+    __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
+    __m512i *sum, __m512i *product) {
+  *sum = _mm512_add_epi16(a, b);
   *product = ntt_mont_mul_precomp_i16x32_avx512(
       _mm512_sub_epi16(b, a), zeta_lo, zeta_hi);
 }
@@ -1976,6 +1993,10 @@ static void ntt_inv_mont_before_final4_shared_avx512(
   const __m512i swap_halves =
       _mm512_setr_epi64(4, 5, 6, 7, 0, 1, 2, 3);
 
+  /*
+   * Canonical inputs allow two lazy sum levels before each Barrett pass.
+   * Reducing levels 2 and 5 keeps every intermediate inside int16.
+   */
   for (int block = 0; block < 8; block++) {
     __m512i x0 = _mm512_loadu_si512((const void *)(f0 + 32 * block));
     __m512i x1 = _mm512_loadu_si512((const void *)(f1 + 32 * block));
@@ -1984,31 +2005,31 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     __m512i zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[0][block];
     __m512i zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[0][block];
     __m512i partner = _mm512_rol_epi64(x0, 32);
-    x0 = ntt_inv_mont_level_i16x32_avx512(
+    x0 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
     partner = _mm512_rol_epi64(x1, 32);
-    x1 = ntt_inv_mont_level_i16x32_avx512(
+    x1 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x1, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
     partner = _mm512_rol_epi64(x2, 32);
-    x2 = ntt_inv_mont_level_i16x32_avx512(
+    x2 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x2, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
     partner = _mm512_rol_epi64(x3, 32);
-    x3 = ntt_inv_mont_level_i16x32_avx512(
+    x3 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
 
     zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[1][block];
     zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[1][block];
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x0);
-    x0 = ntt_inv_mont_level_i16x32_avx512(
+    x0 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x1);
-    x1 = ntt_inv_mont_level_i16x32_avx512(
+    x1 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x1, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x2);
-    x2 = ntt_inv_mont_level_i16x32_avx512(
+    x2 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x2, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x3);
-    x3 = ntt_inv_mont_level_i16x32_avx512(
+    x3 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
 
     zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[2][block];
@@ -2029,16 +2050,16 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[3][block];
     zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[3][block];
     partner = _mm512_permutexvar_epi64(swap_halves, x0);
-    x0 = ntt_inv_mont_level_i16x32_avx512(
+    x0 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
     partner = _mm512_permutexvar_epi64(swap_halves, x1);
-    x1 = ntt_inv_mont_level_i16x32_avx512(
+    x1 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x1, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
     partner = _mm512_permutexvar_epi64(swap_halves, x2);
-    x2 = ntt_inv_mont_level_i16x32_avx512(
+    x2 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x2, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
     partner = _mm512_permutexvar_epi64(swap_halves, x3);
-    x3 = ntt_inv_mont_level_i16x32_avx512(
+    x3 = ntt_inv_mont_level_lazy_i16x32_avx512(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
 
     _mm512_storeu_si512((void *)(f0 + 32 * block), x0);
@@ -2060,8 +2081,13 @@ static void ntt_inv_mont_before_final4_shared_avx512(
           __m512i b = _mm512_loadu_si512(
               (const void *)(out[lane] + start + length + j));
           __m512i sum, product;
-          ntt_inv_mont_pair_i16x32_avx512(
-              a, b, zeta_lo, zeta_hi, &sum, &product);
+          if (level == 5) {
+            ntt_inv_mont_pair_i16x32_avx512(
+                a, b, zeta_lo, zeta_hi, &sum, &product);
+          } else {
+            ntt_inv_mont_pair_lazy_i16x32_avx512(
+                a, b, zeta_lo, zeta_hi, &sum, &product);
+          }
           _mm512_storeu_si512((void *)(out[lane] + start + j), sum);
           _mm512_storeu_si512(
               (void *)(out[lane] + start + length + j), product);
