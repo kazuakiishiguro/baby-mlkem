@@ -1508,6 +1508,65 @@ static void validate_ntt_mul_acc4_madd_avx2(void) {
 }
 #endif
 
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+static void stage_encrypt_prf_cbd_eta2_32_sample_tail_x8_i8_avx512(
+    const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
+    poly256 r0, poly256 r1, poly256 r2,
+    int8_t e10[N], int8_t e11[N], int8_t e12[N], int8_t e2[N]) {
+  mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx512(
+      seed, rho, tail, r0, r1, r2, e10, e11, e12, e2);
+}
+
+static void validate_encrypt_prf_cbd_tail_x8_avx512(void) {
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32], rho[32];
+    poly256 got_tail, want_tail, got_r[3], want_r[3], want_e1[3], want_e2;
+    int8_t got_e1[3][N], got_e2[N];
+
+    fill_bytes(seed, sizeof(seed), 0x58384e4f49534500ULL + fixture);
+    fill_bytes(rho, sizeof(rho), 0x58385441494c0000ULL + fixture);
+    stage_encrypt_prf_cbd_eta2_32_sample_tail_x8_i8_avx512(
+        seed, rho, got_tail, got_r[0], got_r[1], got_r[2],
+        got_e1[0], got_e1[1], got_e1[2], got_e2);
+    sample_ntt(rho, 2, 2, want_tail);
+    mlkem_encrypt_prf_cbd_eta2_32(
+        seed, want_r[0], want_r[1], want_r[2],
+        want_e1[0], want_e1[1], want_e1[2], want_e2);
+
+    if (memcmp(got_tail, want_tail, sizeof(poly256)) != 0) {
+      fprintf(stderr, "x8 encrypt mixed-tail mismatch at %zu\n", fixture);
+      exit(EXIT_FAILURE);
+    }
+    for (int output = 0; output < K; output++) {
+      if (memcmp(got_r[output], want_r[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "x8 encrypt mixed-noise mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+      for (int coeff = 0; coeff < N; coeff++) {
+        int value = want_e1[output][coeff];
+        if (value > Q / 2) value -= Q;
+        if (got_e1[output][coeff] != value) {
+          fprintf(stderr, "x8 encrypt mixed-i8 mismatch at %zu,%d,%d\n",
+                  fixture, output, coeff);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+    for (int coeff = 0; coeff < N; coeff++) {
+      int value = want_e2[coeff];
+      if (value > Q / 2) value -= Q;
+      if (got_e2[coeff] != value) {
+        fprintf(stderr, "x8 encrypt mixed-e2 mismatch at %zu,%d\n",
+                fixture, coeff);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 static void stage_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
     poly256 r0, poly256 r1, poly256 r2, poly256 e10,
@@ -2960,6 +3019,9 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX512F__)
 #if defined(__GNUC__) && !defined(__clang__)
   validate_keccakf8_sparse_mixed_keygen_avx512();
+#if defined(__AVX512BW__)
+  validate_encrypt_prf_cbd_tail_x8_avx512();
+#endif
 #endif
   validate_sample_ntt8_sparse_first_avx512();
 #endif
@@ -10350,6 +10412,51 @@ static uint64_t bench_encrypt_noise_lazy(size_t iters) {
 #endif
 
 #if defined(__AVX2__)
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+static uint64_t bench_encrypt_noise_prf_cbd_tail_separate_x8_i8(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+    sample_ntt4_one(stage_rho[lane], 2, 2,
+                    stage_tmp_ahat[lane][2][2]);
+    mlkem_prf_cbd_eta2x3x4_i8_32(
+        stage_r[lane], nonce, stage_tmp_vec0[lane][0],
+        stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2],
+        stage_tmp_eta2_i8[lane][0], stage_tmp_eta2_i8[lane][1],
+        stage_tmp_eta2_i8[lane][2], stage_tmp_eta2_i8[lane][3]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u];
+    acc ^= (uint8_t)stage_tmp_eta2_i8[lane][i & 3u][(i * 5u) & 255u];
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_noise_prf_cbd_tail_mixed_x8_i8(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    stage_encrypt_prf_cbd_eta2_32_sample_tail_x8_i8_avx512(
+        stage_r[lane], stage_rho[lane], stage_tmp_ahat[lane][2][2],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2], stage_tmp_eta2_i8[lane][0],
+        stage_tmp_eta2_i8[lane][1], stage_tmp_eta2_i8[lane][2],
+        stage_tmp_eta2_i8[lane][3]);
+    acc ^= (uint16_t)stage_tmp_ahat[lane][2][2][i & 255u];
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 3u) & 255u];
+    acc ^= (uint8_t)stage_tmp_eta2_i8[lane][i & 3u][(i * 5u) & 255u];
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_noise_prf_cbd_tail_separate(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -14552,6 +14659,12 @@ int main(int argc, char **argv) {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512",
                bench_encrypt_noise_prf_cbd_i8_raw_avx512(iters), iters);
+#if defined(__GNUC__) && !defined(__clang__)
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_x8_i8",
+               bench_encrypt_noise_prf_cbd_tail_separate_x8_i8(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_mixed_x8_i8",
+               bench_encrypt_noise_prf_cbd_tail_mixed_x8_i8(iters), iters);
+#endif
 #endif
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw",
                bench_encrypt_noise_prf_cbd_x4_raw(iters), iters);
