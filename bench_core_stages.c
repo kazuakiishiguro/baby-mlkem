@@ -2915,6 +2915,114 @@ static void validate_ntt_inv_add4_shared_avx512(void) {
   }
 }
 
+static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
+  static const int expected[6][6] = {
+      {0, 6656, -1739, 1739, -1739, 6656},
+      {-3478, 13312, -1867, 1867, -3478, 13312},
+      {0, 3329, -2062, 2065, -2062, 3329},
+      {-4124, 6658, -1772, 1772, -4124, 6658},
+      {-8248, 13316, -1907, 1907, -8248, 13316},
+      {0, 3329, -2158, 2158, -2158, 3329},
+  };
+  int16_t input_lanes[32], output_lanes[32];
+  int input_min = 0;
+  int input_max = Q - 1;
+
+  for (int level = 0; level < 6; level++) {
+    int sum_input_min = 2 * input_min;
+    int sum_input_max = 2 * input_max;
+    int difference_min = input_min - input_max;
+    int difference_max = input_max - input_min;
+    int sum_min = sum_input_min;
+    int sum_max = sum_input_max;
+    int product_min = 32767;
+    int product_max = -32768;
+
+    if (sum_input_min < -32768 || sum_input_max > 32767 ||
+        difference_min < -32768 || difference_max > 32767) {
+      fprintf(stderr,
+              "AVX512 periodic inverse range overflows before level %d: "
+              "sum=[%d,%d] difference=[%d,%d]\n",
+              level, sum_input_min, sum_input_max, difference_min,
+              difference_max);
+      exit(EXIT_FAILURE);
+    }
+
+    if (level == 2 || level == 5) {
+      sum_min = 32767;
+      sum_max = -32768;
+      for (int base = sum_input_min; base <= sum_input_max; base += 32) {
+        int lanes = sum_input_max - base + 1;
+        if (lanes > 32) lanes = 32;
+        for (int lane = 0; lane < 32; lane++) {
+          int value = base + (lane < lanes ? lane : lanes - 1);
+          input_lanes[lane] = (int16_t)value;
+        }
+        __m512i reduced = ntt_barrett_reduce_i16x32_avx512(
+            _mm512_loadu_si512((const void *)input_lanes));
+        _mm512_storeu_si512((void *)output_lanes, reduced);
+        for (int lane = 0; lane < lanes; lane++) {
+          if (output_lanes[lane] < sum_min) sum_min = output_lanes[lane];
+          if (output_lanes[lane] > sum_max) sum_max = output_lanes[lane];
+        }
+      }
+    }
+
+    int zeta_base = 127 >> level;
+    int zeta_count = 64 >> level;
+    for (int zeta = 0; zeta < zeta_count; zeta++) {
+      int16_t zeta_lo, zeta_hi;
+      ntt_mont_factor(ZETA[zeta_base - zeta], &zeta_lo, &zeta_hi);
+      __m512i zeta_lo_vec = _mm512_set1_epi16(zeta_lo);
+      __m512i zeta_hi_vec = _mm512_set1_epi16(zeta_hi);
+      for (int base = difference_min; base <= difference_max; base += 32) {
+        int lanes = difference_max - base + 1;
+        if (lanes > 32) lanes = 32;
+        for (int lane = 0; lane < 32; lane++) {
+          int value = base + (lane < lanes ? lane : lanes - 1);
+          input_lanes[lane] = (int16_t)value;
+        }
+        __m512i product = ntt_mont_mul_precomp_i16x32_avx512(
+            _mm512_loadu_si512((const void *)input_lanes), zeta_lo_vec,
+            zeta_hi_vec);
+        _mm512_storeu_si512((void *)output_lanes, product);
+        for (int lane = 0; lane < lanes; lane++) {
+          if (output_lanes[lane] < product_min) {
+            product_min = output_lanes[lane];
+          }
+          if (output_lanes[lane] > product_max) {
+            product_max = output_lanes[lane];
+          }
+        }
+      }
+    }
+
+    int output_min = sum_min < product_min ? sum_min : product_min;
+    int output_max = sum_max > product_max ? sum_max : product_max;
+    if (sum_min != expected[level][0] || sum_max != expected[level][1] ||
+        product_min != expected[level][2] ||
+        product_max != expected[level][3] ||
+        output_min != expected[level][4] ||
+        output_max != expected[level][5]) {
+      fprintf(stderr,
+              "AVX512 periodic inverse range mismatch at level %d: "
+              "sum=[%d,%d] product=[%d,%d] output=[%d,%d]\n",
+              level, sum_min, sum_max, product_min, product_max, output_min,
+              output_max);
+      exit(EXIT_FAILURE);
+    }
+    input_min = output_min;
+    input_max = output_max;
+  }
+
+  if (2 * input_min != -4316 || 2 * input_max != 6658) {
+    fprintf(stderr, "AVX512 periodic inverse final add range mismatch: "
+                    "[%d,%d]\n",
+            2 * input_min, 2 * input_max);
+    exit(EXIT_FAILURE);
+  }
+}
+
 static void validate_ntt_inv_scale_eta2_single_reduce_avx512(void) {
   int16_t input[32], raw_lanes[32], expected_lanes[32], got_lanes[32];
   int8_t noise[32];
@@ -3228,6 +3336,7 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_accum_asym_madd512_avx512();
 #endif
   validate_ntt_inv_add4_shared_avx512();
+  validate_ntt_inv_periodic_reduce_range_avx512();
   validate_ntt_inv_scale_eta2_single_reduce_avx512();
   validate_ntt_inv_add4_eta2_i8_avx512();
 #endif
