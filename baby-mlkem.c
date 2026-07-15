@@ -3641,31 +3641,38 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_final_l1_block32_avx512(
   return _mm512_permutexvar_epi64(order, out);
 }
 
-static MLKEM_ALWAYS_INLINE void ntt_acc4_madd_block_avx512(
+/*
+ * Preweight each common rhat odd lane once for all four dot products.
+ * Centering preserves the +/-6*(Q-1)*(Q/2) K=3 madd bound.
+ */
+static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_c0_factor_avx512(
+    __m512i y, __m512i y_odd, __m512i gamma_hi) {
+  const __m512i q = _mm512_set1_epi32(Q);
+  const __m512i half_q = _mm512_set1_epi32(Q / 2);
+  __m512i weighted =
+      ntt_acc4_madd_reduce_i32x16(_mm512_madd_epi16(y_odd, gamma_hi));
+  __mmask16 high = _mm512_cmpgt_epi32_mask(weighted, half_q);
+  weighted = _mm512_mask_sub_epi32(weighted, high, weighted, q);
+  return _mm512_mask_mov_epi16(
+      y, (__mmask32)0xaaaaaaaau, _mm512_slli_epi32(weighted, 16));
+}
+
+static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_madd_block_avx512(
     const poly256 a0, const poly256 a1, const poly256 a2, int offset,
-    __m512i y0, __m512i y1, __m512i y2,
-    __m512i y0_odd, __m512i y1_odd, __m512i y2_odd,
-    __m512i gamma, poly256 out) {
+    __m512i y0_c0, __m512i y1_c0, __m512i y2_c0,
+    __m512i y0_c1, __m512i y1_c1, __m512i y2_c1, poly256 out) {
   __m512i x = _mm512_loadu_si512((const void *)(a0 + offset));
-  __m512i sum = _mm512_madd_epi16(x, y0);
-  __m512i odd = _mm512_madd_epi16(x, y0_odd);
-  __m512i c1 = _mm512_madd_epi16(x, _mm512_rol_epi32(y0, 16));
+  __m512i c0 = _mm512_madd_epi16(x, y0_c0);
+  __m512i c1 = _mm512_madd_epi16(x, y0_c1);
 
   x = _mm512_loadu_si512((const void *)(a1 + offset));
-  sum = _mm512_add_epi32(sum, _mm512_madd_epi16(x, y1));
-  odd = _mm512_add_epi32(odd, _mm512_madd_epi16(x, y1_odd));
-  c1 = _mm512_add_epi32(
-      c1, _mm512_madd_epi16(x, _mm512_rol_epi32(y1, 16)));
+  c0 = _mm512_add_epi32(c0, _mm512_madd_epi16(x, y1_c0));
+  c1 = _mm512_add_epi32(c1, _mm512_madd_epi16(x, y1_c1));
 
   x = _mm512_loadu_si512((const void *)(a2 + offset));
-  sum = _mm512_add_epi32(sum, _mm512_madd_epi16(x, y2));
-  odd = _mm512_add_epi32(odd, _mm512_madd_epi16(x, y2_odd));
-  c1 = _mm512_add_epi32(
-      c1, _mm512_madd_epi16(x, _mm512_rol_epi32(y2, 16)));
+  c0 = _mm512_add_epi32(c0, _mm512_madd_epi16(x, y2_c0));
+  c1 = _mm512_add_epi32(c1, _mm512_madd_epi16(x, y2_c1));
 
-  __m512i even = _mm512_sub_epi32(sum, odd);
-  odd = ntt_acc4_madd_reduce_i32x16(odd);
-  __m512i c0 = _mm512_add_epi32(even, _mm512_mullo_epi32(odd, gamma));
   c0 = ntt_acc4_madd_reduce_i32x16(c0);
   c1 = ntt_acc4_madd_reduce_i32x16(c1);
   __m256i c0_16 = _mm512_cvtusepi32_epi16(c0);
@@ -3709,19 +3716,29 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
     __m512i gamma = _mm512_cvtepu16_epi32(
         _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
+    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
+    __m512i y0_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
+    __m512i y1_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
+    __m512i y2_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
+    __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
+    __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
 
-    ntt_acc4_madd_block_avx512(
+    ntt_acc4_asym_madd_block_avx512(
         ahat[0][0], ahat[0][1], ahat[0][2], offset,
-        y0, y1, y2, y0_odd, y1_odd, y2_odd, gamma, out[0]);
-    ntt_acc4_madd_block_avx512(
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
+    ntt_acc4_asym_madd_block_avx512(
         ahat[1][0], ahat[1][1], ahat[1][2], offset,
-        y0, y1, y2, y0_odd, y1_odd, y2_odd, gamma, out[1]);
-    ntt_acc4_madd_block_avx512(
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
+    ntt_acc4_asym_madd_block_avx512(
         ahat[2][0], ahat[2][1], ahat[2][2], offset,
-        y0, y1, y2, y0_odd, y1_odd, y2_odd, gamma, out[2]);
-    ntt_acc4_madd_block_avx512(
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
+    ntt_acc4_asym_madd_block_avx512(
         that[0], that[1], that[2], offset,
-        y0, y1, y2, y0_odd, y1_odd, y2_odd, gamma, outv);
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, outv);
   }
 }
 #endif

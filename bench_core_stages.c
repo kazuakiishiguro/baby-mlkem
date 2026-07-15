@@ -10565,6 +10565,28 @@ static uint64_t bench_encrypt_rhat_acc4_fused_madd512_avx512(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+static uint64_t bench_encrypt_rhat_acc4_fused_asym_madd512_avx512(
+    size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec1[lane][j], stage_r_raw[lane][j], sizeof(poly256));
+    }
+    ntt3_mul_acc4_fused_final_madd512_avx512(
+        stage_ahat[lane], stage_that[lane], stage_tmp_vec1[lane],
+        stage_tmp_vec0[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 #endif
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -14028,6 +14050,11 @@ int main(int argc, char **argv) {
                bench_encrypt_rhat_acc4_fused_madd_avx512(iters), iters);
   print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512",
                bench_encrypt_rhat_acc4_fused_madd512_avx512(iters), iters);
+#if defined(__GNUC__) && !defined(__clang__)
+  print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512",
+               bench_encrypt_rhat_acc4_fused_asym_madd512_avx512(iters),
+               iters);
+#endif
 #endif
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
   print_metric("mlkem_core_stage_ntt_mul_acc4_madd_avx2",
