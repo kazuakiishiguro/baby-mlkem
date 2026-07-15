@@ -3945,14 +3945,14 @@ static void ntt_before_final_l1_avx512(poly256 f) {
 }
 
 #if defined(__GNUC__) && !defined(__clang__)
-/* Exact over the full centered K=3 pair-sum range. */
+/* Exact from -6*(Q-1)*(Q/2) through 6*(Q-1)^2. */
 static MLKEM_ALWAYS_INLINE __m512i
 ntt_acc4_madd_reduce_i32x16(__m512i x) {
-  const __m512i reciprocal = _mm512_set1_epi32(315);
+  const __m512i reciprocal = _mm512_set1_epi32(20159);
   const __m512i q = _mm512_set1_epi32(Q);
   const __m512i q_minus_1 = _mm512_set1_epi32(Q - 1);
   __m512i quot = _mm512_srai_epi32(
-      _mm512_mullo_epi32(_mm512_srai_epi32(x, 3), reciprocal), 17);
+      _mm512_mullo_epi32(_mm512_srai_epi32(x, 10), reciprocal), 16);
   __m512i reduced = _mm512_sub_epi32(x, _mm512_mullo_epi32(quot, q));
   reduced = _mm512_add_epi32(
       reduced, _mm512_and_si512(_mm512_srai_epi32(reduced, 31), q));
@@ -3986,18 +3986,11 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_final_l1_block32_avx512(
   return _mm512_permutexvar_epi64(order, out);
 }
 
-/*
- * Preweight each common rhat odd lane once for all four dot products.
- * Centering preserves the +/-6*(Q-1)*(Q/2) K=3 madd bound.
- */
+/* Preweight each common canonical odd lane once for all dot products. */
 static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_c0_factor_avx512(
     __m512i y, __m512i y_odd, __m512i gamma_hi) {
-  const __m512i q = _mm512_set1_epi32(Q);
-  const __m512i half_q = _mm512_set1_epi32(Q / 2);
   __m512i weighted =
       ntt_acc4_madd_reduce_i32x16(_mm512_madd_epi16(y_odd, gamma_hi));
-  __mmask16 high = _mm512_cmpgt_epi32_mask(weighted, half_q);
-  weighted = _mm512_mask_sub_epi32(weighted, high, weighted, q);
   return _mm512_mask_mov_epi16(
       y, (__mmask32)0xaaaaaaaau, _mm512_slli_epi32(weighted, 16));
 }
@@ -4070,8 +4063,6 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
     poly256 out[K], poly256 outv) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
-  const __m512i q = _mm512_set1_epi16(Q);
-  const __m512i half_q = _mm512_set1_epi16(Q / 2);
 
   ntt_before_final_l1_avx512(b[0]);
   ntt_before_final_l1_avx512(b[1]);
@@ -4084,12 +4075,6 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
     __m512i y0 = ntt_final_l1_block32_avx512(b[0], offset, zeta);
     __m512i y1 = ntt_final_l1_block32_avx512(b[1], offset, zeta);
     __m512i y2 = ntt_final_l1_block32_avx512(b[2], offset, zeta);
-    __mmask32 y0_gt = _mm512_cmpgt_epi16_mask(y0, half_q);
-    __mmask32 y1_gt = _mm512_cmpgt_epi16_mask(y1, half_q);
-    __mmask32 y2_gt = _mm512_cmpgt_epi16_mask(y2, half_q);
-    y0 = _mm512_mask_sub_epi16(y0, y0_gt, y0, q);
-    y1 = _mm512_mask_sub_epi16(y1, y1_gt, y1, q);
-    y2 = _mm512_mask_sub_epi16(y2, y2_gt, y2, q);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
@@ -4127,8 +4112,6 @@ ntt3_mul_acc4_fused_final_vnni512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
     poly256 out[K], poly256 outv) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
-  const __m512i q = _mm512_set1_epi16(Q);
-  const __m512i half_q = _mm512_set1_epi16(Q / 2);
 
   ntt_before_final_l1_avx512(b[0]);
   ntt_before_final_l1_avx512(b[1]);
@@ -4141,12 +4124,6 @@ ntt3_mul_acc4_fused_final_vnni512_avx512(
     __m512i y0 = ntt_final_l1_block32_avx512(b[0], offset, zeta);
     __m512i y1 = ntt_final_l1_block32_avx512(b[1], offset, zeta);
     __m512i y2 = ntt_final_l1_block32_avx512(b[2], offset, zeta);
-    __mmask32 y0_gt = _mm512_cmpgt_epi16_mask(y0, half_q);
-    __mmask32 y1_gt = _mm512_cmpgt_epi16_mask(y1, half_q);
-    __mmask32 y2_gt = _mm512_cmpgt_epi16_mask(y2, half_q);
-    y0 = _mm512_mask_sub_epi16(y0, y0_gt, y0, q);
-    y1 = _mm512_mask_sub_epi16(y1, y1_gt, y1, q);
-    y2 = _mm512_mask_sub_epi16(y2, y2_gt, y2, q);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
@@ -4179,13 +4156,11 @@ ntt3_mul_acc4_fused_final_vnni512_avx512(
 }
 #endif
 
-/* Reuse the centered gamma-weighted secret factors across all A^T columns. */
+/* Reuse canonical gamma-weighted secret factors across all A^T columns. */
 static MLKEM_ALWAYS_INLINE void
 ntt_mul_acc3_cols3_asym_madd512_avx512(
     const poly256 ahat[K][K], const poly256 b[K], poly256 out[K]) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
-  const __m512i q = _mm512_set1_epi16(Q);
-  const __m512i half_q = _mm512_set1_epi16(Q / 2);
 
   for (int offset = 0, pair = 0; offset < N; offset += 32, pair += 16) {
     __m512i y0 =
@@ -4194,12 +4169,6 @@ ntt_mul_acc3_cols3_asym_madd512_avx512(
         _mm512_loadu_si512((const void *)(b[1] + offset));
     __m512i y2 =
         _mm512_loadu_si512((const void *)(b[2] + offset));
-    __mmask32 y0_gt = _mm512_cmpgt_epi16_mask(y0, half_q);
-    __mmask32 y1_gt = _mm512_cmpgt_epi16_mask(y1, half_q);
-    __mmask32 y2_gt = _mm512_cmpgt_epi16_mask(y2, half_q);
-    y0 = _mm512_mask_sub_epi16(y0, y0_gt, y0, q);
-    y1 = _mm512_mask_sub_epi16(y1, y1_gt, y1, q);
-    y2 = _mm512_mask_sub_epi16(y2, y2_gt, y2, q);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
