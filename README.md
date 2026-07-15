@@ -186,7 +186,7 @@ Near-term target selection:
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed as a standalone tactic; superseded by the full representation | Head `l2+l3`, tail `l4+l5`/`l5+l6`, and `l6/final` fusion attempts were slower in the old 32-bit representation. The accepted full 16-bit inverse succeeds by changing butterfly arithmetic and range handling across all seven levels, not by reviving those local schedules. |
 | Public-matrix x4 lane grouping | Closed | Column-major x4 batches measured 0.9994x median versus current row-major production; regrouping lanes without changing Keccak/state work is not enough. |
-| Broad lazy/signed range contract | Full forward and inverse NTTs accepted; producer boundary still open only end-to-end | The forward transform removes stage-local 32-bit reductions, while the inverse proves a narrower contract: reduce only sum branches per level and keep difference products in Montgomery lanes. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins sampling, the transform, and accumulation together. |
+| Broad lazy/signed range contract | Full transforms and native x6 keygen producer boundary accepted | The forward transform carries signed 16-bit Montgomery values through all seven stages and canonicalizes once at the end. Native AVX512 keygen now keeps all six ETA2 CBD outputs in centered `[-2,2]` form through that transform, removing the producer-side add-`Q` correction. Clang/GCC CBD+six-NTT paired geometric means improve `1.0189x`/`1.0141x`; cache-disabled complete keygen improves `1.0025x`/`1.0068x`. AVX2-only and scalar paths are unchanged; no cache, external object, table, or wire-format change is added. |
 | AVX2 four-output K=3 encryption accumulation | Accepted for non-AVX512 encryption | One centered `rhat` load feeds all three `u` rows and `v`; `vpmaddwd` computes even/odd and cross terms with a proved signed-32-bit reduction range. Eleven-pair A/B improves cached and uncached K-PKE medians by `1.0165x` and `1.0120x`; full encapsulation improves `1.0171x` with 11/11 wins. No external object, factor cache, or wire-format change is used. |
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; asymmetric-factor follow-up accepted | The final NTT l1 emits 32 centered coefficients into three ZMM `rhat` vectors shared by all three `u` rows and `v`. The follow-up forms `[r0, gamma*r1]` once per common input and reuses it across four dot products, reducing the hot loop from three to two output-side `vpmaddwd` streams. Against the preceding ZMM path, paired medians improve cached K-PKE, encaps, decaps, and roundtrip-core by `1.0292x`/`1.0301x`/`1.0192x`/`1.0069x`. The factors are transient registers, not a cache or table; Clang and narrower builds remain byte-identical. |
 | Clang AVX512 ZMM four-output K=3 encryption boundary | Accepted for Clang native; GCC and narrower ISA byte-identical | The existing canonical-output ZMM `vpmaddwd` kernel now sits behind a Clang-only noinline boundary instead of leaving prepared encryption on the 14 KiB scalar-final helper. Cached/uncached K-PKE paired medians improve `1.1192x`/`1.0466x`; 100k encaps/decaps/roundtrip improve `1.0424x`/`1.0399x`/`1.0171x`, all 14/14. Clang `benchc` text shrinks 4,992 bytes. No external object, cache, table, or wire-format change is added. |
@@ -7912,6 +7912,85 @@ This is a repository-local compiler-code-generation correction, not a borrowed
 Keccak or rejection-sampling schedule. It links no secp256k1, ZKP, Kyber,
 PQClean, XKCP, liboqs, or other external runtime object, adds no persistent
 cache or lookup table, and changes no serialized format.
+
+### Local Core Optimization A/B (2026-07-16, signed x6 keygen CBD/NTT boundary)
+
+The completed native forward NTT changed the producer/consumer tradeoff. Its
+seven signed-lazy butterfly stages accept the centered ETA2 range `[-2,2]` and
+canonicalize once after the final stage. The x6 keygen CBD decoder therefore no
+longer maps `-1` and `-2` to `Q-1` and `Q-2` only for the NTT to consume the
+same residue immediately. Core commit `457fa8c` widens the signed nibble lookup
+results directly to int16 and feeds all six secret/error polynomials to the
+existing NTT. It changes no NTT butterfly, serialized coefficient, or API.
+
+Clang initially turned the shorter loop into an eight-way-unrolled body. That
+form improved the isolated CBD+NTT row but enlarged the stage binary by 2,752
+text bytes and regressed full keygen to `0.9920x` paired geometric mean. The
+accepted source fixes only Clang's decoder loop at four-way unrolling. Clang
+then outlines the bounded decoder from the already large keygen caller; the
+local gain survives without instruction-footprint growth. GCC independently
+shrinks its decoder from `0x186` to `0x12c` bytes.
+
+The stage gate used CPU 0 on a Ryzen Threadripper 7980X, Clang 18.1.3 and GCC
+13.3.0, 30,000 iterations, three warmups, and eleven alternating fixed-path
+baseline/candidate pairs against `63d68cf`. `keygen_noise_ntt_encode` is an
+unchanged-input control: it starts from canonical fixtures and measures the six
+NTTs plus secret-key encoding without the changed producer.
+
+| Compiler | Stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---|---:|---:|---:|---:|---:|
+| Clang | `mlkem_core_stage_keygen_noise_prf_cbd` | 694.31 | 686.68 | 1.0113x | 1.0115x | 11/11 |
+| Clang | `mlkem_core_stage_keygen_noise_ntt` | 969.48 | 951.87 | 1.0189x | 1.0194x | 11/11 |
+| Clang | `mlkem_core_stage_kpke_keygen_full` | 2766.60 | 2756.87 | 1.0050x | 1.0022x | 9/11 |
+| Clang | `mlkem_core_stage_keygen_noise_ntt_encode` control | 816.73 | 818.06 | 0.9984x | 0.9979x | 4/11 |
+| GCC | `mlkem_core_stage_keygen_noise_prf_cbd` | 716.84 | 702.07 | 1.0238x | 1.0214x | 11/11 |
+| GCC | `mlkem_core_stage_keygen_noise_ntt` | 1040.81 | 1026.41 | 1.0141x | 1.0143x | 11/11 |
+| GCC | `mlkem_core_stage_kpke_keygen_full` | 2776.50 | 2766.74 | 1.0045x | 1.0042x | 10/11 |
+| GCC | `mlkem_core_stage_keygen_noise_ntt_encode` control | 880.84 | 881.86 | 0.9995x | 0.9985x | 5/11 |
+
+The production-API gate used a temporary focused harness around
+`mlkem_keygen_derand()`: internal baby-mlkem caches disabled, 64 deterministic
+input/output lanes, 200,000 keygens per run, three warmups, and fifteen
+alternating pairs. It includes complete deterministic ML-KEM key generation,
+not only CBD or NTT, and does not call `randombytes`.
+
+| Compiler | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins | Baseline-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Clang | 4060.07 | 4050.39 | 1.0025x | 1.0017x | 11/15 | 1.0024x | 1.0017x |
+| GCC | 4089.29 | 4070.94 | 1.0068x | 1.0053x | 13/15 | 1.0037x | 1.0075x |
+
+The ordinary all-metric Clang `benchc` run was retained as a transparency
+check, not used as the acceptance score. One candidate keygen run was interrupted
+at 5061.72 ns/op versus roughly 4330 ns/op for the normal cluster, making the
+raw 15-pair geometric mean `0.9915x`; its paired median was `1.0003x` and
+`keygen_core` paired median was `1.0011x`. Lengthening only the changed operation
+in the focused gate avoids letting unrelated encapsulation/decapsulation work
+reduce target sampling density.
+
+Production `benchc` code size also decreases, so the result is not purchased by
+another large inline schedule:
+
+| Compiler | Baseline text bytes | Candidate text bytes | Delta | Data/BSS change |
+|---|---:|---:|---:|---:|
+| Clang | 155251 | 154931 | -320 | 0 / 0 |
+| GCC | 84524 | 84428 | -96 | 0 / 0 |
+
+Test commit `e812747` adds 256 deterministic `(sigma,rho)` fixtures. For both
+the direct x6 producer and the production mixed x8 noise/matrix-tail producer,
+it compares all six polynomials coefficient-for-coefficient with independent
+scalar PRF/CBD in centered form, compares the matrix tail with scalar
+`sample_ntt()`, and requires the complete forward-NTT outputs to match the
+canonical-input outputs exactly. The fixtures must exercise negative
+coefficients.
+
+GCC and Clang native KAT and complete stage validation pass. Both compilers'
+explicit AVX2-only and scalar KATs pass; Clang AVX2-only complete stage
+validation passes. GCC native UBSan passes KAT and complete stage validation.
+The change is repository-local range/dataflow work. It links no secp256k1, ZKP,
+Kyber, PQClean, XKCP, liboqs, or other external runtime object, adds no cache or
+table, and changes no wire format. The Montgomery/Harvey NTT remains covered by
+the existing upstream attribution; the new contribution is removing a redundant
+representation conversion at the proved local producer/consumer boundary.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
