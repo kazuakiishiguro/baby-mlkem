@@ -705,6 +705,44 @@ static void validate_keccakf1_avx2_matches_current(void) {
 }
 #endif
 
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+static void validate_sha3_256_1184_avx512vl_patterns(void) {
+  uint8_t input[1184];
+  uint8_t reference[32];
+  uint8_t actual[32];
+
+  for (int fixture = 0; fixture < 256; fixture++) {
+    if (fixture == 0) {
+      memset(input, 0, sizeof(input));
+    } else if (fixture == 1) {
+      memset(input, 0xff, sizeof(input));
+    } else if (fixture == 2) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (uint8_t)i;
+      }
+    } else if (fixture == 3) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (i & 1u) ? 0xff : 0x00;
+      }
+    } else {
+      fill_bytes(input, sizeof(input), 0x11840000u + (uint64_t)fixture);
+    }
+
+    keccak_ctx ctx;
+    keccak_init(&ctx, 136);
+    keccak_absorb(&ctx, input, sizeof(input));
+    keccak_finalize(&ctx, 0x06);
+    keccak_squeeze(&ctx, reference, sizeof(reference));
+    mlkem_sha3_256_1184_avx512vl(input, actual);
+    if (memcmp(reference, actual, sizeof(reference)) != 0) {
+      fprintf(stderr, "fixed AVX512VL public-key hash mismatch fixture=%d\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 #if defined(__AVX2__)
 static void validate_keccakf4_matches_scalar(void) {
   uint64_t scalar[4][25];
@@ -931,6 +969,9 @@ static void validate_keccak_helpers(void) {
       exit(EXIT_FAILURE);
     }
   }
+#endif
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+  validate_sha3_256_1184_avx512vl_patterns();
 #endif
   validate_cbd3_aos4_matches_pack();
   validate_cbd4_tile2x4_matches_pack();
