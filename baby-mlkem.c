@@ -1126,6 +1126,55 @@ keccakf8_2_store_blocks(
   st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
 }
 
+/* Keep the matrix state live through all three initial XOF rate blocks. */
+static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2"))) void
+keccakf8_sparse_matrix_3_store_blocks(
+    const uint8_t seed[32], __m512i st[25], uint8_t stream[8][504]) {
+  __m512i Ba, Be, Bi, Bo, Bu, D;
+  __m512i zero = _mm512_setzero_si512();
+  __m512i ba = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  __m512i be = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  __m512i bi = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  __m512i bo = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  __m512i bu = _mm512_set_epi64(
+      0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+      0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+  __m512i ga = zero, ge = zero, gi = zero, go = zero, gu = zero;
+  __m512i ka = zero, ke = zero, ki = zero, ko = zero, ku = zero;
+  __m512i ma = zero, me = zero, mi = zero, mo = zero, mu = zero;
+  __m512i sa = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  __m512i se = zero, si = zero, so = zero, su = zero;
+
+  for (int block = 0; block < 3; block++) {
+    for (int round = 0; round < 24; round += 4) {
+      MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+    }
+
+    size_t block_off = (size_t)block * 168;
+    MLKEM_KECCAKF8_STORE_RATE4(stream, block_off, 0, ba, be, bi, bo);
+    MLKEM_KECCAKF8_STORE_RATE4(stream, block_off, 32, bu, ga, ge, gi);
+    MLKEM_KECCAKF8_STORE_RATE4(stream, block_off, 64, go, gu, ka, ke);
+    MLKEM_KECCAKF8_STORE_RATE4(stream, block_off, 96, ki, ko, ku, ma);
+    MLKEM_KECCAKF8_STORE_RATE4(stream, block_off, 128, me, mi, mo, mu);
+    MLKEM_KECCAKF8_STORE_LAST4(stream[0] + block_off,
+                               stream[1] + block_off,
+                               stream[2] + block_off,
+                               stream[3] + block_off,
+                               _mm512_castsi512_si256(sa));
+    MLKEM_KECCAKF8_STORE_LAST4(stream[4] + block_off,
+                               stream[5] + block_off,
+                               stream[6] + block_off,
+                               stream[7] + block_off,
+                               MLKEM_KECCAKF8_HI256(sa));
+  }
+
+  st[0] = ba;    st[1] = be;    st[2] = bi;    st[3] = bo;    st[4] = bu;
+  st[5] = ga;    st[6] = ge;    st[7] = gi;    st[8] = go;    st[9] = gu;
+  st[10] = ka;   st[11] = ke;   st[12] = ki;   st[13] = ko;   st[14] = ku;
+  st[15] = ma;   st[16] = me;   st[17] = mi;   st[18] = mo;   st[19] = mu;
+  st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
+}
+
 #undef MLKEM_KECCAKF8_STORE_LAST4
 #undef MLKEM_KECCAKF8_STORE_RATE4
 #undef MLKEM_KECCAKF8_HI256
@@ -5167,9 +5216,7 @@ static void sample_ntt8_matrix(const uint8_t *seed,
   int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
 
 #if defined(__GNUC__) && !defined(__clang__)
-  keccakf8_sparse_32(seed, NULL, NULL, st);
-  sample_ntt8_store_block(stream, 0, st);
-  keccakf8_2_store_blocks(st, stream);
+  keccakf8_sparse_matrix_3_store_blocks(seed, st, stream);
 #else
   for (int i = 0; i < 25; i++) {
     st[i] = _mm512_setzero_si512();
