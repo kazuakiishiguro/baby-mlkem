@@ -191,6 +191,7 @@ Near-term target selection:
 | Canonical GCC AVX512 NTT accumulation factors | Accepted for GCC AVX512; Clang and narrower ISA unchanged | The asymmetric K=3 kernels now keep final-NTT and gamma-weighted factors in canonical `[0,Q)` form instead of centering each vector. A wider reciprocal reducer proves the resulting `6*(Q-1)^2` signed-32-bit bound without adding instructions. Direct madd/VNNI/keygen accumulation medians improve `1.0310x`/`1.0293x`/`1.0471x`; cached K-PKE improves `1.0211x`, and 100k encaps/decaps improve `1.0181x`/`1.0170x`, both 14/14. This is local arithmetic-range redesign with no cache, external object, table, or wire-format dependency. |
 | Lazy GCC AVX512 encryption final-L1 boundary | Accepted for GCC AVX512; Clang and narrower ISA unchanged | The four-output encryption path now keeps six forward-NTT levels lazy, completes final `l1` with existing 16-bit Montgomery factors, and canonicalizes only each returned 32-coefficient block. This removes three full 256-coefficient canonicalization passes and the 32-bit unsigned final butterfly. Direct madd/VNNI medians improve `1.0536x`/`1.0563x`; cached K-PKE improves `1.0401x`, and 100k encaps/decaps improve `1.0338x`/`1.0272x`. GCC `benchc` text/BSS shrink 416/512 bytes. No cache, external object, new table, or wire-format dependency is added. |
 | GCC AVX512 inverse scale/noise single reduction | Accepted for GCC AVX512 compact ETA2 encryption; Clang and narrower ISA unchanged | Final inverse Montgomery products now receive signed-int8 ETA2 noise and the optional message before one canonicalization, replacing scale canonicalization followed by a second add/correction pass. The exact pre-canonical range is `[-1896,3587]`. Direct inverse-final improves `1.0683x` geometric mean, cached/uncached K-PKE `1.0183x`/`1.0067x`, and 100k encaps/decaps `1.0165x`/`1.0109x`; all target stage pairs win. GCC `benchc` text shrinks 224 bytes. No cache, external object, table, or wire-format change is added. |
+| Native AVX512 periodic inverse sum reductions | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | The shared four-output inverse NTT now leaves sum branches lazy for levels 0-1 and 3-4, applying signed Barrett only at levels 2 and 5. Exact conservative propagation keeps every sum/difference and the final add inside int16. GCC/Clang compact-direct geometric means improve `1.1318x`/`1.1531x`, cached K-PKE `1.0429x`/`1.0313x`, and 100k encaps `1.0262x`/`1.0287x`. GCC `benchc` text shrinks 160 bytes. The fixed arithmetic schedule adds no cache, external object, table, or wire-format change. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
@@ -7094,6 +7095,130 @@ adds no persistent cache or table, and changes no serialized format.
 Montgomery and Barrett reduction remain classical, upstream-attributed
 components; the baby-mlkem-specific work is the exact final-factor range proof,
 single-reduction placement, exhaustive validation, and measured integration.
+
+### Local Core Optimization A/B (2026-07-15, AVX512 periodic inverse sum reductions)
+
+After the inverse scale/noise single-reduction change, a fresh GCC profile at
+commit `6a75442` attributed `4.54%` self time to the shared four-output inverse
+NTT before its final level. That helper still applied signed Barrett to every
+sum branch at all six pre-final inverse levels. Product branches were already
+kept as signed 16-bit Montgomery results.
+
+Commit `cc434cf` changes the fixed reduction schedule to:
+
+```text
+level 0: lazy sum
+level 1: lazy sum
+level 2: Barrett sum
+level 3: lazy sum
+level 4: lazy sum
+level 5: Barrett sum
+```
+
+Thus, each group carries two lazy sum levels and reduces on the third. The
+Montgomery product branch is unchanged. The single-output reference helper is
+also unchanged; only the shared four-output path used by prepared-public
+native AVX512 encryption adopts the periodic schedule.
+
+Conservative interval propagation starts with canonical `[0,Q)` input, takes
+the union of each level's sum and product branches, and evaluates every actual
+inverse twiddle. The exact bounds are:
+
+| Inverse level | Sum schedule | Sum range | Montgomery product range | Output union |
+|---|---|---:|---:|---:|
+| 0, length 2 | lazy | `[0,6656]` | `[-1739,1739]` | `[-1739,6656]` |
+| 1, length 4 | lazy | `[-3478,13312]` | `[-1867,1867]` | `[-3478,13312]` |
+| 2, length 8 | Barrett | `[0,3329]` | `[-2062,2065]` | `[-2062,3329]` |
+| 3, length 16 | lazy | `[-4124,6658]` | `[-1772,1772]` | `[-4124,6658]` |
+| 4, length 32 | lazy | `[-8248,13316]` | `[-1907,1907]` | `[-8248,13316]` |
+| 5, length 64 | Barrett | `[0,3329]` | `[-2158,2158]` | `[-2158,3329]` |
+
+The following final length-128 add is bounded by `[-4316,6658]`. Every raw sum
+and difference consumed before that point also remains in
+`[-32768,32767]`, so `_mm512_add_epi16()` and `_mm512_sub_epi16()` do not wrap.
+The schedule is fixed by public loop level and introduces no data-dependent
+branch.
+
+The direct stage gates used CPU 0, 50,000 iterations, two warmups, and nine
+alternating pairs against `6a75442` under each compiler:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 6a75442
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 6a75442
+```
+
+| Compiler | Stage metric | Baseline avg ns/op | Candidate avg ns/op | Paired geometric mean | Paired median | Wins |
+|---|---|---:|---:|---:|---:|---:|
+| GCC | `mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512` | 303.03 | 267.78 | 1.1318x | 1.1400x | 9/9 |
+| GCC | `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | 311.49 | 278.50 | 1.1188x | 1.1225x | 9/9 |
+| GCC | `mlkem_core_stage_kpke_encrypt_cached` | 1107.88 | 1062.32 | 1.0429x | 1.0435x | 9/9 |
+| GCC | `mlkem_core_stage_kpke_encrypt_uncached` | 2775.02 | 2710.75 | 1.0233x | 1.0139x | 9/9 |
+| Clang | `mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512` | 274.55 | 238.10 | 1.1531x | 1.1538x | 9/9 |
+| Clang | `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | 285.10 | 247.53 | 1.1518x | 1.1519x | 9/9 |
+| Clang | `mlkem_core_stage_kpke_encrypt_cached` | 1228.46 | 1191.20 | 1.0313x | 1.0316x | 9/9 |
+| Clang | `mlkem_core_stage_kpke_encrypt_uncached` | 3019.80 | 2976.50 | 1.0145x | 1.0153x | 9/9 |
+
+The unrelated keygen-full controls stayed neutral: GCC measured `1.0026x`
+geometric mean and `1.0042x` median with 8/9 wins; Clang measured `1.0026x`
+and `1.0009x` with 6/9 wins.
+
+The final KEM gates used 100,000 iterations, three warmups, and fourteen
+alternating pairs against the same baseline:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 6a75442
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=clang ./scripts/bench_core_ab.sh 6a75442
+```
+
+| Compiler | KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---|---:|---:|---:|
+| GCC | `mlkem_encaps` | 1.0262x | 1.0284x | 13/14 |
+| GCC | `mlkem_encaps_core` | 1.0084x | 1.0083x | 13/14 |
+| GCC | `mlkem_decaps` | 1.0212x | 1.0223x | 14/14 |
+| GCC | `mlkem_decaps_core` | 1.0111x | 1.0100x | 13/14 |
+| GCC | `mlkem_roundtrip` | 1.0117x | 1.0117x | 14/14 |
+| GCC | `mlkem_roundtrip_core` | 1.0063x | 1.0062x | 12/14 |
+| Clang | `mlkem_encaps` | 1.0287x | 1.0267x | 14/14 |
+| Clang | `mlkem_encaps_core` | 1.0009x | 1.0071x | 10/14 |
+| Clang | `mlkem_decaps` | 1.0221x | 1.0207x | 14/14 |
+| Clang | `mlkem_decaps_core` | 1.0097x | 1.0089x | 11/14 |
+| Clang | `mlkem_roundtrip` | 1.0105x | 1.0106x | 13/14 |
+| Clang | `mlkem_roundtrip_core` | 1.0045x | 1.0078x | 11/14 |
+
+GCC keygen/keygen-core controls measured `1.0006x`/`1.0012x` geometric mean;
+Clang measured `1.0015x`/`1.0032x`. Keygen does not execute this shared
+inverse path.
+
+Correctness commit `4012800` enumerates all 1,759,438 conservative
+Montgomery-product input/twiddle combinations and all 76,710 inputs to the two
+Barrett sum passes with the production AVX512 helpers. It fixes every exact
+extremum in the table and the final-add bound. The existing validator also
+compares complete shared output against four independent single-output inverse
+paths for real stage inputs and 256 edge/random fixtures.
+
+GCC and Clang native KAT and complete stage validation pass. Explicit AVX2-only
+and scalar KATs pass under both compilers. GCC native UBSan passes KAT and
+complete stage validation, including the new exhaustive range contract.
+
+GCC native `benchc` text decreases from 81,604 to 81,444 bytes; data remains
+708 bytes and BSS remains 36,096 bytes. The shared pre-final helper shrinks from
+`0x7c6` to `0x717` bytes, while the canonical and compact callers remain
+`0x548` and `0x50f` bytes. The improvement therefore removes arithmetic and
+code rather than trading speed for instruction footprint.
+
+This is a repository-local classical lazy-reduction optimization. It links no
+secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object,
+adds no persistent cache or table, and changes no serialized format. The
+Montgomery and Barrett primitives remain part of the explicitly attributed
+upstream-derived arithmetic design; the baby-mlkem-specific work is the shared
+four-output reduction placement, exact interval contract, exhaustive
+validation, and measured GCC/Clang integration.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
