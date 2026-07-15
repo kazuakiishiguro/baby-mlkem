@@ -3960,8 +3960,15 @@ ntt_acc4_madd_reduce_i32x16(__m512i x) {
   return _mm512_mask_sub_epi32(reduced, ge_q, reduced, q);
 }
 
-static MLKEM_ALWAYS_INLINE __m512i ntt_final_l1_block32_avx512(
-    const poly256 f, int offset, __m512i zeta) {
+static MLKEM_ALWAYS_INLINE void
+ntt_before_final_l1_mont_lazy_avx512(poly256 f) {
+  ntt_head_mont_lazy_raw_avx512(f);
+  ntt_tail_before_l1_mont_lazy_raw_avx2(f);
+}
+
+/* Finish lazy l1 in Montgomery lanes, then canonicalize only this block. */
+static MLKEM_ALWAYS_INLINE __m512i ntt_final_l1_mont_block32_avx512(
+    const poly256 f, int offset, __m256i zeta_lo, __m256i zeta_hi) {
   __m128i a_lo = load_i16x2_quad(
       f + offset, f + offset + 4, f + offset + 8, f + offset + 12);
   __m128i a_hi = load_i16x2_quad(
@@ -3970,20 +3977,20 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_final_l1_block32_avx512(
       f + offset + 2, f + offset + 6, f + offset + 10, f + offset + 14);
   __m128i b_hi = load_i16x2_quad(
       f + offset + 18, f + offset + 22, f + offset + 26, f + offset + 30);
-  __m256i a16 = _mm256_inserti128_si256(
+  __m256i a = _mm256_inserti128_si256(
       _mm256_castsi128_si256(a_lo), a_hi, 1);
-  __m256i b16 = _mm256_inserti128_si256(
+  __m256i b = _mm256_inserti128_si256(
       _mm256_castsi128_si256(b_lo), b_hi, 1);
-  __m512i a = _mm512_cvtepu16_epi32(a16);
-  __m512i b = _mm512_cvtepu16_epi32(b16);
-  __m512i t = mod_q_reduce_ntt_u32x16(_mm512_mullo_epi32(b, zeta));
-  __m256i sum = _mm512_cvtusepi32_epi16(mod_q_add_i32x16(a, t));
-  __m256i diff = _mm512_cvtusepi32_epi16(mod_q_sub_i32x16(a, t));
+  __m256i t = ntt_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+  __m256i sum = _mm256_add_epi16(a, t);
+  __m256i diff = _mm256_sub_epi16(a, t);
   __m256i lo = _mm256_unpacklo_epi32(sum, diff);
   __m256i hi = _mm256_unpackhi_epi32(sum, diff);
-  __m512i out = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1);
+  __m512i out = _mm512_inserti64x4(
+      _mm512_castsi256_si512(lo), hi, 1);
   const __m512i order = _mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7);
-  return _mm512_permutexvar_epi64(order, out);
+  out = _mm512_permutexvar_epi64(order, out);
+  return ntt_canonicalize_i16x32_avx512(out);
 }
 
 /* Preweight each common canonical odd lane once for all dot products. */
@@ -4064,17 +4071,20 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
     poly256 out[K], poly256 outv) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
 
-  ntt_before_final_l1_avx512(b[0]);
-  ntt_before_final_l1_avx512(b[1]);
-  ntt_before_final_l1_avx512(b[2]);
+  ntt_before_final_l1_mont_lazy_avx512(b[0]);
+  ntt_before_final_l1_mont_lazy_avx512(b[1]);
+  ntt_before_final_l1_mont_lazy_avx512(b[2]);
 
   for (int offset = 0, i = 0, pair = 0; offset < N;
        offset += 32, i++, pair += 16) {
-    __m512i zeta = _mm512_loadu_si512(
-        (const void *)&ZETA_NTT_TAIL_L1[2 * i]);
-    __m512i y0 = ntt_final_l1_block32_avx512(b[0], offset, zeta);
-    __m512i y1 = ntt_final_l1_block32_avx512(b[1], offset, zeta);
-    __m512i y2 = ntt_final_l1_block32_avx512(b[2], offset, zeta);
+    __m256i zeta_lo = ZETA_NTT_TAIL_MONT_LO[2][i];
+    __m256i zeta_hi = ZETA_NTT_TAIL_MONT_HI[2][i];
+    __m512i y0 = ntt_final_l1_mont_block32_avx512(
+        b[0], offset, zeta_lo, zeta_hi);
+    __m512i y1 = ntt_final_l1_mont_block32_avx512(
+        b[1], offset, zeta_lo, zeta_hi);
+    __m512i y2 = ntt_final_l1_mont_block32_avx512(
+        b[2], offset, zeta_lo, zeta_hi);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
@@ -4113,17 +4123,20 @@ ntt3_mul_acc4_fused_final_vnni512_avx512(
     poly256 out[K], poly256 outv) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
 
-  ntt_before_final_l1_avx512(b[0]);
-  ntt_before_final_l1_avx512(b[1]);
-  ntt_before_final_l1_avx512(b[2]);
+  ntt_before_final_l1_mont_lazy_avx512(b[0]);
+  ntt_before_final_l1_mont_lazy_avx512(b[1]);
+  ntt_before_final_l1_mont_lazy_avx512(b[2]);
 
   for (int offset = 0, i = 0, pair = 0; offset < N;
        offset += 32, i++, pair += 16) {
-    __m512i zeta = _mm512_loadu_si512(
-        (const void *)&ZETA_NTT_TAIL_L1[2 * i]);
-    __m512i y0 = ntt_final_l1_block32_avx512(b[0], offset, zeta);
-    __m512i y1 = ntt_final_l1_block32_avx512(b[1], offset, zeta);
-    __m512i y2 = ntt_final_l1_block32_avx512(b[2], offset, zeta);
+    __m256i zeta_lo = ZETA_NTT_TAIL_MONT_LO[2][i];
+    __m256i zeta_hi = ZETA_NTT_TAIL_MONT_HI[2][i];
+    __m512i y0 = ntt_final_l1_mont_block32_avx512(
+        b[0], offset, zeta_lo, zeta_hi);
+    __m512i y1 = ntt_final_l1_mont_block32_avx512(
+        b[1], offset, zeta_lo, zeta_hi);
+    __m512i y2 = ntt_final_l1_mont_block32_avx512(
+        b[2], offset, zeta_lo, zeta_hi);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
     __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
