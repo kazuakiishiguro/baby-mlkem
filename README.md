@@ -193,6 +193,7 @@ Near-term target selection:
 | GCC AVX512 inverse scale/noise single reduction | Accepted for GCC AVX512 compact ETA2 encryption; Clang and narrower ISA unchanged | Final inverse Montgomery products now receive signed-int8 ETA2 noise and the optional message before one canonicalization, replacing scale canonicalization followed by a second add/correction pass. The exact pre-canonical range is `[-1896,3587]`. Direct inverse-final improves `1.0683x` geometric mean, cached/uncached K-PKE `1.0183x`/`1.0067x`, and 100k encaps/decaps `1.0165x`/`1.0109x`; all target stage pairs win. GCC `benchc` text shrinks 224 bytes. No cache, external object, table, or wire-format change is added. |
 | Native AVX512 periodic inverse sum reductions | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | The shared four-output inverse NTT now leaves sum branches lazy for levels 0-1 and 3-4, applying signed Barrett only at levels 2 and 5. Exact conservative propagation keeps every sum/difference and the final add inside int16. GCC/Clang compact-direct geometric means improve `1.1318x`/`1.1531x`, cached K-PKE `1.0429x`/`1.0313x`, and 100k encaps `1.0262x`/`1.0287x`. GCC `benchc` text shrinks 160 bytes. The fixed arithmetic schedule adds no cache, external object, table, or wire-format change. |
 | GCC AVX512VNNI lazy accumulation/inverse boundary | Accepted for GCC AVX512VNNI; Clang/non-VNNI/narrower ISA unchanged | The four-output K=3 kernel now stops its reciprocal reduction at a congruent `[-440,4570]` result and carries that representation into the shared inverse NTT, whose two Barrett passes move from levels 2/5 to the range-proved levels 1/4. This removes the accumulator's canonical correction without adding an inverse reduction. Direct VNNI accumulation, shared inverse, and cached K-PKE paired geometric means improve `1.0583x`/`1.0151x`/`1.0487x`; 100k encaps/decaps/roundtrip improve `1.0394x`/`1.0256x`/`1.0110x`. GCC `benchc` text shrinks 160 bytes. No cache, external object, table, or wire-format change is added. |
+| GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
@@ -7344,6 +7345,80 @@ The reciprocal, Montgomery, and Barrett techniques are classical and remain
 covered by the existing upstream attribution. The baby-mlkem-specific work is
 the lazy producer/consumer contract, exhaustive schedule and range proof,
 compiler/ISA routing, integrated validation, and measured performance gate.
+
+### Local Core Optimization A/B (2026-07-16, GCC AVX512 rejection compare lowering)
+
+The post-lazy-boundary profile assigned `7.35%` self time to
+`sample_ntt_parse_stream_avx2_ready()` plus another `1.05%` to its constant
+propagated clone. This parser is the consumer of every public-matrix SHAKE128
+stream, so its 48-byte vector loop remains relevant even though the x8 Keccak
+producer is larger.
+
+The source used `_mm256_cmpgt_epi16(bound, value)` for each pair of sixteen
+12-bit candidate vectors. GCC 13.3 under native AVX512 lowered those two AVX2
+comparisons to two `VPMINSW` plus two `VPCMPEQW` instructions. Core commit
+`ceb35c5` adds a GCC+AVX512-only inline wrapper that emits the two intended
+`VPCMPGTW` instructions directly. Its operand alternatives support both AT&T
+and Intel assembler dialects. Clang and builds without AVX512F retain the
+original intrinsic.
+
+This preserves signed comparison semantics because every decoded candidate is
+in `[0,4095]` and `Q=3329`. Test commit `e26f7a7` checks the vector result against
+scalar `candidate < Q` for all 4,096 possible 12-bit values. The parser's GCC
+native symbol shrinks from `0x473` to `0x463` bytes, and complete `benchc` text
+shrinks from 81,284 to 81,252 bytes. Data and BSS stay at 708 and 36,096 bytes.
+
+The stage gate used CPU 0 on a Ryzen Threadripper 7980X, GCC 13.3, 120,000
+iterations, three warmups, and nine alternating pairs against `6f8c15b`:
+
+```bash
+RUNS=9 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=120000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 6f8c15b
+```
+
+| Stage metric | Baseline avg ns/op | Candidate avg ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_sample_ntt4_parse_504` | 127.22 | 123.40 | 1.0310x | 1.0306x | 9/9 |
+| `mlkem_core_stage_sample_ntt8_full_raw` | 1219.48 | 1194.11 | 1.0211x | 1.0087x | 9/9 |
+| `mlkem_core_stage_sample_ntt8_sparse_first_full_raw` | 1246.77 | 1228.83 | 1.0145x | 1.0066x | 9/9 |
+| `mlkem_core_stage_sample_matrix` | 1926.30 | 1908.07 | 1.0095x | 1.0046x | 8/9 |
+| `mlkem_core_stage_sample_matrix_sparse_first_x8` | 1966.99 | 1955.03 | 1.0061x | 1.0041x | 7/9 |
+| `mlkem_core_stage_kpke_prepare_public_no_cache` | 2833.52 | 2769.91 | 1.0214x | 1.0028x | 8/9 |
+| `mlkem_core_stage_kpke_keygen_full` | 2825.87 | 2821.92 | 1.0014x | 1.0025x | 6/9 |
+
+The final KEM gate used 100,000 iterations, three warmups, and fourteen
+alternating pairs:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 6f8c15b
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 1.0024x | 1.0040x | 11/14 |
+| `mlkem_keygen_core` | 1.0046x | 1.0039x | 10/14 |
+| `mlkem_encaps_core` | 1.0021x | 1.0027x | 9/14 |
+| `mlkem_decaps_core` | 1.0037x | 1.0011x | 8/14 |
+| `mlkem_roundtrip` | 1.0047x | 1.0037x | 11/14 |
+| `mlkem_roundtrip_core` | 1.0041x | 1.0033x | 11/14 |
+
+Repeated-key outer encapsulation and decapsulation are neutral, as expected:
+they do not regenerate the complete public matrix on every measured operation.
+The direct parser, complete sampler, matrix, keygen, and roundtrip rows provide
+the causal acceptance chain.
+
+GCC native KAT/KEM passes with both AT&T and `-masm=intel` assembly dialects.
+Clang native and GCC/Clang AVX2-only and scalar KAT/KEM pass. GCC native UBSan
+and Clang native ASan+UBSan pass. Product `benchc` text is byte-identical to
+`6f8c15b` under Clang native, both compilers' AVX2-only builds, and both scalar
+builds.
+
+This is a repository-local compiler-code-generation correction, not a borrowed
+Keccak or rejection-sampling schedule. It links no secp256k1, ZKP, Kyber,
+PQClean, XKCP, liboqs, or other external runtime object, adds no persistent
+cache or lookup table, and changes no serialized format.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
