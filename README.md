@@ -201,6 +201,7 @@ Near-term target selection:
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
+| Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
@@ -7028,6 +7029,107 @@ code-generation discipline documented by
 or object is imported. The arithmetic is the repository's already validated
 canonical ZMM K=3 implementation. This change adds no external runtime library,
 persistent cache, factor table, or wire-format dependency.
+
+### Local Core Optimization A/B (2026-07-16, Clang mixed-x8 encryption tail)
+
+The Clang native cold-encryption path still completed all nine SHAKE128 matrix
+streams before starting seven independent SHAKE256 ETA2 streams. GCC already
+filled the seven-noise-stream batch's eighth lane with matrix `(2,2)`, but that path
+is coupled to GCC's compact int8 noise representation. Commit `85b1a22` closes
+the Clang scheduling gap without adopting the GCC int8/VNNI data path.
+
+For the fixed production shape `rlen == 32 && mlen == 32` on a real public-key
+cache miss, the new dataflow is:
+
+- x8 lanes 0 through 6 absorb `r || nonce` for nonces 0 through 6 as independent SHAKE256 ETA2 streams.
+- x8 lane 7 absorbs `rho || 0x02 || 0x02` as the independent SHAKE128 matrix `(2,2)` stream.
+- One existing generic Clang x8 Keccak permutation advances all eight states; the seven noise lanes are decoded directly into Clang's canonical `poly256` representation.
+- Lane 7 is extracted in canonical scalar state order and any rejection-sampling refill continues through the existing single-state AVX512VL `keccakf()` rather than carrying three empty lanes through `keccakf4()`.
+- Existing Clang `rhat`, `e1`, and `e2` working buffers are shared with the prepared-public consumer; a one-shot flag prevents duplicate noise generation in the same encryption call.
+
+The flag is control flow for already-produced working data, not a key- or
+input-indexed cache. Matrix storage, public-key cache policy, ciphertext format,
+and all arithmetic representations outside the Clang native branch are
+unchanged. The optimization is independent-state batching plus width reduction
+using the repository's existing Keccak implementations. It imports no new
+round schedule, assembly, object, or external runtime library.
+
+The final stage gate compared against `2091af9` on CPU 0 with Clang native,
+two warmups, nine alternating A/B pairs, and 70,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=70000 PIN_CPU=0 C_COMPILER=clang \
+  ARCH_CFLAGS="-march=native" ./scripts/bench_core_ab.sh 2091af9
+```
+
+| Stage metric | Baseline avg ns/op | Candidate avg ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| prepared/cached K-PKE | 1066.28 | 1070.43 | `0.9964x` | `1.0005x` | 5/9 |
+| cache-disabled K-PKE | 2822.07 | 2685.85 | `1.0509x` | `1.0605x` | 9/9 |
+| complete K-PKE keygen control | 2878.83 | 2835.67 | `1.0147x` | `1.0034x` | 8/9 |
+| public preparation control | 2761.44 | 2798.17 | `0.9874x` | `0.9997x` | 4/9 |
+| matrix sampler control | 1926.14 | 1926.59 | `0.9998x` | `0.9999x` | 4/9 |
+
+Only cache-disabled K-PKE is the target and claimed win. Its paired result is
+positive in every run, with base-first and candidate-first medians of `1.0618x`
+and `1.0605x`. Cached K-PKE does not execute the new producer and remains
+neutral by paired median. The keygen, public preparation, and matrix rows are
+non-target code-generation/noise controls; their paired medians stay within
+0.34% of neutral.
+
+Repeated-key KEM normally reuses prepared public data, so the longer KEM gate is
+a control rather than an expected speedup. It used CPU 0, three warmups,
+fourteen alternating pairs, and 100,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ARCH_CFLAGS="-march=native" ./scripts/bench_core_ab.sh 2091af9
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_encaps` | `1.0029x` | `1.0015x` | 9/14 |
+| `mlkem_encaps_core` | `1.0037x` | `0.9991x` | 4/14 |
+| `mlkem_decaps` | `1.0011x` | `1.0019x` | 10/14 |
+| `mlkem_decaps_core` | `0.9948x` | `0.9980x` | 3/14 |
+| `mlkem_keygen` control | `0.9993x` | `1.0008x` | 8/14 |
+| `mlkem_keygen_core` control | `0.9959x` | `0.9988x` | 6/14 |
+| `mlkem_roundtrip` | `1.0019x` | `1.0010x` | 9/14 |
+| `mlkem_roundtrip_core` | `1.0021x` | `1.0016x` | 8/14 |
+
+No KEM-wide gain is claimed from those controls. The weakest paired median is
+`0.9980x`; the negative core geometric means are retained in the table rather
+than being described as neutral wins.
+
+Variant selection was also measured rather than inferred. Replacing the x4
+tail continuation with direct single-state continuation improves the uncached
+boundary by `1.0288x` paired geometric mean and `1.0151x` paired median with
+9/9 wins, while shrinking the helper symbol from `0x24d3` to `0x155e` bytes.
+Parsing the initial rate directly from the extracted state adds a `1.0016x`
+paired median with 6/9 wins and removes another 128 bytes. An earlier prototype
+that duplicated the prepared-public noise consumer was rejected; sharing the
+existing working buffers removed 6,016 text bytes and 5,632 BSS bytes from that
+prototype. A YMM transpose/store variant was also rejected after x8 full,
+Keccak-plus-store, and matrix medians of `0.9957x`, `0.9961x`, and `0.9947x`.
+
+Commit `8cea6bf` adds a Clang-native 256-fixture validator. Every fixture
+compares the mixed lane-7 output with an independent `sample_ntt(rho, 2, 2)`
+and all seven canonical noise outputs with independent
+`mlkem_encrypt_prf_cbd_eta2_32` results. The following gates pass:
+
+- Clang native KAT and complete stage validation.
+- GCC native KAT and complete stage validation, including its existing compact-int8 mixed validator.
+- Clang and GCC AVX2-only KAT; Clang AVX2-only complete stage validation.
+- Clang and GCC scalar KAT.
+- Clang native ASan plus UBSan KAT and GCC native UBSan KAT.
+
+Against `2091af9`, the production Clang-native `benchc` text decreases from
+156,473 to 154,905 bytes (`-1,568`); data remains 696 bytes and BSS remains
+35,392 bytes. GCC, AVX2-only, and scalar implementations do not compile the new
+helper. This change adds no external object, persistent cache, factor table,
+runtime library, or wire-format dependency.
 
 ### Local Core Optimization A/B (2026-07-15, full x8 matrix initial squeeze)
 
