@@ -186,6 +186,7 @@ Near-term target selection:
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC AVX512; Clang and narrower ISA unchanged | One loop centers `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The direct accumulation median improves `6.014x`; high-iteration K-PKE keygen improves `1.6040x`, and 100k KEM `keygen`/`keygen_core` improve `1.0218x`/`1.0210x`, both 14/14. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
+| GCC AVX512VNNI four-output encryption accumulation | Accepted for GCC AVX512VNNI; non-VNNI/Clang/narrower ISA unchanged | `VPDPWSSD` replaces each bounded `vpmaddwd` plus `vpaddd` pair in the four-output K=3 kernel. The direct interval improves `1.0117x` geometric mean with 9/9 wins; cached/uncached K-PKE paired medians improve `1.0056x`/`1.0041x`, and 40k `encaps`/`decaps` improve `1.0041x`/`1.0053x` geometric mean with 13/15 wins each. The compiler/ISA-gated repository-local intrinsics add no external object, cache, table, or wire-format dependency. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -4294,6 +4295,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512` | AVX512-only rejected diagnostic: the same fused boundary with 16-coefficient YMM `vpmaddwd` four-output accumulation |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512` | AVX512-only baseline diagnostic: the preceding three-stream 32-coefficient ZMM `vpmaddwd` four-output accumulation |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512` | GCC AVX512 production diagnostic: transient gamma-weighted `rhat` factors shared across all four outputs |
+| `mlkem_core_stage_encrypt_rhat_acc4_fused_vnni512_avx512` | GCC AVX512VNNI production diagnostic: the same asymmetric four-output boundary with six signed-word `VPDPWSSD` accumulations per output |
 | `mlkem_core_stage_encrypt_inv_add4_split_raw_avx512` | native AVX512 baseline: the preceding three-`u` inverse-add path plus separate `v` inverse-add, from the same four precomputed accumulations with lightweight sinks |
 | `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | native AVX512 production diagnostic: the same four inverse-adds under one shared twiddle and outer-loop schedule |
 | `mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512` | native AVX512 diagnostic: the shared four-output inverse final widens signed-int8 ETA2 noise and folds the message mask into the same modular normalization |
@@ -5431,6 +5433,111 @@ Relative to `6a5f2ee`, final GCC `benchc` text grows from 81,400 to 82,444 bytes
 function itself shrinks from `0x11c7` to `0xfcf`; the separate compact inverse
 helper is `0x5d2` bytes. This adds no external crypto object, runtime library,
 persistent cache, transformed-key table, or wire-format change.
+
+### Independent Core Optimization A/B (2026-07-15, GCC AVX512VNNI four-output accumulation)
+
+The post-ETA2 GCC-native profile still attributed `11.23%` self time to
+`kpke_encrypt_prepared_public()` (`0.52 us/call` self, `1.21 us/call` total).
+The refreshed stage frontier put the final three-`rhat` NTT plus four-output
+K=3 accumulation at about `861 ns`, making it the largest remaining bounded
+encryption arithmetic interval.
+
+The accepted asymmetric block computed each output with six `vpmaddwd` and four
+`vpaddd` instructions: two signed 16-bit pair products for each of the three
+K terms, accumulated into the `c0` and `c1` int32 vectors. AVX512VNNI provides
+non-saturating signed-word dot-product accumulation through `VPDPWSSD`, so the
+same block now uses six `_mm512_dpwssd_epi32()` calls from zero accumulators.
+Across all four outputs, the hot loop changes from 24 `vpmaddwd` plus 16
+`vpaddd` to 24 `vpdpwssd`; packing and modular reduction are unchanged.
+
+The existing centered-factor proof also proves exact VNNI accumulation. With
+`Q = 3329`, the full K=3 pair-sum bound is:
+
+```text
+abs(sum) <= 6 * (Q - 1) * (Q / 2)
+         = 33,226,752
+         < 2^31
+```
+
+No int32 wrap occurs, so non-saturating `VPDPWSSD` is coefficient-for-coefficient
+equivalent to the preceding multiply-then-add sequence. The
+[Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html)
+defines the intrinsic semantics. AMD's
+[Family 19h Software Optimization Guide](https://docs.amd.com/api/khub/documents/f5vEE9HFY50eZwgTAuMMmA/content)
+documents Zen 4 AVX-512/VNNI and its double-pumped 256-bit execution model. The
+implementation applies that integer dot-product primitive to the repository's
+existing polynomial pair representation; it imports no external crypto code.
+
+A same-binary diagnostic used CPU 0, 50,000 iterations, and nine runs. Every
+pair favored VNNI:
+
+| Production-shaped interval | `vpmaddwd` median ns/op | VNNI median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| final `rhat` NTT plus four-output accumulation | 859.20 | 850.13 | 1.0117x | 1.0118x | 9/9 |
+
+The production stage gate used corrected baseline `4368b3a`, two warmups, nine
+alternating pairs, and 20,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage STAGE_ITERS=20000 \
+  PIN_CPU=0 C_COMPILER=gcc ARCH_CFLAGS=-march=native \
+  ./scripts/bench_core_ab.sh 4368b3a
+```
+
+| K-PKE metric | Baseline median ns/op | VNNI median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| prepared/cached encryption | 1184.23 | 1178.16 | 1.0012x | 1.0056x | 6/9 |
+| cache-disabled encryption | 2929.02 | 2915.92 | 1.0138x | 1.0041x | 7/9 |
+
+The cache-disabled row is important: the change accelerates arithmetic on the
+current transient inputs and does not retain a public key, matrix, factor, or
+transformed polynomial between operations.
+
+The longer KEM gate used 40,000 iterations, three warmups, and 15 alternating
+pairs against the same baseline:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=40000 \
+  PIN_CPU=0 C_COMPILER=gcc ARCH_CFLAGS=-march=native \
+  ./scripts/bench_core_ab.sh 4368b3a
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 1.0041x | 1.0045x | 13/15 | 1.0044x / 1.0054x |
+| `mlkem_decaps` | 1.0053x | 1.0048x | 13/15 | 1.0049x / 1.0048x |
+| `mlkem_encaps_core` | 0.9975x | 1.0015x | 10/15 | 1.0004x / 1.0026x |
+| `mlkem_decaps_core` | 0.9952x | 1.0025x | 10/15 | 1.0010x / 1.0032x |
+| `mlkem_roundtrip` | 0.9993x | 1.0019x | 11/15 | 1.0018x / 1.0029x |
+| `mlkem_roundtrip_core` | 0.9957x | 1.0003x | 8/15 | 0.9990x / 1.0004x |
+| unaffected `mlkem_keygen` control | 0.9918x | 0.9988x | 7/15 | 0.9966x / 1.0004x |
+
+Candidate-side outliers also moved the unaffected keygen control and the longer
+core/roundtrip rows. Those negative geometric means are not attributed as wins.
+Acceptance is based on the 9/9 direct kernel result, positive cached and
+cache-disabled K-PKE medians, and the order-balanced `encaps`/`decaps` gains.
+Decapsulation benefits because ciphertext verification recomputes encryption.
+
+The validator compares the old and VNNI kernels on all real benchmark lanes and
+256 deterministic fixtures covering zero, all-`Q-1`, alternating extremes,
+reduction-edge values, and pseudorandom canonical coefficients. All four output
+polynomials match exactly. GCC native KAT, the stage validator, and native UBSan
+pass. GCC `-march=skylake-avx512` KAT verifies the non-VNNI AVX512 fallback.
+Clang native and both compilers' AVX2-only `testc`, `benchc`, and
+`bench_core_stagesc`, plus both scalar `testc` binaries, are byte-identical to
+`4368b3a`.
+
+GCC native ASan+UBSan still faults in the pre-existing `init_ntt_roots()`
+AVX512 load before reaching this helper; the same command and location reproduce
+on `4368b3a`, so it is not counted as a pass or a regression. Final GCC native
+`benchc` contains 24 `vpdpwssd`, no baseline `vpdpwssd`, and its text shrinks
+from 82,444 to 82,380 bytes; data and BSS remain 708 and 36,608 bytes.
+
+Production selects the new path only for GCC builds defining
+`__AVX512VNNI__`. GCC without VNNI retains the preceding `vpmaddwd` kernel,
+while Clang, AVX2-only, and scalar builds retain byte-identical code. Commit
+`f6c8a70` is repository-local intrinsics code and adds no external object,
+runtime library, persistent cache, table, or wire-format dependency.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
