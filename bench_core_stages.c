@@ -532,6 +532,15 @@ static void derive_keygen_lane(size_t lane) {
                                  stage_e_raw[lane][0], stage_e_raw[lane][1],
                                  stage_e_raw[lane][2]);
   }
+#if defined(__AVX512F__)
+  /* The remaining stage fixtures use canonical coefficients. */
+  for (int i = 0; i < K; i++) {
+    for (int j = 0; j < N; j++) {
+      if (stage_s_raw[lane][i][j] < 0) stage_s_raw[lane][i][j] += Q;
+      if (stage_e_raw[lane][i][j] < 0) stage_e_raw[lane][i][j] += Q;
+    }
+  }
+#endif
   for (int i = 0; i < K; i++) {
     memcpy(stage_s_head[lane][i], stage_s_raw[lane][i], sizeof(poly256));
     memcpy(stage_e_head[lane][i], stage_e_raw[lane][i], sizeof(poly256));
@@ -2015,6 +2024,64 @@ static void validate_encrypt_prf_cbd_tail_cosched_matches_separate(void) {
   }
 }
 
+#if defined(__AVX512F__)
+static void validate_keygen_prf_cbd_signed_ntt_avx512(void) {
+  size_t negative_coeffs = 0;
+
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    uint8_t sigma[32], rho[32], prfout[64 * ETA1];
+    poly256 direct[2 * K], mixed[2 * K], want, direct_ntt, mixed_ntt;
+    poly256 want_ntt, tail, want_tail;
+
+    fill_bytes(sigma, sizeof(sigma), 0x5349474e45444342ULL + fixture);
+    fill_bytes(rho, sizeof(rho), 0x5349474e45445248ULL + fixture);
+    mlkem_keygen_prf_cbd_eta2_32(
+        sigma, direct[0], direct[1], direct[2],
+        direct[3], direct[4], direct[5]);
+    mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
+        sigma, rho, tail, mixed[0], mixed[1], mixed[2],
+        mixed[3], mixed[4], mixed[5]);
+    sample_ntt(rho, 2, 2, want_tail);
+    if (memcmp(tail, want_tail, sizeof(poly256)) != 0) {
+      fprintf(stderr, "signed keygen matrix tail mismatch at %zu\n", fixture);
+      exit(EXIT_FAILURE);
+    }
+
+    for (int output = 0; output < 2 * K; output++) {
+      mlkem_prf(ETA1, sigma, 32, (uint8_t)output, prfout);
+      sample_poly_cbd(ETA1, prfout, want);
+      for (int coeff = 0; coeff < N; coeff++) {
+        int16_t centered = want[coeff];
+        if (centered > Q / 2) centered -= Q;
+        if (direct[output][coeff] != centered ||
+            mixed[output][coeff] != centered) {
+          fprintf(stderr,
+                  "signed keygen CBD mismatch at %zu,%d,%d\n",
+                  fixture, output, coeff);
+          exit(EXIT_FAILURE);
+        }
+        negative_coeffs += centered < 0;
+      }
+      ntt(direct[output], direct_ntt);
+      ntt(mixed[output], mixed_ntt);
+      ntt(want, want_ntt);
+      if (memcmp(direct_ntt, want_ntt, sizeof(poly256)) != 0 ||
+          memcmp(mixed_ntt, want_ntt, sizeof(poly256)) != 0) {
+        fprintf(stderr, "signed keygen NTT mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+
+  if (negative_coeffs == 0) {
+    fprintf(stderr,
+            "signed keygen CBD fixtures have no negative coefficients\n");
+    exit(EXIT_FAILURE);
+  }
+}
+#endif
+
 static void validate_prf_cbd_eta2x4_matches_scalar(void) {
   const uint8_t nonce[4] = {0, 1, 2, 3};
   poly256 got[4], want;
@@ -3362,7 +3429,7 @@ static void stage_keygen_tail_x4_baseline_avx512(
   uint64_t stream[21];
 
   keccakf8_sparse_32(sigma, NULL, rho, st);
-  sample_poly_cbd_eta2x6_state_avx512(st, s0, s1, s2, e0, e1, e2);
+  sample_poly_cbd_eta2x6_signed_state_avx512(st, s0, s1, s2, e0, e1, e2);
   for (int word = 0; word < 25; word++) {
     uint64_t value = sample_ntt8_lane6_u64(st[word]);
     tail_st[word] = _mm256_set_epi64x(0, 0, 0, (long long)value);
@@ -3422,6 +3489,9 @@ static void validate_core_stage_helpers(void) {
   validate_ntt_mul_acc3_encrypt4_scalar();
 #if defined(__AVX2__)
   validate_prf_cbd_eta2x4_matches_scalar();
+#if defined(__AVX512F__)
+  validate_keygen_prf_cbd_signed_ntt_avx512();
+#endif
   validate_encrypt_prf_cbd_tail_cosched_matches_separate();
 #if !(defined(__AVX512F__))
   validate_encrypt_prf_cbd_tail_3x4_matches_separate();
