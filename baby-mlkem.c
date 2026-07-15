@@ -4289,6 +4289,84 @@ ntt_mul_acc3_cols3_asym_madd512_avx512(
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
   }
 }
+
+/* Final l1 is canonical [0,Q), so d12 packing needs no range mask. */
+static MLKEM_ALWAYS_INLINE void
+byte_encode_d12_i16x16_register_avx512(__m256i v, uint8_t *out) {
+  const __m256i pack = _mm256_set1_epi32((4096 << 16) | 1);
+  const __m256i shuf = _mm256_setr_epi8(
+      0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1,
+      0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1);
+  __m256i bytes = _mm256_shuffle_epi8(_mm256_madd_epi16(v, pack), shuf);
+  __m128i lo = _mm256_castsi256_si128(bytes);
+  __m128i hi = _mm256_extracti128_si256(bytes, 1);
+  _mm_storel_epi64((__m128i *)(void *)out, lo);
+  _mm_storeu_si32((void *)(out + 8), _mm_srli_si128(lo, 8));
+  _mm_storel_epi64((__m128i *)(void *)(out + 12), hi);
+  _mm_storeu_si32((void *)(out + 20), _mm_srli_si128(hi, 8));
+}
+
+/* Finalize shat once and feed both the column products and d12 output. */
+static MLKEM_ALWAYS_INLINE void
+ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
+    const poly256 ahat[K][K], const poly256 b[K], poly256 out[K],
+    uint8_t encoded_b[K * 384]) {
+  const __m512i even_mask = _mm512_set1_epi32(0xffff);
+
+  for (int offset = 0, i = 0, pair = 0; offset < N;
+       offset += 32, i++, pair += 16) {
+    __m256i zeta_lo = ZETA_NTT_TAIL_MONT_LO[2][i];
+    __m256i zeta_hi = ZETA_NTT_TAIL_MONT_HI[2][i];
+    __m512i y0 = ntt_final_l1_mont_block32_avx512(
+        b[0], offset, zeta_lo, zeta_hi);
+    __m512i y1 = ntt_final_l1_mont_block32_avx512(
+        b[1], offset, zeta_lo, zeta_hi);
+    __m512i y2 = ntt_final_l1_mont_block32_avx512(
+        b[2], offset, zeta_lo, zeta_hi);
+    size_t encoded_offset = (size_t)offset * 3 / 2;
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_castsi512_si256(y0), encoded_b + encoded_offset);
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_extracti64x4_epi64(y0, 1), encoded_b + encoded_offset + 24);
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_castsi512_si256(y1), encoded_b + 384 + encoded_offset);
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_extracti64x4_epi64(y1, 1),
+        encoded_b + 384 + encoded_offset + 24);
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_castsi512_si256(y2), encoded_b + 768 + encoded_offset);
+    byte_encode_d12_i16x16_register_avx512(
+        _mm512_extracti64x4_epi64(y2, 1),
+        encoded_b + 768 + encoded_offset + 24);
+
+    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
+    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
+    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
+    __m512i gamma = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
+    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
+    __m512i y0_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
+    __m512i y1_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
+    __m512i y2_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
+    __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
+    __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
+
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][0], ahat[1][0], ahat[2][0], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][1], ahat[1][1], ahat[2][1], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][2], ahat[1][2], ahat[2][2], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
+  }
+}
+
 #endif
 
 static inline void ntt_mul_acc3_pair_values(
@@ -6696,8 +6774,12 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
       sigma, rho, kpke_public_cache_ahat[2][2],
       shat[0], shat[1], shat[2], ehat[0], ehat[1], ehat[2]);
   for (int i = 0; i < K; i++) {
+#if defined(__GNUC__) && defined(__AVX512BW__)
+    ntt_before_final_l1_mont_lazy_avx512(shat[i]);
+#else
     ntt(shat[i], shat[i]);
     byte_encode(12, shat[i], dk_pke + i * 384);
+#endif
     ntt(ehat[i], ehat[i]);
   }
 #elif defined(__AVX2__)
@@ -6727,8 +6809,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
 #if defined(__GNUC__) && defined(__AVX2__) && defined(__AVX512F__) && \
     defined(__AVX512BW__)
-  ntt_mul_acc3_cols3_asym_madd512_avx512(
-      kpke_public_cache_ahat, shat, kpke_public_cache_that);
+  ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
+      kpke_public_cache_ahat, shat, kpke_public_cache_that, dk_pke);
   for (int i = 0; i < K; i++) {
     ntt_add(kpke_public_cache_that[i], ehat[i],
             kpke_public_cache_that[i]);
