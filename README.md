@@ -187,6 +187,7 @@ Near-term target selection:
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
 | GCC AVX512VNNI four-output encryption accumulation | Accepted for GCC AVX512VNNI; non-VNNI/Clang/narrower ISA unchanged | `VPDPWSSD` replaces each bounded `vpmaddwd` plus `vpaddd` pair in the four-output K=3 kernel. The direct interval improves `1.0117x` geometric mean with 9/9 wins; cached/uncached K-PKE paired medians improve `1.0056x`/`1.0041x`, and 40k `encaps`/`decaps` improve `1.0041x`/`1.0053x` geometric mean with 13/15 wins each. The compiler/ISA-gated repository-local intrinsics add no external object, cache, table, or wire-format dependency. |
+| GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -5538,6 +5539,103 @@ Production selects the new path only for GCC builds defining
 while Clang, AVX2-only, and scalar builds retain byte-identical code. Commit
 `f6c8a70` is repository-local intrinsics code and adds no external object,
 runtime library, persistent cache, table, or wire-format dependency.
+
+### Independent Core Optimization A/B (2026-07-15, mixed sparse x8 keygen entry)
+
+The post-VNNI GCC-native profile assigned `12.67%` self time to
+`keccakf8_2_store_blocks()` and `11.46%` to `keccakf8_sparse_32()`. Together,
+the two x8 Keccak helpers accounted for `24.13%`, behind only the fixed public
+hash. Key generation still entered one of those round schedules through a
+separate generic boundary: six SHAKE256 PRF/CBD lanes used `sigma || nonce
+0..5`, lane 6 independently used `rho || 0x0202` for the final SHAKE128 matrix
+polynomial, and lane 7 was inactive.
+
+Before round zero, only Keccak state words 0 through 4, 16, and 20 can be
+nonzero in that mixed batch. The old GCC path nevertheless zeroed a 25-vector
+ZMM array, populated those seven words, and called generic `keccakf8()`, which
+loaded the array into its named round variables. Commit `5826ea0` extends the
+existing repository-local `keccakf8_sparse_32()` entry with an optional lane-6
+seed. It constructs the heterogeneous lanes directly in named ZMM variables and
+lets GCC partial-evaluate the sparse first round before running the unchanged
+XKCP-derived four-round mapping.
+
+This applies the independent-state SIMD strategy described by the
+[Keccak implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf)
+at an ML-KEM-specific representation boundary. The analogy to
+[libsecp256k1](https://github.com/bitcoin-core/secp256k1) is specialization of
+an internal representation, not reuse of its curve-specific endomorphism or
+wNAF techniques. No new Keccak schedule, external crypto object, runtime
+library, persistent cache, table, key format, or wire-format change is added.
+Clang and narrower ISA paths retain their previous generic initialization.
+
+A store-side diagnostic replaced the final eight scalar lane stores with one
+`vpscatterqq`. A 200,000-iteration, 15-pair focused gate measured only
+`1.0004x` paired geometric mean and `1.0009x` paired median on the direct
+target, with no repeatable propagation to the complete sampler or matrix
+stages. The scatter version was rejected; the accepted change is only the
+sparse mixed-state entry.
+
+The first production-shaped screen used two warmups, nine alternating pairs,
+50,000 stage iterations, and 40,000 KEM iterations against the then-current
+VNNI baseline:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage,kem \
+  STAGE_ITERS=50000 KEM_ITERS=40000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh HEAD
+```
+
+| Keygen stage | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `keygen_noise_prf_cbd` | 1.0020x | 1.0005x | 7/9 |
+| `keygen_noise_ntt` | 1.0037x | 1.0038x | 6/9 |
+| `kpke_keygen_full` | 1.0089x | 1.0066x | 8/9 |
+
+That screen used the first mixed-mode branch ordering. The mixed keygen body was
+already identical to the final implementation, but a later 15-pair KEM gate
+exposed a `0.9948x` geometric mean and `0.9967x` median in the unchanged
+`decaps_core` control. The existing hot x7 noise branch was therefore restored
+to the first branch in `keccakf8_sparse_32()`, preserving its preceding code
+shape, and the complete KEM gate was rerun rather than accepting the isolated
+keygen result.
+
+The final gate used 100,000 iterations, three warmups, and 15 alternating pairs:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh HEAD
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 1.0057x | 1.0081x | 11/15 |
+| `mlkem_keygen_core` | 1.0068x | 1.0084x | 13/15 |
+| `mlkem_encaps` | 1.0027x | 1.0013x | 10/15 |
+| `mlkem_encaps_core` | 0.9988x | 1.0020x | 11/15 |
+| `mlkem_decaps` | 1.0028x | 0.9997x | 6/15 |
+| `mlkem_decaps_core` | 0.9992x | 0.9993x | 5/15 |
+| `mlkem_roundtrip` | 1.0013x | 1.0021x | 10/15 |
+| `mlkem_roundtrip_core` | 0.9994x | 1.0016x | 10/15 |
+
+The base-first/candidate-first medians are `1.0075x`/`1.0081x` for keygen and
+`1.0085x`/`1.0080x` for keygen-core, so the accepted gain survives run order.
+The other KEM rows straddle 1.0 and are controls, not claimed speedups. In
+particular, the final `decaps_core` result is within 0.1% of neutral rather than
+the roughly 0.5% regression seen with the first branch ordering.
+
+A dedicated validator reconstructs the old 25-vector generic input and compares
+all 25 post-permutation ZMM vectors with the sparse mixed helper over 256
+deterministic `sigma`/`rho` fixtures. GCC-native KAT, the full stage validator,
+and native UBSan pass. Clang-native and GCC/Clang AVX2-only `testc`, `benchc`, and
+`bench_core_stagesc`, plus GCC and Clang scalar `testc`, are byte-identical to
+the detached baseline.
+
+GCC-native `benchc` text grows from 82,380 to 82,504 bytes (+124); data remains
+708 bytes and BSS remains 36,608 bytes. `keccakf8_sparse_32()` grows from
+`0xee4` to `0xf9f` bytes, while the mixed keygen helper is `0x9ce` bytes and its
+call to the shared sparse entry is present in final disassembly. The small text
+cost buys a measured keygen boundary improvement without caching inputs or
+borrowing an external implementation.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
