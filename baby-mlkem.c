@@ -3999,7 +3999,7 @@ static void ntt_before_final_l1_avx512(poly256 f) {
   ntt_canonicalize_signed_avx512(f);
 }
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
 /* Exact from -6*(Q-1)*(Q/2) through 6*(Q-1)^2. */
 static MLKEM_ALWAYS_INLINE __m512i
 ntt_acc4_madd_reduce_i32x16(__m512i x) {
@@ -4180,6 +4180,17 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, outv);
   }
 }
+
+#if defined(__clang__)
+/* Isolate Clang's ZMM kernel from prepared-encryption instruction footprint. */
+static MLKEM_NOINLINE void
+ntt3_mul_acc4_fused_final_madd512_clang_avx512(
+    const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
+    poly256 out[K], poly256 outv) {
+  ntt3_mul_acc4_fused_final_madd512_avx512(
+      ahat, that, b, out, outv);
+}
+#endif
 
 #if defined(__AVX512VNNI__)
 static MLKEM_ALWAYS_INLINE void
@@ -6911,6 +6922,9 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   ntt3_mul_acc4_fused_final_madd512_avx512(
       kpke_public_cache_ahat, kpke_public_cache_that, rhat, u, v);
 #endif
+#elif defined(__clang__)
+  ntt3_mul_acc4_fused_final_madd512_clang_avx512(
+      kpke_public_cache_ahat, kpke_public_cache_that, rhat, u, v);
 #else
   ntt3_mul_acc4_fused_final_avx512(
       kpke_public_cache_ahat[0][0], kpke_public_cache_ahat[0][1],
