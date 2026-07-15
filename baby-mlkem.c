@@ -2108,16 +2108,21 @@ ntt_inv_add4_mont_final_shared_avx512(
 static inline uint32_t load32_le(const uint8_t *x);
 
 /* Keep ETA2 noise compact until its inverse-NTT consumer materializes it. */
-static MLKEM_ALWAYS_INLINE __m512i ntt_add_eta2_i8_i16x32_avx512(
-    __m512i x, const int8_t noise[32], __m512i extra) {
-  const __m512i q = _mm512_set1_epi16(Q);
-  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+/*
+ * Final Montgomery products are in [-1894,1920] for every int16 input.
+ * ETA2 plus the optional message keeps the pre-canonical value in
+ * [-1896,3587], so one final canonicalization is sufficient.
+ */
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_inv_mont_scale_add_eta2_i8_i16x32_avx512(
+    __m512i x, __m512i zeta_lo, __m512i zeta_hi,
+    const int8_t noise[32], __m512i extra) {
   __m512i small = _mm512_cvtepi8_epi16(
       _mm256_loadu_si256((const __m256i *)(const void *)noise));
-  __m512i sum = _mm512_add_epi16(_mm512_add_epi16(x, small), extra);
-  sum = _mm512_mask_add_epi16(sum, _mm512_movepi16_mask(sum), sum, q);
-  return _mm512_mask_sub_epi16(
-      sum, _mm512_cmpgt_epi16_mask(sum, q_minus_1), sum, q);
+  __m512i raw = ntt_mont_mul_precomp_i16x32_avx512(
+      x, zeta_lo, zeta_hi);
+  return ntt_canonicalize_i16x32_avx512(
+      _mm512_add_epi16(_mm512_add_epi16(raw, small), extra));
 }
 
 static MLKEM_ALWAYS_INLINE void ntt_inv_add_eta2_i8_final_chunk_avx512(
@@ -2127,11 +2132,12 @@ static MLKEM_ALWAYS_INLINE void ntt_inv_add_eta2_i8_final_chunk_avx512(
     __m512i *result_lo, __m512i *result_hi) {
   __m512i a = _mm512_loadu_si512((const void *)out_lo);
   __m512i b = _mm512_loadu_si512((const void *)out_hi);
-  ntt_inv_mont_scale_pair_i16x32_avx512(a, b, result_lo, result_hi);
-  *result_lo = ntt_add_eta2_i8_i16x32_avx512(
-      *result_lo, add_lo, extra_lo);
-  *result_hi = ntt_add_eta2_i8_i16x32_avx512(
-      *result_hi, add_hi, extra_hi);
+  *result_lo = ntt_inv_mont_scale_add_eta2_i8_i16x32_avx512(
+      _mm512_add_epi16(a, b), ZETA_NTT_INV_MONT_SCALE_LO_AVX512,
+      ZETA_NTT_INV_MONT_SCALE_HI_AVX512, add_lo, extra_lo);
+  *result_hi = ntt_inv_mont_scale_add_eta2_i8_i16x32_avx512(
+      _mm512_sub_epi16(b, a), ZETA_NTT_INV_MONT_ZETA_SCALE_LO_AVX512,
+      ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512, add_hi, extra_hi);
 }
 
 static MLKEM_NOINLINE void ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
