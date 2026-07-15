@@ -2971,6 +2971,61 @@ static void validate_keccakf8_sparse_mixed_keygen_avx512(void) {
     }
   }
 }
+
+static void stage_keygen_tail_x4_baseline_avx512(
+    const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
+    poly256 s0, poly256 s1, poly256 s2,
+    poly256 e0, poly256 e1, poly256 e2) {
+  __m512i st[25];
+  __m256i tail_st[25];
+  uint64_t stream[21];
+
+  keccakf8_sparse_32(sigma, NULL, rho, st);
+  sample_poly_cbd_eta2x6_state_avx512(st, s0, s1, s2, e0, e1, e2);
+  for (int word = 0; word < 25; word++) {
+    uint64_t value = sample_ntt8_lane6_u64(st[word]);
+    tail_st[word] = _mm256_set_epi64x(0, 0, 0, (long long)value);
+    if (word < 21) stream[word] = value;
+  }
+  sample_ntt_tail_lane0_state_avx2(tail_st, stream, tail);
+}
+
+static void validate_keygen_tail_scalar_continuation_avx512(void) {
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    uint8_t sigma[32], rho[32];
+    poly256 baseline_tail, scalar_tail;
+    poly256 baseline_s[K], scalar_s[K];
+    poly256 baseline_e[K], scalar_e[K];
+
+    fill_bytes(sigma, sizeof(sigma), 0x5343414c41525349ULL + fixture);
+    fill_bytes(rho, sizeof(rho), 0x5343414c41525248ULL + fixture);
+    stage_keygen_tail_x4_baseline_avx512(
+        sigma, rho, baseline_tail,
+        baseline_s[0], baseline_s[1], baseline_s[2],
+        baseline_e[0], baseline_e[1], baseline_e[2]);
+    mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
+        sigma, rho, scalar_tail,
+        scalar_s[0], scalar_s[1], scalar_s[2],
+        scalar_e[0], scalar_e[1], scalar_e[2]);
+
+    if (memcmp(baseline_tail, scalar_tail, sizeof(poly256)) != 0) {
+      fprintf(stderr, "scalar keygen tail mismatch at %zu\n", fixture);
+      exit(EXIT_FAILURE);
+    }
+    for (int output = 0; output < K; output++) {
+      if (memcmp(baseline_s[output], scalar_s[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "scalar keygen secret mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+      if (memcmp(baseline_e[output], scalar_e[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "scalar keygen error mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
 #endif
 
 static void validate_core_stage_helpers(void) {
@@ -3019,6 +3074,7 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX512F__)
 #if defined(__GNUC__) && !defined(__clang__)
   validate_keccakf8_sparse_mixed_keygen_avx512();
+  validate_keygen_tail_scalar_continuation_avx512();
 #if defined(__AVX512BW__)
   validate_encrypt_prf_cbd_tail_x8_avx512();
 #endif
