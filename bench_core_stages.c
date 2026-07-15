@@ -2862,6 +2862,58 @@ static void validate_ntt_inv_add4_eta2_i8_avx512(void) {
 }
 #endif
 
+#if defined(__AVX512F__) && defined(__GNUC__) && !defined(__clang__)
+static void validate_keccakf8_sparse_mixed_keygen_avx512(void) {
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    uint8_t sigma[32], rho[32];
+    __m512i baseline[25], sparse[25];
+
+    fill_bytes(sigma, sizeof(sigma), 0x4d49584544534947ULL + fixture);
+    fill_bytes(rho, sizeof(rho), 0x4d4958454452484fULL + fixture);
+    for (int lane = 0; lane < 25; lane++) {
+      baseline[lane] = _mm512_setzero_si512();
+    }
+    baseline[0] = _mm512_set_epi64(
+        0, (long long)load64_le(rho + 0),
+        (long long)load64_le(sigma + 0), (long long)load64_le(sigma + 0),
+        (long long)load64_le(sigma + 0), (long long)load64_le(sigma + 0),
+        (long long)load64_le(sigma + 0), (long long)load64_le(sigma + 0));
+    baseline[1] = _mm512_set_epi64(
+        0, (long long)load64_le(rho + 8),
+        (long long)load64_le(sigma + 8), (long long)load64_le(sigma + 8),
+        (long long)load64_le(sigma + 8), (long long)load64_le(sigma + 8),
+        (long long)load64_le(sigma + 8), (long long)load64_le(sigma + 8));
+    baseline[2] = _mm512_set_epi64(
+        0, (long long)load64_le(rho + 16),
+        (long long)load64_le(sigma + 16), (long long)load64_le(sigma + 16),
+        (long long)load64_le(sigma + 16), (long long)load64_le(sigma + 16),
+        (long long)load64_le(sigma + 16), (long long)load64_le(sigma + 16));
+    baseline[3] = _mm512_set_epi64(
+        0, (long long)load64_le(rho + 24),
+        (long long)load64_le(sigma + 24), (long long)load64_le(sigma + 24),
+        (long long)load64_le(sigma + 24), (long long)load64_le(sigma + 24),
+        (long long)load64_le(sigma + 24), (long long)load64_le(sigma + 24));
+    baseline[4] = _mm512_set_epi64(
+        0, 0x1f0202LL, 0x1f05LL, 0x1f04LL,
+        0x1f03LL, 0x1f02LL, 0x1f01LL, 0x1f00LL);
+    baseline[16] = _mm512_set_epi64(
+        0, 0, (long long)(0x80ULL << 56), (long long)(0x80ULL << 56),
+        (long long)(0x80ULL << 56), (long long)(0x80ULL << 56),
+        (long long)(0x80ULL << 56), (long long)(0x80ULL << 56));
+    baseline[20] = _mm512_set_epi64(
+        0, (long long)(0x80ULL << 56), 0, 0, 0, 0, 0, 0);
+
+    keccakf8(baseline);
+    keccakf8_sparse_32(sigma, NULL, rho, sparse);
+    if (memcmp(baseline, sparse, sizeof(baseline)) != 0) {
+      fprintf(stderr, "mixed sparse x8 keygen state mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void validate_core_stage_helpers(void) {
   uint8_t ek[STAGE_PK_BYTES];
   uint8_t dk[STAGE_DK_PKE_BYTES];
@@ -2906,6 +2958,9 @@ static void validate_core_stage_helpers(void) {
   validate_sample_ntt4_lane0_carry_avx2();
   validate_sample_ntt4_lane0_sparse_first_avx2();
 #if defined(__AVX512F__)
+#if defined(__GNUC__) && !defined(__clang__)
+  validate_keccakf8_sparse_mixed_keygen_avx512();
+#endif
   validate_sample_ntt8_sparse_first_avx512();
 #endif
   validate_sample_ntt4_lane0_pairwise_avx2();

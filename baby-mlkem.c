@@ -865,11 +865,12 @@ static void keccakf8(__m512i st[25]) {
   st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
 }
 
-/* Fresh x8 SHAKE states share the seed but differ in suffix and rate padding. */
+/* Fresh x8 SHAKE states are sparse; lane 6 may carry an independent seed. */
 /* GCC post-reload scheduling regresses this register-heavy round schedule. */
 static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2"))) void
 keccakf8_sparse_32(
-    const uint8_t seed[32], const uint8_t *nonce, __m512i *st) {
+    const uint8_t seed[32], const uint8_t *nonce,
+    const uint8_t *lane6_seed, __m512i *st) {
   __m512i Ba, Be, Bi, Bo, Bu, D;
   __m512i zero = _mm512_setzero_si512();
   __m512i ba = _mm512_set1_epi64((long long)load64_le(seed + 0));
@@ -882,6 +883,7 @@ keccakf8_sparse_32(
   __m512i ma = zero, mi = zero, mo = zero, mu = zero;
   __m512i se = zero, si = zero, so = zero, su = zero;
 
+  /* Preserve the existing x7 noise path before checking the mixed mode. */
   if (nonce != NULL) {
     bu = _mm512_set_epi64(
         (long long)((uint64_t)nonce[7] | (0x1FULL << 8)),
@@ -893,6 +895,44 @@ keccakf8_sparse_32(
         (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
         (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
     me = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  } else if (lane6_seed != NULL) {
+    ba = _mm512_set_epi64(0, (long long)load64_le(lane6_seed + 0),
+                          (long long)load64_le(seed + 0),
+                          (long long)load64_le(seed + 0),
+                          (long long)load64_le(seed + 0),
+                          (long long)load64_le(seed + 0),
+                          (long long)load64_le(seed + 0),
+                          (long long)load64_le(seed + 0));
+    be = _mm512_set_epi64(0, (long long)load64_le(lane6_seed + 8),
+                          (long long)load64_le(seed + 8),
+                          (long long)load64_le(seed + 8),
+                          (long long)load64_le(seed + 8),
+                          (long long)load64_le(seed + 8),
+                          (long long)load64_le(seed + 8),
+                          (long long)load64_le(seed + 8));
+    bi = _mm512_set_epi64(0, (long long)load64_le(lane6_seed + 16),
+                          (long long)load64_le(seed + 16),
+                          (long long)load64_le(seed + 16),
+                          (long long)load64_le(seed + 16),
+                          (long long)load64_le(seed + 16),
+                          (long long)load64_le(seed + 16),
+                          (long long)load64_le(seed + 16));
+    bo = _mm512_set_epi64(0, (long long)load64_le(lane6_seed + 24),
+                          (long long)load64_le(seed + 24),
+                          (long long)load64_le(seed + 24),
+                          (long long)load64_le(seed + 24),
+                          (long long)load64_le(seed + 24),
+                          (long long)load64_le(seed + 24),
+                          (long long)load64_le(seed + 24));
+    bu = _mm512_set_epi64(0, 0x1f0202LL, 0x1f05LL, 0x1f04LL,
+                          0x1f03LL, 0x1f02LL, 0x1f01LL, 0x1f00LL);
+    me = _mm512_set_epi64(0, 0, (long long)(0x80ULL << 56),
+                          (long long)(0x80ULL << 56),
+                          (long long)(0x80ULL << 56),
+                          (long long)(0x80ULL << 56),
+                          (long long)(0x80ULL << 56),
+                          (long long)(0x80ULL << 56));
+    sa = _mm512_set_epi64(0, (long long)(0x80ULL << 56), 0, 0, 0, 0, 0, 0);
   } else {
     bu = _mm512_set_epi64(
         0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
@@ -4447,7 +4487,7 @@ static void mlkem_prf_cbd_eta2x7_32(const uint8_t seed[32],
                                     poly256 out6) {
 #if defined(__GNUC__) && !defined(__clang__)
   __m512i st[16];
-  keccakf8_sparse_32(seed, nonce, st);
+  keccakf8_sparse_32(seed, nonce, NULL, st);
 #else
   __m512i st[25];
   mlkem_prf_cbd_eta2x8_init_32(seed, nonce, st);
@@ -4464,7 +4504,7 @@ static void mlkem_prf_cbd_eta2x3x4_i8_32(
     int8_t out3[N], int8_t out4[N], int8_t out5[N], int8_t out6[N]) {
 #if defined(__GNUC__) && !defined(__clang__)
   __m512i st[16];
-  keccakf8_sparse_32(seed, nonce, st);
+  keccakf8_sparse_32(seed, nonce, NULL, st);
 #else
   __m512i st[25];
   mlkem_prf_cbd_eta2x8_init_32(seed, nonce, st);
@@ -5078,7 +5118,7 @@ static void sample_ntt8_matrix(const uint8_t *seed,
   int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
 
 #if defined(__GNUC__) && !defined(__clang__)
-  keccakf8_sparse_32(seed, NULL, st);
+  keccakf8_sparse_32(seed, NULL, NULL, st);
   sample_ntt8_store_block(stream, 0, st);
   keccakf8_2_store_blocks(st, stream);
 #else
@@ -5138,7 +5178,9 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
   __m512i st[25];
   __m256i tail_st[25];
   uint64_t stream[21];
-
+#if defined(__GNUC__) && !defined(__clang__)
+  keccakf8_sparse_32(sigma, NULL, rho, st);
+#else
   for (int i = 0; i < 25; i++) {
     st[i] = _mm512_setzero_si512();
   }
@@ -5189,6 +5231,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
                             0, 0, 0, 0, 0, 0);
 
   keccakf8(st);
+#endif
   sample_poly_cbd_eta2x6_state_avx512(st, s0, s1, s2, e0, e1, e2);
 
   for (int lane = 0; lane < 25; lane++) {
