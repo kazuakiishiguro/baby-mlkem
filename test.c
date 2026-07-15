@@ -432,6 +432,26 @@ static void test_sample_ntt() {
   }
 }
 
+#if defined(__AVX2__)
+static void test_sample_ntt_cmpgt_epi16_avx2(void) {
+  int16_t input[16];
+  int16_t got[16];
+  const __m256i bound = _mm256_set1_epi16(Q);
+
+  for (int base = 0; base < 4096; base += 16) {
+    for (int lane = 0; lane < 16; lane++) {
+      input[lane] = (int16_t)(base + lane);
+    }
+    __m256i values = _mm256_loadu_si256((const __m256i *)(const void *)input);
+    __m256i result = sample_ntt_cmpgt_epi16_avx2(bound, values);
+    _mm256_storeu_si256((__m256i *)(void *)got, result);
+    for (int lane = 0; lane < 16; lane++) {
+      assert(got[lane] == (input[lane] < Q ? -1 : 0));
+    }
+  }
+}
+#endif
+
 static void test_byte_encode() {
   {
     poly256 f, f_decoded;
@@ -545,6 +565,9 @@ int main(void) {
   test_modexp();
   test_poly256_add();
   test_sample_ntt();
+#if defined(__AVX2__)
+  test_sample_ntt_cmpgt_epi16_avx2();
+#endif
   test_byte_encode();
   test_kpke();
   test_mlkem();
