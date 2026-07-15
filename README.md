@@ -177,7 +177,7 @@ Near-term target selection:
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; Clang keeps scalar fused-final | The final NTT l1 emits 32 centered coefficients directly into three ZMM `rhat` vectors shared by all three `u` rows and `v`; 16 base pairs are accumulated and exactly reduced per block. GCC high-iteration paired medians improve `encaps`/`decaps`/`roundtrip_core` by `1.0030x`/`1.0042x`/`1.0020x`. The Clang trial regressed cached encapsulation to `0.9962x`, so final Clang and GCC AVX2-only binaries remain byte-identical to baseline. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
-| Local accum->inverse-L1 boundary fusion | Closed | Direct register and block-local store fused diagnostics were 0.18-0.19x the split baseline; preserving the compiler-friendly `ntt_mul_acc3()` loop shape matters more than this boundary. |
+| Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
 The full 16-bit inverse NTT removes inverse arithmetic as a leading target: the
@@ -4938,6 +4938,45 @@ twiddle-factor arithmetic remain inherited from and attributed to upstream
 Kyber; the 32-coefficient ZMM mapping, register-resident schedule, and local
 representation-boundary removal are implementation work in baby-mlkem, not a
 claim of new NTT mathematics.
+
+### Independent Core Optimization Diagnostic (2026-07-15, AVX512 accumulation-to-inverse head fusion)
+
+The prepared-public encryption profile left the four-output NTT-domain
+accumulator and inverse NTT as the largest local arithmetic boundary. A
+bench-only GCC/native prototype tested the kernel-fusion lesson used by
+matrix-vector/NTT accelerators: each 32-coefficient ZMM accumulation result was
+passed directly through inverse lengths 2, 4, 8, and 16 before its first store.
+The four-output form also loaded each inverse twiddle vector once per block and
+shared it across the three u rows and v.
+
+This is materially different from the older rejected AVX2 scalar-pair to
+inverse-L1 experiment. The producer here was the accepted vpmaddwd four-output
+AVX512 accumulator, its output already had the exact contiguous 32-coefficient
+layout consumed by the accepted register-fused inverse, and four inverse levels
+were fused rather than one. A second prototype narrowed the change to v only,
+leaving all three u outputs on the existing independent inverse path.
+
+Both prototypes matched the split path coefficient-for-coefficient after the
+complete inverse scale and error/message addition for all stage fixtures.
+Pinned CPU 0, GCC native, seven 20000-iteration runs:
+
+| Form | Split median ns/op | Candidate median ns/op | Median speedup | Wins |
+|---|---:|---:|---:|---:|
+| all four outputs | 1266.57 | 1351.13 | 0.9374x | 1/7 |
+| v only | 1266.05 | 1299.25 | 0.9744x | 0/7 |
+
+Disassembly found no ZMM stack spills. The regression instead tracks code and
+front-end growth: the measured split function had 696 static instruction lines
+and size 0xe59, the all-output fusion had 902 lines and size 0x1374, and the
+v-only fusion still had 767 lines and size 0x1039. Pulling the compact inverse
+block loop into the already dense accumulator schedule costs more than removing
+the hot-L1 store/reload boundary.
+
+Decision: reject and remove both prototypes. Do not revisit local accumulation
+to inverse-head fusion on this layout unless the accumulator or inverse
+representation changes enough to remove arithmetic, not merely materialization.
+The next prepared-public target must be a representation or operation-count
+change outside this already compiler-friendly boundary.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
