@@ -2408,6 +2408,44 @@ static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
   return (uint16_t)(*state % Q);
 }
 
+static void validate_ntt_final_l1_mont_block32_avx512(void) {
+  uint32_t state = 0x9e3779b9u;
+
+  for (size_t fixture = 0; fixture < 16384; fixture++) {
+    poly256 reference;
+    poly256 candidate;
+    for (int i = 0; i < N; i++) {
+      int16_t value = (int16_t)validate_keygen_asym_coeff(
+          fixture, (size_t)i, &state);
+      reference[i] = value;
+      candidate[i] = value;
+    }
+
+    ntt_before_final_l1_avx512(reference);
+    ntt_before_final_l1_mont_lazy_avx512(candidate);
+    for (int offset = 0, i = 0; offset < N; offset += 32, i++) {
+      __m512i expected = stage_ntt_final_l1_block32_avx512(
+          reference, offset, stage_zeta_ntt_tail_l1x2[i]);
+      __m512i got = ntt_final_l1_mont_block32_avx512(
+          candidate, offset, ZETA_NTT_TAIL_MONT_LO[2][i],
+          ZETA_NTT_TAIL_MONT_HI[2][i]);
+      _mm512_storeu_si512((void *)(reference + offset), expected);
+      _mm512_storeu_si512((void *)(candidate + offset), got);
+    }
+
+    if (memcmp(reference, candidate, sizeof(poly256)) != 0) {
+      for (int i = 0; i < N; i++) {
+        if (reference[i] != candidate[i]) {
+          fprintf(stderr,
+                  "AVX512 lazy final-l1 mismatch at %zu,%d: %d != %d\n",
+                  fixture, i, (int)candidate[i], (int)reference[i]);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   const int32_t lower = -6 * (Q - 1) * (Q / 2);
   const int32_t upper = 6 * (Q - 1) * (Q - 1);
@@ -3086,6 +3124,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt3_mul_acc4_fused_final_madd_avx512();
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
 #if defined(__GNUC__) && !defined(__clang__)
+  validate_ntt_final_l1_mont_block32_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__)
   validate_encrypt_accum_vnni512_avx512();
