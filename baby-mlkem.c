@@ -866,7 +866,9 @@ static void keccakf8(__m512i st[25]) {
 }
 
 /* Fresh x8 SHAKE states share the seed but differ in suffix and rate padding. */
-static MLKEM_NOINLINE void keccakf8_sparse_32(
+/* GCC post-reload scheduling regresses this register-heavy round schedule. */
+static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2"))) void
+keccakf8_sparse_32(
     const uint8_t seed[32], const uint8_t *nonce, __m512i *st) {
   __m512i Ba, Be, Bi, Bo, Bu, D;
   __m512i zero = _mm512_setzero_si512();
@@ -993,7 +995,9 @@ static void keccakf8_2(__m512i st[25]) {
   } while (0)
 
 /* Keep the state live while emitting the second and third XOF rate blocks. */
-static MLKEM_NOINLINE void keccakf8_2_store_blocks(
+/* GCC post-reload scheduling regresses this register-heavy round schedule. */
+static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2"))) void
+keccakf8_2_store_blocks(
     __m512i st[25], uint8_t stream[8][504]) {
   __m512i Ba, Be, Bi, Bo, Bu, D;
   __m512i ba = st[0], be = st[1], bi = st[2], bo = st[3], bu = st[4];
