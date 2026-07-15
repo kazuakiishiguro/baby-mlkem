@@ -6468,14 +6468,16 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   static poly256 e1[K];
   /* e2 => 1 polynomial => sample_poly_cbd(ETA2, prf(r,2K)) */
   static poly256 e2;
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
   static int8_t e1_i8[K][N];
   static int8_t e2_i8[N];
   int eta2_i8_noise = 0;
 #endif
 #if defined(__AVX2__)
   if (rlen == 32) {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
     if (mlen == 32) {
       const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
       mlkem_prf_cbd_eta2x3x4_i8_32(
@@ -6550,22 +6552,23 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+#if defined(__GNUC__) && !defined(__clang__)
   if (eta2_i8_noise) {
     ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
         e1_i8[0], e1_i8[1], e1_i8[2], e2_i8, m,
         u[0], u[1], u[2], v);
-  } else {
+  } else
 #endif
+  {
     /* Fold mu directly into e2; e2 is not needed after v is formed. */
     if (mlen == 32) {
       mlkem_add_message_to_poly(m, e2);
     }
-#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
     ntt_inv_add4_mont_final_shared_avx512(
         e1[0], e1[1], e1[2], e2, u[0], u[1], u[2], v);
   }
 #else
-    ntt_inv_add_v_inplace(e2, v);
+  ntt_inv_add_v_inplace(e2, v);
 #endif
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
