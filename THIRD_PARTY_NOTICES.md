@@ -94,17 +94,28 @@ For XKCP/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s and XKCP/lib/low/KeccakP-
 
 ## Single-state AVX512VL Keccak and fixed-length SHA3-256
 
-The repository-local `sha3_256_1184_avx512vl.S` implementation adapts the
-register-per-lane Keccak round schedule from Intel's AVX512VL implementation
-contributed to liboqs in pull request 2167:
+The compact single-state permutation in the repository-local
+`sha3_256_1184_avx512vl.S` implementation adapts the register-per-lane Keccak
+round schedule from Intel's AVX512VL implementation contributed to liboqs in
+pull request 2167:
 
 https://github.com/open-quantum-safe/liboqs/blob/3dca9c939c779c58ffa540f3f47ca099a1fa4b94/src/common/sha3/avx512vl_low/KeccakP-1600-AVX512VL.S
 
-baby-mlkem does not link liboqs or an Intel object. The local file narrows the
-single-state round body from YMM to XMM registers, exposes a canonical-state
-permutation wrapper, and specializes the absorb and padding path for the
-1184-byte ML-KEM-768 public key. The derived round
-schedule remains covered by Intel's MIT license:
+baby-mlkem does not link liboqs or an Intel object. The compact local core
+narrows the single-state round body from YMM to XMM registers and exposes a
+canonical-state permutation wrapper.
+
+The fixed 1184-byte ML-KEM-768 public-key hash uses a separate generated
+four-round core. It applies the order-four cyclic lane mapping described as
+Algorithm 4 in the Keccak Team's *Keccak implementation overview*:
+
+https://keccak.team/files/Keccak-implementation-3.2.pdf
+
+The local generator derives the mapping variants and overwrite schedule; no
+source code from that document is copied. The fixed path also specializes
+absorb and padding and keeps the state in registers across all nine
+permutations. Portions adapted from Intel's implementation remain covered by
+Intel's MIT license:
 
     Copyright (c) 2025 Intel Corporation
 

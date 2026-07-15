@@ -1,9 +1,10 @@
 # Register-per-lane AVX512VL Keccak and fixed-shape SHA3-256.
 #
-# The permutation is adapted from Intel's liboqs AVX512VL Keccak
-# implementation. The local integration narrows the round body to XMM, exposes
-# a canonical single-state wrapper, and keeps the fixed 1184-byte ML-KEM-768
-# public-key hash in registers across all nine permutations.
+# The compact permutation is adapted from Intel's liboqs AVX512VL Keccak
+# implementation. The fixed 1184-byte ML-KEM-768 public-key hash instead uses
+# Keccak Team Algorithm 4 to cycle its XMM lane mapping every four rounds. Both
+# paths keep all 25 lanes in registers; the fixed path also keeps state live
+# across all nine permutations.
 #
 # Copyright (c) 2025 Intel Corporation
 # SPDX-License-Identifier: MIT
