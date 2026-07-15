@@ -2451,6 +2451,9 @@ static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   const int32_t upper = 6 * (Q - 1) * (Q - 1);
   int32_t input[16];
   int32_t got[16];
+  int32_t lazy[16];
+  int32_t lazy_min = 32767;
+  int32_t lazy_max = -32768;
 
   for (int64_t base = lower; base <= upper; base += 16) {
     int active = (int)((int64_t)upper - base + 1);
@@ -2462,20 +2465,62 @@ static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
     __m512i x = _mm512_loadu_si512((const void *)input);
     _mm512_storeu_si512(
         (void *)got, ntt_acc4_madd_reduce_i32x16(x));
+    _mm512_storeu_si512(
+        (void *)lazy, ntt_acc4_madd_reduce_lazy_i32x16(x));
     for (int lane = 0; lane < active; lane++) {
       int32_t expected = input[lane] % Q;
+      int32_t lazy_mod = lazy[lane] % Q;
       if (expected < 0) expected += Q;
-      if (got[lane] != expected) {
+      if (lazy_mod < 0) lazy_mod += Q;
+      if (got[lane] != expected || lazy_mod != expected) {
         fprintf(stderr,
-                "AVX512 accumulation reduction mismatch at %d: %d != %d\n",
-                (int)input[lane], (int)got[lane], (int)expected);
+                "AVX512 accumulation reduction mismatch at %d: "
+                "%d/%d != %d\n",
+                (int)input[lane], (int)got[lane], (int)lazy[lane],
+                (int)expected);
         exit(EXIT_FAILURE);
       }
+      if (lazy[lane] < lazy_min) lazy_min = lazy[lane];
+      if (lazy[lane] > lazy_max) lazy_max = lazy[lane];
     }
+  }
+  if (lazy_min != -440 || lazy_max != 4570) {
+    fprintf(stderr, "AVX512 lazy accumulation range mismatch: [%d,%d]\n",
+            (int)lazy_min, (int)lazy_max);
+    exit(EXIT_FAILURE);
   }
 }
 
 #if defined(__AVX512VNNI__)
+static int stage_poly_equal_mod_q(const poly256 a, const poly256 b);
+
+static void validate_encrypt_accum_vnni_inverse_avx512(
+    const poly256 reference[K], const poly256 reference_v,
+    poly256 vnni[K], poly256 vnni_v, const char *kind, size_t fixture) {
+  static const poly256 zero = {0};
+  poly256 expected[K + 1];
+
+  for (int row = 0; row < K; row++) {
+    ntt_inv(reference[row], expected[row]);
+  }
+  ntt_inv(reference_v, expected[K]);
+  ntt_inv_add4_mont_final_shared_avx512(
+      zero, zero, zero, zero, vnni[0], vnni[1], vnni[2], vnni_v);
+  for (int row = 0; row < K; row++) {
+    if (memcmp(expected[row], vnni[row], sizeof(poly256)) != 0) {
+      fprintf(stderr,
+              "VNNI lazy accumulation inverse mismatch at %s,%zu,%d\n",
+              kind, fixture, row);
+      exit(EXIT_FAILURE);
+    }
+  }
+  if (memcmp(expected[K], vnni_v, sizeof(poly256)) != 0) {
+    fprintf(stderr, "VNNI lazy accumulation inverse mismatch at %s,%zu,v\n",
+            kind, fixture);
+    exit(EXIT_FAILURE);
+  }
+}
+
 static void validate_encrypt_accum_vnni512_avx512(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     poly256 reference_b[K], vnni_b[K];
@@ -2490,17 +2535,19 @@ static void validate_encrypt_accum_vnni512_avx512(void) {
     ntt3_mul_acc4_fused_final_vnni512_avx512(
         stage_ahat[lane], stage_that[lane], vnni_b, vnni, vnni_v);
     for (int row = 0; row < K; row++) {
-      if (memcmp(reference[row], vnni[row], sizeof(poly256)) != 0) {
+      if (!stage_poly_equal_mod_q(reference[row], vnni[row])) {
         fprintf(stderr, "VNNI encryption accumulation mismatch at %zu,%d\n",
                 lane, row);
         exit(EXIT_FAILURE);
       }
     }
-    if (memcmp(reference_v, vnni_v, sizeof(poly256)) != 0) {
+    if (!stage_poly_equal_mod_q(reference_v, vnni_v)) {
       fprintf(stderr, "VNNI encryption v accumulation mismatch at %zu\n",
               lane);
       exit(EXIT_FAILURE);
     }
+    validate_encrypt_accum_vnni_inverse_avx512(
+        reference, reference_v, vnni, vnni_v, "stage", lane);
   }
 
   uint32_t state = 0x13198a2eu;
@@ -2530,19 +2577,21 @@ static void validate_encrypt_accum_vnni512_avx512(void) {
     ntt3_mul_acc4_fused_final_vnni512_avx512(
         ahat, that, vnni_b, vnni, vnni_v);
     for (int row = 0; row < K; row++) {
-      if (memcmp(reference[row], vnni[row], sizeof(poly256)) != 0) {
+      if (!stage_poly_equal_mod_q(reference[row], vnni[row])) {
         fprintf(stderr,
                 "VNNI encryption accumulation fixture mismatch at %zu,%d\n",
                 fixture, row);
         exit(EXIT_FAILURE);
       }
     }
-    if (memcmp(reference_v, vnni_v, sizeof(poly256)) != 0) {
+    if (!stage_poly_equal_mod_q(reference_v, vnni_v)) {
       fprintf(stderr,
               "VNNI encryption v accumulation fixture mismatch at %zu\n",
               fixture);
       exit(EXIT_FAILURE);
     }
+    validate_encrypt_accum_vnni_inverse_avx512(
+        reference, reference_v, vnni, vnni_v, "fixture", fixture);
   }
 }
 #endif
@@ -2688,7 +2737,11 @@ static void stage_range_stats_print(const char *name,
 
 static int stage_poly_equal_mod_q(const poly256 a, const poly256 b) {
   for (int i = 0; i < N; i++) {
-    if (((uint16_t)a[i] % Q) != ((uint16_t)b[i] % Q)) return 0;
+    int ai = a[i] % Q;
+    int bi = b[i] % Q;
+    if (ai < 0) ai += Q;
+    if (bi < 0) bi += Q;
+    if (ai != bi) return 0;
   }
   return 1;
 }
@@ -2916,6 +2969,21 @@ static void validate_ntt_inv_add4_shared_avx512(void) {
 }
 
 static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
+#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512VNNI__)
+  static const int expected[6][6] = {
+      {-880, 9140, -1785, 1785, -1785, 9140},
+      {0, 3329, -1924, 1924, -1924, 3329},
+      {-3848, 6658, -1791, 1791, -3848, 6658},
+      {-7696, 13316, -1896, 1896, -7696, 13316},
+      {0, 3329, -2131, 2131, -2131, 3329},
+      {-4262, 6658, -1784, 1784, -4262, 6658},
+  };
+  const unsigned reduce_mask = (1u << 1) | (1u << 4);
+  const int expected_final_min = -8524;
+  const int expected_final_max = 13316;
+  int input_min = -440;
+  int input_max = 4570;
+#else
   static const int expected[6][6] = {
       {0, 6656, -1739, 1739, -1739, 6656},
       {-3478, 13312, -1867, 1867, -3478, 13312},
@@ -2924,9 +2992,13 @@ static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
       {-8248, 13316, -1907, 1907, -8248, 13316},
       {0, 3329, -2158, 2158, -2158, 3329},
   };
-  int16_t input_lanes[32], output_lanes[32];
+  const unsigned reduce_mask = (1u << 2) | (1u << 5);
+  const int expected_final_min = -4316;
+  const int expected_final_max = 6658;
   int input_min = 0;
   int input_max = Q - 1;
+#endif
+  int16_t input_lanes[32], output_lanes[32];
 
   for (int level = 0; level < 6; level++) {
     int sum_input_min = 2 * input_min;
@@ -2948,7 +3020,7 @@ static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
       exit(EXIT_FAILURE);
     }
 
-    if (level == 2 || level == 5) {
+    if ((reduce_mask & (1u << level)) != 0) {
       sum_min = 32767;
       sum_max = -32768;
       for (int base = sum_input_min; base <= sum_input_max; base += 32) {
@@ -3015,7 +3087,8 @@ static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
     input_max = output_max;
   }
 
-  if (2 * input_min != -4316 || 2 * input_max != 6658) {
+  if (2 * input_min != expected_final_min ||
+      2 * input_max != expected_final_max) {
     fprintf(stderr, "AVX512 periodic inverse final add range mismatch: "
                     "[%d,%d]\n",
             2 * input_min, 2 * input_max);
