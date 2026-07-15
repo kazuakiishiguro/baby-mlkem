@@ -4865,6 +4865,19 @@ static inline uint32_t sample_ntt_cmpmask16_to_8(uint32_t mask16) {
   return (x | (x >> 4)) & 0x00ffu;
 }
 
+static inline __m256i sample_ntt_cmpgt_epi16_avx2(__m256i a, __m256i b) {
+#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512F__)
+  /* Avoid GCC lowering the AVX2 compare to min-plus-equality. */
+  __m256i result;
+  __asm__("vpcmpgtw {%2, %1, %0|%0, %1, %2}"
+          : "=x"(result)
+          : "x"(a), "x"(b));
+  return result;
+#else
+  return _mm256_cmpgt_epi16(a, b);
+#endif
+}
+
 static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
                                               size_t stream_len,
                                               poly256 out,
@@ -4892,8 +4905,8 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
     f1 = _mm256_and_si256(_mm256_blend_epi16(f1, g1, 0xaa), mask);
     pos += 48;
 
-    g0 = _mm256_cmpgt_epi16(bound, f0);
-    g1 = _mm256_cmpgt_epi16(bound, f1);
+    g0 = sample_ntt_cmpgt_epi16_avx2(bound, f0);
+    g1 = sample_ntt_cmpgt_epi16_avx2(bound, f1);
     uint32_t good =
         (uint32_t)_mm256_movemask_epi8(_mm256_packs_epi16(g0, g1));
 
