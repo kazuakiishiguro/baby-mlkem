@@ -184,6 +184,7 @@ Near-term target selection:
 | AVX2 four-output K=3 encryption accumulation | Accepted for non-AVX512 encryption | One centered `rhat` load feeds all three `u` rows and `v`; `vpmaddwd` computes even/odd and cross terms with a proved signed-32-bit reduction range. Eleven-pair A/B improves cached and uncached K-PKE medians by `1.0165x` and `1.0120x`; full encapsulation improves `1.0171x` with 11/11 wins. No external object, factor cache, or wire-format change is used. |
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; asymmetric-factor follow-up accepted | The final NTT l1 emits 32 centered coefficients into three ZMM `rhat` vectors shared by all three `u` rows and `v`. The follow-up forms `[r0, gamma*r1]` once per common input and reuses it across four dot products, reducing the hot loop from three to two output-side `vpmaddwd` streams. Against the preceding ZMM path, paired medians improve cached K-PKE, encaps, decaps, and roundtrip-core by `1.0292x`/`1.0301x`/`1.0192x`/`1.0069x`. The factors are transient registers, not a cache or table; Clang and narrower builds remain byte-identical. |
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC AVX512; Clang and narrower ISA unchanged | One loop centers `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The direct accumulation median improves `6.014x`; high-iteration K-PKE keygen improves `1.6040x`, and 100k KEM `keygen`/`keygen_core` improve `1.0218x`/`1.0210x`, both 14/14. The factors are transient registers and add no cache, table, external object, or wire-format change. |
+| Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -4291,6 +4292,8 @@ stage metrics.
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512` | AVX512-only rejected diagnostic: the same fused boundary with 16-coefficient YMM `vpmaddwd` four-output accumulation |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512` | AVX512-only baseline diagnostic: the preceding three-stream 32-coefficient ZMM `vpmaddwd` four-output accumulation |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512` | GCC AVX512 production diagnostic: transient gamma-weighted `rhat` factors shared across all four outputs |
+| `mlkem_core_stage_encrypt_inv_add4_split_raw_avx512` | native AVX512 baseline: the preceding three-`u` inverse-add path plus separate `v` inverse-add, from the same four precomputed accumulations with lightweight sinks |
+| `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | native AVX512 production diagnostic: the same four inverse-adds under one shared twiddle and outer-loop schedule |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
@@ -5185,6 +5188,117 @@ KAT, GCC native UBSan KAT, and the UBSan stage validator pass. Clang native and
 both GCC/Clang AVX2-only and scalar KATs pass; their `testc`, `benchc`, and
 `bench_core_stagesc` binaries are byte-identical to `24113a7`. The final
 GCC-native `benchc` is byte-identical to the fully measured candidate.
+
+### Independent Core Optimization A/B (2026-07-15, native AVX512 four-output inverse-add scheduling)
+
+Prepared-public encryption reaches the inverse NTT with four independent
+NTT-domain accumulations that all use the same transform constants:
+
+```text
+u[i] = invntt(ahat[i] dot rhat) + e1[i], i = 0..2
+v    = invntt(that dot rhat) + e2 + mu
+```
+
+The preceding native path transformed the three `u` outputs and `v` separately.
+Each call kept one 32-coefficient block in a ZMM register through inverse
+lengths 2, 4, 8, and 16, but reread the same low/high Montgomery twiddle vectors
+for every output. The accepted helper instead loads one twiddle pair and applies
+it to `u[0]`, `u[1]`, `u[2]`, and `v` before advancing the schedule. Lengths
+32/64 and the final scale/add pass likewise share their outer loops while each
+polynomial remains independent.
+
+At the source schedule level, one pre-final transform fetches 76 ZMM twiddle
+vectors: 64 for the first four levels and 12 for lengths 32/64. Four separate
+transforms therefore fetch 304; the shared schedule fetches 76, a 75% reduction.
+The number of butterflies, coefficient loads/stores, Montgomery products, and
+noise additions is unchanged. This is an operation/scheduling change, not a
+warm-cache shortcut.
+
+The transferable high-throughput ECC/ZKP lesson is horizontal co-scheduling of
+independent jobs that consume the same constants. Endomorphisms and NAF optimize
+elliptic-curve scalar multiplication and do not apply to ML-KEM's polynomial
+NTT. No ECC group law or alternative ML-KEM mathematics is introduced here.
+
+The direct production-shaped metric copied the same four precomputed
+accumulations for both forms. GCC used nine 50,000-iteration runs and Clang used
+seven:
+
+| Compiler | Split median ns/op | Shared median ns/op | Speedup | Wins |
+|---|---:|---:|---:|---:|
+| GCC | 380.28 | 305.49 | 1.2448x | 9/9 |
+| Clang | 342.76 | 278.33 | 1.2315x | 7/7 |
+
+Production acceptance compared baseline `33c0d95` with core commit `23fb393`.
+The stage gate used two warmups, nine alternating pairs, and 30,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage STAGE_ITERS=30000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 33c0d95
+```
+
+The same command was repeated with `C_COMPILER=clang`.
+
+| Compiler / metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| GCC `kpke_encrypt_cached` | 1272.17 | 1199.18 | 1.0624x | 1.0623x | 9/9 |
+| GCC `kpke_encrypt_uncached` | 3015.31 | 2936.78 | 1.0271x | 1.0273x | 9/9 |
+| Clang `kpke_encrypt_cached` | 1262.41 | 1196.28 | 1.0537x | 1.0571x | 9/9 |
+| Clang `kpke_encrypt_uncached` | 3011.78 | 2948.45 | 1.0260x | 1.0180x | 8/9 |
+
+The final KEM gate used three warmups, fifteen alternating pairs, and 100,000
+iterations per run:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 33c0d95
+```
+
+The same KEM command was repeated with `C_COMPILER=clang`.
+
+| KEM metric | GCC paired geometric mean | GCC paired median | GCC wins | Clang paired geometric mean | Clang paired median | Clang wins |
+|---|---:|---:|---:|---:|---:|---:|
+| `mlkem_encaps` | 1.0495x | 1.0464x | 15/15 | 1.0468x | 1.0449x | 15/15 |
+| `mlkem_encaps_core` | 1.0272x | 1.0235x | 15/15 | 1.0090x | 1.0142x | 13/15 |
+| `mlkem_decaps` | 1.0343x | 1.0330x | 15/15 | 1.0312x | 1.0313x | 15/15 |
+| `mlkem_decaps_core` | 1.0191x | 1.0210x | 14/15 | 1.0259x | 1.0207x | 14/15 |
+| `mlkem_roundtrip` | 1.0219x | 1.0193x | 15/15 | 1.0164x | 1.0167x | 15/15 |
+| `mlkem_roundtrip_core` | 1.0160x | 1.0116x | 14/15 | 1.0118x | 1.0133x | 14/15 |
+
+Decapsulation benefits because its ciphertext check recomputes prepared-public
+encryption. Keygen does not execute this inverse path; its mixed near-neutral
+results are controls and are not attributed to this change. Cached and uncached
+decrypt stage rows were also neutral controls.
+
+Two smaller schedules were rejected. A compact four-lane loop reduced helper
+size to `0x594` bytes but reached only `1.0932x` directly and
+`1.0298x`/`1.0120x` in GCC cached/uncached K-PKE. Processing two outputs at a
+time occupied `0xd5a` bytes yet reached only `1.1574x` directly. Both gave up
+too much twiddle reuse or instruction-level overlap. Fully inlining the accepted
+schedule expanded GCC prepared encryption from `0x11f2` to `0x1eb8` bytes, so
+the final `MLKEM_NOINLINE` boundary keeps the caller at `0x11c7` and the helper
+at `0xd32`.
+
+Complete GCC `benchc` text grows from 78,884 to 81,400 bytes (+2,516); Clang
+grows from 157,713 to 160,625 bytes (+2,912). Data and BSS are unchanged. The
+Clang prepared-encryption function shrinks from `0x58f1` to `0x469f`, with the
+shared `0x1da2` helper kept separate. This bounded code growth is the cost of
+exposing four-polynomial overlap without inflating the already dense caller.
+
+The validator compares the shared helper coefficient-for-coefficient with the
+preceding split production path on all real stage lanes and 256 additional
+fixtures. Those fixtures cover all-zero, all-`Q-1` input/add combinations,
+alternating extremes, reduction boundaries, and deterministic pseudorandom
+canonical coefficients. GCC and Clang native KATs and validators pass; GCC
+native UBSan KAT and validator also pass. Explicit AVX2-only and scalar KATs
+pass under both compilers, and their `testc`, `benchc`, and
+`bench_core_stagesc` binaries are byte-identical to `33c0d95`.
+
+The helper is repository-local C intrinsics code. It links no Kyber, PQClean,
+liboqs, or other external crypto object, adds no runtime-library dependency,
+persistent key/matrix cache, transformed-key table, or wire-format change. The
+16-bit Montgomery/Barrett inverse arithmetic remains the already disclosed
+upstream-Kyber-derived design; this change claims only local four-output
+scheduling and production integration.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
