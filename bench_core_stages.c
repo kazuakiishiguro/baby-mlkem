@@ -2915,6 +2915,102 @@ static void validate_ntt_inv_add4_shared_avx512(void) {
   }
 }
 
+static void validate_ntt_inv_scale_eta2_single_reduce_avx512(void) {
+  int16_t input[32], raw_lanes[32], expected_lanes[32], got_lanes[32];
+  int8_t noise[32];
+  __m512i zeta_lo[2], zeta_hi[2];
+  int raw_min[2] = {32767, 32767};
+  int raw_max[2] = {-32768, -32768};
+  int combined_min = 32767;
+  int combined_max = -32768;
+  const int expected_raw_min[2] = {-1894, -1793};
+  const int expected_raw_max[2] = {1920, 1793};
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+
+  zeta_lo[0] = ZETA_NTT_INV_MONT_SCALE_LO_AVX512;
+  zeta_hi[0] = ZETA_NTT_INV_MONT_SCALE_HI_AVX512;
+  zeta_lo[1] = ZETA_NTT_INV_MONT_ZETA_SCALE_LO_AVX512;
+  zeta_hi[1] = ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512;
+
+  for (int factor = 0; factor < 2; factor++) {
+    for (int base = -32768; base <= 32736; base += 32) {
+      for (int lane = 0; lane < 32; lane++) {
+        input[lane] = (int16_t)(base + lane);
+      }
+      __m512i x = _mm512_loadu_si512((const void *)input);
+      __m512i raw = ntt_mont_mul_precomp_i16x32_avx512(
+          x, zeta_lo[factor], zeta_hi[factor]);
+      _mm512_storeu_si512((void *)raw_lanes, raw);
+      for (int lane = 0; lane < 32; lane++) {
+        if (raw_lanes[lane] < raw_min[factor]) {
+          raw_min[factor] = raw_lanes[lane];
+        }
+        if (raw_lanes[lane] > raw_max[factor]) {
+          raw_max[factor] = raw_lanes[lane];
+        }
+      }
+
+      for (int noise_value = -2; noise_value <= 2; noise_value++) {
+        memset(noise, noise_value, sizeof(noise));
+        __m512i small = _mm512_cvtepi8_epi16(
+            _mm256_loadu_si256((const __m256i *)(const void *)noise));
+        for (int message = 0; message < 2; message++) {
+          int extra_value = message ? (Q + 1) / 2 : 0;
+          __m512i extra = _mm512_set1_epi16((short)extra_value);
+          __m512i expected = ntt_canonicalize_i16x32_avx512(raw);
+          expected =
+              _mm512_add_epi16(_mm512_add_epi16(expected, small), extra);
+          expected = _mm512_mask_add_epi16(
+              expected, _mm512_movepi16_mask(expected), expected, q);
+          expected = _mm512_mask_sub_epi16(
+              expected, _mm512_cmpgt_epi16_mask(expected, q_minus_1),
+              expected, q);
+          __m512i got =
+              ntt_inv_mont_scale_add_eta2_i8_i16x32_avx512(
+                  x, zeta_lo[factor], zeta_hi[factor], noise, extra);
+          __mmask32 equal = _mm512_cmpeq_epi16_mask(expected, got);
+          if (equal != (__mmask32)0xffffffffu) {
+            _mm512_storeu_si512((void *)expected_lanes, expected);
+            _mm512_storeu_si512((void *)got_lanes, got);
+            for (int lane = 0; lane < 32; lane++) {
+              if (expected_lanes[lane] != got_lanes[lane]) {
+                fprintf(stderr,
+                        "AVX512 inverse scale/ETA2 single-reduce mismatch "
+                        "at %d,%d,%d,%d: %d != %d\n",
+                        factor, noise_value, message, input[lane],
+                        expected_lanes[lane], got_lanes[lane]);
+                exit(EXIT_FAILURE);
+              }
+            }
+          }
+
+          for (int lane = 0; lane < 32; lane++) {
+            int combined = raw_lanes[lane] + noise_value + extra_value;
+            if (combined < combined_min) combined_min = combined;
+            if (combined > combined_max) combined_max = combined;
+          }
+        }
+      }
+    }
+
+    if (raw_min[factor] != expected_raw_min[factor] ||
+        raw_max[factor] != expected_raw_max[factor]) {
+      fprintf(stderr,
+              "AVX512 inverse scale raw range mismatch at %d: [%d,%d]\n",
+              factor, raw_min[factor], raw_max[factor]);
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (combined_min != -1896 || combined_max != 3587) {
+    fprintf(stderr,
+            "AVX512 inverse scale/ETA2 combined range mismatch: [%d,%d]\n",
+            combined_min, combined_max);
+    exit(EXIT_FAILURE);
+  }
+}
+
 static void validate_ntt_inv_add4_eta2_i8_avx512(void) {
   poly256 baseline[4];
   poly256 compact[4];
@@ -3132,6 +3228,7 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_accum_asym_madd512_avx512();
 #endif
   validate_ntt_inv_add4_shared_avx512();
+  validate_ntt_inv_scale_eta2_single_reduce_avx512();
   validate_ntt_inv_add4_eta2_i8_avx512();
 #endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
