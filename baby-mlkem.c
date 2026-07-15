@@ -6568,6 +6568,10 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
         e1[0], e1[1], e1[2], e2, u[0], u[1], u[2], v);
   }
 #else
+  /* Fold mu directly into e2; e2 is not needed after v is formed. */
+  if (mlen == 32) {
+    mlkem_add_message_to_poly(m, e2);
+  }
   ntt_inv_add_v_inplace(e2, v);
 #endif
 
