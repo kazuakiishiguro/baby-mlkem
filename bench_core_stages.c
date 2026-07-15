@@ -85,6 +85,9 @@ static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u_accum[STAGE_BENCH_LANES][K];
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
 static poly256 stage_v_accum[STAGE_BENCH_LANES];
+static int8_t stage_e1_i8[STAGE_BENCH_LANES][K][N];
+static int8_t stage_e2_i8[STAGE_BENCH_LANES][N];
+static int8_t stage_tmp_eta2_i8[STAGE_BENCH_LANES][4][N];
 #endif
 static poly256 stage_u[STAGE_BENCH_LANES][K];
 #if defined(__AVX2__)
@@ -608,6 +611,20 @@ static void derive_encrypt_lane(size_t lane) {
   }
   memcpy(stage_e2_msg[lane], stage_e2[lane], sizeof(poly256));
   mlkem_add_message_to_poly(stage_msg[lane], stage_e2_msg[lane]);
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  for (int output = 0; output < K; output++) {
+    for (int coeff = 0; coeff < N; coeff++) {
+      int noise = stage_e1[lane][output][coeff];
+      stage_e1_i8[lane][output][coeff] =
+          (int8_t)(noise > Q / 2 ? noise - Q : noise);
+    }
+  }
+  for (int coeff = 0; coeff < N; coeff++) {
+    int noise = stage_e2[lane][coeff];
+    stage_e2_i8[lane][coeff] =
+        (int8_t)(noise > Q / 2 ? noise - Q : noise);
+  }
+#endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
   for (int i = 0; i < K; i++) {
@@ -2699,6 +2716,78 @@ static void validate_ntt_inv_add4_shared_avx512(void) {
     }
   }
 }
+
+static void validate_ntt_inv_add4_eta2_i8_avx512(void) {
+  poly256 baseline[4];
+  poly256 compact[4];
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int output = 0; output < K; output++) {
+      memcpy(baseline[output], stage_u_accum[lane][output], sizeof(poly256));
+      memcpy(compact[output], stage_u_accum[lane][output], sizeof(poly256));
+    }
+    memcpy(baseline[3], stage_v_accum[lane], sizeof(poly256));
+    memcpy(compact[3], stage_v_accum[lane], sizeof(poly256));
+    ntt_inv_add4_mont_final_shared_avx512(
+        stage_e1[lane][0], stage_e1[lane][1], stage_e1[lane][2],
+        stage_e2_msg[lane], baseline[0], baseline[1], baseline[2], baseline[3]);
+    ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+        stage_e1_i8[lane][0], stage_e1_i8[lane][1],
+        stage_e1_i8[lane][2], stage_e2_i8[lane], stage_msg[lane],
+        compact[0], compact[1], compact[2], compact[3]);
+    for (int output = 0; output < 4; output++) {
+      if (memcmp(baseline[output], compact[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "AVX512 ETA2 i8 inverse-add4 mismatch at %zu,%d\n",
+                lane, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    poly256 add[4];
+    int8_t small[4][N];
+    uint8_t msg[32];
+    uint32_t state = fixture * 0x9e3779b9u + 0x7f4a7c15u;
+    for (int byte = 0; byte < 32; byte++) {
+      state = state * 1664525u + 1013904223u;
+      msg[byte] = fixture == 0 ? 0 : fixture == 1 ? 0xff : (uint8_t)(state >> 24);
+    }
+    for (int output = 0; output < 4; output++) {
+      for (int coeff = 0; coeff < N; coeff++) {
+        state = state * 1664525u + 1013904223u;
+        uint16_t input;
+        if (fixture == 0) {
+          input = 0;
+        } else if (fixture == 1) {
+          input = Q - 1;
+        } else {
+          input = (uint16_t)(state % Q);
+        }
+        int noise = (int)((state >> 16) % 5u) - 2;
+        baseline[output][coeff] = (int16_t)input;
+        compact[output][coeff] = (int16_t)input;
+        small[output][coeff] = (int8_t)noise;
+        add[output][coeff] = (int16_t)(noise < 0 ? noise + Q : noise);
+      }
+    }
+    mlkem_add_message_to_poly(msg, add[3]);
+    ntt_inv_add4_mont_final_shared_avx512(
+        add[0], add[1], add[2], add[3],
+        baseline[0], baseline[1], baseline[2], baseline[3]);
+    ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+        small[0], small[1], small[2], small[3], msg,
+        compact[0], compact[1], compact[2], compact[3]);
+    for (int output = 0; output < 4; output++) {
+      if (memcmp(baseline[output], compact[output], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "AVX512 ETA2 i8 inverse-add4 fixture mismatch at %u,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
 #endif
 
 static void validate_core_stage_helpers(void) {
@@ -2733,6 +2822,7 @@ static void validate_core_stage_helpers(void) {
   validate_keygen_accum_asym_madd512_avx512();
 #endif
   validate_ntt_inv_add4_shared_avx512();
+  validate_ntt_inv_add4_eta2_i8_avx512();
 #endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
@@ -10387,6 +10477,28 @@ static uint64_t bench_encrypt_noise_prf_cbd_raw(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t bench_encrypt_noise_prf_cbd_i8_raw_avx512(size_t iters) {
+  const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    mlkem_prf_cbd_eta2x3x4_i8_32(
+        stage_r[lane], nonce, stage_tmp_vec0[lane][0],
+        stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2],
+        stage_tmp_eta2_i8[lane][0], stage_tmp_eta2_i8[lane][1],
+        stage_tmp_eta2_i8[lane][2], stage_tmp_eta2_i8[lane][3]);
+    acc ^= (uint16_t)stage_tmp_vec0[lane][i % K][(i * 5u) & (N - 1)];
+    acc ^= (uint8_t)stage_tmp_eta2_i8[lane][(i + 1u) % K]
+        [(i * 7u) & (N - 1)];
+    acc ^= (uint8_t)stage_tmp_eta2_i8[lane][3][(i * 11u) & (N - 1)];
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
 static uint64_t bench_encrypt_noise_prf_cbd_x4_raw(size_t iters) {
   const uint8_t nonce[4] = {0, 1, 2, 3};
   uint64_t acc = 0;
@@ -10525,6 +10637,32 @@ static uint64_t bench_encrypt_inv_add4_shared_raw_avx512(size_t iters) {
     acc ^= (uint16_t)stage_tmp_poly[lane][(i * 23u) & (N - 1)];
   }
   t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add4_eta2_i8_raw_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_accum[lane][row],
+             sizeof(poly256));
+    }
+    memcpy(stage_tmp_poly[lane], stage_v_accum[lane], sizeof(poly256));
+    ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+        stage_e1_i8[lane][0], stage_e1_i8[lane][1],
+        stage_e1_i8[lane][2], stage_e2_i8[lane], stage_msg[lane],
+        stage_tmp_vec0[lane][0], stage_tmp_vec0[lane][1],
+        stage_tmp_vec0[lane][2], stage_tmp_poly[lane]);
+    for (int row = 0; row < K; row++) {
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (17u + 2u * (unsigned)row)) & (N - 1)];
+    }
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 23u) & (N - 1)];
+  }
+  uint64_t t1 = now_ns();
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
@@ -14260,6 +14398,10 @@ int main(int argc, char **argv) {
 #if defined(__AVX2__)
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_raw",
                bench_encrypt_noise_prf_cbd_raw(iters), iters);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+  print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512",
+               bench_encrypt_noise_prf_cbd_i8_raw_avx512(iters), iters);
+#endif
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw",
                bench_encrypt_noise_prf_cbd_x4_raw(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw",
@@ -14299,6 +14441,8 @@ int main(int argc, char **argv) {
                bench_encrypt_inv_add4_split_raw_avx512(iters), iters);
   print_metric("mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512",
                bench_encrypt_inv_add4_shared_raw_avx512(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512",
+               bench_encrypt_inv_add4_eta2_i8_raw_avx512(iters), iters);
 #endif
   print_metric("mlkem_core_stage_encrypt_accum_inv",
                bench_encrypt_accum_inv(iters), iters);

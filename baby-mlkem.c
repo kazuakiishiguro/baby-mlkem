@@ -1967,6 +1967,74 @@ ntt_inv_add4_mont_final_shared_avx512(
   }
 }
 
+static inline uint32_t load32_le(const uint8_t *x);
+
+/* Keep ETA2 noise compact until its inverse-NTT consumer materializes it. */
+static MLKEM_ALWAYS_INLINE __m512i ntt_add_eta2_i8_i16x32_avx512(
+    __m512i x, const int8_t noise[32], __m512i extra) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  __m512i small = _mm512_cvtepi8_epi16(
+      _mm256_loadu_si256((const __m256i *)(const void *)noise));
+  __m512i sum = _mm512_add_epi16(_mm512_add_epi16(x, small), extra);
+  sum = _mm512_mask_add_epi16(sum, _mm512_movepi16_mask(sum), sum, q);
+  return _mm512_mask_sub_epi16(
+      sum, _mm512_cmpgt_epi16_mask(sum, q_minus_1), sum, q);
+}
+
+static MLKEM_ALWAYS_INLINE void ntt_inv_add_eta2_i8_final_chunk_avx512(
+    const int8_t add_lo[32], const int8_t add_hi[32],
+    int16_t *out_lo, int16_t *out_hi,
+    __m512i extra_lo, __m512i extra_hi,
+    __m512i *result_lo, __m512i *result_hi) {
+  __m512i a = _mm512_loadu_si512((const void *)out_lo);
+  __m512i b = _mm512_loadu_si512((const void *)out_hi);
+  ntt_inv_mont_scale_pair_i16x32_avx512(a, b, result_lo, result_hi);
+  *result_lo = ntt_add_eta2_i8_i16x32_avx512(
+      *result_lo, add_lo, extra_lo);
+  *result_hi = ntt_add_eta2_i8_i16x32_avx512(
+      *result_hi, add_hi, extra_hi);
+}
+
+static MLKEM_NOINLINE void ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+    const int8_t add0[N], const int8_t add1[N], const int8_t add2[N],
+    const int8_t add3[N], const uint8_t msg[32],
+    poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
+  const __m512i hqs = _mm512_set1_epi16((Q + 1) / 2);
+  const __m512i zero = _mm512_setzero_si512();
+  ntt_inv_mont_before_final4_shared_avx512(out0, out1, out2, out3);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m512i lo, hi;
+    ntt_inv_add_eta2_i8_final_chunk_avx512(
+        add0 + j, add0 + N / 2 + j, out0 + j, out0 + N / 2 + j,
+        zero, zero, &lo, &hi);
+    _mm512_storeu_si512((void *)(out0 + j), lo);
+    _mm512_storeu_si512((void *)(out0 + N / 2 + j), hi);
+
+    ntt_inv_add_eta2_i8_final_chunk_avx512(
+        add1 + j, add1 + N / 2 + j, out1 + j, out1 + N / 2 + j,
+        zero, zero, &lo, &hi);
+    _mm512_storeu_si512((void *)(out1 + j), lo);
+    _mm512_storeu_si512((void *)(out1 + N / 2 + j), hi);
+
+    ntt_inv_add_eta2_i8_final_chunk_avx512(
+        add2 + j, add2 + N / 2 + j, out2 + j, out2 + N / 2 + j,
+        zero, zero, &lo, &hi);
+    _mm512_storeu_si512((void *)(out2 + j), lo);
+    _mm512_storeu_si512((void *)(out2 + N / 2 + j), hi);
+
+    __m512i msg_lo = _mm512_maskz_mov_epi16(
+        (__mmask32)load32_le(msg + j / 8), hqs);
+    __m512i msg_hi = _mm512_maskz_mov_epi16(
+        (__mmask32)load32_le(msg + 16 + j / 8), hqs);
+    ntt_inv_add_eta2_i8_final_chunk_avx512(
+        add3 + j, add3 + N / 2 + j, out3 + j, out3 + N / 2 + j,
+        msg_lo, msg_hi, &lo, &hi);
+    _mm512_storeu_si512((void *)(out3 + j), lo);
+    _mm512_storeu_si512((void *)(out3 + N / 2 + j), hi);
+  }
+}
+
 static void ntt_inv_add2_mont_final_avx512(
     const poly256 add0, const poly256 add1, poly256 out) {
   ntt_inv_mont_before_final_avx512(out);
@@ -4130,6 +4198,21 @@ static inline void sample_poly_cbd_eta2_store1_avx2(__m128i bytes,
                       cbd_eta2_canonicalize_i8x16(coeffs));
 }
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static inline void sample_poly_cbd_eta2_store2_i8_avx2(
+    __m128i bytes, int8_t *out0, int8_t *out1) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  _mm_storeu_si128((__m128i *)(void *)out0,
+                   _mm_unpacklo_epi8(lo8, hi8));
+  _mm_storeu_si128((__m128i *)(void *)out1,
+                   _mm_unpackhi_epi8(lo8, hi8));
+}
+#endif
 static void sample_poly_cbd_eta2x4_state_avx2(const __m256i st[25],
                                               poly256 out0, poly256 out1,
                                               poly256 out2, poly256 out3) {
@@ -4180,6 +4263,29 @@ static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[16],
         out4 + 16 * i, out5 + 16 * i);
     sample_poly_cbd_eta2_store1_avx2(
         _mm_loadl_epi64((const __m128i *)&words[6]), out6 + 16 * i);
+  }
+}
+#endif
+
+#if defined(__AVX512BW__)
+static void sample_poly_cbd_eta2x3x4_i8_state_avx512(
+    const __m512i st[16], poly256 out0, poly256 out1, poly256 out2,
+    int8_t out3[N], int8_t out4[N], int8_t out5[N], int8_t out6[N]) {
+  for (int i = 0; i < 16; i++) {
+    uint64_t words[8];
+    _mm512_storeu_si512((void *)words, st[i]);
+    sample_poly_cbd_eta2_store2_avx2(
+        _mm_loadu_si128((const __m128i *)(const void *)&words[0]),
+        out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store1_avx2(
+        _mm_loadl_epi64((const __m128i *)(const void *)&words[2]),
+        out2 + 16 * i);
+    sample_poly_cbd_eta2_store2_i8_avx2(
+        _mm_loadu_si128((const __m128i *)(const void *)&words[3]),
+        out3 + 16 * i, out4 + 16 * i);
+    sample_poly_cbd_eta2_store2_i8_avx2(
+        _mm_loadu_si128((const __m128i *)(const void *)&words[5]),
+        out5 + 16 * i, out6 + 16 * i);
   }
 }
 #endif
@@ -4258,6 +4364,24 @@ static void mlkem_prf_cbd_eta2x7_32(const uint8_t seed[32],
   sample_poly_cbd_eta2x7_state_avx512(st, out0, out1, out2, out3,
                                       out4, out5, out6);
 }
+
+#if defined(__AVX512BW__)
+static void mlkem_prf_cbd_eta2x3x4_i8_32(
+    const uint8_t seed[32], const uint8_t nonce[8],
+    poly256 out0, poly256 out1, poly256 out2,
+    int8_t out3[N], int8_t out4[N], int8_t out5[N], int8_t out6[N]) {
+#if defined(__GNUC__) && !defined(__clang__)
+  __m512i st[16];
+  keccakf8_sparse_32(seed, nonce, st);
+#else
+  __m512i st[25];
+  mlkem_prf_cbd_eta2x8_init_32(seed, nonce, st);
+  keccakf8(st);
+#endif
+  sample_poly_cbd_eta2x3x4_i8_state_avx512(
+      st, out0, out1, out2, out3, out4, out5, out6);
+}
+#endif
 #endif
 
 static MLKEM_NOINLINE void mlkem_prf_cbd_eta2x4_32(const uint8_t seed[32],
@@ -6344,10 +6468,26 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   static poly256 e1[K];
   /* e2 => 1 polynomial => sample_poly_cbd(ETA2, prf(r,2K)) */
   static poly256 e2;
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  static int8_t e1_i8[K][N];
+  static int8_t e2_i8[N];
+  int eta2_i8_noise = 0;
+#endif
 #if defined(__AVX2__)
   if (rlen == 32) {
-    mlkem_encrypt_prf_cbd_eta2_32(r, rhat[0], rhat[1], rhat[2], e1[0],
-                                  e1[1], e1[2], e2);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    if (mlen == 32) {
+      const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+      mlkem_prf_cbd_eta2x3x4_i8_32(
+          r, nonce, rhat[0], rhat[1], rhat[2],
+          e1_i8[0], e1_i8[1], e1_i8[2], e2_i8);
+      eta2_i8_noise = 1;
+    } else
+#endif
+    {
+      mlkem_encrypt_prf_cbd_eta2_32(r, rhat[0], rhat[1], rhat[2], e1[0],
+                                    e1[1], e1[2], e2);
+    }
   } else
 #endif
   {
@@ -6409,15 +6549,23 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
                kpke_public_cache_that[2], rhat[2], v);
 #endif
 
-  /* Fold mu directly into e2; e2 is not needed after v is formed. */
-  if (mlen == 32) {
-    mlkem_add_message_to_poly(m, e2);
-  }
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-  ntt_inv_add4_mont_final_shared_avx512(
-      e1[0], e1[1], e1[2], e2, u[0], u[1], u[2], v);
+  if (eta2_i8_noise) {
+    ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+        e1_i8[0], e1_i8[1], e1_i8[2], e2_i8, m,
+        u[0], u[1], u[2], v);
+  } else {
+#endif
+    /* Fold mu directly into e2; e2 is not needed after v is formed. */
+    if (mlen == 32) {
+      mlkem_add_message_to_poly(m, e2);
+    }
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+    ntt_inv_add4_mont_final_shared_avx512(
+        e1[0], e1[1], e1[2], e2, u[0], u[1], u[2], v);
+  }
 #else
-  ntt_inv_add_v_inplace(e2, v);
+    ntt_inv_add_v_inplace(e2, v);
 #endif
 
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
