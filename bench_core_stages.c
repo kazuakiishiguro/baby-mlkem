@@ -1567,6 +1567,48 @@ static void validate_encrypt_prf_cbd_tail_x8_avx512(void) {
 }
 #endif
 
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__clang__)
+static void validate_encrypt_prf_cbd_tail_x8_clang_avx512(void) {
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32], rho[32];
+    poly256 got_tail, want_tail, got_r[K], want_r[K];
+    poly256 got_e1[K], want_e1[K], got_e2, want_e2;
+
+    fill_bytes(seed, sizeof(seed), 0x434c414e47523800ULL + fixture);
+    fill_bytes(rho, sizeof(rho), 0x434c414e47525400ULL + fixture);
+    mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
+        seed, rho, got_tail, got_r[0], got_r[1], got_r[2],
+        got_e1[0], got_e1[1], got_e1[2], got_e2);
+    sample_ntt(rho, 2, 2, want_tail);
+    mlkem_encrypt_prf_cbd_eta2_32(
+        seed, want_r[0], want_r[1], want_r[2],
+        want_e1[0], want_e1[1], want_e1[2], want_e2);
+
+    if (memcmp(got_tail, want_tail, sizeof(poly256)) != 0) {
+      fprintf(stderr, "Clang x8 encrypt mixed-tail mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+    for (int output = 0; output < K; output++) {
+      if (memcmp(got_r[output], want_r[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "Clang x8 encrypt mixed-r mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+      if (memcmp(got_e1[output], want_e1[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "Clang x8 encrypt mixed-e1 mismatch at %zu,%d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+    if (memcmp(got_e2, want_e2, sizeof(poly256)) != 0) {
+      fprintf(stderr, "Clang x8 encrypt mixed-e2 mismatch at %zu\n", fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void stage_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
     poly256 r0, poly256 r1, poly256 r2, poly256 e10,
@@ -3421,6 +3463,9 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX512BW__)
   validate_encrypt_prf_cbd_tail_x8_avx512();
 #endif
+#endif
+#if defined(__AVX512BW__) && defined(__clang__)
+  validate_encrypt_prf_cbd_tail_x8_clang_avx512();
 #endif
   validate_sample_ntt8_sparse_first_avx512();
 #endif
