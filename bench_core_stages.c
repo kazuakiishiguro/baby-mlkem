@@ -7447,6 +7447,28 @@ static void validate_sample_ntt8_sparse_first_avx512(void) {
         exit(EXIT_FAILURE);
       }
     }
+    {
+      __m512i triple_base[25];
+      __m512i triple_got[25];
+      uint8_t triple_base_stream[8][504] = {{0}};
+      uint8_t triple_got_stream[8][504] = {{0}};
+
+      stage_sample_ntt8_init(stage_rho[fixture], triple_base);
+      for (int block = 0; block < 3; block++) {
+        keccakf8(triple_base);
+        sample_ntt8_store_block(triple_base_stream, (size_t)block * 168,
+                                triple_base);
+      }
+      keccakf8_sparse_matrix_3_store_blocks(
+          stage_rho[fixture], triple_got, triple_got_stream);
+      if (memcmp(triple_got, triple_base, sizeof(triple_base)) != 0 ||
+          memcmp(triple_got_stream, triple_base_stream,
+                 sizeof(triple_base_stream)) != 0) {
+        fprintf(stderr, "sample_ntt8 persistent-triple mismatch at %zu\n",
+                fixture);
+        exit(EXIT_FAILURE);
+      }
+    }
 #endif
     for (int checkpoint = 1; checkpoint <= 3; checkpoint++) {
       if (memcmp(got_st, base_st, sizeof(base_st)) != 0) {
