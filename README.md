@@ -185,6 +185,7 @@ Near-term target selection:
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; asymmetric-factor follow-up accepted | The final NTT l1 emits 32 centered coefficients into three ZMM `rhat` vectors shared by all three `u` rows and `v`. The follow-up forms `[r0, gamma*r1]` once per common input and reuses it across four dot products, reducing the hot loop from three to two output-side `vpmaddwd` streams. Against the preceding ZMM path, paired medians improve cached K-PKE, encaps, decaps, and roundtrip-core by `1.0292x`/`1.0301x`/`1.0192x`/`1.0069x`. The factors are transient registers, not a cache or table; Clang and narrower builds remain byte-identical. |
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC AVX512; Clang and narrower ISA unchanged | One loop centers `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The direct accumulation median improves `6.014x`; high-iteration K-PKE keygen improves `1.6040x`, and 100k KEM `keygen`/`keygen_core` improve `1.0218x`/`1.0210x`, both 14/14. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
+| Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed, and its production binaries remain byte-identical. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -4265,6 +4266,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_noise_lazy` | AVX2-only production-aligned encryption PRF, CBD, and lazy multiply-input NTT for `r` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd` | isolated encryption PRF and CBD for `r`, `e1`, and `e2` |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_raw` | AVX2-only diagnostic: same encryption PRF/CBD helper with lightweight coefficient sinks instead of full-polynomial checksums |
+| `mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512` | native AVX512 diagnostic: the mixed x8 producer keeps `rhat[0..2]` canonical int16 but writes `e1[0..2]` and `e2` as signed int8, with lightweight sinks |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw` | AVX2-only diagnostic: first four-lane encryption PRF/CBD block for nonces `0,1,2,3`, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw` | AVX2-only diagnostic: second three-output encryption PRF/CBD block for nonces `4,5,6`, with lightweight coefficient sinks |
 | `mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate` | AVX2-only diagnostic: scalar `(2,2)` public-matrix tail plus encryption PRF/CBD, using a lightweight sink |
@@ -4294,6 +4296,7 @@ stage metrics.
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512` | GCC AVX512 production diagnostic: transient gamma-weighted `rhat` factors shared across all four outputs |
 | `mlkem_core_stage_encrypt_inv_add4_split_raw_avx512` | native AVX512 baseline: the preceding three-`u` inverse-add path plus separate `v` inverse-add, from the same four precomputed accumulations with lightweight sinks |
 | `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | native AVX512 production diagnostic: the same four inverse-adds under one shared twiddle and outer-loop schedule |
+| `mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512` | native AVX512 diagnostic: the shared four-output inverse final widens signed-int8 ETA2 noise and folds the message mask into the same modular normalization |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_scalar` | AVX2-only diagnostic: one scalar `ntt_mul_acc3()` over canonical NTT-domain inputs, using the same fixture as the AVX2 canonical diagnostic |
 | `mlkem_core_stage_ntt_mul_acc3_canonical_avx2` | AVX2-only diagnostic: one manual 8-pair AVX2 `ntt_mul_acc3()` over canonical inputs, excluding lazy-input canonicalization cost |
 | `mlkem_core_stage_encrypt_inv_add_u_only` | isolated three-`u` inverse-NTT-add from precomputed accumulations, including scratch copies to preserve inputs |
@@ -5299,6 +5302,128 @@ persistent key/matrix cache, transformed-key table, or wire-format change. The
 16-bit Montgomery/Barrett inverse arithmetic remains the already disclosed
 upstream-Kyber-derived design; this change claims only local four-output
 scheduling and production integration.
+
+### Independent Core Optimization A/B (2026-07-15, compact ETA2 noise boundary)
+
+The profile after sharing the four inverse-NTT schedules still attributed
+`12.55%` self time to `kpke_encrypt_prepared_public()` and `6.71%` to its
+shared inverse-final helper. The refreshed stage frontier put encryption
+PRF/CBD at about `334 ns` and the four-output inverse/add at about `304 ns`.
+This made the next target the producer/consumer representation between CBD and
+the inverse final pass, not random-number generation or ciphertext packing.
+
+ML-KEM ETA2 coefficients are only in `[-2,2]`. The preceding path immediately
+converted them to canonical 16-bit values in `[0,Q)`, stored four full
+polynomials, then loaded those values in the inverse-final consumer. The GCC
+native AVX512 path now has the existing x8 SHAKE producer emit:
+
+- `rhat[0..2]` as canonical int16 because the forward NTT consumes them;
+- `e1[0..2]` and `e2` as signed int8 because they need no NTT;
+- 1,024 bytes of error-polynomial output instead of 2,048 bytes.
+
+The consumer sign-extends 32 coefficients with one AVX512BW conversion. It
+adds the message mask before normalization for `v`, so noise and message need
+only one range correction. If `x` is the canonical inverse result, `e` is ETA2
+noise, and `mu` is a decoded message coefficient, then:
+
+```text
+0 <= x <= Q - 1
+-2 <= e <= 2
+mu in {0, (Q + 1) / 2}
+-2 <= x + e + mu <= 4995 < 2Q
+```
+
+One masked add of `Q` for a negative lane followed by one masked subtract of
+`Q` for a lane above `Q-1` is therefore exact. There is no secret-dependent
+branch or lookup. The only production branch selects the fixed 32-byte API
+lengths and the compiler/ISA specialization.
+
+This is a CPU form of delayed materialization and producer/consumer fusion.
+The [GPU Kyber study](https://eprint.iacr.org/2022/881) observes that CBD error
+coefficients have fewer than three significant bits and uses an INT8
+representation. The [Kyber hardware dataflow study](https://eprint.iacr.org/2022/1093)
+likewise treats CBD output and its consumers as a dataflow boundary, while the
+[GPU polynomial-multiplication study](https://arxiv.org/abs/2209.01290)
+describes eliminating redundant memory traffic by fusing adjacent NTT-domain
+operations. No code or binary is imported from those projects; only the
+representation/dataflow principle is applied to the repository-local C
+intrinsics implementation.
+
+A same-binary GCC diagnostic used seven pinned CPU 0 runs and 20,000 iterations
+per run. The preceding inverse row receives `e2+mu` already materialized,
+whereas the compact row includes message decoding and addition, so the combined
+comparison is conservative for the candidate:
+
+| Production-shaped interval | Canonical median ns/op | Compact median ns/op | Speedup |
+|---|---:|---:|---:|
+| x8 PRF/CBD output materialization | 336.12 | 317.66 | 1.0581x |
+| four inverse finals plus error/message add | 303.44 | 315.46 | 0.9619x |
+| sum of the two measured intervals | 639.56 | 633.12 | 1.0102x |
+
+The extra sign extension is not free; the optimization is accepted because the
+producer saving is larger and survives complete encryption. Production A/B
+used baseline `6a5f2ee`, two warmups, seven alternating pairs, and 10,000 stage
+iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage STAGE_ITERS=10000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 6a5f2ee
+```
+
+| Compiler / K-PKE metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| GCC prepared/cached encryption | 1.0104x | 1.0130x | 7/7 |
+| GCC cache-disabled encryption | 1.0052x | 1.0058x | 7/7 |
+| Clang pre-gate prepared/cached diagnostic | 1.0103x | 1.0049x | 7/7 |
+| Clang pre-gate cache-disabled diagnostic | 0.9969x | 1.0008x | 5/7 |
+
+The positive GCC cache-disabled row is the important check: the gain does not
+come from retaining a public key, transformed matrix, or other persistent
+cache. It comes from writing half as many transient error bytes and delaying
+widening to the existing inverse-final pass.
+
+The GCC KEM gate used 50,000 iterations with the same warmup and alternating
+seven-pair schedule:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=kem KEM_ITERS=50000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 6a5f2ee
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_encaps` | 1.0144x | 1.0124x | 7/7 |
+| `mlkem_encaps_core` | 1.0046x | 1.0011x | 5/7 |
+| `mlkem_decaps` | 1.0204x | 1.0205x | 7/7 |
+| `mlkem_decaps_core` | 1.0033x | 1.0028x | 5/7 |
+| `mlkem_roundtrip` | 1.0086x | 1.0109x | 5/7 |
+| `mlkem_roundtrip_core` | 1.0028x | 1.0003x | 4/7 |
+
+Decapsulation benefits because its ciphertext check recomputes encryption.
+Keygen does not consume this boundary and remained a neutral control.
+
+Clang was not enabled merely for its prepared/cached gain. Its pre-gate KEM
+geometric means for `encaps_core`, `decaps_core`, and `roundtrip_core` were
+`0.9892x`, `0.9915x`, and `0.9880x`. The final production guard therefore
+keeps Clang on the preceding canonical-int16 path. Final GCC native `testc` and
+`benchc` are byte-identical to measured implementation commit `91c5e1f`; final
+Clang native `testc` and `benchc` are byte-identical to baseline `6a5f2ee`.
+AVX2-only and scalar `testc` are also byte-identical to that baseline under
+both compilers.
+
+The validator compares the compact helper coefficient-for-coefficient with the
+canonical path on all real stage lanes and 256 deterministic fixtures. It
+covers zero, all-`Q-1`, and pseudorandom inverse inputs, every signed ETA2 value,
+and zero, all-one, and pseudorandom messages. GCC and Clang native validators
+and KEM tests pass; native and AVX2-only Clang ASan+UBSan tests pass; explicit
+AVX2-only and scalar KEM tests pass under GCC and Clang.
+
+Relative to `6a5f2ee`, final GCC `benchc` text grows from 81,400 to 82,444 bytes
+(+1,044), data remains 708 bytes, and BSS grows from 35,584 to 36,608 bytes
+(+1,024) for the compact fallback-safe working buffers. The prepared-encryption
+function itself shrinks from `0x11c7` to `0xfcf`; the separate compact inverse
+helper is `0x5d2` bytes. This adds no external crypto object, runtime library,
+persistent cache, transformed-key table, or wire-format change.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
