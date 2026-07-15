@@ -2487,7 +2487,7 @@ static void validate_ntt3_mul_acc4_fused_final_madd512_avx512(void) {
   }
 }
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
 static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
                                            uint32_t *state) {
   static const uint16_t edge[] = {
@@ -3513,6 +3513,8 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX512VNNI__)
   validate_encrypt_accum_vnni512_avx512();
 #endif
+#endif
+#if defined(__GNUC__)
   validate_keygen_accum_asym_madd512_avx512();
 #endif
   validate_ntt_inv_add4_shared_avx512();
@@ -10774,8 +10776,7 @@ static uint64_t bench_keygen_accum_only(size_t iters) {
   return t1 - t0;
 }
 
-#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512F__) && \
-    defined(__AVX512BW__)
+#if defined(__GNUC__) && defined(__AVX512F__) && defined(__AVX512BW__)
 static uint64_t bench_keygen_accum_asym_madd512_avx512(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0 = now_ns();
@@ -15164,8 +15165,7 @@ int main(int argc, char **argv) {
                bench_keygen_accum_add_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_accum_only",
                bench_keygen_accum_only(iters), iters);
-#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512F__) && \
-    defined(__AVX512BW__)
+#if defined(__GNUC__) && defined(__AVX512F__) && defined(__AVX512BW__)
   print_metric("mlkem_core_stage_keygen_accum_asym_madd512_avx512",
                bench_keygen_accum_asym_madd512_avx512(iters), iters);
 #endif
