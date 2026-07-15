@@ -709,6 +709,10 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
 }
 
 #if defined(__AVX512F__)
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+extern void mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
+    const uint8_t seed[32], __m512i st[25], uint8_t stream[8][504]);
+#endif
 #if defined(__GNUC__) && !defined(__clang__)
 /*
  * Four-round lane mapping adapted from XKCP's CC0 AVX512 times8 core by
@@ -5286,7 +5290,9 @@ static void sample_ntt8_matrix(const uint8_t *seed,
   uint8_t stream[8][504];
   int16_t *outs[8] = {out0, out1, out2, out3, out4, out5, out6, out7};
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+  mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(seed, st, stream);
+#elif defined(__GNUC__) && !defined(__clang__)
   keccakf8_sparse_matrix_3_store_blocks(seed, st, stream);
 #else
   for (int i = 0; i < 25; i++) {
