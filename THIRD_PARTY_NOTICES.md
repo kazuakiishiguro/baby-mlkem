@@ -22,8 +22,9 @@ The retained Kyber/PQClean sources are public-domain/CC0 code; see
 
 ## Asymmetric incomplete-NTT multiplication scheduling
 
-The GCC-native AVX512 four-output encryption accumulator in `baby-mlkem.c`
-applies the asymmetric-multiplication principle described in Section 4.2 of:
+The GCC-native AVX512 four-output encryption and three-output keygen
+accumulators in `baby-mlkem.c` apply the asymmetric-multiplication principle
+described in Section 4.2 of:
 
 Becker, Hwang, Kannwischer, Yang, and Yang,
 "Neon NTT: Faster Dilithium, Kyber, and Saber,"
@@ -31,11 +32,12 @@ https://eprint.iacr.org/2021/986.pdf
 
 The known idea is to form the twiddle-weighted terms of an incomplete-NTT
 operand once and reuse them across matrix-vector products. baby-mlkem adapts
-that arithmetic observation to its transient 32-coefficient ZMM `rhat` blocks
-and shares each factor across the three `u` rows and `v`.
+that arithmetic observation to transient 32-coefficient ZMM blocks: encryption
+shares factors from common `rhat` across three `u` rows and `v`, while
+keygen shares factors from common `shat` across all three columns of `A^T*s`.
 
 No source code from that implementation is copied or linked. The intrinsics
-schedule and fixed-range reduction are repository-local, and the weighted
+schedules and fixed-range reduction are repository-local, and the weighted
 factors are generated in registers rather than stored in an expanded key,
 persistent cache, or precomputed table. The underlying asymmetric-multiplication
 idea is externally derived and is not claimed as independently invented here.

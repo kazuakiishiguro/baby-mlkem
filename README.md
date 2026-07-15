@@ -39,16 +39,19 @@ implements the standard ML-KEM base-multiplication equations with a local
 four-output `vpmaddwd` schedule and fixed-range reducer; it imports no
 external object, precomputed factor table, or third-party library.
 
-The GCC AVX512 encryption accumulator extends the same repository-local
-equations and reducer to a 32-coefficient ZMM schedule. Its current inner loop
-applies the known asymmetric-multiplication principle: each common `rhat` odd
-lane is multiplied by its base-pair gamma once and the resulting factor is
-shared by all three `u` rows and `v`. The factors are formed transiently in
-registers, not stored in a persistent cache or table. The SIMD schedule is local,
-but the arithmetic idea is externally known and cited in
-`THIRD_PARTY_NOTICES.md`. It adds no external object, library, cache, factor
-table, or wire-format dependency. Clang keeps the previous scalar fused-final
-accumulator because the unrestricted ZMM route regressed cached encapsulation.
+The GCC AVX512 encryption and keygen accumulators extend the same
+repository-local equations and reducer to 32-coefficient ZMM schedules. Their
+inner loops apply the known asymmetric-multiplication principle. Encryption
+multiplies each common `rhat` odd lane by its base-pair gamma once and shares
+the resulting factor across all three `u` rows and `v`. Keygen similarly
+forms factors from the common secret vector `shat[0..2]` once per block and
+shares them across the three columns of `A^T * s`. The factors are formed
+transiently in registers, not stored in a persistent cache or table. The SIMD
+schedules are local, but the arithmetic idea is externally known and cited in
+`THIRD_PARTY_NOTICES.md`. They add no external object, library, cache, factor
+table, or wire-format dependency. Clang keeps the previous scalar accumulators
+because unrestricted ZMM routing has not passed its integrated performance
+gates.
 
 The memory-resident x4 permutation used by public-matrix sampling, ETA2
 PRF/CBD helpers, and mixed noise/matrix-tail schedules remains repository-local
@@ -180,6 +183,7 @@ Near-term target selection:
 | Broad lazy/signed range contract | Full forward and inverse NTTs accepted; producer boundary still open only end-to-end | The forward transform removes stage-local 32-bit reductions, while the inverse proves a narrower contract: reduce only sum branches per level and keep difference products in Montgomery lanes. Signed CBD alone still saves only about 10.5 ns for K=3 and gives most or all of that back at the boundary, so producer-side signed input remains closed unless it joins sampling, the transform, and accumulation together. |
 | AVX2 four-output K=3 encryption accumulation | Accepted for non-AVX512 encryption | One centered `rhat` load feeds all three `u` rows and `v`; `vpmaddwd` computes even/odd and cross terms with a proved signed-32-bit reduction range. Eleven-pair A/B improves cached and uncached K-PKE medians by `1.0165x` and `1.0120x`; full encapsulation improves `1.0171x` with 11/11 wins. No external object, factor cache, or wire-format change is used. |
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; asymmetric-factor follow-up accepted | The final NTT l1 emits 32 centered coefficients into three ZMM `rhat` vectors shared by all three `u` rows and `v`. The follow-up forms `[r0, gamma*r1]` once per common input and reuses it across four dot products, reducing the hot loop from three to two output-side `vpmaddwd` streams. Against the preceding ZMM path, paired medians improve cached K-PKE, encaps, decaps, and roundtrip-core by `1.0292x`/`1.0301x`/`1.0192x`/`1.0069x`. The factors are transient registers, not a cache or table; Clang and narrower builds remain byte-identical. |
+| AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC AVX512; Clang and narrower ISA unchanged | One loop centers `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The direct accumulation median improves `6.014x`; high-iteration K-PKE keygen improves `1.6040x`, and 100k KEM `keygen`/`keygen_core` improve `1.0218x`/`1.0210x`, both 14/14. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -4250,6 +4254,7 @@ stage metrics.
 | `mlkem_core_stage_keygen_accum_encode` | keygen NTT-domain multiply-add, add error, and public-key encode |
 | `mlkem_core_stage_keygen_accum_add_only` | isolated keygen public-vector NTT-domain multiply-add plus error add, excluding public-key encode |
 | `mlkem_core_stage_keygen_accum_only` | isolated keygen public-vector `A^T*s` NTT-domain multiply-add, excluding error add and public-key encode |
+| `mlkem_core_stage_keygen_accum_asym_madd512_avx512` | GCC AVX512 production diagnostic: three-column `A^T*s` with transient gamma-weighted `shat` factors shared across all outputs |
 | `mlkem_core_stage_keygen_add_only` | isolated keygen public-vector error add, using precomputed `A^T*s` and `ehat` |
 | `mlkem_core_stage_keygen_error_ntt_add_canonical_ehat` | AVX2-only diagnostic: canonical forward NTT for the three keygen error polynomials followed by add into precomputed `A^T*s` |
 | `mlkem_core_stage_keygen_error_ntt_add_lazy_ehat` | AVX2-only diagnostic: lazy multiply-input forward NTT for the three keygen error polynomials followed by an add that reduces only the lazy `ehat` input |
@@ -5075,6 +5080,111 @@ and their `testc`/`benchc` binaries remained byte-identical to the baseline.
 The cleaned GCC-native `benchc` was also byte-identical to the fully measured
 candidate. The change adds no external object, runtime library, persistent
 cache, precomputed table, or wire-format change.
+
+### Independent Core Optimization A/B (2026-07-15, GCC AVX512 asymmetric three-output keygen accumulation)
+
+Keygen computes three NTT-domain output polynomials with the same secret
+vector:
+
+```text
+that[col] = sum_row(ahat[row][col] * shat[row]), col = 0..2
+```
+
+The preceding GCC/native path invoked the scalar
+`ntt_mul_acc3_factored_gamma()` shape once per column. GCC vectorized much of
+that work with widened `vpmulld`, but each output still rebuilt the product
+schedule and reductions independently. The accepted helper processes one
+32-coefficient block across all three columns. It loads and centers
+`shat[0..2]` once, forms the two asymmetric factors
+
+```text
+s_c0 = [s0, centered(gamma*s1 mod q)]
+s_c1 = [s1, s0]
+```
+
+once per secret polynomial, and reuses them in three pairs of `vpmaddwd`
+streams. The existing exact signed-32-bit reducer and the
+`+/-6*(Q-1)*(Q/2)` bound are unchanged. Error-polynomial addition and d12
+encoding remain separate passes.
+
+This extends the same in-register adaptation of asymmetric multiplication from
+Section 4.2 of
+[Neon NTT: Faster Dilithium, Kyber, and Saber](https://eprint.iacr.org/2021/986.pdf)
+that is used by the preceding four-output encryption kernel. The arithmetic
+idea is externally known; the three-column ZMM schedule, range handling, and
+production integration are repository-local. Factors live only in registers
+for one block. No expanded key, persistent cache, precomputed factor table,
+external object, runtime library, or wire-format change is added.
+
+A same-binary diagnostic used two warmups followed by five pinned CPU 0 runs at
+20,000 iterations:
+
+| Form | Median ns/op | Speedup | Wins |
+|---|---:|---:|---:|
+| preceding three-column accumulation | 2090.29 | 1.0000x | - |
+| shared asymmetric ZMM accumulation | 347.56 | 6.014x | 5/5 |
+
+The integrated K-PKE stage compared baseline `24113a7` with accepted core
+commit `04e6dd5` over nine alternating pairs:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage STAGE_ITERS=20000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 24113a7
+```
+
+| Metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 4603.10 | 2874.10 | 1.6148x | 1.6040x | 9/9 |
+
+The final KEM gate used 100,000 iterations, three warmups, and fourteen
+alternating pairs:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  C_COMPILER=gcc PIN_CPU=0 ./scripts/bench_core_ab.sh 24113a7
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_keygen` | 1.0221x | 1.0218x | 14/14 |
+| `mlkem_keygen_core` | 1.0212x | 1.0210x | 14/14 |
+| `mlkem_encaps` | 1.0049x | 1.0002x | 9/14 |
+| `mlkem_encaps_core` | 1.0040x | 1.0013x | 10/14 |
+| `mlkem_decaps` | 1.0050x | 1.0013x | 8/14 |
+| `mlkem_decaps_core` | 1.0021x | 1.0027x | 10/14 |
+| `mlkem_roundtrip` | 1.0114x | 1.0111x | 13/14 |
+| `mlkem_roundtrip_core` | 1.0113x | 1.0101x | 14/14 |
+
+The large stage speedup is a translation-unit-specific GCC/LTO diagnostic, not
+an additive prediction for complete KEM keygen. The KEM benchmark has a
+different inlining and code-layout context, and its approximately 2.1% result
+is the production acceptance signal. The non-keygen rows are controls and are
+not attributed as direct gains.
+
+Generated-code inspection confirms an arithmetic-schedule change rather than a
+cache effect. In `mlkem_keygen`, static `vpmaddwd` occurrences rise from 0
+to 21 while `vpmulld` falls from 32 to 18. Static instruction lines change
+from 498 to 501 and function size from `0xa06` to `0xa2e` bytes. Complete
+GCC `benchc` text grows only 32 bytes, from 78,852 to 78,884 bytes. The
+baseline therefore was already compiler-vectorized; the accepted gain comes
+from packed adjacent-pair products, factor reuse across three outputs, and
+fewer widened reductions, not merely enabling SIMD.
+
+A narrower store/add fusion was rejected and removed. Fusing `+ehat` before
+the output stores reduced the direct add overhead, but nine alternating
+50,000-iteration KEM pairs put `keygen` at 0.9989x paired geometric mean and
+1.0002x paired median (5/9 wins), and `keygen_core` at 0.9999x and 0.9993x
+(2/9 wins). The separate canonical add remains production because the local
+scan saving did not survive whole-function GCC/LTO code generation.
+
+The production helper is compared coefficient-for-coefficient with the scalar
+reference on all stage lanes and 256 additional deterministic fixtures. Those
+fixtures cover all-zero, all-`Q-1`, alternating extremes, reduction
+boundaries, and deterministic pseudorandom canonical coefficients. GCC native
+KAT, GCC native UBSan KAT, and the UBSan stage validator pass. Clang native and
+both GCC/Clang AVX2-only and scalar KATs pass; their `testc`, `benchc`, and
+`bench_core_stagesc` binaries are byte-identical to `24113a7`. The final
+GCC-native `benchc` is byte-identical to the fully measured candidate.
 
 ### Independent Core Optimization A/B (2026-07-15, fixed public hash AVX512VL rotates)
 
