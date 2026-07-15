@@ -83,6 +83,9 @@ static poly256 stage_e1[STAGE_BENCH_LANES][K];
 static poly256 stage_e2[STAGE_BENCH_LANES];
 static poly256 stage_e2_msg[STAGE_BENCH_LANES];
 static poly256 stage_u_accum[STAGE_BENCH_LANES][K];
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static poly256 stage_v_accum[STAGE_BENCH_LANES];
+#endif
 static poly256 stage_u[STAGE_BENCH_LANES][K];
 #if defined(__AVX2__)
 static poly256 stage_s_head[STAGE_BENCH_LANES][K];
@@ -567,7 +570,9 @@ static void derive_keygen_lane(size_t lane) {
 
 static void derive_encrypt_lane(size_t lane) {
   uint16_t cbuf[N];
+#if !(defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__))
   poly256 accum;
+#endif
   uint8_t *p = stage_ct[lane];
 
 #if defined(__AVX2__)
@@ -625,10 +630,17 @@ static void derive_encrypt_lane(size_t lane) {
   }
 #endif
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
+               stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
+               stage_v_accum[lane]);
+  ntt_inv_add(stage_v_accum[lane], stage_e2_msg[lane], stage_v[lane]);
+#else
   ntt_mul_acc3(stage_that[lane][0], stage_rhat[lane][0], stage_that[lane][1],
                stage_rhat[lane][1], stage_that[lane][2], stage_rhat[lane][2],
                accum);
   ntt_inv_add(accum, stage_e2_msg[lane], stage_v[lane]);
+#endif
 
   for (int i = 0; i < K; i++) {
     compress_poly(DU, stage_u[lane][i], cbuf);
@@ -2590,6 +2602,105 @@ static void prepare_inputs(void) {
   }
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static void validate_ntt_inv_add4_shared_avx512(void) {
+  poly256 split[4];
+  poly256 shared[4];
+
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    for (int row = 0; row < K; row++) {
+      memcpy(split[row], stage_u_accum[lane][row], sizeof(poly256));
+      memcpy(shared[row], stage_u_accum[lane][row], sizeof(poly256));
+    }
+    memcpy(split[3], stage_v_accum[lane], sizeof(poly256));
+    memcpy(shared[3], stage_v_accum[lane], sizeof(poly256));
+
+    ntt_inv_add3_inplace(stage_e1[lane][0], stage_e1[lane][1],
+                         stage_e1[lane][2], split[0], split[1], split[2]);
+    ntt_inv_add_v_inplace(stage_e2_msg[lane], split[3]);
+    ntt_inv_add4_mont_final_shared_avx512(
+        stage_e1[lane][0], stage_e1[lane][1], stage_e1[lane][2],
+        stage_e2_msg[lane], shared[0], shared[1], shared[2], shared[3]);
+
+    for (int output = 0; output < 4; output++) {
+      if (memcmp(split[output], shared[output], sizeof(poly256)) != 0) {
+        fprintf(stderr, "AVX512 shared inverse-add4 mismatch at %zu,%d\n",
+                lane, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+  {
+    static const uint16_t boundaries[] = {
+        0, 1, Q / 2, Q / 2 + 1, Q - 2, Q - 1,
+    };
+    poly256 add[4];
+
+    for (unsigned fixture = 0; fixture < 256; fixture++) {
+      uint32_t state = fixture * 0x9e3779b9u + 0x7f4a7c15u;
+      for (int output = 0; output < 4; output++) {
+        for (int coeff = 0; coeff < N; coeff++) {
+          uint16_t input;
+          uint16_t noise;
+          switch (fixture) {
+            case 0:
+              input = 0;
+              noise = 0;
+              break;
+            case 1:
+              input = Q - 1;
+              noise = 0;
+              break;
+            case 2:
+              input = 0;
+              noise = Q - 1;
+              break;
+            case 3:
+              input = Q - 1;
+              noise = Q - 1;
+              break;
+            case 4:
+              input = ((coeff + output) & 1) ? Q - 1 : 0;
+              noise = ((coeff + output) & 1) ? 0 : Q - 1;
+              break;
+            case 5:
+              input = boundaries[(coeff + output) %
+                                 (sizeof(boundaries) / sizeof(boundaries[0]))];
+              noise = boundaries[(2 * coeff + output + 1) %
+                                 (sizeof(boundaries) / sizeof(boundaries[0]))];
+              break;
+            default:
+              state = state * 1664525u + 1013904223u;
+              input = (uint16_t)(state % Q);
+              state = state * 1664525u + 1013904223u;
+              noise = (uint16_t)(state % Q);
+              break;
+          }
+          split[output][coeff] = (int16_t)input;
+          shared[output][coeff] = (int16_t)input;
+          add[output][coeff] = (int16_t)noise;
+        }
+      }
+
+      for (int output = 0; output < 4; output++) {
+        ntt_inv_add_inplace(add[output], split[output]);
+      }
+      ntt_inv_add4_mont_final_shared_avx512(
+          add[0], add[1], add[2], add[3],
+          shared[0], shared[1], shared[2], shared[3]);
+      for (int output = 0; output < 4; output++) {
+        if (memcmp(split[output], shared[output], sizeof(poly256)) != 0) {
+          fprintf(stderr,
+                  "AVX512 shared inverse-add4 fixture mismatch at %u,%d\n",
+                  fixture, output);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+#endif
+
 static void validate_core_stage_helpers(void) {
   uint8_t ek[STAGE_PK_BYTES];
   uint8_t dk[STAGE_DK_PKE_BYTES];
@@ -2621,6 +2732,7 @@ static void validate_core_stage_helpers(void) {
 #if defined(__GNUC__) && !defined(__clang__)
   validate_keygen_accum_asym_madd512_avx512();
 #endif
+  validate_ntt_inv_add4_shared_avx512();
 #endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
@@ -10363,6 +10475,61 @@ static uint64_t bench_encrypt_noise_ntt_lazy_level_batch(size_t iters) {
 }
 #endif
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t bench_encrypt_inv_add4_split_raw_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_accum[lane][row],
+             sizeof(poly256));
+    }
+    memcpy(stage_tmp_poly[lane], stage_v_accum[lane], sizeof(poly256));
+    ntt_inv_add3_inplace(stage_e1[lane][0], stage_e1[lane][1],
+                         stage_e1[lane][2], stage_tmp_vec0[lane][0],
+                         stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2]);
+    ntt_inv_add_v_inplace(stage_e2_msg[lane], stage_tmp_poly[lane]);
+    for (int row = 0; row < K; row++) {
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (17u + 2u * (unsigned)row)) & (N - 1)];
+    }
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 23u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t bench_encrypt_inv_add4_shared_raw_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0, t1;
+  t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_u_accum[lane][row],
+             sizeof(poly256));
+    }
+    memcpy(stage_tmp_poly[lane], stage_v_accum[lane], sizeof(poly256));
+    ntt_inv_add4_mont_final_shared_avx512(
+        stage_e1[lane][0], stage_e1[lane][1], stage_e1[lane][2],
+        stage_e2_msg[lane], stage_tmp_vec0[lane][0],
+        stage_tmp_vec0[lane][1], stage_tmp_vec0[lane][2],
+        stage_tmp_poly[lane]);
+    for (int row = 0; row < K; row++) {
+      acc ^= (uint16_t)stage_tmp_vec0[lane][row]
+          [(i * (17u + 2u * (unsigned)row)) & (N - 1)];
+    }
+    acc ^= (uint16_t)stage_tmp_poly[lane][(i * 23u) & (N - 1)];
+  }
+  t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_encrypt_accum_inv(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -14126,6 +14293,12 @@ int main(int argc, char **argv) {
                bench_encrypt_noise_ntt_lazy(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise_ntt_lazy_level_batch",
                bench_encrypt_noise_ntt_lazy_level_batch(iters), iters);
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  print_metric("mlkem_core_stage_encrypt_inv_add4_split_raw_avx512",
+               bench_encrypt_inv_add4_split_raw_avx512(iters), iters);
+  print_metric("mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512",
+               bench_encrypt_inv_add4_shared_raw_avx512(iters), iters);
 #endif
   print_metric("mlkem_core_stage_encrypt_accum_inv",
                bench_encrypt_accum_inv(iters), iters);
