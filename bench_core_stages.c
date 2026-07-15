@@ -2512,6 +2512,23 @@ static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
   return (uint16_t)(*state % Q);
 }
 
+static int16_t validate_keygen_ntt_input(size_t fixture, size_t index,
+                                         uint32_t *state) {
+  static const int16_t edge[] = {-2, -1, 0, 1, 2};
+
+  if (fixture < 5) {
+    return edge[fixture];
+  }
+  if (fixture == 5) {
+    return edge[index % 5];
+  }
+  *state ^= *state << 13;
+  *state ^= *state >> 17;
+  *state ^= *state << 5;
+  int16_t value = (int16_t)(*state % Q);
+  return value > Q / 2 ? (int16_t)(value - Q) : value;
+}
+
 static void validate_ntt_final_l1_mont_block32_avx512(void) {
   uint32_t state = 0x9e3779b9u;
 
@@ -2750,6 +2767,58 @@ static void validate_keygen_accum_asym_madd512_avx512(void) {
       if (memcmp(expected[col], got[col], sizeof(poly256)) != 0) {
         fprintf(stderr,
                 "keygen asymmetric madd512 fixture mismatch at %zu,%d\n",
+                fixture, col);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+
+  state = 0x13198a2eu;
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    poly256 ahat[K][K], reference_b[K], fused_b[K];
+    poly256 reference[K], fused[K];
+    uint8_t reference_encoded[K * 384], fused_encoded[K * 384];
+    size_t index = 0;
+
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        for (int j = 0; j < N; j++) {
+          ahat[row][col][j] = (int16_t)validate_keygen_asym_coeff(
+              fixture, index++, &state);
+        }
+      }
+    }
+    for (int row = 0; row < K; row++) {
+      for (int j = 0; j < N; j++) {
+        int16_t value =
+            validate_keygen_ntt_input(fixture, index++, &state);
+        reference_b[row][j] = value;
+        fused_b[row][j] = value;
+      }
+      ntt(reference_b[row], reference_b[row]);
+      ntt_before_final_l1_mont_lazy_avx512(fused_b[row]);
+    }
+    for (int col = 0; col < K; col++) {
+      ntt_mul_acc3_factored_gamma(
+          ahat[0][col], reference_b[0], ahat[1][col], reference_b[1],
+          ahat[2][col], reference_b[2], reference[col]);
+    }
+    for (int row = 0; row < K; row++) {
+      byte_encode(12, reference_b[row], reference_encoded + row * 384);
+    }
+    ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
+        ahat, fused_b, fused, fused_encoded);
+
+    if (memcmp(reference_encoded, fused_encoded,
+               sizeof(reference_encoded)) != 0) {
+      fprintf(stderr, "keygen fused final-l1 d12 mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+    for (int col = 0; col < K; col++) {
+      if (memcmp(reference[col], fused[col], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "keygen fused final-l1 accumulation mismatch at %zu,%d\n",
                 fixture, col);
         exit(EXIT_FAILURE);
       }
@@ -10790,6 +10859,51 @@ static uint64_t bench_keygen_accum_asym_madd512_avx512(size_t iters) {
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+
+static uint64_t
+bench_keygen_shat_ntt_accum_encode_split_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      ntt(stage_s_raw[lane][row], stage_tmp_vec0[lane][row]);
+      byte_encode(12, stage_tmp_vec0[lane][row],
+                  stage_tmp_dk[lane] + row * 384);
+    }
+    ntt_mul_acc3_cols3_asym_madd512_avx512(
+        stage_ahat[lane], stage_tmp_vec0[lane], stage_tmp_vec1[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+    acc ^= stage_tmp_dk[lane][(i * 31u) % STAGE_DK_PKE_BYTES];
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+
+static uint64_t
+bench_keygen_shat_ntt_accum_encode_fused_final_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int row = 0; row < K; row++) {
+      memcpy(stage_tmp_vec0[lane][row], stage_s_raw[lane][row],
+             sizeof(poly256));
+      ntt_before_final_l1_mont_lazy_avx512(stage_tmp_vec0[lane][row]);
+    }
+    ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
+        stage_ahat[lane], stage_tmp_vec0[lane], stage_tmp_vec1[lane],
+        stage_tmp_dk[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_vec1[lane][(i + 1u) % K]);
+    acc ^= stage_tmp_dk[lane][(i * 31u) % STAGE_DK_PKE_BYTES];
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
 #endif
 
 static uint64_t bench_keygen_add_only(size_t iters) {
@@ -15168,6 +15282,11 @@ int main(int argc, char **argv) {
 #if defined(__GNUC__) && defined(__AVX512F__) && defined(__AVX512BW__)
   print_metric("mlkem_core_stage_keygen_accum_asym_madd512_avx512",
                bench_keygen_accum_asym_madd512_avx512(iters), iters);
+  print_metric("mlkem_core_stage_keygen_shat_ntt_accum_encode_split_avx512",
+               bench_keygen_shat_ntt_accum_encode_split_avx512(iters), iters);
+  print_metric(
+      "mlkem_core_stage_keygen_shat_ntt_accum_encode_fused_final_avx512",
+      bench_keygen_shat_ntt_accum_encode_fused_final_avx512(iters), iters);
 #endif
   print_metric("mlkem_core_stage_keygen_add_only",
                bench_keygen_add_only(iters), iters);
