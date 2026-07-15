@@ -155,6 +155,7 @@ Near-term target selection:
 | Native AVX512VL fixed H(pk) rotates | Accepted for GCC AVX512; Clang and AVX2-only paths unchanged | The fixed 1184-byte public-key hash uses native 256-bit variable rotates while preserving its seven-YMM state across all nine permutations. GCC direct H(pk)/copy+hash paired medians improve `1.0481x`/`1.0479x`; 14-pair keygen/keygen-core improve `1.0187x`/`1.0173x`, both with 14/14 wins. Clang already emitted `vprolvq`; its native Keccak benchmark and both compilers' AVX2-only test/Keccak binaries remain byte-identical. No external object, cache, or wire-format dependency is added. |
 | Native AVX512VL register-per-lane fixed H(pk) | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The 1184-byte public-key hash now keeps all 25 Keccak lanes in XMM0..24 across nine permutations and uses `VPTERNLOGQ` for Theta/Chi. GCC/Clang direct H(pk) paired medians improve `1.1742x`/`1.0539x`; GCC keygen/keygen-core improve `1.0484x`/`1.0472x` with 14/14 wins, and Clang improves `1.0135x`/`1.0129x`. The round schedule is explicitly adapted from Intel's MIT-licensed liboqs AVX512VL implementation, not claimed as independently invented. The build links only the repository-local `.S` object, never liboqs or an Intel binary; non-AVX512 and standalone builds retain the prior fallback. |
 | Native AVX512VL fixed H(pk) four-round cyclic mapping | Accepted only for fixed H(pk); compact generic core retained | Keccak Team Algorithm 4 cycles logical lanes through `N(x,y)=(x,x+2y) mod 5` and returns to canonical order every four rounds, removing the 25-register reorder after every round. Dynamic instructions per permutation fall from `3459` to `2877`. GCC/Clang direct H(pk) paired medians improve `1.0340x`/`1.0358x`; 100k keygen improves `1.0093x`/`1.0087x`. The broader generic switch was rejected by the decaps gate. Generated assembly is checked in, links no external object or library, and retains explicit Keccak Team and Intel/liboqs provenance. |
+| Native AVX512VL fixed H(pk) Chi-plane interleave | Accepted scheduling-only follow-up | The cyclic fixed hash now overlaps independent Chi output-plane chains while preserving each plane's proven overwrite order. The four-round body remains exactly 476 instructions and the assembly object remains 5309 text bytes, but Zen 4 `llvm-mca` single-block completion falls from 162 to 157 cycles. GCC/Clang direct H(pk) paired medians improve `1.0066x`/`1.0063x`; same-C-object 500k deterministic keygen improves `1.0017x`/`1.0023x`. No cache, table, external object, library, or wire-format dependency is added. |
 | Native AVX512VL register-per-lane generic `keccakf()` | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The generic canonical-state wrapper now loads one Keccak lane into each of XMM0..XMM24 and uses the compact register-per-lane round core originally introduced for fixed H(pk). GCC/Clang direct permutation paired medians improve `1.4104x`/`1.0582x`. GCC `encaps_core`/`roundtrip_core` improve `1.1016x`/`1.0392x` with 14/14 wins; Clang improves `1.0154x`/`1.0082x`. The wrapper adds only 320 text bytes, links no external object or library, and reuses the explicitly disclosed Intel/liboqs-derived round schedule rather than claiming a new baby-mlkem Keccak design. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
@@ -6835,6 +6836,101 @@ does not claim a new Keccak algorithm, link liboqs or XKCP, or add an external
 runtime library, cache, table, or wire-format dependency. The compact core's
 instruction design remains attributed to Intel's MIT-licensed
 [liboqs AVX512VL source](https://github.com/open-quantum-safe/liboqs/blob/3dca9c939c779c58ffa540f3f47ca099a1fa4b94/src/common/sha3/avx512vl_low/KeccakP-1600-AVX512VL.S).
+
+### Local Core Optimization A/B (2026-07-16, fixed H(pk) Chi-plane interleave)
+
+Fresh CPU-0 profiles after the cyclic fixed-hash change kept
+`mlkem_sha3_256_1184_avx512vl()` as the largest single target: `27.04%` GCC
+self time and `21.22%` Clang self time over 500,000 KEM iterations. GCC next
+put the sparse matrix producer at `18.53%`, while Clang put prepared encryption
+and matrix sampling at `19.06%` and `18.76%`. This follow-up therefore stays
+inside the serial fixed H(pk) permutation instead of changing random input,
+cache state, or an unrelated KEM path.
+
+The cyclic generator previously completed each Chi output plane before starting
+the next one. Within a plane, the overwrite order is constrained because a
+physical lane may still be an input to a later Chi result. Different output
+planes are independent after Theta and Rho/Pi, however. Commit `0abe391` makes
+`scripts/gen_keccak_inplace4.pl` build the rotation and Chi streams separately,
+emit both planes' rotations, and then alternate instructions from two Chi
+streams:
+
+- planes `y=0` and `y=1` use disjoint `xmm25..xmm28` temporary ranges;
+- planes `y=2` and `y=3` use disjoint `xmm25..xmm30` ranges;
+- plane `y=4` remains a single chain, and `xmm31` remains reserved for Iota.
+
+The generator checks that a Chi temporary never exceeds `xmm30` and that paired
+temporary ranges do not overlap. It preserves each plane's established
+in-place overwrite order, so this is an instruction-scheduling change rather
+than a new Keccak formula or state representation.
+
+One four-round group has the same instruction multiset and object footprint on
+both sides. `llvm-mca` 18 with `-mcpu=znver4`, one iteration, reports:
+
+| Four-round group | Instructions | uOps | `vmovdqa64` | `vprolq` | `vpternlogq` | Total cycles | Block throughput |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Sequential planes (`9c525ac`) | 476 | 476 | 112 | 116 | 240 | 162 | 116.0 |
+| Interleaved planes (`0abe391`) | 476 | 476 | 112 | 116 | 240 | 157 | 116.0 |
+
+The unchanged throughput reflects the unchanged port-level instruction mix.
+The five-cycle reduction is instead the modeled completion latency of one
+serial four-round group after exposing a second independent Chi chain. Both
+assembly objects have `.text=5309`, `.rodata=192`, and identical public symbol
+sizes, so the result does not buy speed with more code or data.
+
+Direct fixed-hash A/B used nine alternating pairs, 200,000 iterations per
+binary, pinned to CPU 0. The baseline and candidate were built by the same
+compiler configuration:
+
+| Direct metric | GCC paired median | GCC wins | Clang paired median | Clang wins |
+|---|---:|---:|---:|---:|
+| `mlkem_sha3_256_public_key` | `1.0066x` | 9/9 | `1.0063x` | 9/9 |
+| `mlkem_sha3_256_copy_public_key` | `1.0068x` | 9/9 | `1.0065x` | 9/9 |
+| `mlkem_sha3_256_public_key_persistent_avx2` | `1.0066x` | 8/9 | `1.0066x` | 9/9 |
+
+An integrated keygen-only confirmation linked the old and new assembly objects
+against the same compiler-built C object. Each run performed 500,000
+`mlkem_keygen_derand()` calls after 16 warmups; its deterministic in-process
+coin generator is identical between binaries, so no `randombytes` syscall is
+inside this comparison.
+
+| Compiler | Pairs | Baseline median ns/op | Candidate median ns/op | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| GCC | 21 | 4389.913 | 4379.715 | `1.001700x` | 15/21 |
+| Clang | 15 | 4404.936 | 4395.779 | `1.002320x` | 11/15 |
+
+A broader 100,000-iteration KEM suite was intentionally not used to claim more
+than this keygen contribution. Its controls were noisy, and encapsulation and
+decapsulation do not execute the serial fixed H(pk) path in their measured
+steady state. With the same GCC C object, keygen was `1.002020x` and
+keygen-core `1.000220x`; mixed control rows moved in both directions. No gain is
+credited to encapsulation or decapsulation.
+
+Several neighboring designs were measured and rejected:
+
+| Diagnostic | Result | Decision |
+|---|---|---|
+| Fuse x8 Theta D and state XORs into ternary logic | One-/three-permutation medians `0.9818x`/`0.9812x`; full sampler `0.9836x`; matrix `0.9891x` | Reject: fewer spills still concentrate work on Zen 4 ternary-logic execution ports |
+| Replace fixed-core ternary Theta with binary XORs | Direct/persistent H(pk) `0.9645x`/`0.9643x`, 0/9 wins | Reject: this core benefits from the compact ternary form |
+| Search all 120 overwrite orders for each Chi plane | No order reduced the current 92 Chi moves per four rounds | Closed in the current in-place model |
+| Use the `llvm-mca`-best `(0,4)+(1,2)+3` pairing | Modeled 154 cycles, but real direct H(pk) rows were about `0.9963x`/`0.9958x`, 0/11 wins | Reject: static latency alone is not an acceptance gate |
+
+The review used the Keccak Team's
+[implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf)
+and inspected [XKCP's AVX512 times8 implementation](https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600-times8/AVX512/KeccakP-1600-times8-AVX512.c).
+It also considered the fixed-representation, hand-scheduled engineering style
+documented by [libsecp256k1](https://github.com/bitcoin-core/secp256k1/blob/master/README.md).
+The transferable idea is only to expose independent fixed-shape dependency
+chains. secp256k1 endomorphism and wNAF optimize elliptic-curve scalar
+multiplication and do not apply to this Boolean Keccak permutation; no such
+algorithm, table, or external code is present here. The plane-pair schedule is
+repository-local and does not link XKCP, libsecp256k1, liboqs, or any other
+runtime object.
+
+Correctness passes GCC and Clang native KEM tests and the 256-fixture fixed-hash
+validator at 200,000 iterations. Both compilers' AVX2-only and scalar KEM builds
+pass, as do Clang native ASan+UBSan, GCC native UBSan, and GCC native
+`-masm=intel`. The generated block exactly matches the checked-in assembly.
 
 ### Local Core Optimization A/B (2026-07-15, full x8 matrix initial squeeze)
 
