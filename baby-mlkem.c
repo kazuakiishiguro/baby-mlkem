@@ -5400,6 +5400,71 @@ static void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx512(
 }
 #endif
 
+#if defined(__AVX512BW__) && defined(__clang__)
+/* Keep Clang's canonical noise representation while sharing the otherwise
+ * idle eighth SHAKE256 lane with the final SHAKE128 matrix stream. */
+static MLKEM_NOINLINE void
+mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
+    const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
+    poly256 r0, poly256 r1, poly256 r2, poly256 e10,
+    poly256 e11, poly256 e12, poly256 e2) {
+  __m512i st[25];
+  uint64_t tail_st[25];
+
+  for (int word = 0; word < 25; word++) {
+    st[word] = _mm512_setzero_si512();
+  }
+  st[0] = _mm512_set_epi64(
+      (long long)load64_le(rho + 0), (long long)load64_le(seed + 0),
+      (long long)load64_le(seed + 0), (long long)load64_le(seed + 0),
+      (long long)load64_le(seed + 0), (long long)load64_le(seed + 0),
+      (long long)load64_le(seed + 0), (long long)load64_le(seed + 0));
+  st[1] = _mm512_set_epi64(
+      (long long)load64_le(rho + 8), (long long)load64_le(seed + 8),
+      (long long)load64_le(seed + 8), (long long)load64_le(seed + 8),
+      (long long)load64_le(seed + 8), (long long)load64_le(seed + 8),
+      (long long)load64_le(seed + 8), (long long)load64_le(seed + 8));
+  st[2] = _mm512_set_epi64(
+      (long long)load64_le(rho + 16), (long long)load64_le(seed + 16),
+      (long long)load64_le(seed + 16), (long long)load64_le(seed + 16),
+      (long long)load64_le(seed + 16), (long long)load64_le(seed + 16),
+      (long long)load64_le(seed + 16), (long long)load64_le(seed + 16));
+  st[3] = _mm512_set_epi64(
+      (long long)load64_le(rho + 24), (long long)load64_le(seed + 24),
+      (long long)load64_le(seed + 24), (long long)load64_le(seed + 24),
+      (long long)load64_le(seed + 24), (long long)load64_le(seed + 24),
+      (long long)load64_le(seed + 24), (long long)load64_le(seed + 24));
+  st[4] = _mm512_set_epi64(
+      0x1f0202LL, 0x1f06LL, 0x1f05LL, 0x1f04LL,
+      0x1f03LL, 0x1f02LL, 0x1f01LL, 0x1f00LL);
+  st[16] = _mm512_set_epi64(
+      0, (long long)(0x80ULL << 56), (long long)(0x80ULL << 56),
+      (long long)(0x80ULL << 56), (long long)(0x80ULL << 56),
+      (long long)(0x80ULL << 56), (long long)(0x80ULL << 56),
+      (long long)(0x80ULL << 56));
+  st[20] = _mm512_set_epi64(
+      (long long)(0x80ULL << 56), 0, 0, 0, 0, 0, 0, 0);
+
+  keccakf8(st);
+  for (int word = 0; word < 25; word++) {
+    __m128i hi = _mm256_extracti128_si256(sample_ntt8_hi256(st[word]), 1);
+    uint64_t value = (uint64_t)_mm_cvtsi128_si64(_mm_srli_si128(hi, 8));
+    tail_st[word] = value;
+  }
+
+  sample_poly_cbd_eta2x7_state_avx512(
+      st, r0, r1, r2, e10, e11, e12, e2);
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)tail_st, 21 * sizeof(*tail_st), tail, 0);
+  while (count < N) {
+    keccakf(tail_st);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)tail_st, 21 * sizeof(*tail_st), tail, count);
+  }
+}
+#endif
+
 static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
     const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
     poly256 s0, poly256 s1, poly256 s2,
@@ -6839,6 +6904,13 @@ static MLKEM_NOINLINE void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
 static poly256 rhat[K];
 static int8_t e1_i8[K][N];
 static int8_t e2_i8[N];
+#elif defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__clang__)
+/* Canonical Clang work buffers are shared with its mixed producer. */
+static poly256 rhat[K];
+static poly256 e1[K];
+static poly256 e2;
+static int eta2_canonical_prepared;
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
@@ -6856,14 +6928,18 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
   (void)eta2_i8_prepared;
-#else
+#elif !(defined(__AVX2__) && defined(__AVX512F__) && \
+        defined(__AVX512BW__) && defined(__clang__))
   /* rhat => K polynomials => ntt(...) */
   static poly256 rhat[K];
 #endif
+#if !(defined(__AVX2__) && defined(__AVX512F__) && \
+      defined(__AVX512BW__) && defined(__clang__))
   /* e1 => K polynomials => sample_poly_cbd(ETA2, prf(r,i+K)) */
   static poly256 e1[K];
   /* e2 => 1 polynomial => sample_poly_cbd(ETA2, prf(r,2K)) */
   static poly256 e2;
+#endif
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
   int eta2_i8_noise = 0;
@@ -6873,6 +6949,10 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     defined(__GNUC__) && !defined(__clang__)
   if (eta2_i8_prepared) {
     eta2_i8_noise = 1;
+  } else
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__clang__)
+  if (eta2_canonical_prepared) {
+    eta2_canonical_prepared = 0;
   } else
 #endif
   if (rlen == 32) {
@@ -7096,6 +7176,22 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
             rhat[0], rhat[1], rhat[2], e1_i8[0], e1_i8[1], e1_i8[2],
             e2_i8);
         eta2_i8_prepared = 1;
+      } else
+#elif defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__clang__)
+      if (rlen == 32 && mlen == 32) {
+        sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                           kpke_public_cache_ahat[0][1],
+                           kpke_public_cache_ahat[0][2],
+                           kpke_public_cache_ahat[1][0],
+                           kpke_public_cache_ahat[1][1],
+                           kpke_public_cache_ahat[1][2],
+                           kpke_public_cache_ahat[2][0],
+                           kpke_public_cache_ahat[2][1]);
+        mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
+            r, rho, kpke_public_cache_ahat[2][2],
+            rhat[0], rhat[1], rhat[2], e1[0], e1[1], e1[2], e2);
+        eta2_canonical_prepared = 1;
       } else
 #elif defined(__AVX2__) && !defined(__AVX512F__)
       if (rlen == 32) {
