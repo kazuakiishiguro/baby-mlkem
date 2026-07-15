@@ -515,67 +515,63 @@ mlkem_sha3_256_1184_avx512vl:
     vpternlogq $0x96, %xmm30, %xmm28, %xmm19
     vpternlogq $0x96, %xmm30, %xmm28, %xmm24
 
-    # Output plane y=0, B shift=0.
+    # Output planes y=0 (B shift=0) and y=1 (B shift=2), interleaved.
     vprolq $44, %xmm6, %xmm6
     vprolq $43, %xmm12, %xmm12
     vprolq $21, %xmm18, %xmm18
     vprolq $14, %xmm24, %xmm24
-    vmovdqa64 %xmm0, %xmm25
-    vpternlogq $0xD2, %xmm12, %xmm6, %xmm0
-    vmovdqa64 %xmm6, %xmm26
-    vpternlogq $0xD2, %xmm18, %xmm12, %xmm6
-    vpternlogq $0xD2, %xmm24, %xmm18, %xmm12
-    vpternlogq $0xD2, %xmm25, %xmm24, %xmm18
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm24
-
-    # Output plane y=1, B shift=2.
     vprolq $3, %xmm10, %xmm10
     vprolq $45, %xmm16, %xmm16
     vprolq $61, %xmm22, %xmm22
     vprolq $28, %xmm3, %xmm3
     vprolq $20, %xmm9, %xmm9
-    vmovdqa64 %xmm10, %xmm25
+    vmovdqa64 %xmm0, %xmm25
+    vmovdqa64 %xmm10, %xmm27
+    vpternlogq $0xD2, %xmm12, %xmm6, %xmm0
     vpternlogq $0x9C, %xmm9, %xmm3, %xmm10
-    vmovdqa64 %xmm16, %xmm26
-    vpternlogq $0x9C, %xmm25, %xmm9, %xmm16
+    vmovdqa64 %xmm6, %xmm26
+    vmovdqa64 %xmm16, %xmm28
+    vpternlogq $0xD2, %xmm18, %xmm12, %xmm6
+    vpternlogq $0x9C, %xmm27, %xmm9, %xmm16
+    vpternlogq $0xD2, %xmm24, %xmm18, %xmm12
     vpternlogq $0x9C, %xmm3, %xmm22, %xmm9
-    vpternlogq $0x9C, %xmm22, %xmm26, %xmm3
-    vpternlogq $0x9C, %xmm26, %xmm25, %xmm22
+    vpternlogq $0xD2, %xmm25, %xmm24, %xmm18
+    vpternlogq $0x9C, %xmm22, %xmm28, %xmm3
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm24
+    vpternlogq $0x9C, %xmm28, %xmm27, %xmm22
 
-    # Output plane y=2, B shift=4.
+    # Output planes y=2 (B shift=4) and y=3 (B shift=1), interleaved.
     vprolq $18, %xmm20, %xmm20
     vprolq $1, %xmm1, %xmm1
     vprolq $6, %xmm7, %xmm7
     vprolq $25, %xmm13, %xmm13
     vprolq $8, %xmm19, %xmm19
-    vmovdqa64 %xmm20, %xmm25
-    vmovdqa64 %xmm1, %xmm20
-    vpternlogq $0xD2, %xmm13, %xmm7, %xmm20
-    vmovdqa64 %xmm1, %xmm26
-    vmovdqa64 %xmm7, %xmm1
-    vpternlogq $0xD2, %xmm19, %xmm13, %xmm1
-    vmovdqa64 %xmm7, %xmm27
-    vmovdqa64 %xmm13, %xmm7
-    vpternlogq $0xD2, %xmm25, %xmm19, %xmm7
-    vmovdqa64 %xmm19, %xmm13
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
-    vmovdqa64 %xmm25, %xmm19
-    vpternlogq $0xD2, %xmm27, %xmm26, %xmm19
-
-    # Output plane y=3, B shift=1.
     vprolq $36, %xmm5, %xmm5
     vprolq $10, %xmm11, %xmm11
     vprolq $15, %xmm17, %xmm17
     vprolq $56, %xmm23, %xmm23
     vprolq $27, %xmm4, %xmm4
-    vmovdqa64 %xmm5, %xmm25
+    vmovdqa64 %xmm20, %xmm25
+    vmovdqa64 %xmm5, %xmm28
+    vmovdqa64 %xmm1, %xmm20
     vpternlogq $0xC6, %xmm11, %xmm4, %xmm5
-    vmovdqa64 %xmm11, %xmm26
-    vpternlogq $0xC6, %xmm17, %xmm25, %xmm11
-    vmovdqa64 %xmm23, %xmm27
+    vpternlogq $0xD2, %xmm13, %xmm7, %xmm20
+    vmovdqa64 %xmm11, %xmm29
+    vmovdqa64 %xmm1, %xmm26
+    vpternlogq $0xC6, %xmm17, %xmm28, %xmm11
+    vmovdqa64 %xmm7, %xmm1
+    vmovdqa64 %xmm23, %xmm30
+    vpternlogq $0xD2, %xmm19, %xmm13, %xmm1
     vpternlogq $0xC6, %xmm4, %xmm17, %xmm23
-    vpternlogq $0xC6, %xmm27, %xmm26, %xmm17
-    vpternlogq $0xC6, %xmm25, %xmm27, %xmm4
+    vmovdqa64 %xmm7, %xmm27
+    vpternlogq $0xC6, %xmm30, %xmm29, %xmm17
+    vmovdqa64 %xmm13, %xmm7
+    vpternlogq $0xC6, %xmm28, %xmm30, %xmm4
+    vpternlogq $0xD2, %xmm25, %xmm19, %xmm7
+    vmovdqa64 %xmm19, %xmm13
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
+    vmovdqa64 %xmm25, %xmm19
+    vpternlogq $0xD2, %xmm27, %xmm26, %xmm19
 
     # Output plane y=4, B shift=3.
     vprolq $41, %xmm15, %xmm15
@@ -646,67 +642,63 @@ mlkem_sha3_256_1184_avx512vl:
     vpternlogq $0x96, %xmm30, %xmm28, %xmm4
     vpternlogq $0x96, %xmm30, %xmm28, %xmm14
 
-    # Output plane y=0, B shift=0.
+    # Output planes y=0 (B shift=0) and y=1 (B shift=2), interleaved.
     vprolq $44, %xmm16, %xmm16
     vprolq $43, %xmm7, %xmm7
     vprolq $21, %xmm23, %xmm23
     vprolq $14, %xmm14, %xmm14
-    vmovdqa64 %xmm0, %xmm25
-    vpternlogq $0xD2, %xmm7, %xmm16, %xmm0
-    vmovdqa64 %xmm16, %xmm26
-    vpternlogq $0xD2, %xmm23, %xmm7, %xmm16
-    vpternlogq $0xD2, %xmm14, %xmm23, %xmm7
-    vpternlogq $0xD2, %xmm25, %xmm14, %xmm23
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm14
-
-    # Output plane y=1, B shift=2.
     vprolq $3, %xmm20, %xmm20
     vprolq $45, %xmm11, %xmm11
     vprolq $61, %xmm2, %xmm2
     vprolq $28, %xmm18, %xmm18
     vprolq $20, %xmm9, %xmm9
-    vmovdqa64 %xmm20, %xmm25
+    vmovdqa64 %xmm0, %xmm25
+    vmovdqa64 %xmm20, %xmm27
+    vpternlogq $0xD2, %xmm7, %xmm16, %xmm0
     vpternlogq $0x9C, %xmm9, %xmm18, %xmm20
-    vmovdqa64 %xmm11, %xmm26
-    vpternlogq $0x9C, %xmm25, %xmm9, %xmm11
+    vmovdqa64 %xmm16, %xmm26
+    vmovdqa64 %xmm11, %xmm28
+    vpternlogq $0xD2, %xmm23, %xmm7, %xmm16
+    vpternlogq $0x9C, %xmm27, %xmm9, %xmm11
+    vpternlogq $0xD2, %xmm14, %xmm23, %xmm7
     vpternlogq $0x9C, %xmm18, %xmm2, %xmm9
-    vpternlogq $0x9C, %xmm2, %xmm26, %xmm18
-    vpternlogq $0x9C, %xmm26, %xmm25, %xmm2
+    vpternlogq $0xD2, %xmm25, %xmm14, %xmm23
+    vpternlogq $0x9C, %xmm2, %xmm28, %xmm18
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm14
+    vpternlogq $0x9C, %xmm28, %xmm27, %xmm2
 
-    # Output plane y=2, B shift=4.
+    # Output planes y=2 (B shift=4) and y=3 (B shift=1), interleaved.
     vprolq $18, %xmm15, %xmm15
     vprolq $1, %xmm6, %xmm6
     vprolq $6, %xmm22, %xmm22
     vprolq $25, %xmm13, %xmm13
     vprolq $8, %xmm4, %xmm4
-    vmovdqa64 %xmm15, %xmm25
-    vmovdqa64 %xmm6, %xmm15
-    vpternlogq $0xD2, %xmm13, %xmm22, %xmm15
-    vmovdqa64 %xmm6, %xmm26
-    vmovdqa64 %xmm22, %xmm6
-    vpternlogq $0xD2, %xmm4, %xmm13, %xmm6
-    vmovdqa64 %xmm22, %xmm27
-    vmovdqa64 %xmm13, %xmm22
-    vpternlogq $0xD2, %xmm25, %xmm4, %xmm22
-    vmovdqa64 %xmm4, %xmm13
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
-    vmovdqa64 %xmm25, %xmm4
-    vpternlogq $0xD2, %xmm27, %xmm26, %xmm4
-
-    # Output plane y=3, B shift=1.
     vprolq $36, %xmm10, %xmm10
     vprolq $10, %xmm1, %xmm1
     vprolq $15, %xmm17, %xmm17
     vprolq $56, %xmm8, %xmm8
     vprolq $27, %xmm24, %xmm24
-    vmovdqa64 %xmm10, %xmm25
+    vmovdqa64 %xmm15, %xmm25
+    vmovdqa64 %xmm10, %xmm28
+    vmovdqa64 %xmm6, %xmm15
     vpternlogq $0xC6, %xmm1, %xmm24, %xmm10
-    vmovdqa64 %xmm1, %xmm26
-    vpternlogq $0xC6, %xmm17, %xmm25, %xmm1
-    vmovdqa64 %xmm8, %xmm27
+    vpternlogq $0xD2, %xmm13, %xmm22, %xmm15
+    vmovdqa64 %xmm1, %xmm29
+    vmovdqa64 %xmm6, %xmm26
+    vpternlogq $0xC6, %xmm17, %xmm28, %xmm1
+    vmovdqa64 %xmm22, %xmm6
+    vmovdqa64 %xmm8, %xmm30
+    vpternlogq $0xD2, %xmm4, %xmm13, %xmm6
     vpternlogq $0xC6, %xmm24, %xmm17, %xmm8
-    vpternlogq $0xC6, %xmm27, %xmm26, %xmm17
-    vpternlogq $0xC6, %xmm25, %xmm27, %xmm24
+    vmovdqa64 %xmm22, %xmm27
+    vpternlogq $0xC6, %xmm30, %xmm29, %xmm17
+    vmovdqa64 %xmm13, %xmm22
+    vpternlogq $0xC6, %xmm28, %xmm30, %xmm24
+    vpternlogq $0xD2, %xmm25, %xmm4, %xmm22
+    vmovdqa64 %xmm4, %xmm13
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
+    vmovdqa64 %xmm25, %xmm4
+    vpternlogq $0xD2, %xmm27, %xmm26, %xmm4
 
     # Output plane y=4, B shift=3.
     vprolq $41, %xmm5, %xmm5
@@ -777,67 +769,63 @@ mlkem_sha3_256_1184_avx512vl:
     vpternlogq $0x96, %xmm30, %xmm28, %xmm24
     vpternlogq $0x96, %xmm30, %xmm28, %xmm19
 
-    # Output plane y=0, B shift=0.
+    # Output planes y=0 (B shift=0) and y=1 (B shift=2), interleaved.
     vprolq $44, %xmm11, %xmm11
     vprolq $43, %xmm22, %xmm22
     vprolq $21, %xmm8, %xmm8
     vprolq $14, %xmm19, %xmm19
-    vmovdqa64 %xmm0, %xmm25
-    vpternlogq $0xD2, %xmm22, %xmm11, %xmm0
-    vmovdqa64 %xmm11, %xmm26
-    vpternlogq $0xD2, %xmm8, %xmm22, %xmm11
-    vpternlogq $0xD2, %xmm19, %xmm8, %xmm22
-    vpternlogq $0xD2, %xmm25, %xmm19, %xmm8
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm19
-
-    # Output plane y=1, B shift=2.
     vprolq $3, %xmm15, %xmm15
     vprolq $45, %xmm1, %xmm1
     vprolq $61, %xmm12, %xmm12
     vprolq $28, %xmm23, %xmm23
     vprolq $20, %xmm9, %xmm9
-    vmovdqa64 %xmm15, %xmm25
+    vmovdqa64 %xmm0, %xmm25
+    vmovdqa64 %xmm15, %xmm27
+    vpternlogq $0xD2, %xmm22, %xmm11, %xmm0
     vpternlogq $0x9C, %xmm9, %xmm23, %xmm15
-    vmovdqa64 %xmm1, %xmm26
-    vpternlogq $0x9C, %xmm25, %xmm9, %xmm1
+    vmovdqa64 %xmm11, %xmm26
+    vmovdqa64 %xmm1, %xmm28
+    vpternlogq $0xD2, %xmm8, %xmm22, %xmm11
+    vpternlogq $0x9C, %xmm27, %xmm9, %xmm1
+    vpternlogq $0xD2, %xmm19, %xmm8, %xmm22
     vpternlogq $0x9C, %xmm23, %xmm12, %xmm9
-    vpternlogq $0x9C, %xmm12, %xmm26, %xmm23
-    vpternlogq $0x9C, %xmm26, %xmm25, %xmm12
+    vpternlogq $0xD2, %xmm25, %xmm19, %xmm8
+    vpternlogq $0x9C, %xmm12, %xmm28, %xmm23
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm19
+    vpternlogq $0x9C, %xmm28, %xmm27, %xmm12
 
-    # Output plane y=2, B shift=4.
+    # Output planes y=2 (B shift=4) and y=3 (B shift=1), interleaved.
     vprolq $18, %xmm5, %xmm5
     vprolq $1, %xmm16, %xmm16
     vprolq $6, %xmm2, %xmm2
     vprolq $25, %xmm13, %xmm13
     vprolq $8, %xmm24, %xmm24
-    vmovdqa64 %xmm5, %xmm25
-    vmovdqa64 %xmm16, %xmm5
-    vpternlogq $0xD2, %xmm13, %xmm2, %xmm5
-    vmovdqa64 %xmm16, %xmm26
-    vmovdqa64 %xmm2, %xmm16
-    vpternlogq $0xD2, %xmm24, %xmm13, %xmm16
-    vmovdqa64 %xmm2, %xmm27
-    vmovdqa64 %xmm13, %xmm2
-    vpternlogq $0xD2, %xmm25, %xmm24, %xmm2
-    vmovdqa64 %xmm24, %xmm13
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
-    vmovdqa64 %xmm25, %xmm24
-    vpternlogq $0xD2, %xmm27, %xmm26, %xmm24
-
-    # Output plane y=3, B shift=1.
     vprolq $36, %xmm20, %xmm20
     vprolq $10, %xmm6, %xmm6
     vprolq $15, %xmm17, %xmm17
     vprolq $56, %xmm3, %xmm3
     vprolq $27, %xmm14, %xmm14
-    vmovdqa64 %xmm20, %xmm25
+    vmovdqa64 %xmm5, %xmm25
+    vmovdqa64 %xmm20, %xmm28
+    vmovdqa64 %xmm16, %xmm5
     vpternlogq $0xC6, %xmm6, %xmm14, %xmm20
-    vmovdqa64 %xmm6, %xmm26
-    vpternlogq $0xC6, %xmm17, %xmm25, %xmm6
-    vmovdqa64 %xmm3, %xmm27
+    vpternlogq $0xD2, %xmm13, %xmm2, %xmm5
+    vmovdqa64 %xmm6, %xmm29
+    vmovdqa64 %xmm16, %xmm26
+    vpternlogq $0xC6, %xmm17, %xmm28, %xmm6
+    vmovdqa64 %xmm2, %xmm16
+    vmovdqa64 %xmm3, %xmm30
+    vpternlogq $0xD2, %xmm24, %xmm13, %xmm16
     vpternlogq $0xC6, %xmm14, %xmm17, %xmm3
-    vpternlogq $0xC6, %xmm27, %xmm26, %xmm17
-    vpternlogq $0xC6, %xmm25, %xmm27, %xmm14
+    vmovdqa64 %xmm2, %xmm27
+    vpternlogq $0xC6, %xmm30, %xmm29, %xmm17
+    vmovdqa64 %xmm13, %xmm2
+    vpternlogq $0xC6, %xmm28, %xmm30, %xmm14
+    vpternlogq $0xD2, %xmm25, %xmm24, %xmm2
+    vmovdqa64 %xmm24, %xmm13
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
+    vmovdqa64 %xmm25, %xmm24
+    vpternlogq $0xD2, %xmm27, %xmm26, %xmm24
 
     # Output plane y=4, B shift=3.
     vprolq $41, %xmm10, %xmm10
@@ -908,67 +896,63 @@ mlkem_sha3_256_1184_avx512vl:
     vpternlogq $0x96, %xmm30, %xmm28, %xmm14
     vpternlogq $0x96, %xmm30, %xmm28, %xmm4
 
-    # Output plane y=0, B shift=0.
+    # Output planes y=0 (B shift=0) and y=1 (B shift=2), interleaved.
     vprolq $44, %xmm1, %xmm1
     vprolq $43, %xmm2, %xmm2
     vprolq $21, %xmm3, %xmm3
     vprolq $14, %xmm4, %xmm4
-    vmovdqa64 %xmm0, %xmm25
-    vpternlogq $0xD2, %xmm2, %xmm1, %xmm0
-    vmovdqa64 %xmm1, %xmm26
-    vpternlogq $0xD2, %xmm3, %xmm2, %xmm1
-    vpternlogq $0xD2, %xmm4, %xmm3, %xmm2
-    vpternlogq $0xD2, %xmm25, %xmm4, %xmm3
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm4
-
-    # Output plane y=1, B shift=2.
     vprolq $3, %xmm5, %xmm5
     vprolq $45, %xmm6, %xmm6
     vprolq $61, %xmm7, %xmm7
     vprolq $28, %xmm8, %xmm8
     vprolq $20, %xmm9, %xmm9
-    vmovdqa64 %xmm5, %xmm25
+    vmovdqa64 %xmm0, %xmm25
+    vmovdqa64 %xmm5, %xmm27
+    vpternlogq $0xD2, %xmm2, %xmm1, %xmm0
     vpternlogq $0x9C, %xmm9, %xmm8, %xmm5
-    vmovdqa64 %xmm6, %xmm26
-    vpternlogq $0x9C, %xmm25, %xmm9, %xmm6
+    vmovdqa64 %xmm1, %xmm26
+    vmovdqa64 %xmm6, %xmm28
+    vpternlogq $0xD2, %xmm3, %xmm2, %xmm1
+    vpternlogq $0x9C, %xmm27, %xmm9, %xmm6
+    vpternlogq $0xD2, %xmm4, %xmm3, %xmm2
     vpternlogq $0x9C, %xmm8, %xmm7, %xmm9
-    vpternlogq $0x9C, %xmm7, %xmm26, %xmm8
-    vpternlogq $0x9C, %xmm26, %xmm25, %xmm7
+    vpternlogq $0xD2, %xmm25, %xmm4, %xmm3
+    vpternlogq $0x9C, %xmm7, %xmm28, %xmm8
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm4
+    vpternlogq $0x9C, %xmm28, %xmm27, %xmm7
 
-    # Output plane y=2, B shift=4.
+    # Output planes y=2 (B shift=4) and y=3 (B shift=1), interleaved.
     vprolq $18, %xmm10, %xmm10
     vprolq $1, %xmm11, %xmm11
     vprolq $6, %xmm12, %xmm12
     vprolq $25, %xmm13, %xmm13
     vprolq $8, %xmm14, %xmm14
-    vmovdqa64 %xmm10, %xmm25
-    vmovdqa64 %xmm11, %xmm10
-    vpternlogq $0xD2, %xmm13, %xmm12, %xmm10
-    vmovdqa64 %xmm11, %xmm26
-    vmovdqa64 %xmm12, %xmm11
-    vpternlogq $0xD2, %xmm14, %xmm13, %xmm11
-    vmovdqa64 %xmm12, %xmm27
-    vmovdqa64 %xmm13, %xmm12
-    vpternlogq $0xD2, %xmm25, %xmm14, %xmm12
-    vmovdqa64 %xmm14, %xmm13
-    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
-    vmovdqa64 %xmm25, %xmm14
-    vpternlogq $0xD2, %xmm27, %xmm26, %xmm14
-
-    # Output plane y=3, B shift=1.
     vprolq $36, %xmm15, %xmm15
     vprolq $10, %xmm16, %xmm16
     vprolq $15, %xmm17, %xmm17
     vprolq $56, %xmm18, %xmm18
     vprolq $27, %xmm19, %xmm19
-    vmovdqa64 %xmm15, %xmm25
+    vmovdqa64 %xmm10, %xmm25
+    vmovdqa64 %xmm15, %xmm28
+    vmovdqa64 %xmm11, %xmm10
     vpternlogq $0xC6, %xmm16, %xmm19, %xmm15
-    vmovdqa64 %xmm16, %xmm26
-    vpternlogq $0xC6, %xmm17, %xmm25, %xmm16
-    vmovdqa64 %xmm18, %xmm27
+    vpternlogq $0xD2, %xmm13, %xmm12, %xmm10
+    vmovdqa64 %xmm16, %xmm29
+    vmovdqa64 %xmm11, %xmm26
+    vpternlogq $0xC6, %xmm17, %xmm28, %xmm16
+    vmovdqa64 %xmm12, %xmm11
+    vmovdqa64 %xmm18, %xmm30
+    vpternlogq $0xD2, %xmm14, %xmm13, %xmm11
     vpternlogq $0xC6, %xmm19, %xmm17, %xmm18
-    vpternlogq $0xC6, %xmm27, %xmm26, %xmm17
-    vpternlogq $0xC6, %xmm25, %xmm27, %xmm19
+    vmovdqa64 %xmm12, %xmm27
+    vpternlogq $0xC6, %xmm30, %xmm29, %xmm17
+    vmovdqa64 %xmm13, %xmm12
+    vpternlogq $0xC6, %xmm28, %xmm30, %xmm19
+    vpternlogq $0xD2, %xmm25, %xmm14, %xmm12
+    vmovdqa64 %xmm14, %xmm13
+    vpternlogq $0xD2, %xmm26, %xmm25, %xmm13
+    vmovdqa64 %xmm25, %xmm14
+    vpternlogq $0xD2, %xmm27, %xmm26, %xmm14
 
     # Output plane y=4, B shift=3.
     vprolq $41, %xmm20, %xmm20
@@ -997,6 +981,10 @@ mlkem_sha3_256_1184_avx512vl:
     ret
 .size .Lmlkem_keccakf1600_avx512vl_inplace4_permute,.-.Lmlkem_keccakf1600_avx512vl_inplace4_permute
 # END GENERATED BY scripts/gen_keccak_inplace4.pl
+
+
+
+
 
 .section .rodata
 

@@ -35,6 +35,100 @@ sub chi_imm {
     return $imm;
 }
 
+sub build_plane {
+    my ($i, $y, $temp_base) = @_;
+    my $shift = (2 * $y) % 5;
+    my @orders = (
+        [0, 1, 2, 3, 4],
+        [0, 1, 3, 2, 4],
+        [0, 1, 4, 3, 2],
+        [0, 1, 2, 4, 3],
+        [0, 1, 2, 3, 4],
+    );
+    my @order = @{$orders[$shift]};
+    my %position;
+    $position{$order[$_]} = $_ for 0 .. 4;
+    my %location;
+    for my $b (0 .. 4) {
+        my $source_x = ($b - $shift + 5) % 5;
+        $location{$b} = phys($i + 1, $source_x, $y);
+    }
+
+    my @rotations;
+    for my $x (0 .. 4) {
+        my $p = phys($i + 1, $x, $y);
+        my $logical_y = ($x + 2 * $y) % 5;
+        my $rot = $rho[$x][$logical_y];
+        push @rotations, sprintf("vprolq \$%d, %s, %s", $rot, xr($p), xr($p))
+            if $rot;
+    }
+
+    my @chi;
+    my $next_temp = $temp_base;
+    for my $step (0 .. 4) {
+        my $x = $order[$step];
+        my $dest = phys($i + 1, $x, $y);
+        my $old_b = ($x + $shift) % 5;
+        my @users = ($old_b, ($old_b + 4) % 5, ($old_b + 3) % 5);
+        my $last_use = 0;
+        for my $user (@users) {
+            $last_use = $position{$user}
+                if $position{$user} > $last_use;
+        }
+        if ($step < $last_use) {
+            push @chi, sprintf("vmovdqa64 %s, %s",
+                               xr($dest), xr($next_temp));
+            $location{$old_b} = $next_temp++;
+        }
+
+        my @needed = ($x, ($x + 1) % 5, ($x + 2) % 5);
+        my $dest_role = -1;
+        for my $role (0 .. 2) {
+            $dest_role = $role if $needed[$role] == $old_b;
+        }
+        if ($dest_role < 0) {
+            push @chi, sprintf("vmovdqa64 %s, %s",
+                               xr($location{$needed[0]}), xr($dest));
+            $dest_role = 0;
+        }
+        my @source_roles = grep { $_ != $dest_role } 0 .. 2;
+        my ($src1_role, $src2_role) = @source_roles;
+        my $imm = chi_imm($dest_role, $src1_role, $src2_role);
+        push @chi, sprintf("vpternlogq \$0x%02X, %s, %s, %s", $imm,
+                           xr($location{$needed[$src2_role]}),
+                           xr($location{$needed[$src1_role]}), xr($dest));
+        delete $location{$old_b}
+            if exists($location{$old_b}) && $location{$old_b} == $dest;
+    }
+    die "Chi temporary range exceeds xmm30\n" if $next_temp > 31;
+    return (\@rotations, \@chi, $shift, $next_temp);
+}
+
+sub emit_plane_pair {
+    my ($i, $y0, $y1, $temp0, $temp1) = @_;
+    my ($rot0, $chi0, $shift0, $end0) =
+        build_plane($i, $y0, $temp0);
+    my ($rot1, $chi1, $shift1, $end1) =
+        build_plane($i, $y1, $temp1);
+    die "Overlapping Chi temporary ranges\n"
+        unless $end0 <= $temp1 || $end1 <= $temp0;
+    print "\n    # Output planes y=$y0 (B shift=$shift0) and "
+        . "y=$y1 (B shift=$shift1), interleaved.\n";
+    ins($_) for @{$rot0}, @{$rot1};
+    my $count = @{$chi0} > @{$chi1} ? @{$chi0} : @{$chi1};
+    for my $step (0 .. $count - 1) {
+        ins($chi0->[$step]) if $step < @{$chi0};
+        ins($chi1->[$step]) if $step < @{$chi1};
+    }
+}
+
+sub emit_single_plane {
+    my ($i, $y, $temp_base) = @_;
+    my ($rotations, $chi, $shift) = build_plane($i, $y, $temp_base);
+    print "\n    # Output plane y=$y, B shift=$shift.\n";
+    ins($_) for @{$rotations}, @{$chi};
+}
+
 sub emit_round {
     my ($i) = @_;
     print "\n    # Round mapping N^$i -> N^" . ($i + 1) . ".\n";
@@ -56,70 +150,11 @@ sub emit_round {
                         xr($prev), xr($p)));
         }
     }
-    for my $y (0 .. 4) {
-        my $shift = (2 * $y) % 5;
-        my @orders = (
-            [0, 1, 2, 3, 4],
-            [0, 1, 3, 2, 4],
-            [0, 1, 4, 3, 2],
-            [0, 1, 2, 4, 3],
-            [0, 1, 2, 3, 4],
-        );
-        my @order = @{$orders[$shift]};
-        my %position;
-        $position{$order[$_]} = $_ for 0 .. 4;
-        my %location;
-        for my $b (0 .. 4) {
-            my $source_x = ($b - $shift + 5) % 5;
-            $location{$b} = phys($i + 1, $source_x, $y);
-        }
 
-        print "\n    # Output plane y=$y, B shift=$shift.\n";
-        for my $x (0 .. 4) {
-            my $p = phys($i + 1, $x, $y);
-            my $logical_y = ($x + 2 * $y) % 5;
-            my $rot = $rho[$x][$logical_y];
-            ins(sprintf("vprolq \$%d, %s, %s", $rot, xr($p), xr($p)))
-                if $rot;
-        }
-
-        my $next_temp = 25;
-        for my $step (0 .. 4) {
-            my $x = $order[$step];
-            my $dest = phys($i + 1, $x, $y);
-            my $old_b = ($x + $shift) % 5;
-            my @users = ($old_b, ($old_b + 4) % 5, ($old_b + 3) % 5);
-            my $last_use = 0;
-            for my $user (@users) {
-                $last_use = $position{$user}
-                    if $position{$user} > $last_use;
-            }
-            if ($step < $last_use) {
-                ins(sprintf("vmovdqa64 %s, %s",
-                            xr($dest), xr($next_temp)));
-                $location{$old_b} = $next_temp++;
-            }
-
-            my @needed = ($x, ($x + 1) % 5, ($x + 2) % 5);
-            my $dest_role = -1;
-            for my $role (0 .. 2) {
-                $dest_role = $role if $needed[$role] == $old_b;
-            }
-            if ($dest_role < 0) {
-                ins(sprintf("vmovdqa64 %s, %s",
-                            xr($location{$needed[0]}), xr($dest)));
-                $dest_role = 0;
-            }
-            my @source_roles = grep { $_ != $dest_role } 0 .. 2;
-            my ($src1_role, $src2_role) = @source_roles;
-            my $imm = chi_imm($dest_role, $src1_role, $src2_role);
-            ins(sprintf("vpternlogq \$0x%02X, %s, %s, %s", $imm,
-                        xr($location{$needed[$src2_role]}),
-                        xr($location{$needed[$src1_role]}), xr($dest)));
-            delete $location{$old_b}
-                if exists($location{$old_b}) && $location{$old_b} == $dest;
-        }
-    }
+    # Preserve each plane overwrite order while overlapping independent chains.
+    emit_plane_pair($i, 0, 1, 25, 27);
+    emit_plane_pair($i, 2, 3, 25, 28);
+    emit_single_plane($i, 4, 25);
     ins(sprintf("vmovq %d(%%r14), %%xmm31", 8 * $i));
     ins("vpxorq %xmm31, %xmm0, %xmm0");
 }
