@@ -5767,6 +5767,29 @@ format change. It tunes GCC code generation around the existing
 XKCP-derived four-round mapping and does not claim a new baby-mlkem Keccak
 schedule.
 
+### Local Core Optimization Diagnostic (2026-07-15, post-scheduler frontier)
+
+A post-`4eac647` 500,000-iteration GCC native profile kept the combined x8 permutation
+helpers first at `11.77%` plus `11.30%` self time. Fixed public H(pk) was
+`20.39%`, `kpke_encrypt_prepared_public()` self work was `12.66%`, the AVX2
+rejection parser was `6.89%`, and the native inverse NTT before its final
+level was `5.58%`. Three narrow follow-ups were tested and rejected before
+selecting a larger boundary redesign:
+
+| Candidate | Direct or stage result | Decision |
+|---|---|---|
+| Register-per-lane Keccak 2-round loop unroll | Fixed H(pk) was `1.0000x` to `1.0005x`; generic permutation fell to `0.9968x` to `0.9985x` in two order-flipped pairs | Reject: branch overhead is hidden by the round body, while doubled body text does not help |
+| Full-rate memory-source XOR folding | Removed 17 static instructions and 119 dynamic instructions per H(pk), passed KAT, and reduced text by 64 bytes, but fixed H(pk) remained `0.9995x` to `1.0003x` | Reject: fewer decoded instructions do not reduce the load/ALU uops on this target |
+| GCC flattened x8 initial parser | Generated one 358-instruction lane-loop body with no nested parser calls and passed KAT, but `sample_ntt8_full_raw`/matrix/keygen-full paired medians were `0.9981x`/`0.9996x`/`0.9952x`; keygen lost 5/5 | Reject: about 1.5 KiB of duplicate parser text costs more than shared setup saves |
+
+The fixed H(pk) loop and absorb scaffolding are therefore closed to these
+local instruction-count reductions. The parser remains measurable, but another
+call-boundary or fixed-length clone is not justified; a future parser attempt
+must change the state-to-candidate representation without using the already
+rejected Zen 4 `VPCOMPRESSW` path. The next broad production target is the
+self work inside `kpke_encrypt_prepared_public()`, with inverse NTT as the
+next bounded arithmetic target.
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and
