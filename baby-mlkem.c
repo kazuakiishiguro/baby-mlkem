@@ -4477,6 +4477,24 @@ static inline void sample_poly_cbd_eta2_store2_avx2(__m128i bytes,
                       _mm256_permute2x128_si256(a, b, 0x31));
 }
 
+static inline void sample_poly_cbd_eta2_store2_signed_avx2(
+    __m128i bytes, int16_t *out0, int16_t *out1) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  __m256i lo = _mm256_cvtepi8_epi16(lo8);
+  __m256i hi = _mm256_cvtepi8_epi16(hi8);
+  __m256i a = _mm256_unpacklo_epi16(lo, hi);
+  __m256i b = _mm256_unpackhi_epi16(lo, hi);
+  _mm256_storeu_si256((__m256i *)out0,
+                      _mm256_permute2x128_si256(a, b, 0x20));
+  _mm256_storeu_si256((__m256i *)out1,
+                      _mm256_permute2x128_si256(a, b, 0x31));
+}
+
 static inline void sample_poly_cbd_eta2_store1_avx2(__m128i bytes,
                                                     int16_t *out) {
   const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
@@ -4517,20 +4535,24 @@ static void sample_poly_cbd_eta2x4_state_avx2(const __m256i st[25],
 }
 
 #if defined(__AVX512F__)
-static void sample_poly_cbd_eta2x6_state_avx512(const __m512i st[25],
-                                                poly256 out0, poly256 out1,
-                                                poly256 out2, poly256 out3,
-                                                poly256 out4, poly256 out5) {
+static void sample_poly_cbd_eta2x6_signed_state_avx512(
+    const __m512i st[25], poly256 out0, poly256 out1, poly256 out2,
+    poly256 out3, poly256 out4, poly256 out5) {
+  /* Keygen feeds all six centered outputs directly to signed-lazy NTTs. */
+#if defined(__clang__)
+  /* Eight-way unrolling bloats Clang's already large keygen caller. */
+#pragma clang loop unroll_count(4)
+#endif
   for (int i = 0; i < 16; i++) {
     uint64_t words[8];
     _mm512_storeu_si512((__m512i *)words, st[i]);
-    sample_poly_cbd_eta2_store2_avx2(
+    sample_poly_cbd_eta2_store2_signed_avx2(
         _mm_loadu_si128((const __m128i *)&words[0]),
         out0 + 16 * i, out1 + 16 * i);
-    sample_poly_cbd_eta2_store2_avx2(
+    sample_poly_cbd_eta2_store2_signed_avx2(
         _mm_loadu_si128((const __m128i *)&words[2]),
         out2 + 16 * i, out3 + 16 * i);
-    sample_poly_cbd_eta2_store2_avx2(
+    sample_poly_cbd_eta2_store2_signed_avx2(
         _mm_loadu_si128((const __m128i *)&words[4]),
         out4 + 16 * i, out5 + 16 * i);
   }
@@ -4635,7 +4657,7 @@ static void mlkem_prf_cbd_eta2x6_32(const uint8_t seed[32],
   __m512i st[25];
   mlkem_prf_cbd_eta2x8_init_32(seed, nonce, st);
   keccakf8(st);
-  sample_poly_cbd_eta2x6_state_avx512(st, out0, out1, out2, out3,
+  sample_poly_cbd_eta2x6_signed_state_avx512(st, out0, out1, out2, out3,
                                       out4, out5);
 }
 
@@ -5536,7 +5558,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
 
   keccakf8(st);
 #endif
-  sample_poly_cbd_eta2x6_state_avx512(st, s0, s1, s2, e0, e1, e2);
+  sample_poly_cbd_eta2x6_signed_state_avx512(st, s0, s1, s2, e0, e1, e2);
 
   for (int lane = 0; lane < 25; lane++) {
     uint64_t w = sample_ntt8_lane6_u64(st[lane]);
