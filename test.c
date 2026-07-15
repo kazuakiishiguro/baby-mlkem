@@ -432,6 +432,62 @@ static void test_sample_ntt() {
   }
 }
 
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+static void test_keccakf8_matrix_asm(void) {
+  int saw_refill = 0;
+
+  for (unsigned fixture = 0; fixture < 64; fixture++) {
+    uint8_t seed[32];
+    __m512i want_st[25];
+    __m512i got_st[25];
+    uint8_t want_stream[8][504];
+    uint8_t got_stream[8][504];
+    poly256 got_matrix[K][K];
+    poly256 want_poly;
+
+    for (unsigned i = 0; i < sizeof(seed); i++) {
+      seed[i] = (uint8_t)(fixture * 73u + i * 29u + (i >> 1));
+    }
+    for (int lane = 0; lane < 25; lane++) {
+      want_st[lane] = _mm512_setzero_si512();
+    }
+    want_st[0] = _mm512_set1_epi64((long long)load64_le(seed + 0));
+    want_st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
+    want_st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
+    want_st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+    want_st[4] = _mm512_set_epi64(
+        0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+        0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+    want_st[20] = _mm512_set1_epi64((long long)(0x80ULL << 56));
+    for (int block = 0; block < 3; block++) {
+      keccakf8(want_st);
+      sample_ntt8_store_block(want_stream, (size_t)block * 168, want_st);
+    }
+
+    mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
+        seed, got_st, got_stream);
+    assert(memcmp(got_st, want_st, sizeof(got_st)) == 0);
+    assert(memcmp(got_stream, want_stream, sizeof(got_stream)) == 0);
+    for (int lane = 0; lane < 8; lane++) {
+      if (sample_ntt_parse_stream(got_stream[lane], sizeof(got_stream[lane]),
+                                  want_poly, 0) < N) {
+        saw_refill = 1;
+      }
+    }
+
+    sample_matrix(seed, got_matrix);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        sample_ntt(seed, row, col, want_poly);
+        assert(memcmp(got_matrix[row][col], want_poly,
+                      sizeof(want_poly)) == 0);
+      }
+    }
+  }
+  assert(saw_refill);
+}
+#endif
+
 #if defined(__AVX2__)
 static void test_sample_ntt_cmpgt_epi16_avx2(void) {
   int16_t input[16];
@@ -565,6 +621,9 @@ int main(void) {
   test_modexp();
   test_poly256_add();
   test_sample_ntt();
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+  test_keccakf8_matrix_asm();
+#endif
 #if defined(__AVX2__)
   test_sample_ntt_cmpgt_epi16_avx2();
 #endif
