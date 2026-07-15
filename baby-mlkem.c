@@ -3741,6 +3741,55 @@ ntt3_mul_acc4_fused_final_madd512_avx512(
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, outv);
   }
 }
+
+/* Reuse the centered gamma-weighted secret factors across all A^T columns. */
+static MLKEM_ALWAYS_INLINE void
+ntt_mul_acc3_cols3_asym_madd512_avx512(
+    const poly256 ahat[K][K], const poly256 b[K], poly256 out[K]) {
+  const __m512i even_mask = _mm512_set1_epi32(0xffff);
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i half_q = _mm512_set1_epi16(Q / 2);
+
+  for (int offset = 0, pair = 0; offset < N; offset += 32, pair += 16) {
+    __m512i y0 =
+        _mm512_loadu_si512((const void *)(b[0] + offset));
+    __m512i y1 =
+        _mm512_loadu_si512((const void *)(b[1] + offset));
+    __m512i y2 =
+        _mm512_loadu_si512((const void *)(b[2] + offset));
+    __mmask32 y0_gt = _mm512_cmpgt_epi16_mask(y0, half_q);
+    __mmask32 y1_gt = _mm512_cmpgt_epi16_mask(y1, half_q);
+    __mmask32 y2_gt = _mm512_cmpgt_epi16_mask(y2, half_q);
+    y0 = _mm512_mask_sub_epi16(y0, y0_gt, y0, q);
+    y1 = _mm512_mask_sub_epi16(y1, y1_gt, y1, q);
+    y2 = _mm512_mask_sub_epi16(y2, y2_gt, y2, q);
+    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
+    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
+    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
+    __m512i gamma = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
+    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
+    __m512i y0_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
+    __m512i y1_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
+    __m512i y2_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
+    __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
+    __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
+
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][0], ahat[1][0], ahat[2][0], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][1], ahat[1][1], ahat[2][1], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
+    ntt_acc4_asym_madd_block_avx512(
+        ahat[0][2], ahat[1][2], ahat[2][2], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
+  }
+}
 #endif
 
 static inline void ntt_mul_acc3_pair_values(
@@ -5944,6 +5993,16 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 #endif
 
   /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
+#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX2__) && \
+    defined(__AVX512F__) && defined(__AVX512BW__)
+  ntt_mul_acc3_cols3_asym_madd512_avx512(
+      kpke_public_cache_ahat, shat, kpke_public_cache_that);
+  for (int i = 0; i < K; i++) {
+    ntt_add(kpke_public_cache_that[i], ehat[i],
+            kpke_public_cache_that[i]);
+    byte_encode(12, kpke_public_cache_that[i], ek_pke + i * 384);
+  }
+#else
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3_factored_gamma(kpke_public_cache_ahat[0][i], shat[0],
                                 kpke_public_cache_ahat[1][i], shat[1],
@@ -5952,6 +6011,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
     ntt_add(kpke_public_cache_that[i], ehat[i], kpke_public_cache_that[i]);
     byte_encode(12, kpke_public_cache_that[i], ek_pke + i * 384);
   }
+#endif
 
   /* ek_pke = encode(that[0..K-1], 12 bits each) + rho(32 bytes). */
   memcpy(ek_pke + K * 384, rho, 32);

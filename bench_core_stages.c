@@ -2295,6 +2295,89 @@ static void validate_ntt3_mul_acc4_fused_final_madd512_avx512(void) {
   }
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
+                                           uint32_t *state) {
+  static const uint16_t edge[] = {
+      0, Q / 2, Q / 2 + 1, Q - 1,
+  };
+
+  if (fixture == 0) {
+    return 0;
+  }
+  if (fixture == 1) {
+    return Q - 1;
+  }
+  if (fixture == 2) {
+    return (index & 1u) == 0 ? 0 : Q - 1;
+  }
+  if (fixture == 3) {
+    return edge[index & 3u];
+  }
+  *state ^= *state << 13;
+  *state ^= *state >> 17;
+  *state ^= *state << 5;
+  return (uint16_t)(*state % Q);
+}
+
+static void validate_keygen_accum_asym_madd512_avx512(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 expected[K], got[K];
+    for (int col = 0; col < K; col++) {
+      ntt_mul_acc3_factored_gamma(
+          stage_ahat[lane][0][col], stage_shat[lane][0],
+          stage_ahat[lane][1][col], stage_shat[lane][1],
+          stage_ahat[lane][2][col], stage_shat[lane][2], expected[col]);
+    }
+    ntt_mul_acc3_cols3_asym_madd512_avx512(
+        stage_ahat[lane], stage_shat[lane], got);
+    for (int col = 0; col < K; col++) {
+      if (memcmp(expected[col], got[col], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "keygen asymmetric madd512 mismatch at %zu,%d\n",
+                lane, col);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+
+  uint32_t state = 0x243f6a88u;
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    poly256 ahat[K][K], b[K], expected[K], got[K];
+    size_t index = 0;
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        for (int j = 0; j < N; j++) {
+          ahat[row][col][j] =
+              (int16_t)validate_keygen_asym_coeff(
+                  fixture, index++, &state);
+        }
+      }
+    }
+    for (int row = 0; row < K; row++) {
+      for (int j = 0; j < N; j++) {
+        b[row][j] = (int16_t)validate_keygen_asym_coeff(
+            fixture, index++, &state);
+      }
+    }
+    for (int col = 0; col < K; col++) {
+      ntt_mul_acc3_factored_gamma(
+          ahat[0][col], b[0], ahat[1][col], b[1],
+          ahat[2][col], b[2], expected[col]);
+    }
+    ntt_mul_acc3_cols3_asym_madd512_avx512(ahat, b, got);
+    for (int col = 0; col < K; col++) {
+      if (memcmp(expected[col], got[col], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "keygen asymmetric madd512 fixture mismatch at %zu,%d\n",
+                fixture, col);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 #endif
 
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -2535,6 +2618,9 @@ static void validate_core_stage_helpers(void) {
 #else
   validate_ntt3_mul_acc4_fused_final_madd_avx512();
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
+#if defined(__GNUC__) && !defined(__clang__)
+  validate_keygen_accum_asym_madd512_avx512();
+#endif
 #endif
   validate_keygen_noise_ntt_headtail_batch_avx2();
   validate_keygen_noise_ntt_shat_headtail_encode_avx2();
@@ -9758,6 +9844,23 @@ static uint64_t bench_keygen_accum_only(size_t iters) {
   return t1 - t0;
 }
 
+#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+static uint64_t bench_keygen_accum_asym_madd512_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    ntt_mul_acc3_cols3_asym_madd512_avx512(
+        stage_ahat[lane], stage_shat[lane], stage_tmp_vec0[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 static uint64_t bench_keygen_add_only(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
@@ -13962,6 +14065,11 @@ int main(int argc, char **argv) {
                bench_keygen_accum_add_only(iters), iters);
   print_metric("mlkem_core_stage_keygen_accum_only",
                bench_keygen_accum_only(iters), iters);
+#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+  print_metric("mlkem_core_stage_keygen_accum_asym_madd512_avx512",
+               bench_keygen_accum_asym_madd512_avx512(iters), iters);
+#endif
   print_metric("mlkem_core_stage_keygen_add_only",
                bench_keygen_add_only(iters), iters);
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
