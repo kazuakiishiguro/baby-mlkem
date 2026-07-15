@@ -185,7 +185,7 @@ Near-term target selection:
 | AVX512 ZMM four-output K=3 encryption accumulation | Accepted for GCC AVX512; asymmetric-factor follow-up accepted | The final NTT l1 emits 32 centered coefficients into three ZMM `rhat` vectors shared by all three `u` rows and `v`. The follow-up forms `[r0, gamma*r1]` once per common input and reuses it across four dot products, reducing the hot loop from three to two output-side `vpmaddwd` streams. Against the preceding ZMM path, paired medians improve cached K-PKE, encaps, decaps, and roundtrip-core by `1.0292x`/`1.0301x`/`1.0192x`/`1.0069x`. The factors are transient registers, not a cache or table; Clang and narrower builds remain byte-identical. |
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC AVX512; Clang and narrower ISA unchanged | One loop centers `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The direct accumulation median improves `6.014x`; high-iteration K-PKE keygen improves `1.6040x`, and 100k KEM `keygen`/`keygen_core` improve `1.0218x`/`1.0210x`, both 14/14. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
-| Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed, and its production binaries remain byte-identical. |
+| Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -5405,18 +5405,25 @@ Keygen does not consume this boundary and remained a neutral control.
 Clang was not enabled merely for its prepared/cached gain. Its pre-gate KEM
 geometric means for `encaps_core`, `decaps_core`, and `roundtrip_core` were
 `0.9892x`, `0.9915x`, and `0.9880x`. The final production guard therefore
-keeps Clang on the preceding canonical-int16 path. Final GCC native `testc` and
-`benchc` are byte-identical to measured implementation commit `91c5e1f`; final
-Clang native `testc` and `benchc` are byte-identical to baseline `6a5f2ee`.
-AVX2-only and scalar `testc` are also byte-identical to that baseline under
-both compilers.
+keeps Clang on the preceding canonical-int16 path.
 
-The validator compares the compact helper coefficient-for-coefficient with the
-canonical path on all real stage lanes and 256 deterministic fixtures. It
-covers zero, all-`Q-1`, and pseudorandom inverse inputs, every signed ETA2 value,
-and zero, all-one, and pseudorandom messages. GCC and Clang native validators
-and KEM tests pass; native and AVX2-only Clang ASan+UBSan tests pass; explicit
-AVX2-only and scalar KEM tests pass under GCC and Clang.
+The original version of this section incorrectly claimed that AVX2-only and
+scalar KEM tests passed and that their binaries matched `6a5f2ee`. Commit
+`91c5e1f` had accidentally moved `mlkem_add_message_to_poly()` inside the
+AVX512-only branch, so non-AVX512 prepared encryption omitted the message
+polynomial before `ntt_inv_add_v_inplace()`. Correctness commit `4368b3a`
+restores that operation.
+
+The compact validator compares the compact helper coefficient-for-coefficient
+with the canonical path on all real stage lanes and 256 deterministic fixtures.
+It covers zero, all-`Q-1`, and pseudorandom inverse inputs, every signed ETA2
+value, and zero, all-one, and pseudorandom messages. After the correction,
+GCC/Clang AVX2-only KEM and stage validators, both compilers' scalar KEM tests,
+and Clang AVX2-only ASan+UBSan pass. The correction preprocesses out on native
+AVX512 builds, so the GCC measurements above and final GCC/Clang native
+binaries are unchanged. The VNNI follow-up also confirmed that Clang native and
+both compilers' AVX2-only `testc`, `benchc`, and `bench_core_stagesc`, plus both
+scalar `testc` binaries, are byte-identical to corrected baseline `4368b3a`.
 
 Relative to `6a5f2ee`, final GCC `benchc` text grows from 81,400 to 82,444 bytes
 (+1,044), data remains 708 bytes, and BSS grows from 35,584 to 36,608 bytes
