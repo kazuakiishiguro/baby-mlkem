@@ -6725,8 +6725,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 #endif
 
   /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
-#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX2__) && \
-    defined(__AVX512F__) && defined(__AVX512BW__)
+#if defined(__GNUC__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
   ntt_mul_acc3_cols3_asym_madd512_avx512(
       kpke_public_cache_ahat, shat, kpke_public_cache_that);
   for (int i = 0; i < K; i++) {
