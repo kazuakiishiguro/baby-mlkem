@@ -2408,6 +2408,35 @@ static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
   return (uint16_t)(*state % Q);
 }
 
+static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
+  const int32_t lower = -6 * (Q - 1) * (Q / 2);
+  const int32_t upper = 6 * (Q - 1) * (Q - 1);
+  int32_t input[16];
+  int32_t got[16];
+
+  for (int64_t base = lower; base <= upper; base += 16) {
+    int active = (int)((int64_t)upper - base + 1);
+    if (active > 16) active = 16;
+    for (int lane = 0; lane < 16; lane++) {
+      input[lane] = lane < active ? (int32_t)(base + lane) : upper;
+    }
+
+    __m512i x = _mm512_loadu_si512((const void *)input);
+    _mm512_storeu_si512(
+        (void *)got, ntt_acc4_madd_reduce_i32x16(x));
+    for (int lane = 0; lane < active; lane++) {
+      int32_t expected = input[lane] % Q;
+      if (expected < 0) expected += Q;
+      if (got[lane] != expected) {
+        fprintf(stderr,
+                "AVX512 accumulation reduction mismatch at %d: %d != %d\n",
+                (int)input[lane], (int)got[lane], (int)expected);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
 #if defined(__AVX512VNNI__)
 static void validate_encrypt_accum_vnni512_avx512(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
@@ -3057,6 +3086,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt3_mul_acc4_fused_final_madd_avx512();
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
 #if defined(__GNUC__) && !defined(__clang__)
+  validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__)
   validate_encrypt_accum_vnni512_avx512();
 #endif
