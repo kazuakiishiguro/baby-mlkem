@@ -2349,6 +2349,78 @@ static uint16_t validate_keygen_asym_coeff(size_t fixture, size_t index,
   return (uint16_t)(*state % Q);
 }
 
+#if defined(__AVX512VNNI__)
+static void validate_encrypt_accum_vnni512_avx512(void) {
+  for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
+    poly256 reference_b[K], vnni_b[K];
+    poly256 reference[K], vnni[K], reference_v, vnni_v;
+    for (int row = 0; row < K; row++) {
+      memcpy(reference_b[row], stage_r_raw[lane][row], sizeof(poly256));
+      memcpy(vnni_b[row], stage_r_raw[lane][row], sizeof(poly256));
+    }
+    ntt3_mul_acc4_fused_final_madd512_avx512(
+        stage_ahat[lane], stage_that[lane], reference_b,
+        reference, reference_v);
+    ntt3_mul_acc4_fused_final_vnni512_avx512(
+        stage_ahat[lane], stage_that[lane], vnni_b, vnni, vnni_v);
+    for (int row = 0; row < K; row++) {
+      if (memcmp(reference[row], vnni[row], sizeof(poly256)) != 0) {
+        fprintf(stderr, "VNNI encryption accumulation mismatch at %zu,%d\n",
+                lane, row);
+        exit(EXIT_FAILURE);
+      }
+    }
+    if (memcmp(reference_v, vnni_v, sizeof(poly256)) != 0) {
+      fprintf(stderr, "VNNI encryption v accumulation mismatch at %zu\n",
+              lane);
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  uint32_t state = 0x13198a2eu;
+  for (size_t fixture = 0; fixture < 256; fixture++) {
+    poly256 ahat[K][K], that[K], reference_b[K], vnni_b[K];
+    poly256 reference[K], vnni[K], reference_v, vnni_v;
+    size_t index = 0;
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        for (int j = 0; j < N; j++) {
+          ahat[row][col][j] = (int16_t)validate_keygen_asym_coeff(
+              fixture, index++, &state);
+        }
+      }
+    }
+    for (int row = 0; row < K; row++) {
+      for (int j = 0; j < N; j++) {
+        that[row][j] = (int16_t)validate_keygen_asym_coeff(
+            fixture, index++, &state);
+        reference_b[row][j] = (int16_t)validate_keygen_asym_coeff(
+            fixture, index++, &state);
+        vnni_b[row][j] = reference_b[row][j];
+      }
+    }
+    ntt3_mul_acc4_fused_final_madd512_avx512(
+        ahat, that, reference_b, reference, reference_v);
+    ntt3_mul_acc4_fused_final_vnni512_avx512(
+        ahat, that, vnni_b, vnni, vnni_v);
+    for (int row = 0; row < K; row++) {
+      if (memcmp(reference[row], vnni[row], sizeof(poly256)) != 0) {
+        fprintf(stderr,
+                "VNNI encryption accumulation fixture mismatch at %zu,%d\n",
+                fixture, row);
+        exit(EXIT_FAILURE);
+      }
+    }
+    if (memcmp(reference_v, vnni_v, sizeof(poly256)) != 0) {
+      fprintf(stderr,
+              "VNNI encryption v accumulation fixture mismatch at %zu\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+#endif
+
 static void validate_keygen_accum_asym_madd512_avx512(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     poly256 expected[K], got[K];
@@ -2819,6 +2891,9 @@ static void validate_core_stage_helpers(void) {
   validate_ntt3_mul_acc4_fused_final_madd_avx512();
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
 #if defined(__GNUC__) && !defined(__clang__)
+#if defined(__AVX512VNNI__)
+  validate_encrypt_accum_vnni512_avx512();
+#endif
   validate_keygen_accum_asym_madd512_avx512();
 #endif
   validate_ntt_inv_add4_shared_avx512();
@@ -10993,6 +11068,27 @@ static uint64_t bench_encrypt_rhat_acc4_fused_asym_madd512_avx512(
   bench_stage_sink ^= acc;
   return t1 - t0;
 }
+#if defined(__AVX512VNNI__)
+static uint64_t bench_encrypt_rhat_acc4_fused_vnni512_avx512(size_t iters) {
+  uint64_t acc = 0;
+  uint64_t t0 = now_ns();
+  for (size_t i = 0; i < iters; i++) {
+    size_t lane = i & (STAGE_BENCH_LANES - 1);
+    for (int j = 0; j < K; j++) {
+      memcpy(stage_tmp_vec1[lane][j], stage_r_raw[lane][j], sizeof(poly256));
+    }
+    ntt3_mul_acc4_fused_final_vnni512_avx512(
+        stage_ahat[lane], stage_that[lane], stage_tmp_vec1[lane],
+        stage_tmp_vec0[lane], stage_tmp_poly[lane]);
+    acc ^= checksum_poly(stage_tmp_vec0[lane][i % K]);
+    acc ^= checksum_poly(stage_tmp_poly[lane]);
+  }
+  uint64_t t1 = now_ns();
+  bench_stage_sink ^= acc;
+  return t1 - t0;
+}
+#endif
+
 #endif
 
 #endif
@@ -14479,6 +14575,10 @@ int main(int argc, char **argv) {
   print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512",
                bench_encrypt_rhat_acc4_fused_asym_madd512_avx512(iters),
                iters);
+#if defined(__AVX512VNNI__)
+  print_metric("mlkem_core_stage_encrypt_rhat_acc4_fused_vnni512_avx512",
+               bench_encrypt_rhat_acc4_fused_vnni512_avx512(iters), iters);
+#endif
 #endif
 #endif
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
