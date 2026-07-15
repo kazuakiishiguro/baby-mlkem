@@ -20,6 +20,26 @@ derived and is not claimed as an independently invented baby-mlkem NTT method.
 The retained Kyber/PQClean sources are public-domain/CC0 code; see
 `include/pqclean_avx2/ml-kem-768-avx2/LICENSE`.
 
+## Asymmetric incomplete-NTT multiplication scheduling
+
+The GCC-native AVX512 four-output encryption accumulator in `baby-mlkem.c`
+applies the asymmetric-multiplication principle described in Section 4.2 of:
+
+Becker, Hwang, Kannwischer, Yang, and Yang,
+"Neon NTT: Faster Dilithium, Kyber, and Saber,"
+https://eprint.iacr.org/2021/986.pdf
+
+The known idea is to form the twiddle-weighted terms of an incomplete-NTT
+operand once and reuse them across matrix-vector products. baby-mlkem adapts
+that arithmetic observation to its transient 32-coefficient ZMM `rhat` blocks
+and shares each factor across the three `u` rows and `v`.
+
+No source code from that implementation is copied or linked. The intrinsics
+schedule and fixed-range reduction are repository-local, and the weighted
+factors are generated in registers rather than stored in an expanded key,
+persistent cache, or precomputed table. The underlying asymmetric-multiplication
+idea is externally derived and is not claimed as independently invented here.
+
 ## Single-state AVX2 Keccak-f[1600]
 
 The local keccakf1600_avx2.h implementation adapts the seven-vector state
