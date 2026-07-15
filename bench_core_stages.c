@@ -2324,15 +2324,11 @@ static void validate_ntt3_mul_acc4_fused_final_madd512_avx512(void) {
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     poly256 scalar_b[K], madd_b[K], final_b[K];
     poly256 scalar[K], madd[K], scalarv, maddv;
-#if defined(__GNUC__) && !defined(__clang__)
     poly256 prod_b[K], prod[K], prodv;
-#endif
     for (int j = 0; j < K; j++) {
       memcpy(scalar_b[j], stage_r_raw[lane][j], sizeof(poly256));
       memcpy(madd_b[j], stage_r_raw[lane][j], sizeof(poly256));
-#if defined(__GNUC__) && !defined(__clang__)
       memcpy(prod_b[j], stage_r_raw[lane][j], sizeof(poly256));
-#endif
       memcpy(final_b[j], stage_r_raw[lane][j], sizeof(poly256));
       ntt_before_final_l1_avx512(final_b[j]);
       for (int offset = 0, i = 0; offset < N; offset += 32, i++) {
@@ -2350,7 +2346,10 @@ static void validate_ntt3_mul_acc4_fused_final_madd512_avx512(void) {
         stage_ahat[lane], stage_that[lane], scalar_b, scalar, scalarv);
     stage_ntt3_mul_acc4_fused_final_madd512_avx512(
         stage_ahat[lane], stage_that[lane], madd_b, madd, maddv);
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__clang__)
+    ntt3_mul_acc4_fused_final_madd512_clang_avx512(
+        stage_ahat[lane], stage_that[lane], prod_b, prod, prodv);
+#else
     ntt3_mul_acc4_fused_final_madd512_avx512(
         stage_ahat[lane], stage_that[lane], prod_b, prod, prodv);
 #endif
@@ -2360,26 +2359,22 @@ static void validate_ntt3_mul_acc4_fused_final_madd512_avx512(void) {
                 lane, row);
         exit(EXIT_FAILURE);
       }
-#if defined(__GNUC__) && !defined(__clang__)
       if (memcmp(scalar[row], prod[row], sizeof(poly256)) != 0) {
         fprintf(stderr,
                 "production fused final madd512 row mismatch at %zu,%d\n",
                 lane, row);
         exit(EXIT_FAILURE);
       }
-#endif
     }
     if (memcmp(scalarv, maddv, sizeof(poly256)) != 0) {
       fprintf(stderr, "fused final madd512 v mismatch at %zu\n", lane);
       exit(EXIT_FAILURE);
     }
-#if defined(__GNUC__) && !defined(__clang__)
     if (memcmp(scalarv, prodv, sizeof(poly256)) != 0) {
       fprintf(stderr, "production fused final madd512 v mismatch at %zu\n",
               lane);
       exit(EXIT_FAILURE);
     }
-#endif
   }
 }
 
