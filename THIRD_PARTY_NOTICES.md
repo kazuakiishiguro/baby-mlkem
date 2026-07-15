@@ -92,6 +92,28 @@ For XKCP/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s and XKCP/lib/low/KeccakP-
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+## Eight-state AVX512 Keccak-p[1600]
+
+The GCC-native x8 intrinsics helpers in `baby-mlkem.c` and the Clang-native
+fixed matrix schedule in `keccakf8_matrix_avx512.S` adapt the four-round logical
+lane mapping from Ronny Van Keer's XKCP KeccakP-1600-times8 AVX512
+implementation:
+
+https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600-times8/AVX512/KeccakP-1600-times8-AVX512.c
+
+The upstream file states that, to the extent possible under law, the
+implementer waived all copyright and related or neighboring rights to that
+source under CC0 1.0 Universal:
+
+http://creativecommons.org/publicdomain/zero/1.0/
+
+baby-mlkem does not vendor or link that XKCP source or an XKCP object. The local
+C helper specializes state construction, three-rate matrix output, and refill
+state handling. The checked-in Clang assembly schedule was generated from that
+repository-local C helper by GCC 13.3.0, then exposed through a Clang-only
+compiler/ISA boundary. The underlying four-round mapping is externally derived
+and is not claimed as an independently invented baby-mlkem Keccak schedule.
+
 ## Single-state AVX512VL Keccak and fixed-length SHA3-256
 
 The compact single-state permutation in the repository-local
