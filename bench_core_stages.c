@@ -2529,7 +2529,7 @@ static int16_t validate_keygen_ntt_input(size_t fixture, size_t index,
   return value > Q / 2 ? (int16_t)(value - Q) : value;
 }
 
-static void validate_ntt_final_l1_mont_block32_avx512(void) {
+static void validate_ntt_full_mont_lazy_blocks_avx512(void) {
   uint32_t state = 0x9e3779b9u;
 
   for (size_t fixture = 0; fixture < 16384; fixture++) {
@@ -2543,13 +2543,12 @@ static void validate_ntt_final_l1_mont_block32_avx512(void) {
     }
 
     ntt_before_final_l1_avx512(reference);
-    ntt_before_final_l1_mont_lazy_avx512(candidate);
+    ntt_full_mont_lazy_raw_avx512(candidate);
     for (int offset = 0, i = 0; offset < N; offset += 32, i++) {
       __m512i expected = stage_ntt_final_l1_block32_avx512(
           reference, offset, stage_zeta_ntt_tail_l1x2[i]);
-      __m512i got = ntt_final_l1_mont_block32_avx512(
-          candidate, offset, ZETA_NTT_TAIL_MONT_LO[2][i],
-          ZETA_NTT_TAIL_MONT_HI[2][i]);
+      __m512i got =
+          ntt_canonicalize_lazy_block32_avx512(candidate, offset);
       _mm512_storeu_si512((void *)(reference + offset), expected);
       _mm512_storeu_si512((void *)(candidate + offset), got);
     }
@@ -2558,7 +2557,7 @@ static void validate_ntt_final_l1_mont_block32_avx512(void) {
       for (int i = 0; i < N; i++) {
         if (reference[i] != candidate[i]) {
           fprintf(stderr,
-                  "AVX512 lazy final-l1 mismatch at %zu,%d: %d != %d\n",
+                  "AVX512 lazy full-NTT block mismatch at %zu,%d: %d != %d\n",
                   fixture, i, (int)candidate[i], (int)reference[i]);
           exit(EXIT_FAILURE);
         }
@@ -2846,7 +2845,7 @@ static void validate_keygen_accum_asym_madd512_avx512(void) {
         fused_b[row][j] = value;
       }
       ntt(reference_b[row], reference_b[row]);
-      ntt_before_final_l1_mont_lazy_avx512(fused_b[row]);
+      ntt_full_mont_lazy_raw_avx512(fused_b[row]);
     }
     for (int col = 0; col < K; col++) {
       ntt_mul_acc3_factored_gamma(
@@ -2901,7 +2900,7 @@ static void validate_keygen_accum_asym_madd512_avx512(void) {
         fused_b[row][j] = value;
       }
       ntt(reference_b[row], reference_b[row]);
-      ntt_before_final_l1_mont_lazy_avx512(fused_b[row]);
+      ntt_full_mont_lazy_raw_avx512(fused_b[row]);
       byte_encode(12, reference_b[row], reference_secret + row * 384);
     }
     for (int col = 0; col < K; col++) {
@@ -3690,7 +3689,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt3_mul_acc4_fused_final_madd_avx512();
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
 #if defined(__GNUC__)
-  validate_ntt_final_l1_mont_block32_avx512();
+  validate_ntt_full_mont_lazy_blocks_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__) || defined(__clang__)
   validate_ntt_acc4_dot_lazy_avx512();
@@ -11005,7 +11004,7 @@ bench_keygen_shat_ntt_accum_encode_fused_final_avx512(size_t iters) {
     for (int row = 0; row < K; row++) {
       memcpy(stage_tmp_vec0[lane][row], stage_s_raw[lane][row],
              sizeof(poly256));
-      ntt_before_final_l1_mont_lazy_avx512(stage_tmp_vec0[lane][row]);
+      ntt_full_mont_lazy_raw_avx512(stage_tmp_vec0[lane][row]);
     }
     ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
         stage_ahat[lane], stage_tmp_vec0[lane], stage_tmp_vec1[lane],
@@ -11028,7 +11027,7 @@ bench_keygen_shat_ntt_accum_add_encode_split_avx512(size_t iters) {
     for (int row = 0; row < K; row++) {
       memcpy(stage_tmp_vec0[lane][row], stage_s_raw[lane][row],
              sizeof(poly256));
-      ntt_before_final_l1_mont_lazy_avx512(stage_tmp_vec0[lane][row]);
+      ntt_full_mont_lazy_raw_avx512(stage_tmp_vec0[lane][row]);
     }
     ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
         stage_ahat[lane], stage_tmp_vec0[lane], stage_tmp_vec1[lane],
@@ -11057,7 +11056,7 @@ bench_keygen_shat_ntt_accum_add_encode_fused_avx512(size_t iters) {
     for (int row = 0; row < K; row++) {
       memcpy(stage_tmp_vec0[lane][row], stage_s_raw[lane][row],
              sizeof(poly256));
-      ntt_before_final_l1_mont_lazy_avx512(stage_tmp_vec0[lane][row]);
+      ntt_full_mont_lazy_raw_avx512(stage_tmp_vec0[lane][row]);
     }
     ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
         stage_ahat[lane], stage_tmp_vec0[lane], stage_ehat[lane],
