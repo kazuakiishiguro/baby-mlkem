@@ -62,15 +62,15 @@ the Keccak Team implementation literature, but production does not compile,
 link, or call the reference KeccakP times4 object. The separate vendor benchmark
 is reference-only.
 
-The GCC AVX512 x8 public-matrix sampler is repository-local as well. Its first
-SHAKE128 permutation partially evaluates Keccak round 0 from the six known
-nonzero state lanes, then rejoins the normal dense schedule for rounds 1..23
-and the next two permutations. The GCC path now keeps all 25 x8 state vectors
-live across those last two permutations and emits each intermediate rate block
-directly from that register layout. Clang retains the original generic schedule
-because its automatic inlining makes the specialized form slower. Neither
-compiler path adds a cache, external object, library dependency, or wire-format
-change.
+The GCC and Clang AVX512 x8 public-matrix sampler fast paths are compiled only
+from repository-local sources. Their first SHAKE128 permutation partially
+evaluates Keccak round 0 from the six known nonzero state lanes, then rejoins
+the normal dense schedule for rounds 1..23 and the next two permutations. GCC
+keeps all 25 x8 state vectors live through that schedule in its C helper. Clang
+uses checked assembly that combines the same sparse-state specialization with
+the existing stable dense schedule and integrated rate stores. The dense
+four-round mapping remains explicitly XKCP-derived; no path adds a cache,
+external object, runtime-library dependency, or wire-format change.
 
 The cold non-AVX512 AVX2 public-key preparation schedule is also
 repository-local. It co-schedules the nine serial `H(pk)` permutation

@@ -94,10 +94,10 @@ For XKCP/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s and XKCP/lib/low/KeccakP-
 
 ## Eight-state AVX512 Keccak-p[1600]
 
-The GCC-native x8 intrinsics helpers in `baby-mlkem.c` and the Clang-native
-fixed matrix schedule in `keccakf8_matrix_avx512.S` adapt the four-round logical
-lane mapping from Ronny Van Keer's XKCP KeccakP-1600-times8 AVX512
-implementation:
+The GCC-native x8 intrinsics helpers in `baby-mlkem.c` and the dense rounds in
+the Clang-native fixed matrix schedule in `keccakf8_matrix_avx512.S` adapt the
+four-round logical lane mapping from Ronny Van Keer's XKCP
+KeccakP-1600-times8 AVX512 implementation:
 
 https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600-times8/AVX512/KeccakP-1600-times8-AVX512.c
 
@@ -108,11 +108,21 @@ source under CC0 1.0 Universal:
 http://creativecommons.org/publicdomain/zero/1.0/
 
 baby-mlkem does not vendor or link that XKCP source or an XKCP object. The local
-C helper specializes state construction, three-rate matrix output, and refill
-state handling. The checked-in Clang assembly schedule was generated from that
-repository-local C helper by GCC 13.3.0, then exposed through a Clang-only
-compiler/ISA boundary. The underlying four-round mapping is externally derived
-and is not claimed as an independently invented baby-mlkem Keccak schedule.
+C helper specializes sparse state construction, three-rate matrix output, and
+refill-state handling. The checked-in Clang assembly combines a repository-local
+partial evaluation of round 0 for the six known nonzero matrix-input lanes with
+the existing dense rounds 1..23, next two permutations, and integrated rate
+stores generated from that C helper by GCC 13.3.0. The sparse round maps its
+five output planes into the existing dense round-1 register layout.
+
+The local sparse plane schedule follows the order-four mapping principles in
+Algorithm 4 of the Keccak Team's *Keccak implementation overview*:
+
+https://keccak.team/files/Keccak-implementation-3.2.pdf
+
+The underlying dense four-round mapping is externally derived and is not
+claimed as an independently invented baby-mlkem Keccak schedule. The local
+partial evaluation adds no external source object or runtime dependency.
 
 ## Single-state AVX512VL Keccak and fixed-length SHA3-256
 
