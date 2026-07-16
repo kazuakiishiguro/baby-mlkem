@@ -259,6 +259,42 @@ assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
 
+### Latest Core Optimization Diagnostic (2026-07-16, AVX2 complete shuffle-mask LUT)
+
+An AVX2 rejection-parser representation change was tested and rejected. The
+candidate expanded the runtime-generated compaction table from 256 eight-byte
+index rows (2 KiB) to 256 complete 16-byte `vpshufb` mask rows (4 KiB). This
+removed two `vpaddb` and two `vpunpcklbw` instructions from every 48-byte wide
+parse step, plus the corresponding add/unpack pair from the eight-candidate
+tail. SHAKE output, acceptance comparisons, output order, and refill handling
+were unchanged.
+
+GCC and Clang native and explicit AVX2-only KAT builds passed. The performance
+screen used CPU 0, two warmups, seven alternating pairs, and 100,000 stage
+iterations against `9030c22`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 9030c22
+```
+
+| GCC native stage metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| 504-byte x4 parser | `0.9454x` | `0.9469x` | 0/7 | `0.9470x` / `0.9454x` |
+| single-output 504-byte parser | `0.9228x` | `0.9228x` | 0/7 | `0.9225x` / `0.9256x` |
+| complete x8 sampler | `0.9959x` | `0.9885x` | 2/7 | `0.9869x` / `1.0004x` |
+| complete matrix | `1.0028x` | `0.9913x` | 3/7 | `0.9909x` / `1.0051x` |
+| full K-PKE keygen stage | `0.9908x` | `0.9916x` | 0/7 | `0.9950x` / `0.9908x` |
+| uncached K-PKE encryption | `0.9909x` | `0.9898x` | 0/7 | `0.9933x` / `0.9898x` |
+
+The direct parser regression is too large to attribute the integrated loss
+only to surrounding code layout. On this Zen 4 target, doubling each
+data-dependent table row costs more than the removed vector index-construction
+instructions. Keep the compact 2 KiB index table. No candidate code, enlarged
+table, cache, generated object, API change, or wire-format change remains in
+the tree.
+
 ### Latest Core Optimization A/B (2026-07-16, GCC public-key copy/H(pk) fusion)
 
 Top-level ML-KEM keygen has one mandatory producer/consumer boundary that the
