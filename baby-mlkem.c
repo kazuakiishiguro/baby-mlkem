@@ -4277,7 +4277,11 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_madd_value_avx512(
 /* Keep the proven K=3 dot products exact while delaying canonicalization. */
 static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_dot_lazy_i32x16_avx512(
     __m512i accum, __m512i x, __m512i y) {
-#if defined(__AVX512VNNI__)
+#if defined(__clang__) && defined(__AVX512VNNI__)
+  /* Clang can split the intrinsic here; retain the single VNNI instruction. */
+  __asm__("vpdpwssd %2, %1, %0" : "+v"(accum) : "v"(x), "v"(y));
+  return accum;
+#elif defined(__AVX512VNNI__)
   return _mm512_dpwssd_epi32(accum, x, y);
 #else
   return _mm512_add_epi32(accum, _mm512_madd_epi16(x, y));
