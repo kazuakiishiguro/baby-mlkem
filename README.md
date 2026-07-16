@@ -191,6 +191,7 @@ Near-term target selection:
 | Native AVX512VL fixed H(pk) four-round cyclic mapping | Accepted only for fixed H(pk); compact generic core retained | Keccak Team Algorithm 4 cycles logical lanes through `N(x,y)=(x,x+2y) mod 5` and returns to canonical order every four rounds, removing the 25-register reorder after every round. Dynamic instructions per permutation fall from `3459` to `2877`. GCC/Clang direct H(pk) paired medians improve `1.0340x`/`1.0358x`; 100k keygen improves `1.0093x`/`1.0087x`. The broader generic switch was rejected by the decaps gate. Generated assembly is checked in, links no external object or library, and retains explicit Keccak Team and Intel/liboqs provenance. |
 | Native AVX512VL fixed H(pk) Chi-plane interleave | Accepted scheduling-only follow-up | The cyclic fixed hash now overlaps independent Chi output-plane chains while preserving each plane's proven overwrite order. The four-round body remains exactly 476 instructions and the assembly object remains 5309 text bytes, but Zen 4 `llvm-mca` single-block completion falls from 162 to 157 cycles. GCC/Clang direct H(pk) paired medians improve `1.0066x`/`1.0063x`; same-C-object 500k deterministic keygen improves `1.0017x`/`1.0023x`. No cache, table, external object, library, or wire-format dependency is added. |
 | Clang AVX512VL fixed H(pk) final-output slice | Accepted for Clang native fixed H(pk); GCC and narrower ISAs unchanged | The ninth permutation keeps rounds 0..22 complete, then evaluates only the final-round `y=0`, `x=0..3` lanes returned by SHA3-256. A same-binary 11-pair direct test improves by `1.0036x` paired median with 11/11 wins; the 14-pair complete-KEM gate improves keygen and roundtrip by `1.0037x` and `1.0033x` paired median. Executable assembly grows 261 bytes and linked benchmark text grows 262 bytes. No cache, external object, API, or wire-format dependency is added. |
+| GCC AVX512VL fixed H(pk) final-output slice | Closed; Clang-only selector retained | Re-enabling the validated final-round y=0 slice for GCC improved same-process direct H(pk) and copy+hash medians by `1.0031x` and `1.0032x`, but the 15-pair 100k KEM gate did not reproduce it: keygen/keygen-core geometric means were both `0.9989x`, with order medians crossing below 1.0. The GCC path therefore retains the complete final round; no candidate code, cache, external object, API, or wire-format change remains. |
 | Native AVX512VL register-per-lane generic `keccakf()` | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The generic canonical-state wrapper now loads one Keccak lane into each of XMM0..XMM24 and uses the compact register-per-lane round core originally introduced for fixed H(pk). GCC/Clang direct permutation paired medians improve `1.4104x`/`1.0582x`. GCC `encaps_core`/`roundtrip_core` improve `1.1016x`/`1.0392x` with 14/14 wins; Clang improves `1.0154x`/`1.0082x`. The wrapper adds only 320 text bytes, links no external object or library, and reuses the explicitly disclosed Intel/liboqs-derived round schedule rather than claiming a new baby-mlkem Keccak design. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
@@ -413,6 +414,59 @@ materialization, gather reconstruction, and wider store transposes. The
 existing split-YMM producer plus register-result wide parser remains production.
 No rejected code remains, and no experiment added an external object, runtime
 library, persistent cache, API change, or wire-format change.
+
+### Latest Core Optimization Diagnostic (2026-07-17, GCC fixed H(pk) final-output slice)
+
+The accepted Clang fixed-hash path computes only the final SHA3-256 output
+plane in round 23 of the ninth permutation. GCC remained on the complete round
+because its original ungated experiment failed the complete-KEM gate. After the
+wide rejection decode, fixed `H(pk)` again led the GCC profile at `31.06%`,
+so the same mathematically validated slice was retested against current baseline
+`63e57c6` rather than assuming that the earlier compiler decision was
+permanent.
+
+The candidate enabled the existing final-round `y=0`, `x=0..3` backward
+slice for both GCC fixed entries. This included the plain 1184-byte hash and
+GCC keygen's copy-plus-hash entry; all first 23 rounds and all preceding
+permutations remained complete. The generated assembly and
+`scripts/gen_keccak_inplace4.pl` used one common selector. Outputs from both
+entries matched the complete generic sponge for 4,096 deterministic public
+keys, and native GCC and Clang `make test` passed.
+
+A same-process harness renamed and linked baseline and candidate objects,
+warmed both functions, and alternated call order for 21 pairs of 500,000 calls:
+
+| GCC focused boundary | Paired geometric mean | Paired median | Wins | Baseline-first | Candidate-first |
+|---|---:|---:|---:|---:|---:|
+| fixed `H(pk)` | `1.0017x` | `1.0031x` | 18/21 | `1.0030x` | `1.0033x` |
+| copy plus fixed `H(pk)` | `1.0035x` | `1.0032x` | 20/21 | `1.0032x` | `1.0032x` |
+
+The focused saving was real, but only about three tenths of one percent. A
+seven-pair, 50,000-iteration stage gate put complete K-PKE keygen at
+`1.0013x` geometric mean and `1.0017x` median with 4/7 wins; its two order
+medians were `1.0006x` and `1.0021x`. That weak propagation required a
+larger product gate.
+
+The final gate used three warmups followed by 15 alternating pairs at 100,000
+KEM iterations:
+
+| GCC native row | Paired geometric mean | Paired median | Wins | Baseline-first | Candidate-first |
+|---|---:|---:|---:|---:|---:|
+| `keygen` | `0.9989x` | `1.0009x` | 8/15 | `1.0030x` | `0.9993x` |
+| `keygen_core` | `0.9989x` | `1.0016x` | 8/15 | `1.0016x` | `0.9990x` |
+| `roundtrip` | `1.0016x` | `1.0000x` | 8/15 | `0.9997x` | `1.0048x` |
+| `roundtrip_core` | `0.9999x` | `0.9984x` | 7/15 | `0.9996x` | `0.9975x` |
+
+The expected keygen rows did not have a positive geometric mean, and their
+order medians disagreed. Unaffected controls also exposed layout/noise:
+`decaps` was `0.9977x` geometric mean with 2/15 wins, while `encaps` was
+`0.9928x` with 3/15 wins. The candidate therefore fails the integrated gate
+despite passing correctness and focused timing.
+
+Decision: keep the final-output slice Clang-only and retain GCC's complete final
+round. The rejected source patch is not present in the repository. The
+experiment changed no Keccak semantics, persistent cache, table, external
+object or runtime library, API, or wire format.
 
 ### Latest Core Optimization A/B (2026-07-17, GCC AVX512VBMI/VBMI2 wide rejection decode)
 
