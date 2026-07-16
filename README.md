@@ -67,12 +67,14 @@ is reference-only.
 The GCC and Clang AVX512 x8 public-matrix sampler fast paths are compiled only
 from repository-local sources. Their first SHAKE128 permutation partially
 evaluates Keccak round 0 from the six known nonzero state lanes, then rejoins
-the normal dense schedule for rounds 1..23 and the next two permutations. GCC
-keeps all 25 x8 state vectors live through that schedule in its C helper. Clang
-uses checked assembly that combines the same sparse-state specialization with
-the existing stable dense schedule and integrated rate stores. The dense
-four-round mapping remains explicitly XKCP-derived; no path adds a cache,
-external object, runtime-library dependency, or wire-format change.
+the normal dense schedule for rounds 1..23 and the next two permutations. The
+default native Makefile build routes both compilers through checked assembly
+that combines the sparse-state specialization with the stable dense schedule,
+integrated rate stores, and a capacity-only refill handoff. The source retains
+the GCC intrinsics helper as a fallback for direct builds that do not link the
+assembly object. The dense four-round mapping remains explicitly XKCP-derived;
+no path adds a cache, external object, runtime-library dependency, or
+wire-format change.
 
 The cold non-AVX512 AVX2 public-key preparation schedule is also
 repository-local. It co-schedules the nine serial `H(pk)` permutation
@@ -175,6 +177,7 @@ Near-term target selection:
 | GCC AVX512 x8 full initial-squeeze fusion | Accepted for the matrix common path; Clang and narrower ISA unchanged | A matrix-only helper now constructs the sparse SHAKE128 state in ZMM registers, keeps all 25 vectors live through all three initial permutations, emits each 168-byte rate, and writes the final state once for rare rejection refills. This removes the remaining 1,600-byte state store/reload boundary between the first and second rates. Complete x8 sampling, matrix generation, and keygen-full improve `1.0160x`/`1.0128x`/`1.0050x` paired median; 100k KEM keygen/keygen-core improve `1.0044x`/`1.0049x`, and `benchc` text shrinks 800 bytes. The helper reuses the disclosed XKCP-derived round mapping and adds no external object, cache, or wire-format dependency. |
 | Native Clang AVX512 fixed x8 matrix squeeze schedule | Accepted for Clang x86-64 ELF with AVX2+AVX512F/DQ/VL; GCC and narrower ISA unchanged | A checked-in repository-local `.S` boundary gives Clang the established GCC three-permutation matrix schedule without a GCC build-time or runtime dependency. Complete x8 sampling, matrix generation, keygen-full, and uncached public preparation improve `1.0431x`/`1.0245x`/`1.0179x`/`1.0140x` paired geometric mean; 100k KEM keygen improves `1.0056x` geometric mean and `1.0094x` median. The four-round mapping remains XKCP-derived and the instruction schedule was generated from the local C helper by GCC 13.3, so neither is claimed as a new baby-mlkem design. Linked text grows 346 bytes; no external object, runtime library, persistent cache, table, or wire-format dependency is added. |
 | Clang AVX512 x8 sparse round-0 peel | Accepted for the checked Clang matrix helper; GCC and narrower ISA unchanged | The known-zero initial state is partial-evaluated only through round 0, then its five output planes are mapped into the existing round-1 register layout. The direct fused helper improves `1.0053x` paired median (`1.0064x` geometric mean, 18/21 wins); same-binary complete sampling, matrix, and keygen boundaries improve `1.0040x`/`1.0018x`/`1.0014x` paired median with 18/21, 19/21, and 15/21 wins. The helper grows from 4,887 to 5,623 text bytes; all later rounds and rate stores remain unchanged. No cache, external object, runtime library, table, API, or wire-format change is used. |
+| GCC routing to checked x8 matrix assembly | Accepted for GCC native; Clang and narrower ISA byte-identical | GCC now uses the same repository-local fixed schedule and capacity-only handoff already validated for Clang instead of regenerating the older C helper. Complete x8 sampling, matrix generation, and public preparation improve `1.0538x`/`1.0326x`/`1.0193x` paired geometric mean, all 7/7. The 100k KEM gate improves keygen/keygen-core by `1.0113x`/`1.0125x` and cache-disabled encapsulation by `1.0096x`, each 13/15. Linked text shrinks 4,443 bytes. No assembly instruction, cache, external object, API, table, or wire-format change is added. |
 | Shared fresh-state x8 Keccak entry | Accepted for GCC AVX512; Clang and narrower ISA byte-identical | One noinline helper now constructs either the SHAKE128 matrix state or SHAKE256 x7 PRF/CBD state directly in ZMM registers and runs the existing four-round mapping. Matrix generation writes all 25 state vectors; PRF/CBD writes only the 16 vectors its 128-byte rate decoder consumes. Production x7 PRF/CBD, full x8 sampling, and matrix paired medians improve `1.0414x`, `1.0103x`, and `1.0079x`; 14-pair keygen/encaps/decaps/roundtrip-core medians improve `1.0022x`/`1.0085x`/`1.0053x`/`1.0090x`. GCC `benchc` text grows 1,552 bytes after replacing the prior separate matrix schedule; no external object, cache, or wire-format dependency is added. |
 | GCC AVX512 x8 post-reload schedule preservation | Accepted for GCC native; Clang and narrower ISA byte-identical | GCC's second scheduling pass disturbed the dependency order of the two register-heavy x8 helpers. Function-scoped `no-schedule-insns2` improves x7 PRF/CBD and x8 permutation-plus-store paired medians by `1.0124x` and `1.0077x`; 14-pair `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0064x`/`1.0044x`/`1.0054x`. The XKCP-derived four-round algorithm, cache behavior, state layout, wire format, and linked objects are unchanged. |
 | Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
@@ -294,6 +297,87 @@ data-dependent table row costs more than the removed vector index-construction
 instructions. Keep the compact 2 KiB index table. No candidate code, enlarged
 table, cache, generated object, API change, or wire-format change remains in
 the tree.
+
+### Latest Core Optimization A/B (2026-07-16, GCC checked x8 matrix assembly routing)
+
+The default GCC native matrix path still regenerated
+`keccakf8_sparse_matrix_3_store_blocks()` from the large intrinsics helper. The
+repository-local assembly originally introduced for Clang had since gained two
+fixed-boundary improvements: its first permutation explicitly partial-evaluates
+the six-nonzero-lane state, and its common return writes only the four capacity
+vectors needed for a rare refill because rate words 0..20 already exist in the
+third emitted stream block.
+
+Commit `4277a38` enables that same checked assembly for GCC x86-64 ELF builds
+with AVX2 and AVX512F/DQ/VL. No assembly instruction, C caller, stream layout,
+parser, or refill algorithm changes. GCC simply selects the already validated
+fixed implementation instead of compiling the older C boundary.
+
+The stage screen used CPU 0, two warmups, seven alternating pairs, and 50,000
+iterations against `76a3ceb`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 76a3ceb
+```
+
+| GCC native stage metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| complete x8 sampler | `1.0538x` | `1.0429x` | 7/7 | `1.0609x` / `1.0429x` |
+| complete matrix | `1.0326x` | `1.0274x` | 7/7 | `1.0356x` / `1.0274x` |
+| public preparation without cache | `1.0193x` | `1.0199x` | 7/7 | `1.0210x` / `1.0199x` |
+| uncached K-PKE encryption | `1.0333x` | `1.0209x` | 6/7 | `1.0419x` / `1.0206x` |
+| full K-PKE keygen stage | `1.0139x` | `1.0182x` | 5/7 | `1.0192x` / `0.9849x` |
+
+The short keygen stage had an execution-order mismatch, so it was not used as
+the product acceptance gate. The final KEM run used three warmups, fifteen
+alternating pairs, and 100,000 iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 76a3ceb
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | `1.0113x` | `1.0068x` | 13/15 | `1.0056x` / `1.0082x` |
+| `mlkem_keygen_core` | `1.0125x` | `1.0064x` | 13/15 | `1.0064x` / `1.0107x` |
+| `mlkem_encaps_core` | `1.0096x` | `1.0039x` | 13/15 | `1.0030x` / `1.0039x` |
+| `mlkem_decaps_core` | `1.0005x` | `1.0023x` | 10/15 | `1.0014x` / `1.0026x` |
+| `mlkem_roundtrip` | `1.0061x` | `1.0023x` | 13/15 | `1.0023x` / `1.0023x` |
+| `mlkem_roundtrip_core` | `1.0085x` | `1.0060x` | 13/15 | `1.0061x` / `1.0055x` |
+| cached `mlkem_encaps` control | `0.9939x` | `0.9988x` | 5/15 | `0.9983x` / `0.9995x` |
+| cached `mlkem_decaps` control | `0.9979x` | `1.0006x` | 8/15 | `1.0009x` / `1.0000x` |
+
+Cached encapsulation does not execute matrix generation. A separate focused
+500,000-iteration, fifteen-pair cached-encapsulation check measured `0.9991x`
+geometric mean, `1.0004x` median, and 8/15 wins; base-first and
+candidate-first medians were `1.0002x` and `1.0004x`. The cached control is
+therefore treated as neutral, not as a speedup or a regression. No padding,
+alignment, or cache-policy change is used to alter it.
+
+For GCC native `benchc`, linked text falls from 85,074 to 80,631 bytes
+(`-4,443`), and ordinary `.text` falls from `0x130bd` to `0x11e5a` bytes
+(`-4,707`). The fixed assembly symbol is `0x155a` bytes versus `0x12fd` for the
+old C helper, but selecting it lets LTO remove the unused helper and associated
+code. Data and BSS remain 708 and 39,168 bytes.
+
+The existing 64-seed assembly differential test now runs under GCC as well as
+Clang. It compares all 4,032 emitted stream bytes and four returned capacity
+vectors with three independent generic permutations, compares all nine matrix
+polynomials with scalar sampling, and requires a refill fixture. GCC and Clang
+native, explicit AVX2-only, and scalar KATs pass. GCC UBSan and Clang
+ASan+UBSan pass. Clang native and both compilers' AVX2-only and scalar `testc`
+and `benchc` remain byte-identical to `76a3ceb`.
+
+The build links the repository-local assembly object and adds no external
+runtime object or library. Its dense four-round mapping remains explicitly
+XKCP-derived, and its checked
+instruction order was originally generated by GCC 13.3 from the local helper.
+This change claims only compiler routing, reuse of the existing capacity ABI,
+and the measured integration, not a new Keccak schedule.
 
 ### Latest Core Optimization A/B (2026-07-16, GCC public-key copy/H(pk) fusion)
 
