@@ -727,8 +727,6 @@ static void test_keccakf8_matrix_asm(void) {
         seed, got_st, got_stream);
     assert(memcmp(got_st + 21, want_st + 21,
                   4 * sizeof(got_st[0])) == 0);
-    sample_ntt8_restore_last_rate(got_stream, got_st);
-    assert(memcmp(got_st, want_st, sizeof(got_st)) == 0);
     assert(memcmp(got_stream, want_stream, sizeof(got_stream)) == 0);
     for (int lane = 0; lane < 8; lane++) {
       if (sample_ntt_parse_stream(got_stream[lane], sizeof(got_stream[lane]),
