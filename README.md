@@ -205,6 +205,7 @@ Near-term target selection:
 | GCC AVX512 inverse scale/noise single reduction | Accepted for GCC AVX512 compact ETA2 encryption; Clang and narrower ISA unchanged | Final inverse Montgomery products now receive signed-int8 ETA2 noise and the optional message before one canonicalization, replacing scale canonicalization followed by a second add/correction pass. The exact pre-canonical range is `[-1896,3587]`. Direct inverse-final improves `1.0683x` geometric mean, cached/uncached K-PKE `1.0183x`/`1.0067x`, and 100k encaps/decaps `1.0165x`/`1.0109x`; all target stage pairs win. GCC `benchc` text shrinks 224 bytes. No cache, external object, table, or wire-format change is added. |
 | Native AVX512 periodic inverse sum reductions | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | The shared four-output inverse NTT now leaves sum branches lazy for levels 0-1 and 3-4, applying signed Barrett only at levels 2 and 5. Exact conservative propagation keeps every sum/difference and the final add inside int16. GCC/Clang compact-direct geometric means improve `1.1318x`/`1.1531x`, cached K-PKE `1.0429x`/`1.0313x`, and 100k encaps `1.0262x`/`1.0287x`. GCC `benchc` text shrinks 160 bytes. The fixed arithmetic schedule adds no cache, external object, table, or wire-format change. |
 | GCC AVX512VNNI lazy accumulation/inverse boundary | Accepted for GCC AVX512VNNI; Clang/non-VNNI/narrower ISA unchanged | The four-output K=3 kernel now stops its reciprocal reduction at a congruent `[-440,4570]` result and carries that representation into the shared inverse NTT, whose two Barrett passes move from levels 2/5 to the range-proved levels 1/4. This removes the accumulator's canonical correction without adding an inverse reduction. Direct VNNI accumulation, shared inverse, and cached K-PKE paired geometric means improve `1.0583x`/`1.0151x`/`1.0487x`; 100k encaps/decaps/roundtrip improve `1.0394x`/`1.0256x`/`1.0110x`. GCC `benchc` text shrinks 160 bytes. No cache, external object, table, or wire-format change is added. |
+| Clang AVX512 lazy accumulation/inverse boundary | Accepted for Clang AVX512 with or without VNNI; GCC native text byte-identical; narrower ISAs unchanged | Clang now keeps each four-output K=3 dot product in the congruent `[-440,4570]` interval and carries it into the shared inverse NTT, moving its two Barrett passes from levels 2/5 to the range-proved levels 1/4. Clang native 100k encaps/decaps/roundtrip paired geometric means improve `1.0296x`/`1.0210x`/`1.0102x`; an explicit `-mno-avx512vnni` gate improves them `1.0394x`/`1.0353x`/`1.0113x`. LLVM emits `VPMADDWD`/`VPADDD`, not `VPDPWSSD`, so the gain is delayed canonicalization rather than a VNNI claim. Clang `benchc` text shrinks 256 bytes, while GCC native text is byte-identical. No cache, external object, table, API, or wire-format change is added. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
@@ -4317,8 +4318,9 @@ stage metrics.
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_scalar_avx512` | AVX512-only baseline: pre-final-l1 `rhat` NTT plus the production scalar fused-final four-output accumulation, including fixture copies |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512` | AVX512-only rejected diagnostic: the same fused boundary with 16-coefficient YMM `vpmaddwd` four-output accumulation |
 | `mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512` | AVX512-only baseline diagnostic: the preceding three-stream 32-coefficient ZMM `vpmaddwd` four-output accumulation |
-| `mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512` | GCC AVX512 production diagnostic: transient gamma-weighted `rhat` factors shared across all four outputs |
-| `mlkem_core_stage_encrypt_rhat_acc4_fused_vnni512_avx512` | GCC AVX512VNNI production diagnostic: the same asymmetric four-output boundary with six signed-word `VPDPWSSD` accumulations per output |
+| `mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512` | native AVX512 canonical diagnostic: transient gamma-weighted `rhat` factors shared across all four outputs |
+| `mlkem_core_stage_encrypt_rhat_acc4_fused_vnni512_avx512` | historical GCC AVX512VNNI metric name, superseded by the compiler-neutral lazy metric below |
+| `mlkem_core_stage_encrypt_rhat_acc4_fused_lazy512_avx512` | current GCC AVX512VNNI and Clang AVX512 production diagnostic: congruent `[-440,4570]` outputs carried into the shared inverse NTT |
 | `mlkem_core_stage_encrypt_inv_add4_split_raw_avx512` | native AVX512 baseline: the preceding three-`u` inverse-add path plus separate `v` inverse-add, from the same four precomputed accumulations with lightweight sinks |
 | `mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512` | native AVX512 production diagnostic: the same four inverse-adds under one shared twiddle and outer-loop schedule |
 | `mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512` | native AVX512 diagnostic: the shared four-output inverse final widens signed-int8 ETA2 noise and folds the message mask into the same modular normalization |
@@ -6960,11 +6962,13 @@ kernel to Clang behind
 `ntt3_mul_acc4_fused_final_madd512_clang_avx512()`, a noinline boundary. The
 generated Clang stage helper is `0x09b2` bytes.
 
-This route deliberately does not enable GCC's VNNI lazy-output contract or its
-signed-int8 compact-noise path for Clang. Clang keeps its canonical accumulation
-output, int16 ETA2 working buffers, shared inverse NTT, and ciphertext encoder.
-GCC retains its existing VNNI/non-VNNI selection, and non-AVX512 builds
-preprocess the new boundary out.
+At that stage, this route deliberately did not enable GCC's lazy-output contract
+or its signed-int8 compact-noise path for Clang. Clang kept canonical
+accumulation output, int16 ETA2 working buffers, the shared inverse NTT, and the
+ciphertext encoder. The later Clang lazy accumulation/inverse section
+supersedes only the canonical accumulation boundary; compact int8 noise remains
+GCC-only. GCC retains its existing VNNI/non-VNNI selection, and non-AVX512
+builds preprocess the boundary out.
 
 The stage gate used CPU 0, two warmups, nine alternating pairs, and 30,000
 iterations against `42cff0a`:
@@ -8182,6 +8186,155 @@ repository-local producer/consumer lifetime and encoding fusion around that
 arithmetic. It links no secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or
 other external runtime object, adds no persistent cache or table, and changes
 no API or wire format.
+
+### Local Core Optimization A/B (2026-07-16, Clang AVX512 lazy accumulation/inverse boundary)
+
+A fresh Clang 18.1.3 native profile after the fixed-H output slice used 500,000
+keygen iterations on an AMD Ryzen Threadripper 7980X:
+
+| Profile symbol | Self time |
+|---|---:|
+| fixed 1184-byte `H(pk)` | 25.51% |
+| fixed x8 matrix Keccak | 17.33% |
+| `bench_keygen` | 10.71% |
+| `kpke_encrypt_prepared_public` | 8.90% |
+| canonical four-output ZMM accumulation | 7.92% |
+| rejection parser | 6.83% |
+| shared four-output inverse NTT | 6.16% |
+
+The x8 Keccak row was investigated first. Replacing its two 256-bit rate
+transposes with one 512-bit 8x4 qword transpose removed 72 function bytes and
+about 84 dynamic instructions, but the 21-pair direct gate lost 20/21 and had a
+paired median near `0.9964x`. Folding Iota's broadcast plus XOR into an EVEX
+memory-broadcast XOR also shrank code, but a 31-pair, one-million-iteration gate
+ended near `0.997x`. Both were reverted. On this Zen 4 target, cross-lane
+permutation or load-use latency outweighed the static instruction reduction.
+
+The accepted target is classical lazy modular reduction at a producer/consumer
+boundary. Baseline Clang converted every four-output K=3 dot product to
+canonical `[0,Q)` before signed-16-bit storage, even though the next operation
+is a modular inverse NTT. GCC AVX512VNNI already carried the congruent
+`[-440,4570]` output from the same reciprocal reducer into that inverse.
+Core commit `b28e845` extends that proved contract to the Clang AVX512 path:
+
+```text
+K=3 dot products in signed int32
+  -> reciprocal reduction, stop at congruent [-440,4570]
+  -> signed int16 materialization
+  -> shared inverse NTT
+       -> Barrett sum reductions at levels 1 and 4
+  -> canonical final output
+```
+
+`ntt_acc4_dot_lazy_i32x16_avx512()` uses non-saturating `VPDPWSSD` when the
+compiler exposes AVX512VNNI and otherwise spells the same exact operation as
+`VPMADDWD` plus `VPADDD`. Clang native lowers even the VNNI intrinsic to the
+latter sequence on this host. The implementation therefore selects the lazy
+contract for every Clang AVX512 build, not only for VNNI builds. This is an
+arithmetic-range and normalization-placement improvement, not a claim that
+Clang became faster by executing VNNI instructions.
+
+A 10,000-iteration same-binary diagnostic measured the complete final-L1 plus
+four-output accumulation boundary as follows. This is supporting evidence; the
+alternating production gates below are the acceptance criteria.
+
+| Clang native path | ns/op | Relative |
+|---|---:|---:|
+| canonical accumulation | 761.62 | 1.0000x |
+| lazy accumulation | 718.55 | 1.0599x |
+
+The production-shaped stage screen used CPU 0, two warmups, seven alternating
+pairs, and 30,000 iterations against `f3fc748`:
+
+| Stage metric | Paired geometric mean | Paired median | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| shared inverse-add4 | 1.0139x | 1.0161x | 7/7 | 1.0080x | 1.0177x |
+| cached K-PKE encryption | 1.0532x | 1.0522x | 7/7 | 1.0546x | 1.0521x |
+| uncached K-PKE encryption | 1.0084x | 1.0194x | 5/7 | 1.0211x | 1.0158x |
+| keygen control | 1.0026x | 1.0025x | 4/7 | - | - |
+
+The final native gate used three warmups, fourteen alternating pairs, and
+100,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=clang ARCH_CFLAGS='-march=native' \
+  ./scripts/bench_core_ab.sh f3fc748
+```
+
+| Clang native KEM metric | Paired geometric mean | Paired median | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_encaps` | 1.0296x | 1.0331x | 13/14 | 1.0327x | 1.0336x |
+| `mlkem_encaps_core` | 1.0110x | 1.0085x | 12/14 | 1.0079x | 1.0106x |
+| `mlkem_decaps` | 1.0210x | 1.0190x | 14/14 | 1.0152x | 1.0301x |
+| `mlkem_decaps_core` | 1.0142x | 1.0073x | 10/14 | 1.0068x | 1.0158x |
+| `mlkem_roundtrip` | 1.0102x | 1.0126x | 12/14 | 1.0129x | 1.0098x |
+| `mlkem_roundtrip_core` | 1.0084x | 1.0093x | 11/14 | 1.0056x | 1.0126x |
+| `mlkem_keygen` control | 0.9946x | 0.9981x | 4/14 | 0.9977x | 0.9995x |
+| `mlkem_keygen_core` control | 0.9948x | 0.9987x | 4/14 | 0.9989x | 0.9978x |
+
+Keygen does not execute the changed encryption accumulator or shared inverse.
+Its small negative control result is not hidden or credited; it is a residual
+layout/noise risk. Complete roundtrip still improves in both execution orders.
+
+A separate gate explicitly disabled VNNI while retaining AVX512F/BW/DQ/VL:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=clang \
+  ARCH_CFLAGS='-march=x86-64-v4 -mno-avx512vnni' \
+  ./scripts/bench_core_ab.sh f3fc748
+```
+
+| Clang AVX512 without VNNI | Paired geometric mean | Paired median | Wins | Base-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_encaps` | 1.0394x | 1.0402x | 9/9 | 1.0402x | 1.0405x |
+| `mlkem_decaps` | 1.0353x | 1.0370x | 9/9 | 1.0370x | 1.0374x |
+| `mlkem_roundtrip` | 1.0113x | 1.0138x | 8/9 | 1.0167x | 1.0130x |
+| `mlkem_keygen` control | 0.9908x | 0.9995x | 4/9 | 0.9888x | 1.0012x |
+
+The target rows remain positive in both execution orders without VNNI. The
+keygen control's split order result is another reason not to infer unrelated
+whole-program gains from its geometric mean.
+
+Clang native code generation confirms that work was removed rather than moved:
+
+| Code property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| accumulation helper instructions | 379 | 355 | -24 |
+| helper `VPMADDWD` | 38 | 30 | -8 |
+| helper `VPADDD` | 49 | 41 | -8 |
+| helper `VPCMPGTD` | 11 | 3 | -8 |
+| helper `VPDPWSSD` | 0 | 0 | 0 |
+| accumulation helper bytes | `0x9e2` | `0x952` | -144 |
+| shared inverse helper bytes | `0x1472` | `0x1402` | -112 |
+| linked `benchc` text bytes | 149,273 | 149,017 | -256 |
+
+GCC native `benchc` remains 85,768 text bytes, and its extracted `.text`
+SHA-256 is byte-identical before and after:
+`96241f95b6435ed59a77db13f1961f690f22d728384c4fd55b9ee40a5bf2cdb9`.
+The existing GCC VNNI and non-VNNI routing is therefore unchanged in generated
+code despite the internal helper's compiler-neutral lazy name.
+
+Test commit `1a90b85` enables the existing exact contract for Clang. It checks
+all 99,680,257 integers in the supported accumulator interval against scalar
+modulo and fixes the exact lazy extrema `[-440,4570]`; enumerates actual inverse
+twiddles and the levels-1/4 reduction schedule; compares canonical and lazy
+accumulation modulo `Q`; and compares complete inverse output exactly for real
+stage data plus 256 deterministic edge/random fixtures.
+
+Clang native and explicit no-VNNI KAT and complete stage validation pass. GCC
+native KAT and complete stage validation pass. Clang/GCC AVX2-only KAT and
+complete stage validation pass, both scalar KATs pass, and Clang native UBSan
+passes KAT plus complete stage validation.
+
+This is a repository-local classical lazy-reduction optimization. It links no
+secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object,
+adds no persistent cache or table, and changes no API or wire format. The
+reciprocal, Montgomery, and Barrett techniques remain covered by the existing
+upstream attribution. The baby-mlkem-specific contribution is the Clang
+producer/consumer range contract, compiler routing, exact validation, and
+integrated performance gate.
 
 ### Local Core Optimization A/B (2026-07-16, Clang fixed H(pk) final-output slice)
 
