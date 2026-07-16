@@ -713,7 +713,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
 extern void mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
     const uint8_t seed[32], __m512i st[25], uint8_t stream[8][504]);
 #endif
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
 /*
  * Four-round lane mapping adapted from XKCP's CC0 AVX512 times8 core by
  * Ronny Van Keer. The mapping removes explicit Rho/Pi copies; this is not a
@@ -849,6 +849,7 @@ extern void mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
     MLKEM_KECCAKF8_ROW4(sa, se, si, so, su);                         \
   } while (0)
 
+#if !defined(__clang__)
 static void keccakf8(__m512i st[25]) {
   __m512i Ba, Be, Bi, Bo, Bu, D;
   __m512i ba = st[0], be = st[1], bi = st[2], bo = st[3], bu = st[4];
@@ -868,6 +869,44 @@ static void keccakf8(__m512i st[25]) {
   st[15] = ma;   st[16] = me;   st[17] = mi;   st[18] = mo;   st[19] = mu;
   st[20] = sa;   st[21] = se;   st[22] = si;   st[23] = so;   st[24] = su;
 }
+#else
+
+/* Encryption always has seven ETA2 streams, so specialize the sparse state. */
+static MLKEM_NOINLINE void keccakf8_sparse_eta2x7_32(
+    const uint8_t seed[32], const uint8_t nonce[8], __m512i st[16]) {
+  __m512i Ba, Be, Bi, Bo, Bu, D;
+  const __m512i zero = _mm512_setzero_si512();
+  __m512i ba = _mm512_set1_epi64((long long)load64_le(seed + 0));
+  __m512i be = _mm512_set1_epi64((long long)load64_le(seed + 8));
+  __m512i bi = _mm512_set1_epi64((long long)load64_le(seed + 16));
+  __m512i bo = _mm512_set1_epi64((long long)load64_le(seed + 24));
+  __m512i bu = _mm512_set_epi64(
+      (long long)((uint64_t)nonce[7] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[6] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[5] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[4] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[3] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[2] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[1] | (0x1FULL << 8)),
+      (long long)((uint64_t)nonce[0] | (0x1FULL << 8)));
+  __m512i ga = zero, ge = zero, gi = zero, go = zero, gu = zero;
+  __m512i ka = zero, ke = zero, ki = zero, ko = zero, ku = zero;
+  __m512i ma = zero;
+  __m512i me = _mm512_set1_epi64((long long)(0x80ULL << 56));
+  __m512i mi = zero, mo = zero, mu = zero;
+  __m512i sa = zero, se = zero, si = zero, so = zero, su = zero;
+
+  for (int round = 0; round < 24; round += 4) {
+    MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+  }
+
+  st[0] = ba;   st[1] = be;   st[2] = bi;   st[3] = bo;
+  st[4] = bu;   st[5] = ga;   st[6] = ge;   st[7] = gi;
+  st[8] = go;   st[9] = gu;   st[10] = ka;  st[11] = ke;
+  st[12] = ki;  st[13] = ko;  st[14] = ku;  st[15] = ma;
+}
+#endif
+#if !defined(__clang__)
 
 /* Fresh x8 SHAKE states are sparse; one lane may carry an independent seed. */
 /* GCC post-reload scheduling regresses this register-heavy round schedule. */
@@ -1183,6 +1222,7 @@ keccakf8_sparse_matrix_3_store_blocks(
 #undef MLKEM_KECCAKF8_STORE_RATE4
 #undef MLKEM_KECCAKF8_HI256
 #undef MLKEM_KECCAKF8_STORE4X4
+#endif /* !defined(__clang__) */
 
 #undef MLKEM_KECCAKF8_FOUR_ROUNDS
 #undef MLKEM_KECCAKF8_ROW4
@@ -1196,7 +1236,7 @@ keccakf8_sparse_matrix_3_store_blocks(
 #undef MLKEM_KECCAKF8_CHI
 #undef MLKEM_KECCAKF8_XOR5
 #undef MLKEM_KECCAKF8_XOR3
-#else
+#if defined(__clang__)
 static void keccakf8(__m512i st[25]) {
   __m512i a0 = st[0], a1 = st[1], a2 = st[2], a3 = st[3], a4 = st[4];
   __m512i a5 = st[5], a6 = st[6], a7 = st[7], a8 = st[8], a9 = st[9];
@@ -1300,7 +1340,8 @@ static void keccakf8(__m512i st[25]) {
   st[15] = a15;  st[16] = a16;  st[17] = a17;  st[18] = a18;  st[19] = a19;
   st[20] = a20;  st[21] = a21;  st[22] = a22;  st[23] = a23;  st[24] = a24;
 }
-#endif /* defined(__GNUC__) && !defined(__clang__) */
+#endif /* defined(__clang__) */
+#endif /* defined(__GNUC__) */
 #endif /* defined(__AVX512F__) */
 
 
@@ -5029,7 +5070,10 @@ static void mlkem_prf_cbd_eta2x7_32(const uint8_t seed[32],
                                     poly256 out2, poly256 out3,
                                     poly256 out4, poly256 out5,
                                     poly256 out6) {
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__clang__)
+  __m512i st[16];
+  keccakf8_sparse_eta2x7_32(seed, nonce, st);
+#elif defined(__GNUC__)
   __m512i st[16];
   keccakf8_sparse_32(seed, nonce, NULL, st);
 #else
