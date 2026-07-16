@@ -216,6 +216,7 @@ Near-term target selection:
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
+| Clang AVX512 matrix capacity-only handoff | Accepted for Clang native AVX512; GCC/narrower ISA unchanged | The x8 SHAKE128 matrix producer already writes all three 168-byte rates, so its final handoff now retains only capacity words 21..24 instead of redundantly storing all 25 state vectors. A rare rejection refill rebuilds only each deficient scalar lane from the third rate plus its four capacity words. The complete x8 sampler and matrix paired medians improve `1.0400x`/`1.0316x`; final 100k keygen/keygen-core improve `1.0046x`/`1.0052x` with 13/15 and 14/15 wins. Cached encapsulation is not credited: its `0.9981x` product median accompanies an unchanged source hot path and a 4 KiB BSS-layout shift. Clang `benchc` text shrinks 4,253 bytes. The handoff/refill design is repository-local, reuses the already attributed XKCP-derived x8 round mapping, and adds no cache, external object, table, API, or wire-format dependency. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |
@@ -9237,6 +9238,80 @@ No generated assembly, generator, build gate, runtime object, external library,
 API change, or wire-format change from this experiment remains in the tree. The
 prototype reused the already attributed XKCP CC0 four-round mapping and did not
 link XKCP at runtime.
+
+### Independent Core Optimization Diagnostic (2026-07-16, Clang matrix capacity handoff)
+
+The accepted Clang AVX512 matrix assembly produced three SHAKE128 rate blocks for
+eight streams, then returned all 25 final x8 Keccak state vectors. That duplicated
+the final rate: words 0..20 were already transposed into bytes 336..503 of every
+504-byte stream. Only capacity words 21..24 were unavailable to a possible
+rejection-sampler continuation.
+
+The new handoff keeps those four capacity vectors and deletes the other 21 final
+ZMM stores, removing 1,344 bytes of common-path state traffic per x8 sampler.
+Most calls finish from the initial 504 bytes. If a lane is short, the refill
+helper copies that lane's 21 rate words from the third stream block, appends its
+four saved capacity words, and continues with the existing single-state
+`keccakf()`. Completed lanes are never permuted again. This is the same
+lane-selective continuation principle used by the narrower matrix paths, applied
+at the x8 rate/capacity boundary rather than by adding a cache.
+
+A deterministic 1,024-seed distribution check observed 65 refill calls
+(`6.35%`). Exactly 65 of 8,192 lanes were deficient (`0.79%`), and every observed
+refill call had one deficient lane. The implementation remains correct if more
+than one lane is deficient or if a lane needs multiple additional rates; the
+frequency only explains why rebuilding all eight rate states was wasteful.
+
+Two continuation forms were measured. Reconstructing all x8 rate vectors only on
+refill improved the complete x8 sampler by `1.0092x` geometric mean and full
+matrix generation by `1.0059x`, but cache-disabled keygen was neutral. The
+accepted form reconstructs and advances only deficient scalar lanes. Against
+commit `90b5c6c`, CPU 0, two warmups, seven alternating pairs, and 30,000 stage
+iterations produced:
+
+| Clang native stage metric | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| complete x8 matrix sampler | 1.0397x | 1.0400x | 7/7 |
+| `sample_matrix()` | 1.0293x | 1.0316x | 7/7 |
+| K-PKE keygen stage | 1.0164x | 1.0170x | 7/7 |
+| public preparation without cache | 1.0077x | 1.0175x | 6/7 |
+| uncached K-PKE encryption control | 1.0020x | 1.0140x | 6/7 |
+
+The final product gate used separately built baseline and candidate binaries,
+CPU 0, two 30,000-iteration warmups per binary, fifteen alternating pairs, and
+100,000 iterations:
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.0060x | 1.0046x | 13/15 | 1.0044x / 1.0075x |
+| `mlkem_keygen_core` | 1.0057x | 1.0052x | 14/15 | 1.0047x / 1.0064x |
+| `mlkem_encaps` control | 0.9927x | 0.9981x | 3/15 | 0.9976x / 0.9991x |
+| `mlkem_encaps_core` control | 1.0014x | 1.0013x | 10/15 | 1.0011x / 1.0017x |
+| `mlkem_roundtrip` | 1.0024x | 1.0034x | 12/15 | 1.0029x / 1.0044x |
+| `mlkem_roundtrip_core` | 1.0038x | 1.0050x | 12/15 | 1.0050x / 1.0044x |
+
+Cached encapsulation does not execute matrix generation. In the focused harness,
+its `mlkem_encaps_derand` symbol retained the same address and 9,050-byte size;
+the production source hot path was unchanged. Linked `.bss` nevertheless moved
+by 4 KiB because total text fell from 139,417 to 135,164 bytes. Two focused
+cached-encapsulation checks had medians `1.0018x` and `1.0009x`, while the
+product median above was `0.9981x`. The contradictory signs make this control
+inconclusive at this magnitude. It is not evidence for a speedup, and no
+padding, alignment trick, or cache behavior is added to alter it. The accepted
+claim is the direct matrix and integrated keygen improvement.
+
+Correctness passed native Clang and GCC, explicit AVX2-only and scalar builds for
+both compilers, and native Clang ASan+UBSan. The assembly differential test runs
+64 deterministic seeds, compares all 504 rate bytes and all four returned
+capacity vectors with the independent intrinsics permutation, compares all nine
+matrix polynomials with scalar `sample_ntt()`, and requires at least one refill
+fixture. The stage validator also completed with a nonzero sink.
+
+The matrix assembly's underlying four-round schedule remains the previously
+disclosed XKCP-derived mapping generated from repository-local C. This change
+claims only the rate/capacity handoff and lane-selective continuation as local
+design. It links no new external object or runtime library and changes no key,
+ciphertext, API, table, persistent cache, or wire format.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
