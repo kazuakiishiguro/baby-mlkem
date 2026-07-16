@@ -192,6 +192,7 @@ Near-term target selection:
 | Clang AVX512 ZMM four-output K=3 encryption boundary | Accepted for Clang native; GCC and narrower ISA byte-identical | The existing canonical-output ZMM `vpmaddwd` kernel now sits behind a Clang-only noinline boundary instead of leaving prepared encryption on the 14 KiB scalar-final helper. Cached/uncached K-PKE paired medians improve `1.1192x`/`1.0466x`; 100k encaps/decaps/roundtrip improve `1.0424x`/`1.0399x`/`1.0171x`, all 14/14. Clang `benchc` text shrinks 4,992 bytes. No external object, cache, table, or wire-format change is added. |
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC and Clang native; narrower ISA unchanged | One loop keeps canonical `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The original GCC gate improved 100k KEM keygen/keygen-core by `1.0218x`/`1.0210x`. Routing current Clang through the same validated kernel improves direct accumulation `1.1342x`, full-keygen stage median `1.0179x`, and 100k KEM keygen/keygen-core geometric means `1.0100x`/`1.0072x`; Clang `benchc` text shrinks 2,752 bytes. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 keygen final-L1/accumulation/d12 boundary | Accepted for GCC and Clang native; AVX2-only/scalar byte-identical | Keygen leaves `shat[0..2]` one NTT level short, then each canonical 32-coefficient ZMM feeds all three `A^T * s` columns and secret-key d12 packing before being discarded. This removes 7,680 bytes of intermediate coefficient traffic per keygen. Direct fused-boundary geometric means improve `1.0247x`/`1.0114x` under Clang/GCC; 100k KEM keygen improves `1.0104x`/`1.0084x`, with 13/14 and 12/14 wins. Clang product text shrinks 2,816 bytes; GCC grows 1,340 bytes but retains the measured win. The existing Montgomery/Harvey and asymmetric multiplication arithmetic remains externally attributed; the lifetime fusion is repository-local and adds no external object, cache, table, or wire-format change. |
+| Clang AVX512 keygen accumulation/add/public-d12 boundary | Accepted for Clang native; GCC retained the split path; AVX2-only/scalar byte-identical | Each canonical `A^T * s` ZMM now receives `ehat`, emits public-key d12 bytes, and stores the final cached `that` tile before being discarded. This removes 4,608 bytes of intermediate coefficient traffic per keygen. Clang's direct boundary improves `1.0133x` geometric mean with 9/9 wins; 100k KEM keygen/keygen-core improve `1.0043x`/`1.0094x` geometric mean with 11/14 and 12/14 wins. Product text shrinks 1,088 bytes. GCC's paired median was `0.9998x`, so its existing path and binary remain unchanged. No cache shortcut, external object, table, API, or wire-format change is added. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
 | GCC AVX512VNNI four-output encryption accumulation | Accepted for GCC AVX512VNNI; non-VNNI/Clang/narrower ISA unchanged | `VPDPWSSD` replaces each bounded `vpmaddwd` plus `vpaddd` pair in the four-output K=3 kernel. The direct interval improves `1.0117x` geometric mean with 9/9 wins; cached/uncached K-PKE paired medians improve `1.0056x`/`1.0041x`, and 40k `encaps`/`decaps` improve `1.0041x`/`1.0053x` geometric mean with 13/15 wins each. The compiler/ISA-gated repository-local intrinsics add no external object, cache, table, or wire-format dependency. |
@@ -8177,6 +8178,113 @@ repository-local producer/consumer lifetime and encoding fusion around that
 arithmetic. It links no secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or
 other external runtime object, adds no persistent cache or table, and changes
 no API or wire format.
+
+### Local Core Optimization A/B (2026-07-16, Clang keygen accumulation/add/public-d12 fusion)
+
+After `f815a98`, native keygen already completed the final secret NTT level,
+encoded secret-key d12 bytes, and computed all three `A^T * s` columns from
+each live 32-coefficient ZMM tile. Baseline `cfc08cb` still materialized each
+canonical accumulation polynomial before two immediate consumers:
+
+```text
+accumulation ZMM -> store accum
+                 -> reload accum + reload ehat -> store final that
+                 -> reload final that -> public-key d12 bytes
+```
+
+Core commit `8e4b393` gives Clang native a value-returning accumulation
+boundary and changes that flow to:
+
+```text
+accumulation ZMM -> add ehat in-register
+                 -> public-key d12 bytes
+                 -> one final that store for cache/API semantics
+```
+
+For three 256-coefficient int16 polynomials, this removes the 1,536-byte
+accumulation write, its 1,536-byte add-side reload, and the 1,536-byte
+encode-side reload: 4,608 bytes of intermediate coefficient traffic per
+keygen. The `ehat` reads, final cached-`that` writes, and 1,152 public-key
+output bytes remain. This is an operation-lifetime change in hot local data;
+it does not reuse a key, matrix, or benchmark cache.
+
+This is broader than the earlier rejected experiments. The scalar add fusion
+put modular addition on the multiply critical path; the AVX2 add/pack helper
+removed only one reload; and the earlier GCC ZMM store/add form left public
+encoding as a later pass. The current candidate removes both materialization
+boundaries, then retains it only for the compiler where the full shape wins.
+
+The same-binary direct diagnostic used nine CPU-0 runs of 20,000 iterations.
+Both rows include secret final-l1/d12, three-column accumulation, canonical
+`+ehat`, public d12 output, and the final public-cache coefficients:
+
+| Compiler | Split median ns/op | Fused median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| Clang 18.1.3 | 623.57 | 616.05 | 1.013323x | 1.01259x | 9/9 |
+| GCC 13.3.0 | 658.63 | 658.54 | 1.002574x | 0.999802x | 4/9 |
+
+The GCC geometric mean is distorted by one slow split-path sample; its paired
+median and win count are neutral-to-negative. GCC therefore keeps the old
+split helper. The production switch is explicitly `__clang__`-gated.
+
+A clean core-only stage comparison used commit `8e4b393`, CPU 0, two warmups,
+eleven alternating pairs, and 30,000 iterations. It contained no new
+diagnostic rows:
+
+| Stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_core_stage_kpke_keygen_full` | 2689.22 | 2687.51 | 1.0114x | 1.0015x | 7/11 |
+
+The base-first and candidate-first medians were `1.0030x` and `0.9982x`, so
+this small stage row is supporting evidence only. The acceptance gate was
+the separately built complete KEM benchmark: CPU 0, three warmups, fourteen
+alternating pairs, and 100,000 iterations against `cfc08cb`:
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.0043x | 1.0026x | 11/14 | 1.0029x / 1.0024x |
+| `mlkem_keygen_core` | 1.0094x | 1.0035x | 12/14 | 1.0155x / 1.0035x |
+| `mlkem_encaps` | 1.0051x | 1.0022x | 11/14 | 1.0025x / 1.0019x |
+| `mlkem_encaps_core` | 0.9927x | 0.9987x | 5/14 | 1.0001x / 0.9975x |
+| `mlkem_decaps` | 1.0014x | 0.9998x | 7/14 | 0.9995x / 1.0001x |
+| `mlkem_decaps_core` | 0.9944x | 1.0044x | 11/14 | 1.0061x / 1.0022x |
+| `mlkem_roundtrip` | 1.0019x | 0.9995x | 7/14 | 1.0030x / 0.9981x |
+| `mlkem_roundtrip_core` | 0.9972x | 0.9994x | 6/14 | 1.0018x / 0.9986x |
+
+Encapsulation and decapsulation do not execute this keygen boundary and are
+code-layout/frequency controls, not claimed gains. Roundtrip includes
+keygen but also larger unrelated work. Both dedicated keygen rows improve in
+both execution orders and provide the production acceptance signal.
+
+Clang product `benchc` text falls from 149,363 to 148,275 bytes (`-1,088`);
+data and BSS remain 696 and 35,200 bytes. The file remains 162,896 bytes due
+to section alignment. The inlined `bench_keygen` body shrinks from `0x3d47`
+to `0x38c4` bytes and from 2,357 to 2,177 static instructions, while stack
+references remain 232. The optimization removes generated work rather than
+buying speed with code expansion.
+
+Test commit `253a44c` extends the 256-fixture keygen boundary validator. It
+compares all 768 final public coefficients, all 1,152 secret-key d12 bytes,
+and all 1,152 public-key d12 bytes with independent complete NTT,
+scalar-shaped accumulation, canonical add, and ordinary `byte_encode`.
+
+Clang and GCC native KAT and complete stage validation pass, as do both
+native UBSan KAT/stage builds. Both compilers' explicit AVX2-only and scalar
+KATs pass; Clang AVX2-only and GCC scalar complete stage validation also
+pass. GCC native and all four narrower production binaries are byte-identical
+to `cfc08cb`. GCC native SHA-256 remains
+`351b8e57b26633813fe9cbe7ab9e15402e6fcd60ba85b380b7a60c11ea1dc201`
+for `testc` and
+`6d2c511aafb285803c503847d69cae1a8307152840a0659d1fb5e036052d2747`
+for `benchc`; the narrower hashes are the unchanged values in the immediately
+preceding section.
+
+The Montgomery/Harvey NTT and asymmetric multiplication arithmetic keeps its
+existing upstream Kyber and Neon NTT attribution. The new contribution is
+only the repository-local Clang producer/consumer lifetime, canonical add,
+and output schedule around those operations. It links no secp256k1, ZKP,
+Kyber, PQClean, XKCP, liboqs, or other external runtime object, adds no
+persistent cache or table, and changes no API or wire format.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
