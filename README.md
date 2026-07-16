@@ -209,6 +209,7 @@ Near-term target selection:
 | GCC AVX512VNNI lazy accumulation/inverse boundary | Accepted for GCC AVX512VNNI; Clang/non-VNNI/narrower ISA unchanged | The four-output K=3 kernel now stops its reciprocal reduction at a congruent `[-440,4570]` result and carries that representation into the shared inverse NTT, whose two Barrett passes move from levels 2/5 to the range-proved levels 1/4. This removes the accumulator's canonical correction without adding an inverse reduction. Direct VNNI accumulation, shared inverse, and cached K-PKE paired geometric means improve `1.0583x`/`1.0151x`/`1.0487x`; 100k encaps/decaps/roundtrip improve `1.0394x`/`1.0256x`/`1.0110x`. GCC `benchc` text shrinks 160 bytes. No cache, external object, table, or wire-format change is added. |
 | Clang AVX512 lazy accumulation/inverse boundary | Accepted for Clang AVX512 with or without VNNI; GCC native text byte-identical; narrower ISAs unchanged | Clang now keeps each four-output K=3 dot product in the congruent `[-440,4570]` interval and carries it into the shared inverse NTT, moving its two Barrett passes from levels 2/5 to the range-proved levels 1/4. Clang native 100k encaps/decaps/roundtrip paired geometric means improve `1.0296x`/`1.0210x`/`1.0102x`; an explicit `-mno-avx512vnni` gate improves them `1.0394x`/`1.0353x`/`1.0113x`. At that commit LLVM emitted `VPMADDWD`/`VPADDD`, not `VPDPWSSD`, so its gain was delayed canonicalization; the separately measured VNNI lowering follow-up is listed below. Clang `benchc` text shrinks 256 bytes, while GCC native text is byte-identical. No cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512VNNI forced dot-product lowering | Accepted for Clang AVX512VNNI; GCC and Clang non-VNNI text byte-identical | Clang 18 exposed AVX512VNNI but decomposed the four-output K=3 helper's 24 dot products into `VPMADDWD` plus `VPADDD`. A Clang+VNNI local inline-assembly expression now retains one `VPDPWSSD` per dot product. Direct lazy accumulation and cached K-PKE paired geometric means improve `1.0185x`/`1.0126x`; 100k encaps/decaps improve `1.0141x`/`1.0132x`. Clang `benchc` text shrinks 128 bytes. No external object, cache, table, API, or wire-format change is added. |
+| Clang AVX512 sparse x7 encryption-noise entry | Accepted for Clang native AVX512; GCC/AVX2-only/scalar byte-identical | The seven fixed SHAKE256 encryption-noise streams now enter the existing repository-local four-round x8 mapping from a directly constructed sparse state and write only the 16 rate vectors consumed by ETA2 CBD. Raw PRF/CBD and cached K-PKE paired geometric means improve `1.0436x`/`1.0157x`; 100k encaps/decaps improve `1.0099x`/`1.0106x`. Clang `benchc` text shrinks 192 bytes. This reuses the already attributed XKCP-derived mapping but links no external object and adds no cache, table, API, or wire-format dependency. |
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
@@ -9038,6 +9039,122 @@ materialization between two compact loops is faster on this Zen 4 target.
 The prototype was removed. Do not retry this boundary as another scheduling or
 inlining variant; a future candidate must reduce packing arithmetic or change
 the final representation, not only remove the store/reload.
+
+### Local Core Optimization A/B (2026-07-16, Clang sparse x7 encryption noise)
+
+Clang's cached encryption path previously built a 25-vector SHAKE256 state for
+seven `seed || nonce` inputs, zeroed the unused lanes, entered the generic x8
+Keccak permutation, and retained all 25 output vectors even though ETA2 CBD
+consumes only the first 128 bytes, or 16 64-bit words, from each live stream.
+Each stream fits in one SHAKE256 rate block, so no continuation permutation is
+needed.
+
+Core commit `9397621` partially evaluates that fixed shape for Clang AVX512.
+The new noinline helper broadcasts the four seed words, installs nonce bytes
+0-6 plus SHAKE domain/final padding, keeps the remaining logical lanes at zero,
+runs the same 24 Keccak-f[1600] rounds, and stores only state words 0-15. The
+ordinary Clang `keccakf8()` implementation remains unchanged for every other
+caller. GCC retains its existing sparse helper and produces a byte-identical
+binary.
+
+This is a classical sparse-state specialization, not a new Keccak schedule.
+The four-round lane mapping was already present in the repository with XKCP
+CC0 attribution; this change exposes it to one fixed Clang core path without
+linking XKCP or another external object.
+
+The final stage screen used CPU 0, two warmups, seven alternating pairs, and
+30,000 iterations against `cb4704f`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh cb4704f
+```
+
+| Stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| raw x7 PRF/CBD | 347.54 | 333.01 | 1.0436x | 1.0441x | 7/7 | 1.0426x / 1.0448x |
+| complete PRF/CBD with full-polynomial checksums | 883.16 | 874.63 | 1.0087x | 1.0096x | 7/7 | 1.0087x / 1.0096x |
+| cached K-PKE encryption | 998.57 | 983.03 | 1.0157x | 1.0156x | 7/7 | 1.0152x / 1.0170x |
+| uncached K-PKE encryption control | 2554.73 | 2547.25 | 1.0026x | 1.0010x | 5/7 | 1.0010x / 1.0057x |
+| PRF/CBD plus three NTTs and checksum diagnostic | 682.03 | 683.17 | 0.9960x | 0.9978x | 0/7 | 0.9978x / 0.9983x |
+
+The last row is retained as a negative diagnostic rather than relabeled as a
+win. It combines the changed producer with three unchanged forward NTTs and a
+checksum-heavy consumer. The direct producer, complete PRF/CBD, and actual
+cached K-PKE boundary all improve in both execution orders; the full KEM gate
+below is the production acceptance signal.
+
+The KEM gate used three warmups, fifteen alternating pairs, and 100,000
+iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh cb4704f
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 1.0099x | 1.0114x | 14/15 | 1.0118x / 1.0108x |
+| `mlkem_decaps` | 1.0106x | 1.0148x | 12/15 | 1.0122x / 1.0152x |
+| `mlkem_decaps_core` | 1.0060x | 1.0052x | 12/15 | 1.0039x / 1.0054x |
+| `mlkem_roundtrip` | 1.0062x | 1.0046x | 12/15 | 1.0070x / 1.0037x |
+| `mlkem_encaps_core` | 0.9992x | 1.0020x | 10/15 | 1.0040x / 1.0018x |
+| `mlkem_keygen` control | 1.0041x | 1.0033x | 11/15 | 1.0040x / 1.0010x |
+| `mlkem_keygen_core` control | 1.0045x | 1.0017x | 11/15 | 1.0034x / 1.0008x |
+
+Keygen does not execute this helper and is not credited as a gain.
+`encaps_core` is also not claimed because its paired geometric mean is below
+one even though its median and both execution-order medians are positive.
+Encapsulation, decapsulation, and roundtrip are positive in both execution
+orders.
+
+Production `benchc` inspection shows that specialization removes work rather
+than hiding it in a larger caller:
+
+| Clang native property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| prepared helper instructions | 2,078 | 1,532 | -546 |
+| separate sparse helper instructions | inlined | 519 | +519 |
+| combined prepared-boundary instructions | 2,078 | 2,051 | -27 |
+| combined stack references | 59 | 41 | -18 |
+| prepared helper bytes | `0x2991` | `0x1c85` | -3,340 |
+| separate sparse helper bytes | inlined | `0xcc2` | +3,266 |
+| combined prepared-boundary bytes | 10,641 | 10,567 | -74 |
+| linked text bytes | 139,609 | 139,417 | -192 |
+| linked data / BSS bytes | 696 / 38,272 | 696 / 38,272 | 0 / 0 |
+
+The new helper still contains 16 stack references, eight ZMM spill/reload
+pairs. That is the next narrow optimization target; the accepted C
+specialization does not claim a spill-free Keccak core.
+
+A 500,000-iteration post-change Clang profile attributes `6.80%` self time to
+`keccakf8_sparse_eta2x7_32`, behind fixed `H(pk)` (`23.96%`), x8 matrix Keccak
+(`17.21%`), keygen (`12.29%`), and the parser (`7.24%`). Inside prepared
+public-key encryption it is now the largest single leaf, ahead of the
+four-output accumulator (`6.38%`) and shared inverse completion (`5.28%`).
+This profile and the static spills select a checked spill-reduction experiment
+as the next target, not another cache or random-number change.
+
+Test commit `a6bfee7` adds 4,096 deterministic fixtures. For each seed it
+compares all seven 256-coefficient outputs with serial `mlkem_prf()` plus an
+independent scalar ETA2 CBD implementation. Native Clang/GCC, Clang AVX512
+without VNNI, Clang AVX2-only, and Clang scalar KATs pass. Clang native
+ASan+UBSan and GCC native UBSan pass KAT plus complete stage validation; both
+stage sinks are `14297946206519143839`.
+
+GCC, Clang AVX2-only, and Clang scalar `benchc` files are byte-identical to the
+baseline, with SHA-256 values
+`73f7cafedaa6ace3d2e70b845f4975036f6f31a154fd1e824985e419fb0974cc`,
+`11999577e4f7e60097d4448a5982a12db53d9bab16faf2826ad05e6967520bca`,
+and
+`228a55310da764c85cc1a5b53dbe2db5abb80195a32a895cf4fb148b12be0323`
+respectively.
+
+The optimization adds no persistent cache, factor table, external runtime
+library, API, or wire-format dependency. It does not call upstream Kyber,
+PQClean, liboqs, secp256k1, a ZKP library, or XKCP at runtime.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
