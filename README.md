@@ -163,13 +163,14 @@ Near-term target selection:
 | Additional x4 loop-carried lane | Closed in C; assembly-only reopening | Carrying lane 3 alongside lane 0 is exact, but the isolated permutation and rate-store rows regress to `0.9962x` and `0.9771x` paired median with 0/11 wins. The compiled round loop gains 13 instructions, seven `vmov*`, and five stack references because the additional live YMM value spills. |
 | Pairwise x4 next-parity reduction | Bench retained; production closed | Materializing two output rows before completing next-round parity shortens the XOR dependency chain, but reloads ten output vectors. Clang improves the full sampler by only `1.0032x` paired median while GCC regresses to `0.9943x`; the Clang round probe grows from 13 to 28 stack references. The compiler split does not justify a production branch. |
 | Sparse fresh-state x4 first round | Bench retained; production closed; x8 follow-up completed | Fusing state initialization with round 0 removes 19 zero-lane stores and 19 zero-source XORs. GCC AVX2 isolated full-sampler median improves `1.0057x`, but production routing regresses to about `0.968x`; Clang AVX2 isolated full sampling is `0.9962x`. AVX-512 direct x4 improves about `1.02x`, but live matrix/KEM paths use x8 and compile out x4 callers. The live GCC AVX512 x8 follow-up below confirms the specialization on the real path. |
-| Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang keeps generic path | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang routing regresses direct sampling and matrix to `0.9961x`/`0.9958x`, so the final Clang binaries remain byte-identical to baseline. |
+| Sparse fresh-state x8 first round | Accepted for GCC AVX512; Clang C routing closed and checked-assembly follow-up accepted | The first matrix permutation starts with only lanes `0..4,20` nonzero. GCC direct x8 sampling and full matrix medians improve `1.0224x` and `1.0114x`; KEM `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0077x`/`1.0068x`/`1.0040x`. Unrestricted Clang C routing regressed direct sampling and matrix to `0.9961x`/`0.9958x`; the later checked-assembly first-round peel below preserves Clang's dense schedule and passes its separate production gate. |
 | Native AVX512 x8 Keccak rotates | Accepted; GCC benefits, Clang already emitted rotates | `rotl64x8()` now exposes AVX512F immediate rotates directly. GCC x8 one-/three-permutation stage medians improve `1.3555x`/`1.3355x`; all eight high-iteration KEM metrics win 15/15. Corrected native validation shows Clang `testc`/`benchc` and GCC AVX2-only binaries remain byte-identical; the Clang stage diagnostic differs only through inline-TU layout. |
 | GCC AVX512 x8 four-round Keccak mapping | Accepted for GCC; Clang and AVX2-only paths unchanged | Four rounds reuse logical lane names so Theta, Rho/Pi, and Chi consume five-lane rows without materializing 25 simultaneous Rho/Pi outputs. GCC x8 one-/three-permutation stage medians improve `1.0560x`/`1.0553x`, full sampling `1.0244x`, and matrix generation `1.0185x`; 15-pair KEM core medians improve `1.0108x`/`1.0135x`/`1.0117x`/`1.0135x` for keygen/encaps/decaps/roundtrip. The mapping is explicitly adapted from XKCP's CC0 AVX512 times8 core, not claimed as a new schedule, and adds no external object or cache. |
 | GCC AVX512 x8 in-place Theta/Chi rows | Accepted as a local four-round follow-up | Five column parities remain live, but each Theta D is consumed immediately across its column; Rho/Pi then updates the selected state lanes in place and Chi preserves at most three cyclic inputs. Against the accepted four-round baseline, GCC x8 one-/three-permutation medians improve another `1.0294x`/`1.0246x`, full sampling `1.0089x`, and matrix generation `1.0053x`. High-iteration `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0027x`/`1.0046x`/`1.0050x`; decaps is neutral and is not credited as a gain. |
 | GCC AVX512 x8 cross-permutation state/rate fusion | Accepted for the matrix common path; Clang and AVX2-only unchanged | After the sparse first permutation emits block 0, one noinline helper keeps all 25 ZMM state vectors live through the next two permutations and transposes blocks 1 and 2 directly to the eight streams. Final stage paired medians improve the permutation-plus-store row `1.0175x`, complete x8 sampling `1.0173x`, and matrix generation `1.0059x`; all complete sampler and matrix rows win 9/9. High-iteration KEM is neutral-to-positive except `roundtrip_core` at a neutral `0.9994x`, which is not credited as a gain. The helper adds 4,808 text bytes but no external object, cache, or wire-format change. |
 | GCC AVX512 x8 full initial-squeeze fusion | Accepted for the matrix common path; Clang and narrower ISA unchanged | A matrix-only helper now constructs the sparse SHAKE128 state in ZMM registers, keeps all 25 vectors live through all three initial permutations, emits each 168-byte rate, and writes the final state once for rare rejection refills. This removes the remaining 1,600-byte state store/reload boundary between the first and second rates. Complete x8 sampling, matrix generation, and keygen-full improve `1.0160x`/`1.0128x`/`1.0050x` paired median; 100k KEM keygen/keygen-core improve `1.0044x`/`1.0049x`, and `benchc` text shrinks 800 bytes. The helper reuses the disclosed XKCP-derived round mapping and adds no external object, cache, or wire-format dependency. |
 | Native Clang AVX512 fixed x8 matrix squeeze schedule | Accepted for Clang x86-64 ELF with AVX2+AVX512F/DQ/VL; GCC and narrower ISA unchanged | A checked-in repository-local `.S` boundary gives Clang the established GCC three-permutation matrix schedule without a GCC build-time or runtime dependency. Complete x8 sampling, matrix generation, keygen-full, and uncached public preparation improve `1.0431x`/`1.0245x`/`1.0179x`/`1.0140x` paired geometric mean; 100k KEM keygen improves `1.0056x` geometric mean and `1.0094x` median. The four-round mapping remains XKCP-derived and the instruction schedule was generated from the local C helper by GCC 13.3, so neither is claimed as a new baby-mlkem design. Linked text grows 346 bytes; no external object, runtime library, persistent cache, table, or wire-format dependency is added. |
+| Clang AVX512 x8 sparse round-0 peel | Accepted for the checked Clang matrix helper; GCC and narrower ISA unchanged | The known-zero initial state is partial-evaluated only through round 0, then its five output planes are mapped into the existing round-1 register layout. The direct fused helper improves `1.0053x` paired median (`1.0064x` geometric mean, 18/21 wins); same-binary complete sampling, matrix, and keygen boundaries improve `1.0040x`/`1.0018x`/`1.0014x` paired median with 18/21, 19/21, and 15/21 wins. The helper grows from 4,887 to 5,623 text bytes; all later rounds and rate stores remain unchanged. No cache, external object, runtime library, table, API, or wire-format change is used. |
 | Shared fresh-state x8 Keccak entry | Accepted for GCC AVX512; Clang and narrower ISA byte-identical | One noinline helper now constructs either the SHAKE128 matrix state or SHAKE256 x7 PRF/CBD state directly in ZMM registers and runs the existing four-round mapping. Matrix generation writes all 25 state vectors; PRF/CBD writes only the 16 vectors its 128-byte rate decoder consumes. Production x7 PRF/CBD, full x8 sampling, and matrix paired medians improve `1.0414x`, `1.0103x`, and `1.0079x`; 14-pair keygen/encaps/decaps/roundtrip-core medians improve `1.0022x`/`1.0085x`/`1.0053x`/`1.0090x`. GCC `benchc` text grows 1,552 bytes after replacing the prior separate matrix schedule; no external object, cache, or wire-format dependency is added. |
 | GCC AVX512 x8 post-reload schedule preservation | Accepted for GCC native; Clang and narrower ISA byte-identical | GCC's second scheduling pass disturbed the dependency order of the two register-heavy x8 helpers. Function-scoped `no-schedule-insns2` improves x7 PRF/CBD and x8 permutation-plus-store paired medians by `1.0124x` and `1.0077x`; 14-pair `keygen_core`/`encaps_core`/`roundtrip_core` improve `1.0064x`/`1.0044x`/`1.0054x`. The XKCP-derived four-round algorithm, cache behavior, state layout, wire format, and linked objects are unchanged. |
 | Explicit AVX512VL x4 Keccak rotates | Closed | GCC already recognizes the 256-bit shift/OR idiom as `vprorq`, so direct x4 permutation medians remain `1.0005x`. The intrinsic spelling perturbs large inline callers: uncached encryption, keygen, and public preparation regress to `0.9906x`, `0.9887x`, and `0.9914x`. Keep the compiler-friendly expression. |
@@ -8178,6 +8179,78 @@ repository-local producer/consumer lifetime and encoding fusion around that
 arithmetic. It links no secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or
 other external runtime object, adds no persistent cache or table, and changes
 no API or wire format.
+
+### Local Core Optimization A/B (2026-07-16, Clang sparse x8 round-0 peel)
+
+The checked Clang x8 matrix helper already kept all 25 ZMM lanes live through
+three SHAKE128 permutations and integrated all three 168-byte rate stores. Its
+initial state, however, has only lanes `0..4` and `20` nonzero. Running the
+normal dense round 0 first materialized the 19 zero lanes and entered the
+GCC-captured four-round schedule before that sparsity had been consumed.
+
+Core commit `f339554` partial-evaluates only this first round. For column
+parities `C[x]`, the fixed input shape reduces them to:
+
+```text
+C0 = A0 ^ A20
+C1 = A1
+C2 = A2
+C3 = A3
+C4 = A4
+```
+
+The helper forms the five Theta corrections from those values, applies them to
+the six nonzero lanes, seeds each initially zero lane directly from its column
+correction, and evaluates the five Rho/Pi/Chi output planes. Twenty-eight
+register moves then map those outputs into the existing round-1 register
+layout. Rounds 1..23, the next two complete permutations, all rate transposes,
+and the rare-refill final-state ABI remain unchanged.
+
+This limited peel was important. Two exact full-core no-spill replacements also
+included a new rate transpose, but their 21-pair direct-helper geometric means
+were only `0.9722x` and `0.9714x`, with 0/21 wins. Replacing the established
+integrated schedule costs much more than eliminating its initial sparse work.
+The accepted mapped form also beat a globally renamed form in 18/21 direct
+pairs, despite using more register moves; those moves shorten dependencies at
+the handoff to round 1.
+
+The direct fused-helper gate pinned CPU 0 and used 21 alternating-order pairs of
+500,000 iterations. It improved `1.0064x` by paired geometric mean and `1.0053x`
+by paired median, with 18/21 wins. Production-shaped checks linked current and
+candidate helpers under distinct symbols in one binary, used the same C parser
+and helper-pointer wrapper for both, and alternated call order inside each
+process:
+
+| Boundary | Iterations per pair | Current median ns/op | Sparse median ns/op | Paired median speedup | Wins |
+|---|---:|---:|---:|---:|---:|
+| Complete x8 `sample_ntt8` | 300,000 | 1151.5190 | 1146.9242 | `1.004006x` | 18/21 |
+| Nine-polynomial matrix | 200,000 | 1843.9331 | 1840.4767 | `1.001763x` | 19/21 |
+| Production-shaped keygen | 200,000 | 2702.3322 | 2699.0114 | `1.001435x` | 15/21 |
+
+Base-first and candidate-first medians were `1.003327x`/`1.004129x` for the
+complete sampler, `1.001692x`/`1.001763x` for the matrix, and
+`1.001467x`/`1.001419x` for keygen. One interrupt outlier distorted the
+untrimmed geometric means to `1.001820x`, `1.000564x`, and `0.999407x`; the
+acceptance signal is the paired median, win count, and both execution orders,
+not favorable trimming. The keygen gain is therefore recorded as a small
+supporting result rather than a broad KEM claim.
+
+The same-binary harness compared all nine matrix polynomials for eight fixtures.
+Its keygen wrapper used the production Clang path except for the common helper
+pointer and compared public and secret outputs for eight fixtures. The existing
+production test is stronger at the helper boundary: 64 deterministic seeds
+compare all 4,032 emitted stream bytes, all 1,600 final-state bytes, all nine
+matrix polynomials, and require at least one rare refill fixture. Clang and GCC
+native tests, plus Clang AVX2-only and scalar tests, pass.
+
+The function grows from 4,887 to 5,623 text bytes (`+736`) because the generic
+round-0 body must remain for later permutations. The sparse prelude removes
+runtime work without a key or matrix cache. The build still links only the
+repository-local `.S`; it adds no XKCP, liboqs, Kyber, PQClean, or other runtime
+object, persistent table, API change, or wire-format change. Dense rounds retain
+the explicitly disclosed XKCP-derived mapping and GCC-captured schedule; the
+new contribution is only the fixed-input round-0 partial evaluation and its
+measured handoff.
 
 ### Local Core Optimization A/B (2026-07-16, Clang keygen accumulation/add/public-d12 fusion)
 
