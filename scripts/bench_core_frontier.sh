@@ -47,6 +47,7 @@ printf "compiler=%s avx2_backend=core runs=%s stage_iters=%s pin_cpu=%s\n" \
   "$C_COMPILER" "$RUNS" "$STAGE_ITERS" "${PIN_CPU:-<unset>}"
 printf "arch_cflags=%s\n" "$ARCH_CFLAGS"
 
+make -C "$ROOT_DIR" clean "${make_args[@]}" >/dev/null
 make -C "$ROOT_DIR" bench-stages "${make_args[@]}" >/dev/null
 
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-core-frontier.XXXXXX)"
@@ -74,26 +75,18 @@ targets = [
      "public-key d12 decode + matrix sampling + H(pk)"),
     ("mlkem_core_stage_sample_matrix",
      "largest standalone public-work target"),
-    ("mlkem_core_stage_sample_matrix_seed_init_hoist",
-     "seed word reuse is a rejected sampler-neighbor check"),
     ("mlkem_core_stage_kpke_encrypt_cached",
      "cached encapsulation arithmetic/noise target"),
     ("mlkem_core_stage_keygen_noise_ntt",
      "keygen PRF/CBD plus six forward NTTs"),
     ("mlkem_core_stage_keygen_noise_ntt_encode",
      "six forward NTTs plus secret d12 encode"),
-    ("mlkem_core_stage_encrypt_noise_lazy",
-     "production-aligned encrypt PRF/CBD plus lazy r NTT"),
     ("mlkem_core_stage_encrypt_accum_inv",
      "K=3 accumulation plus production 16-bit inverse-add"),
     ("mlkem_core_stage_encrypt_inv_add_u_raw",
      "production 16-bit inverse-add across the three u rows"),
-    ("mlkem_core_stage_encrypt_inv_add_u_full3_pragma_raw",
-     "legacy three-polynomial level batching is slower than production"),
     ("mlkem_core_stage_encrypt_inv_add_u_tail_final_raw",
      "legacy 32-bit tail/final diagnostic; no longer a production target"),
-    ("mlkem_core_stage_encrypt_inv_add_u_tail_final3_pragma_raw",
-     "legacy level-by-level three-u tail/final batching is rejected"),
     ("mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3",
      "production x4 sampler Keccak/state/store cost"),
     ("mlkem_core_stage_sample_ntt4_init_only",
