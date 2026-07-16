@@ -1997,12 +1997,12 @@ static void ntt_inv_mont_before_final4_shared_avx512(
   const __m512i swap_halves =
       _mm512_setr_epi64(4, 5, 6, 7, 0, 1, 2, 3);
 
-#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512VNNI__)
+#if defined(__AVX512VNNI__) || defined(__clang__)
 #define MLKEM_INV_SHARED_LEVEL0 ntt_inv_mont_level_lazy_i16x32_avx512
 #define MLKEM_INV_SHARED_LEVEL1 ntt_inv_mont_level_i16x32_avx512
 #define MLKEM_INV_SHARED_LEVEL2 ntt_inv_mont_level_lazy_i16x32_avx512
 #define MLKEM_INV_SHARED_LEVEL3 ntt_inv_mont_level_lazy_i16x32_avx512
-  /* The lazy VNNI accumulator range is reduced at levels 1/4. */
+  /* The lazy accumulator range is reduced at levels 1/4. */
 #else
 #define MLKEM_INV_SHARED_LEVEL0 ntt_inv_mont_level_lazy_i16x32_avx512
 #define MLKEM_INV_SHARED_LEVEL1 ntt_inv_mont_level_lazy_i16x32_avx512
@@ -2094,7 +2094,7 @@ static void ntt_inv_mont_before_final4_shared_avx512(
           __m512i b = _mm512_loadu_si512(
               (const void *)(out[lane] + start + length + j));
           __m512i sum, product;
-#if defined(__GNUC__) && !defined(__clang__) && defined(__AVX512VNNI__)
+#if defined(__AVX512VNNI__) || defined(__clang__)
           if (level == 4) {
             ntt_inv_mont_pair_i16x32_avx512(
                 a, b, zeta_lo, zeta_hi, &sum, &product);
@@ -4129,25 +4129,34 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_madd_value_avx512(
   return _mm512_permutexvar_epi64(order, packed);
 }
 
+#if defined(__AVX512VNNI__) || defined(__clang__)
+/* Keep the proven K=3 dot products exact while delaying canonicalization. */
+static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_dot_lazy_i32x16_avx512(
+    __m512i accum, __m512i x, __m512i y) {
 #if defined(__AVX512VNNI__)
-/* The proven K=3 bound makes non-saturating VPDPWSSD exact here. */
-static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_vnni_block_avx512(
+  return _mm512_dpwssd_epi32(accum, x, y);
+#else
+  return _mm512_add_epi32(accum, _mm512_madd_epi16(x, y));
+#endif
+}
+
+static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_lazy_block_avx512(
     const poly256 a0, const poly256 a1, const poly256 a2, int offset,
     __m512i y0_c0, __m512i y1_c0, __m512i y2_c0,
     __m512i y0_c1, __m512i y1_c1, __m512i y2_c1, poly256 out) {
   __m512i c0 = _mm512_setzero_si512();
   __m512i c1 = _mm512_setzero_si512();
   __m512i x = _mm512_loadu_si512((const void *)(a0 + offset));
-  c0 = _mm512_dpwssd_epi32(c0, x, y0_c0);
-  c1 = _mm512_dpwssd_epi32(c1, x, y0_c1);
+  c0 = ntt_acc4_dot_lazy_i32x16_avx512(c0, x, y0_c0);
+  c1 = ntt_acc4_dot_lazy_i32x16_avx512(c1, x, y0_c1);
 
   x = _mm512_loadu_si512((const void *)(a1 + offset));
-  c0 = _mm512_dpwssd_epi32(c0, x, y1_c0);
-  c1 = _mm512_dpwssd_epi32(c1, x, y1_c1);
+  c0 = ntt_acc4_dot_lazy_i32x16_avx512(c0, x, y1_c0);
+  c1 = ntt_acc4_dot_lazy_i32x16_avx512(c1, x, y1_c1);
 
   x = _mm512_loadu_si512((const void *)(a2 + offset));
-  c0 = _mm512_dpwssd_epi32(c0, x, y2_c0);
-  c1 = _mm512_dpwssd_epi32(c1, x, y2_c1);
+  c0 = ntt_acc4_dot_lazy_i32x16_avx512(c0, x, y2_c0);
+  c1 = ntt_acc4_dot_lazy_i32x16_avx512(c1, x, y2_c1);
 
   c0 = ntt_acc4_madd_reduce_lazy_i32x16(c0);
   c1 = ntt_acc4_madd_reduce_lazy_i32x16(c1);
@@ -4225,9 +4234,9 @@ ntt3_mul_acc4_fused_final_madd512_clang_avx512(
 }
 #endif
 
-#if defined(__AVX512VNNI__)
+#if defined(__AVX512VNNI__) || defined(__clang__)
 static MLKEM_ALWAYS_INLINE void
-ntt3_mul_acc4_fused_final_vnni512_avx512(
+ntt3_mul_acc4_fused_final_lazy512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
     poly256 out[K], poly256 outv) {
   const __m512i even_mask = _mm512_set1_epi32(0xffff);
@@ -4262,19 +4271,30 @@ ntt3_mul_acc4_fused_final_vnni512_avx512(
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
     __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
 
-    ntt_acc4_asym_vnni_block_avx512(
+    ntt_acc4_asym_lazy_block_avx512(
         ahat[0][0], ahat[0][1], ahat[0][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
-    ntt_acc4_asym_vnni_block_avx512(
+    ntt_acc4_asym_lazy_block_avx512(
         ahat[1][0], ahat[1][1], ahat[1][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
-    ntt_acc4_asym_vnni_block_avx512(
+    ntt_acc4_asym_lazy_block_avx512(
         ahat[2][0], ahat[2][1], ahat[2][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
-    ntt_acc4_asym_vnni_block_avx512(
+    ntt_acc4_asym_lazy_block_avx512(
         that[0], that[1], that[2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, outv);
   }
+}
+#endif
+
+#if defined(__clang__)
+/* Keep Clang's lazy accumulator kernel out of the prepared-encryption caller. */
+static MLKEM_NOINLINE void
+ntt3_mul_acc4_fused_final_lazy512_clang_avx512(
+    const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
+    poly256 out[K], poly256 outv) {
+  ntt3_mul_acc4_fused_final_lazy512_avx512(
+      ahat, that, b, out, outv);
 }
 #endif
 
@@ -7228,14 +7248,14 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
 #if defined(__GNUC__) && !defined(__clang__)
 #if defined(__AVX512VNNI__)
-  ntt3_mul_acc4_fused_final_vnni512_avx512(
+  ntt3_mul_acc4_fused_final_lazy512_avx512(
       kpke_public_cache_ahat, kpke_public_cache_that, rhat, u, v);
 #else
   ntt3_mul_acc4_fused_final_madd512_avx512(
       kpke_public_cache_ahat, kpke_public_cache_that, rhat, u, v);
 #endif
 #elif defined(__clang__)
-  ntt3_mul_acc4_fused_final_madd512_clang_avx512(
+  ntt3_mul_acc4_fused_final_lazy512_clang_avx512(
       kpke_public_cache_ahat, kpke_public_cache_that, rhat, u, v);
 #else
   ntt3_mul_acc4_fused_final_avx512(
