@@ -146,8 +146,11 @@ https://keccak.team/files/Keccak-implementation-3.2.pdf
 The local generator derives the mapping variants and overwrite schedule; no
 source code from that document is copied. The fixed path also specializes
 absorb and padding and keeps the state in registers across all nine
-permutations. Portions adapted from Intel's implementation remain covered by
-Intel's MIT license:
+permutations. Its Clang-only final-output slice is a local fixed-boundary
+partial evaluation: it computes only final-round plane `y=0`, lanes `x=0..3`
+that SHA3-256 returns. This slice copies no secp256k1, ZKP, or other external
+implementation and adds no external object or runtime dependency. Portions
+adapted from Intel's implementation remain covered by Intel's MIT license:
 
     Copyright (c) 2025 Intel Corporation
 

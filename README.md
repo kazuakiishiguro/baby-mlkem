@@ -29,6 +29,8 @@ seven-vector layout and round schedule of XKCP/CRYPTOGAMS. In
 adapts Intel's register-per-lane schedule contributed to liboqs, while the fixed
 public-key SHA3-256 path uses the order-four in-place mapping from the
 [Keccak implementation overview](https://keccak.team/files/Keccak-implementation-3.2.pdf).
+On Clang native builds, the fixed path also backward-slices its final round to
+the four 64-bit lanes observed by SHA3-256; GCC retains the complete round.
 The AVX2 forward and inverse NTTs use local intrinsics implementations of
 Montgomery butterfly arithmetic and the precomputed low/high twiddle-factor
 decomposition used by upstream Kyber. None adds an external library or object
@@ -156,6 +158,7 @@ Near-term target selection:
 | Native AVX512VL register-per-lane fixed H(pk) | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The 1184-byte public-key hash now keeps all 25 Keccak lanes in XMM0..24 across nine permutations and uses `VPTERNLOGQ` for Theta/Chi. GCC/Clang direct H(pk) paired medians improve `1.1742x`/`1.0539x`; GCC keygen/keygen-core improve `1.0484x`/`1.0472x` with 14/14 wins, and Clang improves `1.0135x`/`1.0129x`. The round schedule is explicitly adapted from Intel's MIT-licensed liboqs AVX512VL implementation, not claimed as independently invented. The build links only the repository-local `.S` object, never liboqs or an Intel binary; non-AVX512 and standalone builds retain the prior fallback. |
 | Native AVX512VL fixed H(pk) four-round cyclic mapping | Accepted only for fixed H(pk); compact generic core retained | Keccak Team Algorithm 4 cycles logical lanes through `N(x,y)=(x,x+2y) mod 5` and returns to canonical order every four rounds, removing the 25-register reorder after every round. Dynamic instructions per permutation fall from `3459` to `2877`. GCC/Clang direct H(pk) paired medians improve `1.0340x`/`1.0358x`; 100k keygen improves `1.0093x`/`1.0087x`. The broader generic switch was rejected by the decaps gate. Generated assembly is checked in, links no external object or library, and retains explicit Keccak Team and Intel/liboqs provenance. |
 | Native AVX512VL fixed H(pk) Chi-plane interleave | Accepted scheduling-only follow-up | The cyclic fixed hash now overlaps independent Chi output-plane chains while preserving each plane's proven overwrite order. The four-round body remains exactly 476 instructions and the assembly object remains 5309 text bytes, but Zen 4 `llvm-mca` single-block completion falls from 162 to 157 cycles. GCC/Clang direct H(pk) paired medians improve `1.0066x`/`1.0063x`; same-C-object 500k deterministic keygen improves `1.0017x`/`1.0023x`. No cache, table, external object, library, or wire-format dependency is added. |
+| Clang AVX512VL fixed H(pk) final-output slice | Accepted for Clang native fixed H(pk); GCC and narrower ISAs unchanged | The ninth permutation keeps rounds 0..22 complete, then evaluates only the final-round `y=0`, `x=0..3` lanes returned by SHA3-256. A same-binary 11-pair direct test improves by `1.0036x` paired median with 11/11 wins; the 14-pair complete-KEM gate improves keygen and roundtrip by `1.0037x` and `1.0033x` paired median. Executable assembly grows 261 bytes and linked benchmark text grows 262 bytes. No cache, external object, API, or wire-format dependency is added. |
 | Native AVX512VL register-per-lane generic `keccakf()` | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The generic canonical-state wrapper now loads one Keccak lane into each of XMM0..XMM24 and uses the compact register-per-lane round core originally introduced for fixed H(pk). GCC/Clang direct permutation paired medians improve `1.4104x`/`1.0582x`. GCC `encaps_core`/`roundtrip_core` improve `1.1016x`/`1.0392x` with 14/14 wins; Clang improves `1.0154x`/`1.0082x`. The wrapper adds only 320 text bytes, links no external object or library, and reuses the explicitly disclosed Intel/liboqs-derived round schedule rather than claiming a new baby-mlkem Keccak design. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
@@ -8179,6 +8182,96 @@ repository-local producer/consumer lifetime and encoding fusion around that
 arithmetic. It links no secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or
 other external runtime object, adds no persistent cache or table, and changes
 no API or wire format.
+
+### Local Core Optimization A/B (2026-07-16, Clang fixed H(pk) final-output slice)
+
+A fresh Clang native profile on an AMD Ryzen Threadripper 7980X used 500,000
+keygen iterations and put the fixed 1184-byte SHA3-256 helper first:
+
+| Profile symbol | Self time |
+|---|---:|
+| `mlkem_sha3_256_1184_avx512vl` | `23.76%` |
+| `mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512` | `17.53%` |
+| `bench_keygen` | `11.41%` |
+| `kpke_encrypt_prepared_public` | `11.10%` |
+| native keygen accumulation | `6.33%` |
+| public-key parser | `5.76%` |
+| shared inverse NTT | `5.71%` |
+
+The accepted change is a classic output-liveness/backward slice, not a new
+Keccak permutation. SHA3-256 squeezes 32 bytes, so this fixed helper observes
+only final state lanes `A[0..3,0]`. Standard Keccak dependencies still require
+all five Theta column parities. The final round then needs Theta corrections
+only on the five source lanes that become `B[0..4,0]`, all five of those values
+to compute Chi, and only Chi outputs `x=0..3`; Iota applies to `x=0`. All first
+23 rounds of the ninth permutation and every round of the preceding eight
+permutations remain complete.
+
+This boundary-minimization principle was cross-checked against three sources:
+
+* The [Keccak specification summary](https://keccak.team/keccak_specs_summary.html)
+  defines the Theta, Rho, Pi, Chi, and Iota dependencies used for the slice.
+* The 2024 paper
+  [Optimized Software Implementation of Keccak, Kyber, and Dilithium](https://eprint.iacr.org/2024/1515)
+  emphasizes Keccak register allocation, scheduling, RAW hazards, and bounded
+  code layout. It informed the decision to preserve the existing 23-round
+  schedule rather than duplicate a large round prefix; it does not describe
+  this baby-mlkem-specific final-output slice.
+* [libsecp256k1](https://github.com/bitcoin-core/secp256k1) documents specialized
+  comparison paths that avoid a field inversion when only the observable
+  coordinate relation is needed. The analogy here is only to compute the
+  representation required at an API boundary. No elliptic-curve formula or
+  secp256k1/ZKP code is used.
+
+Core commit `0ded4b8` adds a selector only to Clang's fixed H(pk) path. On the
+last four-round group of the final permutation, round 3 branches to a 246-byte
+`.mlkem_sha3_final32` executable section. Keeping the partial round outside
+normal `.text` limits displacement of the following live x8 matrix helper to
+16 bytes. The generated assembly remains reproducible from
+`scripts/gen_keccak_inplace4.pl`. GCC is preprocessor-gated to the prior path,
+and its assembly object is byte-identical to `7ab44df`.
+
+The direct A/B linked the baseline and candidate helpers under distinct symbols
+in one binary, checked exact output on 4,096 deterministic 1184-byte inputs,
+then ran 11 alternating CPU-0 pairs of 500,000 calls:
+
+| Fixed H(pk) | Baseline median | Candidate median | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| Clang native | `1341.394486 ns` | `1336.758812 ns` | `1.005253x` | `1.003616x` | `11/11` |
+
+The baseline-first and candidate-first paired medians are `1.003616x` and
+`1.003639x`, respectively. A production-aligned complete-KEM gate used three
+warmups followed by 14 alternating pairs at 100,000 iterations:
+
+| Clang native row | Paired geometric mean | Paired median | Wins | Baseline-first | Candidate-first |
+|---|---:|---:|---:|---:|---:|
+| `keygen` | `1.0062x` | `1.0037x` | `10/14` | `1.0079x` | `1.0012x` |
+| `keygen_core` | `1.0013x` | `1.0032x` | `9/14` | `1.0037x` | `0.9990x` |
+| `roundtrip` | `1.0038x` | `1.0033x` | `10/14` | `1.0037x` | `1.0030x` |
+| `roundtrip_core` | `1.0016x` | `1.0020x` | `9/14` | `1.0022x` | `1.0019x` |
+
+The unaffected `encaps`, `decaps`, `encaps_core`, and `decaps_core` controls
+have paired medians `0.9997x`, `0.9997x`, `0.9995x`, and `1.0003x`. They are
+neutral-to-mixed noise, so no broad encapsulation or decapsulation gain is
+claimed. The accepted claim is the direct fixed hash plus its keygen and
+roundtrip propagation.
+
+A rejected alternative duplicated the first three rounds after a shared
+20-round prefix. It grew object text by 2,691 bytes and reached only `1.0002x`
+direct paired median with 13/21 wins. Another candidate placed the partial
+round in normal `.text`; it moved the following x8 helper by 272 bytes and
+regressed `encaps_core` to `0.9977x` with 4/14 wins. The accepted orphan section
+avoids that instruction-cache/layout regression. An ungated GCC version showed
+a small focused result but failed to reproduce a reliable complete-KEM gain,
+so GCC deliberately remains byte-identical to the baseline.
+
+The assembly executable sections grow from 5,309 to 5,570 bytes (`+261`), and
+the linked `benchc` text grows from 149,011 to 149,273 bytes (`+262`). Test
+commit `1408d72` compares the helper against the complete generic sponge for
+256 fixtures: zero, all-`0xff`, sequential, alternating, and 252 deterministic
+pseudorandom public keys. GCC and Clang native complete tests pass; AVX2-only
+and scalar paths are unchanged. The optimization adds no cache, table, external
+object, runtime library, API change, or wire-format change.
 
 ### Local Core Optimization A/B (2026-07-16, Clang sparse x8 round-0 peel)
 
