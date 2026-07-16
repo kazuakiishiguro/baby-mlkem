@@ -5380,7 +5380,10 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
                                               int count) {
   size_t pos = 0;
   const __m256i bound = _mm256_set1_epi16(Q);
+#if !(defined(__AVX512VBMI2__) && defined(__AVX512VL__) && \
+      defined(__GNUC__) && !defined(__clang__))
   const __m256i ones = _mm256_set1_epi8(1);
+#endif
   const __m256i mask = _mm256_set1_epi16(0x0fff);
   const __m256i idx8 = _mm256_set_epi8(
       15, 14, 14, 13, 12, 11, 11, 10,
@@ -5388,6 +5391,48 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
       11, 10, 10,  9,  8,  7,  7,  6,
        5,  4,  4,  3,  2,  1,  1,  0);
 
+#if defined(__AVX512VBMI2__) && defined(__AVX512VL__) && \
+    defined(__GNUC__) && !defined(__clang__)
+  while (count <= N - 32 && pos + 56 <= stream_len) {
+    __m256i f0 = _mm256_loadu_si256((const __m256i *)(stream + pos));
+    __m256i f1 = _mm256_loadu_si256((const __m256i *)(stream + pos + 24));
+    f0 = _mm256_permute4x64_epi64(f0, 0x94);
+    f1 = _mm256_permute4x64_epi64(f1, 0x94);
+    f0 = _mm256_shuffle_epi8(f0, idx8);
+    f1 = _mm256_shuffle_epi8(f1, idx8);
+    __m256i g0 = _mm256_srli_epi16(f0, 4);
+    __m256i g1 = _mm256_srli_epi16(f1, 4);
+    f0 = _mm256_and_si256(_mm256_blend_epi16(f0, g0, 0xaa), mask);
+    f1 = _mm256_and_si256(_mm256_blend_epi16(f1, g1, 0xaa), mask);
+    pos += 48;
+
+    __mmask16 good0 =
+        _mm256_cmp_epu16_mask(f0, bound, _MM_CMPINT_LT);
+    __mmask16 good1 =
+        _mm256_cmp_epu16_mask(f1, bound, _MM_CMPINT_LT);
+    __m256i packed0 = _mm256_maskz_compress_epi16(good0, f0);
+    __m256i packed1 = _mm256_maskz_compress_epi16(good1, f1);
+    _mm256_storeu_si256((__m256i *)(void *)(out + count), packed0);
+    count += __builtin_popcount((unsigned)good0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + count), packed1);
+    count += __builtin_popcount((unsigned)good1);
+  }
+
+  while (count <= N - 8 && pos + 16 <= stream_len) {
+    __m128i f = _mm_loadu_si128((const __m128i *)(stream + pos));
+    f = _mm_shuffle_epi8(f, _mm256_castsi256_si128(idx8));
+    __m128i t = _mm_srli_epi16(f, 4);
+    f = _mm_and_si128(_mm_blend_epi16(f, t, 0xaa),
+                      _mm256_castsi256_si128(mask));
+    pos += 12;
+
+    __mmask8 good = _mm_cmp_epu16_mask(
+        f, _mm256_castsi256_si128(bound), _MM_CMPINT_LT);
+    __m128i packed = _mm_maskz_compress_epi16(good, f);
+    _mm_storeu_si128((__m128i *)(void *)(out + count), packed);
+    count += __builtin_popcount((unsigned)good);
+  }
+#else
   while (count <= N - 32 && pos + 56 <= stream_len) {
     __m256i f0 = _mm256_loadu_si256((const __m256i *)(stream + pos));
     __m256i f1 = _mm256_loadu_si256((const __m256i *)(stream + pos + 24));
@@ -5457,6 +5502,7 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
     _mm_storeu_si128((__m128i *)(out + count), f);
     count += __builtin_popcount(good);
   }
+#endif
 
   const uint8_t *ip = stream + pos;
   int16_t *op = out + count;
