@@ -152,6 +152,7 @@ Near-term target selection:
 | Native AVX512 partial forward-NTT boundary | Accepted for GCC and Clang native; AVX2-only unchanged | The fused K=3 consumers now carry the forward transform through `l2` in signed 16-bit Montgomery form and canonicalize once before their unchanged unsigned final `l1`. This removes the old head canonicalization plus two levels of 32-bit widening, reciprocal reduction, and per-butterfly correction. Production-aligned GCC/Clang encryption stage medians improve `1.1303x`/`1.1395x`; decrypt NTT+accum improves `1.0756x`/`1.2593x`. GCC 100k KEM paired medians improve encaps/decaps/roundtrip by `1.0724x`/`1.1137x`/`1.0432x`, all 14/14. No external object, runtime library, cache, or wire-format dependency is added; the Montgomery arithmetic remains attributed to the existing upstream-derived local design. |
 | Native AVX512 full-tail consumer handoff | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | Fused K=3 consumers now reuse the existing register-merged ZMM `l3`..`l1` tail, leave its complete NTT output lazy, and canonicalize each contiguous 32-coefficient block only when accumulation or key encoding consumes it. This removes one 512-byte coefficient read/write boundary per transform and the consumer's YMM lane reconstruction. Clang/GCC cached K-PKE paired medians improve `1.0365x`/`1.0358x`; 100k KEM encaps improves `1.0502x`/`1.0264x`, decaps `1.0332x`/`1.0070x`, and roundtrip `1.0173x`/`1.0130x`. The scheduling and handoff are repository-local; Montgomery/Harvey arithmetic remains attributed to upstream Kyber, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 full-lazy single-correction canonicalization | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | The proved `(-7Q,8Q)` forward-NTT output reduces by the existing signed Barrett step to `[0,Q]`, so the block consumer now removes only the possible value `Q` with one compare and masked subtract instead of running generic negative and high corrections. Clang/GCC fused lazy K=3 boundaries improve `1.0217x`/`1.0230x` paired median and cached K-PKE improves `1.0111x`/`1.0106x`; 100k encaps improves `1.0094x`/`1.0111x`, decaps `1.0065x`/`1.0132x`, and roundtrip `1.0067x`/`1.0064x`. The output remains canonical, data/BSS are unchanged, and no cache, external object, table, API, or wire-format dependency is added. |
+| GCC flattened full forward-NTT wrapper | Closed | A GCC-only noinline `flatten` wrapper exposed the existing upper head and lower tail in one compilation unit. Three consecutive transforms improved `1.0085x` geometric mean in a focused probe, but cached/uncached K-PKE and keygen stage gates regressed to `0.9974x`/`0.9986x`/`0.9969x`, with only 2/7, 1/7, and 1/7 wins. Linked text grew 1,536 bytes. Keep the smaller shared head/tail boundaries; no candidate code remains. |
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
 | Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
@@ -261,6 +262,50 @@ results. A new attempt must use a compact rotating plane window, controlled
 assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization Diagnostic (2026-07-16, GCC flattened full forward NTT)
+
+GCC emitted the shared AVX512 forward-NTT head and tail as separate noinline
+functions. Full transforms called both functions, while partial NTT consumers
+called only the head. A GCC-only candidate changed the complete-transform
+wrapper to a noinline `flatten` function so the compiler could schedule the
+existing head and tail together without changing any butterfly, twiddle,
+Montgomery arithmetic, range contract, or caller representation.
+
+GCC native KAT passed. A focused CPU-0 probe used three warmups, 21 alternating
+pairs, and 500,000 iterations. It copied canonical fixtures before each timed
+transform so every invocation consumed the same valid input:
+
+| Focused GCC native metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| one complete forward NTT | `0.9944x` | `0.9988x` | 10/21 | `0.9965x` / `1.0014x` |
+| three complete forward NTTs | `1.0085x` | `1.0034x` | 18/21 | `1.0027x` / `1.0047x` |
+
+The three-transform result was promising enough for the production-shaped
+stage gate. That screen used CPU 0, two warmups, seven alternating pairs, and
+30,000 iterations against `7f6df5c`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 7f6df5c
+```
+
+| GCC native product stage | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| cached K-PKE encryption | `0.9974x` | `0.9970x` | 2/7 | `0.9977x` / `0.9952x` |
+| uncached K-PKE encryption | `0.9986x` | `0.9988x` | 1/7 | `0.9988x` / `0.9966x` |
+| full K-PKE keygen | `0.9969x` | `0.9982x` | 1/7 | `0.9971x` / `0.9982x` |
+
+The candidate replaced the standalone tail symbol with a `0x601`-byte full
+helper and increased linked `benchc` text from 80,631 to 82,167 bytes
+(`+1,536`). The focused three-transform gain therefore does not survive the
+real callers or justify the extra instruction footprint. The source of the
+integrated loss is not proven, but instruction-cache or surrounding code-layout
+pressure is consistent with the larger helper. No final KEM gate was run after
+all three product stages failed. Keep the compact shared head and tail. No
+candidate code, table, cache, external object, API change, or wire-format change
+remains in the tree.
 
 ### Latest Core Optimization Diagnostic (2026-07-16, AVX2 complete shuffle-mask LUT)
 
