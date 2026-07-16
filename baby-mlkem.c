@@ -4304,6 +4304,17 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_canonicalize_lazy_block32_avx512(
   return _mm512_mask_sub_epi16(v, ge_q, v, q);
 }
 
+/* Clang can retain redundant zero Q under the proved K=3 dot bound. */
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_acc4_reduce_lazy_block32_avx512(const poly256 f, int offset) {
+#if defined(__clang__)
+  return ntt_barrett_reduce_i16x32_avx512(
+      _mm512_loadu_si512((const void *)(f + offset)));
+#else
+  return ntt_canonicalize_lazy_block32_avx512(f, offset);
+#endif
+}
+
 /* Preweight each common canonical odd lane once for all dot products. */
 static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_c0_factor_avx512(
     __m512i y, __m512i y_odd, __m512i gamma_hi) {
@@ -4491,11 +4502,11 @@ ntt3_mul_acc4_fused_final_lazy512_avx512(
 
   for (int offset = 0, pair = 0; offset < N;
        offset += 32, pair += 16) {
-    __m512i y0 = ntt_canonicalize_lazy_block32_avx512(
+    __m512i y0 = ntt_acc4_reduce_lazy_block32_avx512(
         b[0], offset);
-    __m512i y1 = ntt_canonicalize_lazy_block32_avx512(
+    __m512i y1 = ntt_acc4_reduce_lazy_block32_avx512(
         b[1], offset);
-    __m512i y2 = ntt_canonicalize_lazy_block32_avx512(
+    __m512i y2 = ntt_acc4_reduce_lazy_block32_avx512(
         b[2], offset);
     __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
     __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
