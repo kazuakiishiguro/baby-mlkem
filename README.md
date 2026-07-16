@@ -209,6 +209,7 @@ Near-term target selection:
 | GCC AVX512VNNI lazy accumulation/inverse boundary | Accepted for GCC AVX512VNNI; Clang/non-VNNI/narrower ISA unchanged | The four-output K=3 kernel now stops its reciprocal reduction at a congruent `[-440,4570]` result and carries that representation into the shared inverse NTT, whose two Barrett passes move from levels 2/5 to the range-proved levels 1/4. This removes the accumulator's canonical correction without adding an inverse reduction. Direct VNNI accumulation, shared inverse, and cached K-PKE paired geometric means improve `1.0583x`/`1.0151x`/`1.0487x`; 100k encaps/decaps/roundtrip improve `1.0394x`/`1.0256x`/`1.0110x`. GCC `benchc` text shrinks 160 bytes. No cache, external object, table, or wire-format change is added. |
 | Clang AVX512 lazy accumulation/inverse boundary | Accepted for Clang AVX512 with or without VNNI; GCC native text byte-identical; narrower ISAs unchanged | Clang now keeps each four-output K=3 dot product in the congruent `[-440,4570]` interval and carries it into the shared inverse NTT, moving its two Barrett passes from levels 2/5 to the range-proved levels 1/4. Clang native 100k encaps/decaps/roundtrip paired geometric means improve `1.0296x`/`1.0210x`/`1.0102x`; an explicit `-mno-avx512vnni` gate improves them `1.0394x`/`1.0353x`/`1.0113x`. At that commit LLVM emitted `VPMADDWD`/`VPADDD`, not `VPDPWSSD`, so its gain was delayed canonicalization; the separately measured VNNI lowering follow-up is listed below. Clang `benchc` text shrinks 256 bytes, while GCC native text is byte-identical. No cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512VNNI forced dot-product lowering | Accepted for Clang AVX512VNNI; GCC and Clang non-VNNI text byte-identical | Clang 18 exposed AVX512VNNI but decomposed the four-output K=3 helper's 24 dot products into `VPMADDWD` plus `VPADDD`. A Clang+VNNI local inline-assembly expression now retains one `VPDPWSSD` per dot product. Direct lazy accumulation and cached K-PKE paired geometric means improve `1.0185x`/`1.0126x`; 100k encaps/decaps improve `1.0141x`/`1.0132x`. Clang `benchc` text shrinks 128 bytes. No external object, cache, table, API, or wire-format change is added. |
+| Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
@@ -8986,6 +8987,57 @@ arithmetic. It links no secp256k1, ZKP, Kyber, PQClean, XKCP, liboqs, or other
 external runtime object, adds no persistent cache or table, and changes no API
 or wire format. Existing Montgomery/Harvey, reciprocal reduction, and
 asymmetric multiplication attributions remain unchanged.
+
+Post-change 500,000-iteration native profiles confirm that the forced VNNI
+lowering reduced the intended Clang arithmetic share. Clang now attributes
+`5.86%` self time to the four-output accumulator, down from the preceding
+`6.35%`; its shared inverse completion falls from `5.72%` to `4.77%`. The
+current leading rows are:
+
+| Compiler | Fixed `H(pk)` | x8 matrix Keccak | Prepared encryption | Parser | Other prepared arithmetic |
+|---|---:|---:|---:|---:|---:|
+| Clang 18.1.3 | 26.60% | 17.89% | 9.75% | 5.50% | accumulator 5.86%, shared inverse 4.77% |
+| GCC 13.3.0 | 27.48% | 18.61% | 8.35% | 5.55% | sparse SHAKE256 8.40%, inverse 3.63% + 1.97% |
+
+The AVX512VBMI2 parser direction was not reopened: the existing documented
+`VPCOMPRESSW` experiment regressed the direct parser to `0.145x` and complete
+matrix generation to `0.533x` on this target.
+
+A fresh shared-inverse-to-ciphertext experiment was also rejected. The Clang
+AVX512 prototype kept inverse levels 0-5 unchanged, but sent each canonical
+32-coefficient final ZMM directly into the existing d10 or d4 arithmetic and
+wrote packed ciphertext bytes instead of materializing `u[0..2]` and `v`.
+This removed 2,048 bytes of final coefficient stores and 2,048 bytes of packer
+reloads per prepared encryption. It was materially broader than the old AVX2
+single-output final-d10 diagnostic because all four outputs and both ciphertext
+encodings were consumed at one shared boundary.
+
+The production-shaped screen used CPU 0, two warmups, nine alternating pairs,
+and 30,000 stage iterations against `0f90244`:
+
+| Stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| cached K-PKE encryption | 997.32 | 1036.95 | 0.9607x | 0.9608x | 0/9 | 0.9608x / 0.9618x |
+| uncached K-PKE encryption | 2552.34 | 2582.11 | 0.9876x | 0.9874x | 0/9 | 0.9866x / 0.9887x |
+
+Static inspection rules out simple code-size growth as the explanation:
+
+| Clang native `benchc` property | Baseline | Fused candidate | Delta |
+|---|---:|---:|---:|
+| inverse/fused helper instructions | 927 | 882 | -45 |
+| inverse/fused helper stack references | 0 | 19 | +19 |
+| inverse/fused helper bytes | `0x13f2` | `0x12d6` | -284 |
+| prepared helper instructions | 2,078 | 961 | -1,117 |
+| prepared helper bytes | `0x2991` | `0x151b` | -5,238 |
+| linked text bytes | 139,609 | 134,105 | -5,504 |
+| linked data / BSS bytes | 696 / 38,272 | 696 / 38,272 | 0 / 0 |
+
+The candidate couples dense d10/d4 packing to the inverse-final dependency
+chain and introduces spills where the current inverse has none. Hot-L1
+materialization between two compact loops is faster on this Zen 4 target.
+The prototype was removed. Do not retry this boundary as another scheduling or
+inlining variant; a future candidate must reduce packing arithmetic or change
+the final representation, not only remove the store/reload.
 
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
