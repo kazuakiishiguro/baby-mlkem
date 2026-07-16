@@ -1659,6 +1659,8 @@ static __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15];
 static __m512i ZETA_NTT_HEAD_MONT_HI_AVX512[15];
+static __m512i ZETA_NTT_TAIL_MONT_LO_AVX512[3][8];
+static __m512i ZETA_NTT_TAIL_MONT_HI_AVX512[3][8];
 static __m512i ZETA_NTT_INV_MONT_LO_AVX512[6][8];
 static __m512i ZETA_NTT_INV_MONT_HI_AVX512[6][8];
 static __m512i ZETA_NTT_INV_MONT_SCALE_LO_AVX512;
@@ -1803,6 +1805,11 @@ static inline __m512i ntt_mont_mul_precomp_i16x32_avx512(
   __m512i lo = _mm512_mullo_epi16(b, zeta_lo);
   __m512i hi = _mm512_mulhi_epi16(b, zeta_hi);
   return _mm512_sub_epi16(hi, _mm512_mulhi_epi16(lo, q));
+}
+
+static inline __m512i ntt_dup_mont_factor_i16x16_avx512(__m256i factor) {
+  __m512i expanded = _mm512_cvtepu16_epi32(factor);
+  return _mm512_or_si512(expanded, _mm512_slli_epi32(expanded, 16));
 }
 
 static void ntt_canonicalize_signed_avx512(poly256 f) {
@@ -3021,6 +3028,14 @@ static void init_ntt_roots(void) {
           _mm256_loadu_si256((const __m256i *)(const void *)lo);
       ZETA_NTT_TAIL_MONT_HI[level][i] =
           _mm256_loadu_si256((const __m256i *)(const void *)hi);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+      ZETA_NTT_TAIL_MONT_LO_AVX512[level][i] =
+          ntt_dup_mont_factor_i16x16_avx512(
+              ZETA_NTT_TAIL_MONT_LO[level][i]);
+      ZETA_NTT_TAIL_MONT_HI_AVX512[level][i] =
+          ntt_dup_mont_factor_i16x16_avx512(
+              ZETA_NTT_TAIL_MONT_HI[level][i]);
+#endif
     }
   }
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -3315,11 +3330,54 @@ static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
   }
 }
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+static inline __m512i ntt_forward_level_i16x32_avx512(
+    __m512i x, __m512i partner, __m512i zeta_lo, __m512i zeta_hi,
+    __mmask32 diff_mask) {
+  __m512i a = _mm512_mask_mov_epi16(x, diff_mask, partner);
+  __m512i b = _mm512_mask_mov_epi16(partner, diff_mask, x);
+  __m512i t = ntt_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+  __m512i sum = _mm512_add_epi16(a, t);
+  __m512i diff = _mm512_sub_epi16(a, t);
+  return _mm512_mask_mov_epi16(sum, diff_mask, diff);
+}
+
+static void ntt_tail_mont_lazy_raw_avx512(poly256 f) {
+  const __m512i swap_qword_pairs =
+      _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
+  const __m512i swap_qword_quads =
+      _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+
+  /* Merge l3 through l1 while each contiguous 32-coefficient block is live. */
+  for (int block = 0; block < 8; block++) {
+    __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
+    __m512i partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
+    x = ntt_forward_level_i16x32_avx512(
+        x, partner, ZETA_NTT_TAIL_MONT_LO_AVX512[0][block],
+        ZETA_NTT_TAIL_MONT_HI_AVX512[0][block],
+        (__mmask32)0xff00ff00u);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
+    x = ntt_forward_level_i16x32_avx512(
+        x, partner, ZETA_NTT_TAIL_MONT_LO_AVX512[1][block],
+        ZETA_NTT_TAIL_MONT_HI_AVX512[1][block],
+        (__mmask32)0xf0f0f0f0u);
+
+    partner = _mm512_rol_epi64(x, 32);
+    x = ntt_forward_level_i16x32_avx512(
+        x, partner, ZETA_NTT_TAIL_MONT_LO_AVX512[2][block],
+        ZETA_NTT_TAIL_MONT_HI_AVX512[2][block],
+        (__mmask32)0xccccccccu);
+    _mm512_storeu_si512((void *)(f + 32 * block), x);
+  }
+}
+#endif
+
 static void ntt_mont_lazy_avx2(poly256 f) {
   /* Seven lazy stages stay in (-7Q,8Q), within int16_t. */
 #if defined(__AVX512F__) && defined(__AVX512BW__)
   ntt_head_mont_lazy_raw_avx512(f);
-  ntt_tail_mont_lazy_raw_avx2(f);
+  ntt_tail_mont_lazy_raw_avx512(f);
   ntt_canonicalize_signed_avx512(f);
 #else
   ntt_head_mont_lazy_raw_avx2(f);
