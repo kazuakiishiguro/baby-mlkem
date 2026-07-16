@@ -5403,14 +5403,18 @@ static inline __m256i sample_ntt_cmpgt_epi16_avx2(__m256i a, __m256i b) {
 #endif
 }
 
-static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
-                                              size_t stream_len,
-                                              poly256 out,
-                                              int count) {
+#if defined(__clang__) && defined(__AVX512VBMI2__) && defined(__AVX512VL__)
+/* Clang otherwise clones the shorter VBMI parser into every sampler. */
+#define MLKEM_SAMPLE_NTT_PARSE_NOINLINE MLKEM_NOINLINE
+#else
+#define MLKEM_SAMPLE_NTT_PARSE_NOINLINE
+#endif
+static MLKEM_SAMPLE_NTT_PARSE_NOINLINE int
+sample_ntt_parse_stream_avx2_ready(const uint8_t *stream, size_t stream_len,
+                                  poly256 out, int count) {
   size_t pos = 0;
   const __m256i bound = _mm256_set1_epi16(Q);
-#if !(defined(__AVX512VBMI2__) && defined(__AVX512VL__) && \
-      defined(__GNUC__) && !defined(__clang__))
+#if !(defined(__AVX512VBMI2__) && defined(__AVX512VL__))
   const __m256i ones = _mm256_set1_epi8(1);
 #endif
   const __m256i mask = _mm256_set1_epi16(0x0fff);
@@ -5420,8 +5424,7 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
       11, 10, 10,  9,  8,  7,  7,  6,
        5,  4,  4,  3,  2,  1,  1,  0);
 
-#if defined(__AVX512VBMI2__) && defined(__AVX512VL__) && \
-    defined(__GNUC__) && !defined(__clang__)
+#if defined(__AVX512VBMI2__) && defined(__AVX512VL__)
   const __m512i bound512 = _mm512_set1_epi16(Q);
 
 #if defined(__AVX512VBMI__) && defined(__AVX512BW__)
@@ -5581,6 +5584,7 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
   }
   return (int)(op - out);
 }
+#undef MLKEM_SAMPLE_NTT_PARSE_NOINLINE
 
 static int sample_ntt_parse_stream_avx2(const uint8_t *stream,
                                         size_t stream_len,
