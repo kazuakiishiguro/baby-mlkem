@@ -261,6 +261,7 @@ Near-term target selection:
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
+| Native Clang mixed-x8 keygen single-state continuation | Accepted for Clang native AVX512 keygen; GCC/narrower ISA text byte-identical | After the mixed x8 first permutation completes six SHAKE256 noise streams, the lone SHAKE128 matrix-tail state now continues through the existing single-state AVX512VL core instead of carrying three empty lanes through `keccakf4()`. Complete keygen improves `1.0159x` geometric mean and `1.0130x` median; three 15-pair 100k KEM gates keep keygen/keygen-core geometric means in `1.0058x..1.0099x`/`1.0034x..1.0104x`. A 64-byte function-alignment diagnostic gives `1.0131x`/`1.0079x` with 13/15 wins each and neutralizes most unchanged-path layout movement. Clang `benchc` text shrinks 4,096 bytes; no cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512 matrix capacity-only handoff | Accepted for Clang native AVX512; GCC/narrower ISA unchanged | The x8 SHAKE128 matrix producer already writes all three 168-byte rates, so its final handoff now retains only capacity words 21..24 instead of redundantly storing all 25 state vectors. A rare rejection refill rebuilds only each deficient scalar lane from the third rate plus its four capacity words. The complete x8 sampler and matrix paired medians improve `1.0400x`/`1.0316x`; final 100k keygen/keygen-core improve `1.0046x`/`1.0052x` with 13/15 and 14/15 wins. Cached encapsulation is not credited: its `0.9981x` product median accompanies an unchanged source hot path and a 4 KiB BSS-layout shift. Clang `benchc` text shrinks 4,253 bytes. The handoff/refill design is repository-local, reuses the already attributed XKCP-derived x8 round mapping, and adds no cache, external object, table, API, or wire-format dependency. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
@@ -342,6 +343,140 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, Clang mixed-x8 keygen single-state continuation)
+
+Clang keygen co-schedules six one-block SHAKE256 ETA2 streams in x8 lanes 0..5
+with the final SHAKE128 matrix stream in lane 6. After the first permutation all
+six noise streams are complete, while only that one matrix stream needs two
+more rates. The preceding Clang path extracted lane 6 into 25 YMM values, kept
+three lanes empty through `keccakf4()`, and extracted 21 scalar words again
+after every continuation permutation.
+
+The accepted path extracts the complete lane-6 state once into canonical
+`uint64_t[25]`, parses its first 168-byte rate, and continues a deficient stream
+with the existing single-state `keccakf()` core. Native Clang routes that call
+to the repository-local AVX512VL assembly and uses the accepted wide rejection
+parser. The initial mixed x8 permutation, all six CBD outputs, every rejection
+candidate, and the output polynomial are unchanged.
+
+Compiler code shape was evaluated separately. Commit `b9fe290` temporarily put
+the old x4 helper behind a Clang `noinline` boundary, and `da0ab83` applied the
+single-state continuation behind the same boundary. That made the timed keygen,
+encaps, and decaps wrapper addresses identical across the algorithm comparison,
+but the boundary itself erased most of the gain when compared with the real
+inline baseline. Commit `9a9bf31` therefore removes only `noinline`; final
+production keeps Clang's faster inline policy. The intermediate commits remain
+in history as diagnostics, not as the final routing decision.
+
+The existing 256-fixture signed-keygen validator executes the changed Clang
+path. For each deterministic `sigma`/`rho` pair it compares the matrix tail with
+independent `sample_ntt(rho,2,2)`, compares all six centered CBD polynomials with
+scalar PRF/CBD, and compares their canonical NTT outputs. Clang/GCC native,
+Clang/GCC AVX2-only, and Clang/GCC scalar KATs pass. Native complete stage
+validation passes under both compilers, as does Clang AVX2-only stage
+validation. Clang native ASan+UBSan and GCC native UBSan pass KAT plus complete
+stage validation.
+
+The production-shaped stage gate compared the inline candidate with baseline
+`17bb080` on CPU 0 using two warmups, seven alternating pairs, and 50,000
+iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 17bb080
+```
+
+| Clang native stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| complete K-PKE keygen | `1.0159x` | `1.0130x` | 6/7 | `1.0178x` / `1.0074x` |
+| standalone matrix control | `1.0000x` | `1.0020x` | 4/7 | `1.0010x` / `1.0020x` |
+| repeated-key K-PKE control | `0.9986x` | `1.0011x` | 4/7 | `1.0036x` / `0.9933x` |
+
+The final committed tree `9a9bf31` was then compared with the same baseline
+using three warmups and 15 alternating pairs of 100,000 KEM iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 17bb080
+```
+
+| Default Clang native KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | `1.0058x` | `1.0061x` | 11/15 | `1.0039x` / `1.0061x` |
+| `mlkem_keygen_core` | `1.0034x` | `1.0054x` | 11/15 | `1.0034x` / `1.0054x` |
+| `mlkem_encaps` control | `0.9980x` | `0.9960x` | 4/15 | `0.9978x` / `0.9947x` |
+| `mlkem_encaps_core` control | `0.9932x` | `0.9947x` | 4/15 | `0.9855x` / `0.9959x` |
+| `mlkem_decaps` control | `1.0016x` | `0.9958x` | 5/15 | `0.9939x` / `0.9982x` |
+| `mlkem_decaps_core` control | `0.9965x` | `0.9930x` | 5/15 | `0.9921x` / `0.9930x` |
+| `mlkem_roundtrip` | `0.9997x` | `1.0006x` | 8/15 | `0.9986x` / `1.0006x` |
+| `mlkem_roundtrip_core` | `0.9966x` | `0.9945x` | 5/15 | `0.9921x` / `0.9945x` |
+
+Two independent 15-pair runs of the same final inline source before commit gave
+`1.0099x`/`1.0104x` and `1.0092x`/`1.0082x` geometric means for
+keygen/keygen-core. Their paired medians were `1.0098x`/`1.0066x` and
+`1.0083x`/`1.0069x`. Keygen won 13/15 in both runs; keygen-core won
+14/15 and 13/15. The changed keygen signal is therefore repeatable, while
+unchanged controls move materially with code layout.
+
+The layout mechanism is visible in the binary. Removing the inlined x4
+continuation shrinks the timed keygen body by about 4.1 KiB and moves the later
+encaps/decaps benchmark functions. A diagnostic rebuilt both revisions with
+identical 64-byte function alignment; this is not a production flag or a
+claimed optimization:
+
+```bash
+EXTRA_CFLAGS='-fomit-frame-pointer -fno-stack-protector -falign-loops=64 \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -fno-strict-aliasing -falign-functions=64' \
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 17bb080
+```
+
+| 64-byte-aligned diagnostic | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | `1.0131x` | `1.0078x` | 13/15 | `1.0076x` / `1.0083x` |
+| `mlkem_keygen_core` | `1.0079x` | `1.0071x` | 13/15 | `1.0071x` / `1.0093x` |
+| `mlkem_encaps` control | `1.0003x` | `1.0001x` | 8/15 | `1.0029x` / `0.9993x` |
+| `mlkem_encaps_core` control | `0.9980x` | `0.9978x` | 7/15 | `1.0058x` / `0.9977x` |
+| `mlkem_decaps` control | `0.9970x` | `1.0012x` | 8/15 | `1.0023x` / `0.9998x` |
+| `mlkem_decaps_core` control | `1.0061x` | `1.0040x` | 10/15 | `1.0058x` / `1.0039x` |
+| `mlkem_roundtrip` | `1.0037x` | `1.0027x` | 11/15 | `1.0048x` / `1.0027x` |
+| `mlkem_roundtrip_core` | `1.0041x` | `1.0036x` | 8/15 | `1.0084x` / `0.9978x` |
+
+A second diagnostic compared `b9fe290` and `da0ab83`, where both old and new
+helpers were noinline. The timed keygen/encaps/decaps wrapper addresses and sizes
+were identical. Keygen/keygen-core improved `1.0097x`/`1.0098x` geometric mean,
+`1.0070x`/`1.0058x` median, and 15/15 each; `decaps_core` was neutral at
+`0.9994x` geometric mean and `0.9988x` median. This isolates the width transition
+from wrapper displacement. The noinline boundary was still removed because its
+comparison against the real inline baseline reduced keygen-core to only
+`1.0017x` geometric mean and moved unrelated controls negatively.
+
+Only keygen is credited. The default encaps/decaps and roundtrip rows above are
+reported, not hidden or claimed as gains. Their source paths are unchanged, but
+their timed wrappers move and can acquire different branch encodings as text
+shrinks. Their sign changes across default, aligned, and address-matched
+layouts. This is evidence of benchmark text-layout sensitivity, not evidence
+that the keygen continuation executes during those operations.
+
+Clang native `benchc` text/data/BSS change from 139,155/688/36,224 to
+135,059/688/36,224 bytes. The final native `.text` SHA-256 is
+`e8fea4f45459a67cd82d3680375a4782c0891ca2d96690459a04a7aa7cbc3919`.
+GCC native remains byte-identical with hash
+`4b9dd48be75b262a1434f6390245968c65af25230f637d87eddf529cdbaf45bf`.
+Clang AVX2-only and scalar remain byte-identical with hashes
+`ace7f3b2765eb6e749109a58be895c6861891cd4548666483d85f445431ce5e9` and
+`b117807cff60a578fffdd3c9ac298e1607185802072c17c6bd7f37cf33407c66`.
+
+This is a repository-local ML-KEM state-width transition. It reuses the existing
+single-state AVX512VL round core whose schedule is already disclosed as derived
+from Intel/liboqs, and the existing wide parser designed in baby-mlkem. It does
+not claim a new Keccak schedule and links no external object or runtime library.
+No persistent cache, table, API, or wire-format change is added.
 
 ### Latest Core Optimization Diagnostic (2026-07-17, Clang lazy keygen `ehat` handoff)
 
