@@ -898,8 +898,37 @@ static MLKEM_NOINLINE void keccakf8_sparse_eta2x7_32(
   __m512i mi = zero, mo = zero, mu = zero;
   __m512i sa = zero, se = zero, si = zero, so = zero, su = zero;
 
-  for (int round = 0; round < 24; round += 4) {
-    MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+  for (int round = 0;; round += 4) {
+    MLKEM_KECCAKF8_ROUND0(ba, ge, ki, mo, su, round);
+    MLKEM_KECCAKF8_ROW1(ka, me, si, bo, gu);
+    MLKEM_KECCAKF8_ROW2(sa, be, gi, ko, mu);
+    MLKEM_KECCAKF8_ROW3(ga, ke, mi, so, bu);
+    MLKEM_KECCAKF8_ROW4(ma, se, bi, go, ku);
+    MLKEM_KECCAKF8_ROUND0(ba, me, gi, so, ku, round + 1);
+    MLKEM_KECCAKF8_ROW1(sa, ke, bi, mo, gu);
+    MLKEM_KECCAKF8_ROW2(ma, ge, si, ko, bu);
+    MLKEM_KECCAKF8_ROW3(ka, be, mi, go, su);
+    MLKEM_KECCAKF8_ROW4(ga, se, ki, bo, mu);
+    MLKEM_KECCAKF8_ROUND0(ba, ke, si, go, mu, round + 2);
+    MLKEM_KECCAKF8_ROW1(ma, be, ki, so, gu);
+    MLKEM_KECCAKF8_ROW2(ga, me, bi, ko, su);
+    MLKEM_KECCAKF8_ROW3(sa, ge, mi, bo, ku);
+    MLKEM_KECCAKF8_ROW4(ka, se, gi, mo, bu);
+    MLKEM_KECCAKF8_ROUND0(ba, be, bi, bo, bu, round + 3);
+    MLKEM_KECCAKF8_ROW1(ga, ge, gi, go, gu);
+    MLKEM_KECCAKF8_ROW2(ka, ke, ki, ko, ku);
+
+    if (round == 20) {
+      /* ETA2 observes words 0..15; finish only word 15 in the last row. */
+      __m512i T0 = rotl64x8(ma, 36);
+      __m512i T1 = rotl64x8(me, 10);
+      __m512i T4 = rotl64x8(mu, 27);
+      ma = MLKEM_KECCAKF8_CHI(T4, T0, T1);
+      break;
+    }
+
+    MLKEM_KECCAKF8_ROW3(ma, me, mi, mo, mu);
+    MLKEM_KECCAKF8_ROW4(sa, se, si, so, su);
   }
 
   st[0] = ba;   st[1] = be;   st[2] = bi;   st[3] = bo;
