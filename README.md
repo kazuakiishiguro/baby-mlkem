@@ -105,13 +105,20 @@ single-state Keccak path. This removes a separate x8 noise permutation without
 using a cross-operation cache, external object, library dependency, or
 wire-format change.
 
+The GCC native AVX512BW encryption-noise producer also keeps the first three
+ETA2 `rhat` polynomials in their centered `[-2,2]` form and passes them directly
+to the existing signed-lazy forward NTT. The four error polynomials retain their
+accepted signed-int8 representation. This removes producer-side add-`Q`
+canonicalization; it adds no external object, runtime library, cache, table,
+API, or wire-format dependency.
+
 The repository still keeps in-tree comparator backends. Set
 `AVX2_BACKEND=upstream` to use the vendored upstream Kyber AVX2 sources under
 `include/kyber_upstream/avx2`, or `AVX2_BACKEND=pqclean` to use the vendored
 PQClean AVX2 sources. Results from those opt-in backends measure integration with
 external-origin vendored code, not an independent baby-mlkem core.
 
-## Current Core Optimization Frontier (2026-07-15)
+## Current Core Optimization Frontier (2026-07-16)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -227,6 +234,8 @@ Near-term target selection:
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | GCC compact sparse x8 round-0 peel | Accepted for GCC native AVX512; Clang and narrower ISA byte-identical | The x7-noise, mixed-encryption, mixed-keygen, and diagnostic matrix modes can have only lanes `0..4`, `16`, and `20` nonzero before their first permutation. Round 0 is evaluated once outside the rotating four-phase loop, while rounds 1..23 reuse one compact `1,2,3,0` body. Raw x7 PRF/CBD and cached K-PKE improve `1.0023x`/`1.0025x` paired geometric mean; 100k encaps-core and keygen improve `1.0051x`/`1.0026x` with 12/15 wins each. Decaps and roundtrip are neutral and are not credited. GCC `benchc` text grows 804 bytes. No cache, external object, table, API, or wire-format change is added. |
 | GCC native decaps hash/tail/noise lane filling | Accepted for cache-disabled GCC AVX512BW decapsulation; Clang/narrower ISA byte-identical | After `SHA3-512(m' || H(pk))` produces `rdash`, the remaining two x4 matrix-tail permutations fill six idle lanes with ETA2 nonces 0..5 and generate nonce 6 with single-state Keccak, replacing the old separate sparse x8 noise permutation. The direct boundary improves `1.1308x` paired geometric mean with 11/11 wins; 100k `decaps_core` improves `1.0263x` geometric mean and `1.0256x` median with 15/15 wins, and `roundtrip_core` improves `1.0050x` with 13/15 wins. Cached decapsulation is neutral and is not credited. GCC `benchc` text grows 1,152 bytes; no cache, external object, table, API, or wire-format change is added. |
+| GCC native centered encryption `rhat` boundary | Accepted for GCC AVX512BW; Clang native and both compilers' AVX2-only/scalar product binaries are byte-identical | The first three ETA2 CBD outputs remain centered in `[-2,2]` and enter the existing signed-lazy forward NTT without three producer-side add-`Q` correction streams. Raw x7 noise, mixed x8 noise/tail, and cached K-PKE paired geometric means improve `1.0231x`/`1.0115x`/`1.0083x`; 100k encaps/decaps improve `1.0064x`/`1.0084x`. GCC linked text shrinks 132 bytes. No external object, cache, table, API, or wire-format change is added. |
+| Native cyclic register-only x4/x8 Keccak cores | Closed | A 32-YMM x4 Algorithm 4 core was exact over 1,024 fixtures, but retaining state through three permutations plus three rate transposes regressed five reversed-order pairs to roughly `0.98x`. A spill-free 32-ZMM x8 core was also exact over 1,024 fixtures but measured `292.958490` versus `293.244675 ns` (`0.999024x`). Front-end and routing cost erased the removed state traffic; no candidate code remains. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
@@ -267,18 +276,128 @@ A/B below rather than this cross-run snapshot.
 The GCC native cache-disabled decapsulation path now fills the six x4 lanes
 that become free after its dependent SHA3-512 result is available. This removes
 a separate x8 noise permutation but does not make the common x4 permutation
-itself cheaper. The standalone x4 sampler therefore remains a frontier for the
-other matrix-heavy paths.
+itself cheaper.
 
-The next independent target therefore remains the common x4 sampler. Its 24
-nonzero lanes form the Rho/Pi cycle and still ping-pong through memory every
-round. Seed-load hoisting, lane regrouping, scalar refill tweaks, two-stream
-parser interleaving, final-round/rate-store fusion, expanded four-round
-in-place mapping, and a second carried lane in C are closed by recorded A/B
-results. A new attempt must use a compact rotating plane window, controlled
-assembly/register allocation, or another representation that removes state
-traffic without recreating spill or instruction-cache pressure. A sampler win
-would now improve both keygen and the compressed cold public-preparation path.
+A fresh 500,000-iteration GCC native profile then put fixed `H(pk)` at `29.92%`,
+the checked x8 matrix assembly at `17.07%`, sparse x8 Keccak at `7.25%`,
+rejection parsing at `6.83%`, prepared encryption self time at `6.72%`, and the
+forward-NTT tail at `6.35%`. Fixed `H(pk)` remains the largest entry, but its
+local unroll, absorb-folding, theta, and GCC final-output-slice variants have
+already failed integrated gates.
+
+The next register-only sampler attempt is also closed. A native 32-YMM x4
+cyclic core gained only `1.0056x` for one isolated permutation and regressed to
+roughly `0.98x` when the real three-permutation state lifetime and rate
+transposes were included. The analogous spill-free 32-ZMM x8 core was neutral
+at `0.999024x`. Removing state traffic alone does not pay for these larger
+cyclic schedules on this compiler and CPU.
+
+The accepted centered-`rhat` change instead removes work at the producer/NTT
+representation boundary. The next tractable frontier is the remaining
+materialization between the three signed ETA2 outputs and their fused forward
+NTT/four-output accumulator. Any candidate must reduce that boundary or its
+first NTT levels without expanding the already register-heavy consumer. The
+fixed hash and matrix sampler remain larger long-term targets, but reopening
+their closed local variants requires a materially different schedule.
+
+### Latest Core Optimization A/B (2026-07-16, GCC centered encryption `rhat`)
+
+A fresh GCC native profile after the dependent decapsulation lane schedule put
+fixed `H(pk)` first at `29.92%` self time, followed by checked x8 matrix assembly
+at `17.07%`, sparse x8 Keccak at `7.25%`, rejection parsing at `6.83%`, prepared
+encryption at `6.72%` self time (`21.5%` inclusive), and the forward-NTT tail at
+`6.35%`. The fixed hash and matrix round cores had just exhausted local
+schedule variants, so the next gate examined the encryption-noise/NTT boundary.
+
+ETA2 CBD naturally produces signed coefficients in `[-2,2]`. The previous GCC
+native decoder used its nibble LUT to form those coefficients, widened them to
+int16, then compared negative lanes and added `Q` to create canonical `[0,Q)`
+`rhat` values. The existing native forward NTT is already a signed-lazy
+Montgomery transform and accepts either representation modulo `Q`. Core commit
+`87cc2ae` therefore sign-extends the first three CBD outputs directly and leaves
+the four signed-int8 error outputs unchanged:
+
+```text
+before: CBD [-2,2] -> compare/add Q -> canonical rhat -> signed-lazy NTT
+now:    CBD [-2,2] -------------------------------> signed-lazy NTT
+```
+
+The same representation is used by the cached x7 producer, the mixed x8
+noise/matrix-tail producer, and the dependent decapsulation producer. The NTT,
+K=3 arithmetic, ciphertext packing, API, and wire format are unchanged.
+
+Two register-only Keccak diagnostics were closed before accepting this smaller
+boundary change. A native 32-YMM Algorithm 4 x4 core was exact over 1,024
+fixtures and improved one isolated permutation by about `1.0056x`, but retaining
+state through three permutations plus three rate transposes regressed five
+reversed-order pairs to roughly `0.98x`. A spill-free 32-ZMM x8 core was exact
+over 1,024 fixtures but measured `292.958490 ns` for production versus
+`293.244675 ns` for the candidate, or `0.999024x`. Neither diagnostic left
+production code.
+
+The stage gate compared baseline `9d7ac80` with the candidate on CPU 0 using GCC
+native, two warmups, seven alternating pairs, and 50,000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 9d7ac80
+```
+
+| GCC native stage metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| raw x7 int8 PRF/CBD producer | `1.0231x` | `1.0233x` | 7/7 | `1.0226x` / `1.0233x` |
+| mixed x8 noise/tail producer | `1.0115x` | `1.0114x` | 7/7 | `1.0109x` / `1.0115x` |
+| separate x8 int8 producer | `1.0081x` | `1.0080x` | 7/7 | `1.0067x` / `1.0104x` |
+| cached K-PKE encryption | `1.0083x` | `1.0081x` | 7/7 | `1.0079x` / `1.0106x` |
+| cache-disabled K-PKE encryption | `0.9872x` | `1.0064x` | 6/7 | `1.0061x` / `1.0070x` |
+
+One cache-disabled candidate sample was a large outlier consistent with a
+system stall, which pulls its seven-pair geometric mean below one while both
+order medians and six of seven pairs improve. Acceptance therefore relies on
+the stable producer rows and the higher-iteration complete KEM gate,
+not on that geometric mean.
+
+The final gate used three warmups, fifteen alternating pairs, and 100,000 KEM
+iterations against the same baseline:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 9d7ac80
+```
+
+| GCC native KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | `1.0064x` | `1.0059x` | 15/15 | `1.0056x` / `1.0072x` |
+| `mlkem_encaps_core` | `1.0033x` | `1.0016x` | 12/15 | `1.0016x` / `1.0016x` |
+| `mlkem_decaps` | `1.0084x` | `1.0090x` | 14/15 | `1.0042x` / `1.0103x` |
+| `mlkem_decaps_core` | `1.0115x` | `1.0083x` | 13/15 | `1.0068x` / `1.0089x` |
+| `mlkem_roundtrip` | `1.0017x` | `1.0022x` | 13/15 | `1.0024x` / `1.0022x` |
+| `mlkem_roundtrip_core` | `1.0025x` | `1.0025x` | 13/15 | `1.0015x` / `1.0048x` |
+| `mlkem_keygen` control | `0.9968x` | `0.9990x` | 5/15 | `0.9985x` / `0.9990x` |
+| `mlkem_keygen_core` control | `0.9991x` | `0.9988x` | 3/15 | `0.9988x` / `0.9989x` |
+
+Encapsulation and decapsulation execute the changed producer and are accepted.
+The unrelated keygen rows are not claimed as gains; their source and function
+size are unchanged, and the sub-percent movement is recorded as a control.
+Linked GCC `benchc` text shrinks from 82,587 to 82,455 bytes, while data and BSS
+remain 708 and 39,168 bytes. The shared decoder, prepared-encryption helper, and
+dependent decapsulation helper shrink by 59, 16, and 34 bytes respectively.
+
+Correctness commit `1c8211d` adds an independent scalar oracle for 4,096
+fixtures. It derives all seven outputs with scalar PRF/CBD, checks the exact
+`[-2,2]` signed representation, compares both shared and dependent producers,
+and verifies that signed and canonical inputs produce byte-identical canonical
+NTT outputs. GCC/Clang native, both compilers' AVX2-only, and both scalar tests
+pass; GCC native UBSan and Clang native ASan+UBSan also pass. Production
+`benchc` is byte-identical to `9d7ac80` for Clang native and both compilers'
+AVX2-only and scalar builds.
+
+This is a repository-local representation-boundary optimization. It reuses the
+existing attributed Montgomery/Harvey NTT arithmetic but adds no external
+object or runtime library, no key/result/matrix cache, no new table, and no API
+or wire-format change.
 
 ### Latest Core Optimization A/B (2026-07-16, GCC decaps hash/tail/noise lane filling)
 
