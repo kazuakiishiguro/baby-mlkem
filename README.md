@@ -150,6 +150,7 @@ Near-term target selection:
 | Native AVX512 partial forward-NTT boundary | Accepted for GCC and Clang native; AVX2-only unchanged | The fused K=3 consumers now carry the forward transform through `l2` in signed 16-bit Montgomery form and canonicalize once before their unchanged unsigned final `l1`. This removes the old head canonicalization plus two levels of 32-bit widening, reciprocal reduction, and per-butterfly correction. Production-aligned GCC/Clang encryption stage medians improve `1.1303x`/`1.1395x`; decrypt NTT+accum improves `1.0756x`/`1.2593x`. GCC 100k KEM paired medians improve encaps/decaps/roundtrip by `1.0724x`/`1.1137x`/`1.0432x`, all 14/14. No external object, runtime library, cache, or wire-format dependency is added; the Montgomery arithmetic remains attributed to the existing upstream-derived local design. |
 | Native AVX512 full-tail consumer handoff | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | Fused K=3 consumers now reuse the existing register-merged ZMM `l3`..`l1` tail, leave its complete NTT output lazy, and canonicalize each contiguous 32-coefficient block only when accumulation or key encoding consumes it. This removes one 512-byte coefficient read/write boundary per transform and the consumer's YMM lane reconstruction. Clang/GCC cached K-PKE paired medians improve `1.0365x`/`1.0358x`; 100k KEM encaps improves `1.0502x`/`1.0264x`, decaps `1.0332x`/`1.0070x`, and roundtrip `1.0173x`/`1.0130x`. The scheduling and handoff are repository-local; Montgomery/Harvey arithmetic remains attributed to upstream Kyber, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 full-lazy single-correction canonicalization | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | The proved `(-7Q,8Q)` forward-NTT output reduces by the existing signed Barrett step to `[0,Q]`, so the block consumer now removes only the possible value `Q` with one compare and masked subtract instead of running generic negative and high corrections. Clang/GCC fused lazy K=3 boundaries improve `1.0217x`/`1.0230x` paired median and cached K-PKE improves `1.0111x`/`1.0106x`; 100k encaps improves `1.0094x`/`1.0111x`, decaps `1.0065x`/`1.0132x`, and roundtrip `1.0067x`/`1.0064x`. The output remains canonical, data/BSS are unchanged, and no cache, external object, table, API, or wire-format dependency is added. |
+| GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
 | Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
@@ -257,6 +258,89 @@ results. A new attempt must use a compact rotating plane window, controlled
 assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization A/B (2026-07-16, GCC public-key copy/H(pk) fusion)
+
+Top-level ML-KEM keygen has one mandatory producer/consumer boundary that the
+standalone fixed-hash profile does not show. The 1,184-byte encoded public key
+must be copied into the decapsulation key and hashed as `H(pk)`. The native
+baseline ran `memcpy(1184)` and then loaded the same source again in the fixed
+SHA3-256 helper.
+
+Core commit `e03de87` adds a GCC-only AVX512VL entry. Each 64-bit input word is
+loaded once into an XMM register, stored to the required decapsulation-key copy,
+and fed from that same register to the existing absorb. The state still remains
+in XMM0..XMM24 across exactly nine complete sponge permutations; no Keccak
+round, public-key byte, or output copy is skipped. The helper resides in its own
+`.mlkem_sha3_copy1184` executable section so its 1 KiB body does not displace
+the established x8 matrix hot text.
+
+The first screen used CPU 0, two warmups, seven alternating pairs, 200,000
+fixed-hash iterations, and 50,000 KEM iterations:
+
+```bash
+for cc in gcc clang; do
+  RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=keccak,kem \
+    KECCAK_ITERS=200000 KEM_ITERS=50000 PIN_CPU=0 C_COMPILER="$cc" \
+    ./scripts/bench_core_ab.sh 0e1156a
+done
+```
+
+| Compiler | Direct copy+hash baseline median ns | Candidate median ns | Paired gmean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| GCC | `1362.18` | `1353.29` | `1.0063x` | `1.0064x` | 7/7 | `1.0064x` / `1.0066x` |
+| Clang | `1359.31` | `1349.24` | `1.0073x` | `1.0072x` | 7/7 | `1.0074x` / `1.0071x` |
+
+The direct result alone was not sufficient. The final product gate used three
+warmups, fifteen alternating pairs, and 100,000 KEM iterations:
+
+```bash
+for cc in gcc clang; do
+  RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+    KEM_ITERS=100000 PIN_CPU=0 C_COMPILER="$cc" \
+    ./scripts/bench_core_ab.sh 0e1156a
+done
+```
+
+| Compiler | KEM metric | Paired gmean | Paired median | Wins | Base-first / candidate-first median | Decision |
+|---|---|---:|---:|---:|---:|---|
+| GCC | `mlkem_keygen` | `1.0016x` | `1.0020x` | 12/15 | `1.0026x` / `1.0005x` | accept |
+| GCC | `mlkem_keygen_core` | `1.0019x` | `1.0022x` | 13/15 | `1.0022x` / `1.0019x` | accept |
+| GCC | `mlkem_roundtrip` | `0.9994x` | `1.0001x` | 8/15 | `1.0018x` / `0.9993x` | not claimed |
+| GCC | `mlkem_roundtrip_core` | `1.0022x` | `1.0008x` | 9/15 | `1.0011x` / `0.9985x` | not claimed |
+| Clang | `mlkem_keygen` | `0.9970x` | `0.9986x` | 4/15 | `0.9970x` / `0.9997x` | reject |
+| Clang | `mlkem_keygen_core` | `1.0001x` | `1.0013x` | 10/15 | `0.9988x` / `1.0021x` | reject |
+
+Encapsulation and decapsulation do not execute this serial top-level copy/hash
+boundary in the measured steady-state path, so their mixed control movement is
+not attributed to the change. Clang is deliberately routed to the prior
+`memcpy` plus fixed-hash path despite its positive microbenchmark: complete
+keygen is the acceptance boundary.
+
+Static GCC native inspection records the code-size tradeoff:
+
+| GCC `benchc` property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| ordinary `.text` bytes | `0x130dd` | `0x130bd` | -32 |
+| dedicated copy/hash section bytes | 0 | `0x40a` | +1,034 |
+| dedicated helper instructions | 0 | 194 | +194 |
+| linked text bytes | 84,072 | 85,074 | +1,002 |
+| linked data / BSS bytes | 708 / 39,168 | 708 / 39,168 | 0 / 0 |
+
+Test commit `0d462ad` extends the existing 256 fixed-public-key fixtures. For
+each all-zero, all-`0xff`, sequential, alternating, or deterministic random
+input, it checks all 1,184 copied bytes and the 32-byte digest against the
+independent generic sponge. GCC/Clang native KAT and complete stage validation
+pass with sink `16374744525661797297`; Clang native ASan+UBSan and GCC native
+UBSan pass both. Both compilers' AVX2-only and scalar KATs pass. Clang native
+and both compilers' narrower production binaries remain byte-identical to the
+baseline.
+
+This is a repository-local producer/consumer lifetime fusion, not a new Keccak
+schedule. It reuses the already attributed Keccak Team and Intel/liboqs-derived
+round core, but links no external object or runtime library. It adds no
+persistent cache or table, changes no API or wire format, and does not involve
+`randombytes`, secp256k1, NAF, an endomorphism, or a ZKP implementation.
 
 ### Latest Core Optimization A/B (2026-07-16, full-lazy single correction)
 
