@@ -242,6 +242,7 @@ Near-term target selection:
 | Clang AVX512 lazy accumulation/inverse boundary | Accepted for Clang AVX512 with or without VNNI; GCC native text byte-identical; narrower ISAs unchanged | Clang now keeps each four-output K=3 dot product in the congruent `[-440,4570]` interval and carries it into the shared inverse NTT, moving its two Barrett passes from levels 2/5 to the range-proved levels 1/4. Clang native 100k encaps/decaps/roundtrip paired geometric means improve `1.0296x`/`1.0210x`/`1.0102x`; an explicit `-mno-avx512vnni` gate improves them `1.0394x`/`1.0353x`/`1.0113x`. At that commit LLVM emitted `VPMADDWD`/`VPADDD`, not `VPDPWSSD`, so its gain was delayed canonicalization; the separately measured VNNI lowering follow-up is listed below. Clang `benchc` text shrinks 256 bytes, while GCC native text is byte-identical. No cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512VNNI forced dot-product lowering | Accepted for Clang AVX512VNNI; GCC and Clang non-VNNI text byte-identical | Clang 18 exposed AVX512VNNI but decomposed the four-output K=3 helper's 24 dot products into `VPMADDWD` plus `VPADDD`. A Clang+VNNI local inline-assembly expression now retains one `VPDPWSSD` per dot product. Direct lazy accumulation and cached K-PKE paired geometric means improve `1.0185x`/`1.0126x`; 100k encaps/decaps improve `1.0141x`/`1.0132x`. Clang `benchc` text shrinks 128 bytes. No external object, cache, table, API, or wire-format change is added. |
 | Clang AVX512 sparse x7 encryption-noise entry | Accepted for Clang native AVX512; GCC/AVX2-only/scalar byte-identical | The seven fixed SHAKE256 encryption-noise streams now enter the existing repository-local four-round x8 mapping from a directly constructed sparse state and write only the 16 rate vectors consumed by ETA2 CBD. Raw PRF/CBD and cached K-PKE paired geometric means improve `1.0436x`/`1.0157x`; 100k encaps/decaps improve `1.0099x`/`1.0106x`. Clang `benchc` text shrinks 192 bytes. This reuses the already attributed XKCP-derived mapping but links no external object and adds no cache, table, API, or wire-format dependency. |
+| Clang AVX512 sparse x7 final-output slice | Accepted for Clang native cached encryption; GCC/AVX2-only/scalar byte-identical | ETA2 consumes only state words `0..15`, so rounds 0..22 remain complete while round 23 computes all Theta corrections, output rows 0..2, and only word 15 from row 3; words 16..24 are dead. Across two same-binary object layouts, raw Keccak geometric means improve `1.0365x`/`1.0348x`, PRF/CBD `1.0175x`/`1.0201x`, and complete cached K-PKE `1.0072x`/`1.0031x`. Two 100k KEM gates improve encaps by `1.0039x` and `1.0124x`; decaps is mixed and is treated as neutral. Linked Clang text is unchanged, the helper grows seven padding bytes, and no cache, external object, table, API, or wire-format change is added. |
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512VBMI2 register rejection compaction | Accepted for GCC native AVX512VBMI2+VL; Clang and narrower ISA builds are byte-identical | Two 16-lane decoded vectors are compacted with register `VPCOMPRESSW`, then written with bounded ordinary stores. The direct 504-byte parser, x8 sampler, matrix generation, and uncached K-PKE encryption improve `1.8626x`/`1.0981x`/`1.0661x`/`1.0466x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0306x`/`1.0339x`/`1.0526x`/`1.0318x`, all 15/15. GCC `benchc` text shrinks 684 bytes and BSS shrinks 2,048 bytes because the old compaction LUT becomes dead. No cache, external object, table, API, or wire-format change is added. |
 | GCC AVX512VBMI/VBMI2 wide rejection decode | Accepted for GCC native AVX512VBMI+VBMI2+BW+VL; a compaction-only VBMI2 fallback remains available | A masked 48-byte ZMM load and `VPERMB` now expand 32 packed 12-bit candidates before one unsigned compare, one register-result `VPCOMPRESSW`, one ordinary store, and one popcount. Against the preceding register-compaction path, the direct parser and complete matrix improve `1.1852x` and `1.0225x` paired geometric mean. Fifteen-pair cache-disabled KEM medians improve keygen/encaps-core/decaps-core/roundtrip-core by `1.0076x`/`1.0067x`/`1.0075x`/`1.0074x`; repeated-key controls remain neutral. The parser shrinks 30 bytes while linked GCC native text grows 32 bytes. No cache, external object, table, API, or wire-format change is added. |
@@ -335,6 +336,116 @@ measurement. The next sampler target must cross the x8 producer/parser boundary
 or reduce the permutation/rate-store work itself. Another local parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, Clang sparse x7 final-output slice)
+
+The Clang native encryption-noise helper runs one x8 SHAKE256 permutation for
+seven ETA2 streams. Each ETA2 polynomial needs 128 bytes, not 32 bytes, so the
+observable state boundary is exactly words `0..15` in each live stream. The
+remaining words never feed CBD and no continuation permutation is required.
+
+Core commit `9672cb7` applies a backward output-liveness slice only to round 23.
+Rounds 0..22 remain complete. The final round still computes all five Theta
+column parities and applies every Theta correction, then emits complete output
+rows 0, 1, and 2. In row 3 it rotates only the three inputs needed for word 15
+and evaluates that one Chi output. It skips row-3 words 16..19 and all of row 4,
+removing two rotations and four Chi outputs from row 3 plus five rotations and
+five Chi outputs from row 4: 16 vector operations per permutation.
+
+Keeping complete Theta is deliberate. A first prototype also skipped seven
+Theta applications whose corrected lanes were dead. It removed 23 vector
+operations, but duplicated too much of phase 3: the helper grew from `0xcc2` to
+`0xe5e` bytes, gained a stack reference, and a 15-pair KEM gate put encaps and
+decaps at `0.9971x` and `0.9975x` geometric mean. That form was rejected. The
+accepted form shares Theta and the first three output rows with the normal loop;
+its production helper is only seven bytes larger and fits in the same linked
+text padding.
+
+Correctness commit `4b6b50d` adds a direct primitive oracle. For 256 seeds and
+all eight nonce lanes, it constructs the sparse input, runs scalar `keccakf()`,
+and compares every bit of all 16 returned words. This checks 32,768 64-bit lane
+words. The existing 4,096-fixture test additionally compares all seven complete
+ETA2 polynomials with serial SHAKE256 plus an independent scalar CBD decoder.
+Both the old complete-round source and the sliced source pass the new oracle.
+
+The focused harness compiled baseline and candidate `baby-mlkem.c` as
+independent translation units, renamed their symbols, linked both into one
+executable, verified 4,096 fixtures, warmed both paths, and alternated call
+order. It built a second executable with object order reversed. CPU 0 on the
+AMD Ryzen Threadripper 7980X ran 31 pairs with 500,000 raw Keccak calls and
+300,000 complete PRF/CBD calls per side:
+
+| Object layout | Boundary | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---|---:|---:|---:|---:|---:|
+| baseline object first | raw sparse x7 Keccak | 286.8565 | 277.2555 | `1.03654x` | `1.03442x` | 31/31 |
+| candidate object first | raw sparse x7 Keccak | 286.4267 | 277.0387 | `1.03476x` | `1.03398x` | 31/31 |
+| baseline object first | complete x7 PRF/CBD | 338.0556 | 332.0693 | `1.01753x` | `1.01789x` | 30/31 |
+| candidate object first | complete x7 PRF/CBD | 337.9059 | 331.9593 | `1.02011x` | `1.01803x` | 31/31 |
+
+Every raw call-order median was between `1.0339x` and `1.0349x`; every PRF/CBD
+call-order median was between `1.0178x` and `1.0181x`. The gain is larger than a
+simple count of the 16 removed vector operations would predict. Disassembly
+shows that Clang also changes the rotating register assignment and spill
+placement around the shortened last phase, so the measured result is attributed
+to the liveness slice plus its compiler schedule, not to arithmetic count alone.
+
+A second independent-object harness included the complete prepared-public
+K-PKE encryption boundary through NTT, four-output accumulation, inverse NTT,
+and ciphertext encoding. It compared 4,096 complete 1,088-byte ciphertexts and
+then ran 31 pairs of 200,000 encryptions:
+
+| Object layout | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline object first | 928.0460 | 922.1337 | `1.00719x` | `1.00786x` | 30/31 | `1.00551x` / `1.00843x` |
+| candidate object first | 927.9695 | 924.0329 | `1.00311x` | `1.00434x` | 20/31 | `0.99975x` / `1.00522x` |
+
+The complete boundary remains positive by geometric mean in both layouts, but
+the reversed layout exposes a near-neutral call-order median. It is supporting
+evidence, not a claim that every placement gains seven tenths of one percent.
+
+The final production checks used three warmups and 15 alternating pairs of
+100,000 KEM iterations against `ecc488e`. A second independent gate audited the
+large control drift in the first run:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ARCH_CFLAGS='-march=native' ./scripts/bench_core_ab.sh ecc488e
+```
+
+| KEM metric | Gate 1 gmean | Gate 1 median | Gate 1 wins | Gate 2 gmean | Gate 2 median | Gate 2 wins |
+|---|---:|---:|---:|---:|---:|---:|
+| `encaps` | `1.0039x` | `1.0047x` | 12/15 | `1.0124x` | `1.0066x` | 14/15 |
+| `encaps_core` | `1.0033x` | `0.9997x` | 7/15 | `1.0073x` | `1.0006x` | 9/15 |
+| `decaps` | `0.9974x` | `0.9990x` | 5/15 | `1.0007x` | `1.0008x` | 11/15 |
+| `decaps_core` | `0.9919x` | `0.9971x` | 5/15 | `1.0186x` | `1.0060x` | 11/15 |
+| `roundtrip` | `1.0061x` | `1.0029x` | 10/15 | `0.9987x` | `0.9998x` | 7/15 |
+| `roundtrip_core` | `1.0039x` | `1.0010x` | 10/15 | `1.0053x` | `1.0013x` | 11/15 |
+| `keygen` control | `1.0113x` | `1.0037x` | 13/15 | `0.9945x` | `0.9993x` | 5/15 |
+| `keygen_core` control | `1.0060x` | `1.0009x` | 9/15 | `0.9959x` | `0.9990x` | 5/15 |
+
+Encapsulation is the stable production signal: its baseline-first and
+candidate-first medians were `1.0066x`/`1.0002x` in gate 1 and
+`1.0103x`/`1.0066x` in gate 2. The keygen controls do not execute this helper and
+flip from strongly positive to negative between gates, demonstrating run-level
+noise. Decapsulation also changes sign and is therefore treated as neutral, not
+credited as a gain. Roundtrip-core is positive in both gates, while complete
+roundtrip is mixed.
+
+Production `benchc` text/data/BSS remain exactly 139,484/696/38,272 bytes. The
+helper changes from `0xcc2` to `0xcc9` bytes, static instructions from 496 to
+497, and keeps 16 stack references; the seven extra bytes consume existing
+alignment padding. GCC native `.text` is byte-identical with SHA-256
+`4b9dd48be75b262a1434f6390245968c65af25230f637d87eddf529cdbaf45bf`.
+Clang AVX2-only and scalar `.text` are also byte-identical, with hashes
+`ace7f3b2765eb6e749109a58be895c6861891cd4548666483d85f445431ce5e9` and
+`b117807cff60a578fffdd3c9ac298e1607185802072c17c6bd7f37cf33407c66`.
+
+Clang/GCC native, AVX2-only, and scalar clean tests pass. Clang native
+ASan+UBSan and GCC native UBSan also pass. This is repository-local output
+liveness and scheduling over the already attributed four-round Keccak mapping.
+It links no new object or external runtime library, adds no persistent cache or
+table, and changes no API or wire format.
 
 ### Latest Core Optimization Diagnostic (2026-07-17, x8 rate materialization boundary)
 
