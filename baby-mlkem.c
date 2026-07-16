@@ -4100,6 +4100,35 @@ static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_madd_block_avx512(
   _mm512_storeu_si512((void *)(out + offset), packed);
 }
 
+/* Return one canonical accumulation tile without materializing it. */
+static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_madd_value_avx512(
+    const poly256 a0, const poly256 a1, const poly256 a2, int offset,
+    __m512i y0_c0, __m512i y1_c0, __m512i y2_c0,
+    __m512i y0_c1, __m512i y1_c1, __m512i y2_c1) {
+  __m512i x = _mm512_loadu_si512((const void *)(a0 + offset));
+  __m512i c0 = _mm512_madd_epi16(x, y0_c0);
+  __m512i c1 = _mm512_madd_epi16(x, y0_c1);
+
+  x = _mm512_loadu_si512((const void *)(a1 + offset));
+  c0 = _mm512_add_epi32(c0, _mm512_madd_epi16(x, y1_c0));
+  c1 = _mm512_add_epi32(c1, _mm512_madd_epi16(x, y1_c1));
+
+  x = _mm512_loadu_si512((const void *)(a2 + offset));
+  c0 = _mm512_add_epi32(c0, _mm512_madd_epi16(x, y2_c0));
+  c1 = _mm512_add_epi32(c1, _mm512_madd_epi16(x, y2_c1));
+
+  c0 = ntt_acc4_madd_reduce_i32x16(c0);
+  c1 = ntt_acc4_madd_reduce_i32x16(c1);
+  __m256i c0_16 = _mm512_cvtusepi32_epi16(c0);
+  __m256i c1_16 = _mm512_cvtusepi32_epi16(c1);
+  __m256i lo = _mm256_unpacklo_epi16(c0_16, c1_16);
+  __m256i hi = _mm256_unpackhi_epi16(c0_16, c1_16);
+  __m512i packed = _mm512_inserti64x4(
+      _mm512_castsi256_si512(lo), hi, 1);
+  const __m512i order = _mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7);
+  return _mm512_permutexvar_epi64(order, packed);
+}
+
 #if defined(__AVX512VNNI__)
 /* The proven K=3 bound makes non-saturating VPDPWSSD exact here. */
 static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_vnni_block_avx512(
@@ -4306,6 +4335,23 @@ byte_encode_d12_i16x16_register_avx512(__m256i v, uint8_t *out) {
   _mm_storeu_si32((void *)(out + 20), _mm_srli_si128(hi, 8));
 }
 
+static MLKEM_ALWAYS_INLINE __m512i ntt_add_canonical_i16x32_avx512(
+    __m512i a, __m512i b) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  __m512i sum = _mm512_add_epi16(a, b);
+  __mmask32 ge_q = _mm512_cmpgt_epi16_mask(sum, q_minus_1);
+  return _mm512_mask_sub_epi16(sum, ge_q, sum, q);
+}
+
+static MLKEM_ALWAYS_INLINE void
+byte_encode_d12_i16x32_register_avx512(__m512i v, uint8_t *out) {
+  byte_encode_d12_i16x16_register_avx512(
+      _mm512_castsi512_si256(v), out);
+  byte_encode_d12_i16x16_register_avx512(
+      _mm512_extracti64x4_epi64(v, 1), out + 24);
+}
+
 /* Finalize shat once and feed both the column products and d12 output. */
 static MLKEM_ALWAYS_INLINE void
 ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
@@ -4364,6 +4410,76 @@ ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
     ntt_acc4_asym_madd_block_avx512(
         ahat[0][2], ahat[1][2], ahat[2][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
+  }
+}
+
+/* Keep both keygen encodings and the final public coefficients in-register. */
+static MLKEM_ALWAYS_INLINE void
+ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
+    const poly256 ahat[K][K], const poly256 b[K], const poly256 ehat[K],
+    poly256 out[K], uint8_t encoded_b[K * 384],
+    uint8_t encoded_out[K * 384]) {
+  const __m512i even_mask = _mm512_set1_epi32(0xffff);
+
+  for (int offset = 0, i = 0, pair = 0; offset < N;
+       offset += 32, i++, pair += 16) {
+    __m256i zeta_lo = ZETA_NTT_TAIL_MONT_LO[2][i];
+    __m256i zeta_hi = ZETA_NTT_TAIL_MONT_HI[2][i];
+    __m512i y0 = ntt_final_l1_mont_block32_avx512(
+        b[0], offset, zeta_lo, zeta_hi);
+    __m512i y1 = ntt_final_l1_mont_block32_avx512(
+        b[1], offset, zeta_lo, zeta_hi);
+    __m512i y2 = ntt_final_l1_mont_block32_avx512(
+        b[2], offset, zeta_lo, zeta_hi);
+    size_t encoded_offset = (size_t)offset * 3 / 2;
+    byte_encode_d12_i16x32_register_avx512(
+        y0, encoded_b + encoded_offset);
+    byte_encode_d12_i16x32_register_avx512(
+        y1, encoded_b + 384 + encoded_offset);
+    byte_encode_d12_i16x32_register_avx512(
+        y2, encoded_b + 768 + encoded_offset);
+
+    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
+    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
+    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
+    __m512i gamma = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
+    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
+    __m512i y0_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
+    __m512i y1_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
+    __m512i y2_c0 =
+        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
+    __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
+    __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
+
+    __m512i c0 = ntt_acc4_asym_madd_value_avx512(
+        ahat[0][0], ahat[1][0], ahat[2][0], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
+    __m512i c1 = ntt_acc4_asym_madd_value_avx512(
+        ahat[0][1], ahat[1][1], ahat[2][1], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
+    __m512i c2 = ntt_acc4_asym_madd_value_avx512(
+        ahat[0][2], ahat[1][2], ahat[2][2], offset,
+        y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
+
+    c0 = ntt_add_canonical_i16x32_avx512(
+        c0, _mm512_loadu_si512((const void *)(ehat[0] + offset)));
+    c1 = ntt_add_canonical_i16x32_avx512(
+        c1, _mm512_loadu_si512((const void *)(ehat[1] + offset)));
+    c2 = ntt_add_canonical_i16x32_avx512(
+        c2, _mm512_loadu_si512((const void *)(ehat[2] + offset)));
+    _mm512_storeu_si512((void *)(out[0] + offset), c0);
+    _mm512_storeu_si512((void *)(out[1] + offset), c1);
+    _mm512_storeu_si512((void *)(out[2] + offset), c2);
+    byte_encode_d12_i16x32_register_avx512(
+        c0, encoded_out + encoded_offset);
+    byte_encode_d12_i16x32_register_avx512(
+        c1, encoded_out + 384 + encoded_offset);
+    byte_encode_d12_i16x32_register_avx512(
+        c2, encoded_out + 768 + encoded_offset);
   }
 }
 
@@ -6809,6 +6925,11 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   /* that[i] = sum_j(ahat[j][i] * shat[j]) + ehat[i], in NTT domain. */
 #if defined(__GNUC__) && defined(__AVX2__) && defined(__AVX512F__) && \
     defined(__AVX512BW__)
+#if defined(__clang__)
+  ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
+      kpke_public_cache_ahat, shat, ehat, kpke_public_cache_that, dk_pke,
+      ek_pke);
+#else
   ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
       kpke_public_cache_ahat, shat, kpke_public_cache_that, dk_pke);
   for (int i = 0; i < K; i++) {
@@ -6816,6 +6937,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
             kpke_public_cache_that[i]);
     byte_encode(12, kpke_public_cache_that[i], ek_pke + i * 384);
   }
+#endif
 #else
   for (int i = 0; i < K; i++) {
     ntt_mul_acc3_factored_gamma(kpke_public_cache_ahat[0][i], shat[0],
