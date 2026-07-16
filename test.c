@@ -946,6 +946,53 @@ static void test_avx512_encrypt_prf_cbd_eta2x7(void) {
     }
   }
 }
+#if defined(__clang__)
+static void test_keccakf8_sparse_eta2x7_final16(void) {
+  const uint64_t final_pad = UINT64_C(0x80) << 56;
+  uint64_t rng = UINT64_C(0x78372d66696e616c);
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32];
+    uint8_t nonce[8];
+    uint64_t expected[8][25] = {{0}};
+    __m512i got[16];
+
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      if (fixture == 0) {
+        seed[i] = 0;
+      } else if (fixture == 1) {
+        seed[i] = UINT8_MAX;
+      } else {
+        seed[i] = (uint8_t)test_eta2x7_next_u64(&rng);
+      }
+    }
+    for (size_t lane = 0; lane < sizeof(nonce); lane++) {
+      nonce[lane] = (uint8_t)(fixture * 29u + lane * 71u);
+      for (int word = 0; word < 4; word++) {
+        expected[lane][word] = load64_le(seed + 8 * word);
+      }
+      expected[lane][4] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+      expected[lane][16] = final_pad;
+      keccakf(expected[lane]);
+    }
+
+    keccakf8_sparse_eta2x7_32(seed, nonce, got);
+    for (int word = 0; word < 16; word++) {
+      uint64_t lanes[8];
+      _mm512_storeu_si512((void *)lanes, got[word]);
+      for (int lane = 0; lane < 8; lane++) {
+        if (lanes[lane] != expected[lane][word]) {
+          fprintf(stderr,
+                  "Clang sparse x7 final16 mismatch at fixture %u word %d lane %d\n",
+                  fixture, word, lane);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+#endif
+
 #endif
 
 static void test_byte_encode() {
@@ -1274,6 +1321,9 @@ int main(void) {
 #endif
 #if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
   test_keccakf8_sparse_32();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__clang__)
+  test_keccakf8_sparse_eta2x7_final16();
 #endif
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
