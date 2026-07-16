@@ -245,7 +245,7 @@ Near-term target selection:
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512VBMI2 register rejection compaction | Accepted for GCC native AVX512VBMI2+VL; Clang and narrower ISA builds are byte-identical | Two 16-lane decoded vectors are compacted with register `VPCOMPRESSW`, then written with bounded ordinary stores. The direct 504-byte parser, x8 sampler, matrix generation, and uncached K-PKE encryption improve `1.8626x`/`1.0981x`/`1.0661x`/`1.0466x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0306x`/`1.0339x`/`1.0526x`/`1.0318x`, all 15/15. GCC `benchc` text shrinks 684 bytes and BSS shrinks 2,048 bytes because the old compaction LUT becomes dead. No cache, external object, table, API, or wire-format change is added. |
 | GCC AVX512VBMI/VBMI2 wide rejection decode | Accepted for GCC native AVX512VBMI+VBMI2+BW+VL; a compaction-only VBMI2 fallback remains available | A masked 48-byte ZMM load and `VPERMB` now expand 32 packed 12-bit candidates before one unsigned compare, one register-result `VPCOMPRESSW`, one ordinary store, and one popcount. Against the preceding register-compaction path, the direct parser and complete matrix improve `1.1852x` and `1.0225x` paired geometric mean. Fifteen-pair cache-disabled KEM medians improve keygen/encaps-core/decaps-core/roundtrip-core by `1.0076x`/`1.0067x`/`1.0075x`/`1.0074x`; repeated-key controls remain neutral. The parser shrinks 30 bytes while linked GCC native text grows 32 bytes. No cache, external object, table, API, or wire-format change is added. |
-| GCC x8 SHAKE rate materialization boundary | Closed | Padding each stream row to 512 bytes made an isolated parser about `1.22x` faster but left complete x8/matrix medians at `0.9991x`/`0.9986x`. Storing 63 word-major rate vectors made the producer `1.0335x` faster, but the required consumer transpose reduced parser/x8/matrix/public-prepare geometric means to `0.7701x`/`0.9508x`/`0.9741x`/`0.9786x`. A same-process 4x8 ZMM store rewrite and a tail-only extraction cleanup reached only `0.9973x` and `0.9992x` median. Keep the existing AVX2 transpose/store plus wide parser; no candidate code remains. |
+| GCC x8 SHAKE rate materialization boundary | Closed | Padding each stream row to 512 bytes made an isolated parser about `1.22x` faster but left complete x8/matrix medians at `0.9991x`/`0.9986x`. Storing 63 word-major vectors made the producer `1.0335x` faster but reduced complete x8/matrix to `0.9508x`/`0.9741x`. Wider store rewrites reached only `0.9973x` and `0.9992x` median. A selective final-word design improved its producer median by `1.0012x`, but an independent-object same-process complete-x8 gate measured `0.9993x` median with 5/21 wins. Keep the existing AVX2 transpose/store plus wide parser; no candidate code remains. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | GCC compact sparse x8 round-0 peel | Accepted for GCC native AVX512; Clang and narrower ISA byte-identical | The x7-noise, mixed-encryption, mixed-keygen, and diagnostic matrix modes can have only lanes `0..4`, `16`, and `20` nonzero before their first permutation. Round 0 is evaluated once outside the rotating four-phase loop, while rounds 1..23 reuse one compact `1,2,3,0` body. Raw x7 PRF/CBD and cached K-PKE improve `1.0023x`/`1.0025x` paired geometric mean; 100k encaps-core and keygen improve `1.0051x`/`1.0026x` with 12/15 wins each. Decaps and roundtrip are neutral and are not credited. GCC `benchc` text grows 804 bytes. No cache, external object, table, API, or wire-format change is added. |
@@ -409,11 +409,65 @@ five instructions per block. The same-process 41-pair, 300,000-iteration gate
 reached only `0.9992x` median with 6/41 wins; order medians were `0.9992x` and
 `0.9993x`. Fewer instructions again did not mean fewer cycles.
 
-All four directions are closed on this target: 512-byte rows, word-major rate
-materialization, gather reconstruction, and wider store transposes. The
-existing split-YMM producer plus register-result wide parser remains production.
-No rejected code remains, and no experiment added an external object, runtime
-library, persistent cache, API change, or wire-format change.
+A fifth direction isolated only word 20 of the third rate. A 1,600,000-stream
+distribution probe found that `6.0758%` of lanes still needed output after 492
+bytes, while `0.8343%` still needed a refill after all 504 bytes. Across each
+eight-lane matrix call, `60.452%` needed no final-word handling at all; the
+mean was 0.486 deficient lanes per call.
+
+The GCC-only prototype packed the first 496 bytes of each stream contiguously
+and kept the eight final words in one lane-major ZMM. Its total scratch remained
+4,032 bytes. The first two rates retained their existing stores; only the third
+rate replaced eight word-20 extractions and stores with one ZMM store. Parsing
+stopped on the 492-byte candidate boundary, then joined four prefix bytes with
+the saved word only for a deficient lane. Rare full refills rebuilt the third
+state from its 20 prefix words, saved word 20, and four returned capacity words.
+
+The layout matched every byte of the canonical 504-byte rows and all returned
+capacity over 64 assembly fixtures. Complete matrices matched the scalar oracle,
+including rare refills; GCC and Clang native clean tests passed. Clang stayed on
+the old ABI, and its assembly `.text` hash remained byte-identical to baseline.
+A 4,096-seed independent complete-x8 harness also produced identical
+coefficients.
+
+The assembly-side saving was measurable but too small. Baseline and candidate
+producers were renamed and linked into one executable for 31 alternating pairs
+of 200,000 calls:
+
+| Selective word-20 producer | Result |
+|---|---:|
+| Paired geometric mean | `1.00034x` |
+| Paired median | `1.00122x` |
+| Wins | 28/31 |
+| Baseline-first / candidate-first median | `1.00092x` / `1.00147x` |
+
+A first consumer reused the generic parser for the 12-byte reconstructed tail.
+Its stage geometric means fell to `0.9897x` for complete x8, `0.9946x` for
+matrix generation, and `0.9817x` for full K-PKE keygen. Replacing that call
+with an inlined scalar decode recovered most of the loss, but the seven-pair
+stage gate remained mixed: complete x8 had `0.9966x` geometric mean and
+`1.0022x` median, matrix had `0.9987x` and `1.0013x`, and full keygen
+had `0.9974x` and `0.9993x`.
+
+The final direct gate compiled baseline and candidate `baby-mlkem.c` as
+independent translation units, prefixed every symbol, and linked both optimized
+objects into one executable. This preserved each version's compiler decisions
+while eliminating cross-process clock and layout drift. After 4,096 exact
+fixtures, 21 alternating pairs of 200,000 complete x8 calls gave:
+
+| Complete x8 selective-word gate | Result |
+|---|---:|
+| Paired geometric mean | `0.99791x` |
+| Paired median | `0.99926x` |
+| Wins | 5/21 |
+| Baseline-first / candidate-first median | `0.99936x` / `0.99916x` |
+
+All five directions are closed on this target: 512-byte rows, full word-major
+rates, gather reconstruction, wider stream-major transposes, and selective
+final-word materialization. The existing split-YMM producer plus register-result
+wide parser remains production. No rejected code remains, and no experiment
+added an external object, runtime library, persistent cache, API change, or
+wire-format change.
 
 ### Latest Core Optimization Diagnostic (2026-07-17, GCC fixed H(pk) final-output slice)
 
