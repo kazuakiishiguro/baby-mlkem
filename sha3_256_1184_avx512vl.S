@@ -107,6 +107,80 @@
     vpxorq  %xmm31, %xmm11, %xmm11
 .endm
 
+.macro mlkem_copy_load_lane state, offset, input, output
+    vmovq \offset(\input), %xmm\state
+    vmovq %xmm\state, \offset(\output)
+.endm
+
+.macro mlkem_copy_absorb_lane state, offset, input, output
+    vmovq \offset(\input), %xmm31
+    vmovq %xmm31, \offset(\output)
+    vpxorq %xmm31, %xmm\state, %xmm\state
+.endm
+
+.macro mlkem_load_first_rate_copy input, output
+    mlkem_copy_load_lane 0,   0, \input, \output
+    mlkem_copy_load_lane 1,   8, \input, \output
+    mlkem_copy_load_lane 2,  16, \input, \output
+    mlkem_copy_load_lane 3,  24, \input, \output
+    mlkem_copy_load_lane 4,  32, \input, \output
+    mlkem_copy_load_lane 5,  40, \input, \output
+    mlkem_copy_load_lane 6,  48, \input, \output
+    mlkem_copy_load_lane 7,  56, \input, \output
+    mlkem_copy_load_lane 8,  64, \input, \output
+    mlkem_copy_load_lane 9,  72, \input, \output
+    mlkem_copy_load_lane 10, 80, \input, \output
+    mlkem_copy_load_lane 11, 88, \input, \output
+    mlkem_copy_load_lane 12, 96, \input, \output
+    mlkem_copy_load_lane 13, 104, \input, \output
+    mlkem_copy_load_lane 14, 112, \input, \output
+    mlkem_copy_load_lane 15, 120, \input, \output
+    mlkem_copy_load_lane 16, 128, \input, \output
+    vpxorq %xmm17, %xmm17, %xmm17
+    vmovdqa64 %xmm17, %xmm18
+    vmovdqa64 %xmm17, %xmm19
+    vmovdqa64 %xmm17, %xmm20
+    vmovdqa64 %xmm17, %xmm21
+    vmovdqa64 %xmm17, %xmm22
+    vmovdqa64 %xmm17, %xmm23
+    vmovdqa64 %xmm17, %xmm24
+.endm
+
+.macro mlkem_absorb_rate_copy input, output
+    mlkem_copy_absorb_lane 0,   0, \input, \output
+    mlkem_copy_absorb_lane 1,   8, \input, \output
+    mlkem_copy_absorb_lane 2,  16, \input, \output
+    mlkem_copy_absorb_lane 3,  24, \input, \output
+    mlkem_copy_absorb_lane 4,  32, \input, \output
+    mlkem_copy_absorb_lane 5,  40, \input, \output
+    mlkem_copy_absorb_lane 6,  48, \input, \output
+    mlkem_copy_absorb_lane 7,  56, \input, \output
+    mlkem_copy_absorb_lane 8,  64, \input, \output
+    mlkem_copy_absorb_lane 9,  72, \input, \output
+    mlkem_copy_absorb_lane 10, 80, \input, \output
+    mlkem_copy_absorb_lane 11, 88, \input, \output
+    mlkem_copy_absorb_lane 12, 96, \input, \output
+    mlkem_copy_absorb_lane 13, 104, \input, \output
+    mlkem_copy_absorb_lane 14, 112, \input, \output
+    mlkem_copy_absorb_lane 15, 120, \input, \output
+    mlkem_copy_absorb_lane 16, 128, \input, \output
+.endm
+
+.macro mlkem_absorb_tail_copy input, output
+    mlkem_copy_absorb_lane 0,   0, \input, \output
+    mlkem_copy_absorb_lane 1,   8, \input, \output
+    mlkem_copy_absorb_lane 2,  16, \input, \output
+    mlkem_copy_absorb_lane 3,  24, \input, \output
+    mlkem_copy_absorb_lane 4,  32, \input, \output
+    mlkem_copy_absorb_lane 5,  40, \input, \output
+    mlkem_copy_absorb_lane 6,  48, \input, \output
+    mlkem_copy_absorb_lane 7,  56, \input, \output
+    mlkem_copy_absorb_lane 8,  64, \input, \output
+    mlkem_copy_absorb_lane 9,  72, \input, \output
+    mlkem_copy_absorb_lane 10, 80, \input, \output
+    mlkem_copy_absorb_lane 11, 88, \input, \output
+.endm
+
 # Canonical single-state wrapper sharing the register-per-lane round core.
 # void mlkem_keccakf1600_avx512vl(uint64_t state[25]);
 .globl mlkem_keccakf1600_avx512vl
@@ -190,6 +264,7 @@ mlkem_sha3_256_1184_avx512vl:
     xorl %r10d, %r10d
 #endif
 
+    # The private permutation core preserves r9/r11; retain copy/output there.
     movq %rdi, %r12
     mlkem_load_first_rate %r12
     call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
@@ -229,6 +304,65 @@ mlkem_sha3_256_1184_avx512vl:
     popq %rbx
     ret
 .size mlkem_sha3_256_1184_avx512vl,.-mlkem_sha3_256_1184_avx512vl
+
+# Copy the public key while feeding the same loaded words to the fixed sponge.
+# void mlkem_sha3_256_copy_1184_avx512vl(const uint8_t *in, uint8_t *copy,
+#                                        uint8_t out[32]);
+#if !defined(__clang__)
+.section .mlkem_sha3_copy1184,"ax",@progbits
+.globl mlkem_sha3_256_copy_1184_avx512vl
+.type mlkem_sha3_256_copy_1184_avx512vl,@function
+.hidden mlkem_sha3_256_copy_1184_avx512vl
+.balign 32
+mlkem_sha3_256_copy_1184_avx512vl:
+    pushq %rbx
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    subq $8, %rsp
+
+    movq %rdi, %r12
+    movq %rsi, %r11
+    movq %rdx, %r9
+    mlkem_load_first_rate_copy %r12, %r11
+    call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
+
+    addq $136, %r12
+    addq $136, %r11
+    movl $7, %ebx
+.balign 32
+.Lmlkem_sha3_256_copy_1184_blocks:
+    mlkem_absorb_rate_copy %r12, %r11
+    call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
+    addq $136, %r12
+    addq $136, %r11
+    decl %ebx
+    jnz .Lmlkem_sha3_256_copy_1184_blocks
+
+    mlkem_absorb_tail_copy %r12, %r11
+    movl $0x06, %eax
+    vmovq %rax, %xmm31
+    vpxorq %xmm31, %xmm12, %xmm12
+    movabsq $0x8000000000000000, %rax
+    vmovq %rax, %xmm31
+    vpxorq %xmm31, %xmm16, %xmm16
+    call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
+
+    vmovq %xmm0, 0(%r9)
+    vmovq %xmm1, 8(%r9)
+    vmovq %xmm2, 16(%r9)
+    vmovq %xmm3, 24(%r9)
+    vzeroupper
+
+    addq $8, %rsp
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    ret
+.size mlkem_sha3_256_copy_1184_avx512vl,.-mlkem_sha3_256_copy_1184_avx512vl
+.text
+#endif
 
 # Instructions corresponding to these steps overlap for better efficiency.
 #

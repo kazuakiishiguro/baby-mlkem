@@ -1457,6 +1457,10 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
 #define MLKEM_HAVE_SHA3_256_1184_AVX512VL 1
 extern void mlkem_sha3_256_1184_avx512vl(const uint8_t in[1184],
                                           uint8_t out[32]);
+#if defined(__GNUC__) && !defined(__clang__)
+extern void mlkem_sha3_256_copy_1184_avx512vl(
+    const uint8_t in[1184], uint8_t copy[1184], uint8_t out[32]);
+#endif
 #define sha3_256_1184_avx2 mlkem_sha3_256_1184_avx512vl
 #else
 static void sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]);
@@ -1516,7 +1520,10 @@ static void sha3_256(const uint8_t *in, size_t inlen, uint8_t *out32) {
 
 static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
                                 uint8_t out32[32]) {
-#if defined(__AVX2__)
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL) && defined(__GNUC__) && \
+    !defined(__clang__)
+  mlkem_sha3_256_copy_1184_avx512vl(src, dst, out32);
+#elif defined(__AVX2__)
   memcpy(dst, src, 1184);
   sha3_256_1184_avx2(src, out32);
 #else
