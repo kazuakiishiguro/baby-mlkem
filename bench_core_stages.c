@@ -2685,7 +2685,8 @@ static void validate_ntt_lazy_ehat_add_avx512(void) {
 
 static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   const int32_t lower = -6 * (Q - 1) * (Q / 2);
-  const int32_t upper = 6 * (Q - 1) * (Q - 1);
+  /* Include the redundant zero representation Q on one factor. */
+  const int32_t upper = 6 * (Q - 1) * Q;
   int32_t input[16];
   int32_t got[16];
   int32_t lazy[16];
