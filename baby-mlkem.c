@@ -4222,11 +4222,15 @@ ntt_full_mont_lazy_raw_avx512(poly256 f) {
   ntt_tail_mont_lazy_raw_avx512(f);
 }
 
-/* The producer completed lazy l1; canonicalize only the consumed block. */
+/* The proved full-lazy range reduces to [0,Q]; only Q needs correction. */
 static MLKEM_ALWAYS_INLINE __m512i ntt_canonicalize_lazy_block32_avx512(
     const poly256 f, int offset) {
-  return ntt_canonicalize_i16x32_avx512(
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  __m512i v = ntt_barrett_reduce_i16x32_avx512(
       _mm512_loadu_si512((const void *)(f + offset)));
+  __mmask32 ge_q = _mm512_cmpgt_epi16_mask(v, q_minus_1);
+  return _mm512_mask_sub_epi16(v, ge_q, v, q);
 }
 
 /* Preweight each common canonical odd lane once for all dot products. */
