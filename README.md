@@ -246,6 +246,7 @@ Near-term target selection:
 | Clang AVX512VNNI forced dot-product lowering | Accepted for Clang AVX512VNNI; GCC and Clang non-VNNI text byte-identical | Clang 18 exposed AVX512VNNI but decomposed the four-output K=3 helper's 24 dot products into `VPMADDWD` plus `VPADDD`. A Clang+VNNI local inline-assembly expression now retains one `VPDPWSSD` per dot product. Direct lazy accumulation and cached K-PKE paired geometric means improve `1.0185x`/`1.0126x`; 100k encaps/decaps improve `1.0141x`/`1.0132x`. Clang `benchc` text shrinks 128 bytes. No external object, cache, table, API, or wire-format change is added. |
 | Clang AVX512 sparse x7 encryption-noise entry | Accepted for Clang native AVX512; GCC/AVX2-only/scalar byte-identical | The seven fixed SHAKE256 encryption-noise streams now enter the existing repository-local four-round x8 mapping from a directly constructed sparse state and write only the 16 rate vectors consumed by ETA2 CBD. Raw PRF/CBD and cached K-PKE paired geometric means improve `1.0436x`/`1.0157x`; 100k encaps/decaps improve `1.0099x`/`1.0106x`. Clang `benchc` text shrinks 192 bytes. This reuses the already attributed XKCP-derived mapping but links no external object and adds no cache, table, API, or wire-format dependency. |
 | Clang AVX512 sparse x7 final-output slice | Accepted for Clang native cached encryption; GCC/AVX2-only/scalar byte-identical | ETA2 consumes only state words `0..15`, so rounds 0..22 remain complete while round 23 computes all Theta corrections, output rows 0..2, and only word 15 from row 3; words 16..24 are dead. Across two same-binary object layouts, raw Keccak geometric means improve `1.0365x`/`1.0348x`, PRF/CBD `1.0175x`/`1.0201x`, and complete cached K-PKE `1.0072x`/`1.0031x`. Two 100k KEM gates improve encaps by `1.0039x` and `1.0124x`; decaps is mixed and is treated as neutral. Linked Clang text is unchanged, the helper grows seven padding bytes, and no cache, external object, table, API, or wire-format change is added. |
+| GCC AVX512 sparse x7 final-output slice | Closed; complete shared round remains production | A GCC-specific branchless final slice improved canonical and compact-int8 raw x7 PRF/CBD by `1.0120x` and `1.0151x`, but cached K-PKE was neutral at `0.9997x`. The 15-pair 100k KEM gate reached only `1.0018x` encaps, produced an order-negative decaps result, and regressed roundtrip/roundtrip-core to `0.9965x`/`0.9964x`, while linked text grew 6,718 bytes. Shared-loop, Clang-shape, and compact-loop variants were directly slower. No candidate code remains. |
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512VBMI2 register rejection compaction | Accepted for GCC native AVX512VBMI2+VL; Clang and narrower ISA builds are byte-identical | Two 16-lane decoded vectors are compacted with register `VPCOMPRESSW`, then written with bounded ordinary stores. The direct 504-byte parser, x8 sampler, matrix generation, and uncached K-PKE encryption improve `1.8626x`/`1.0981x`/`1.0661x`/`1.0466x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0306x`/`1.0339x`/`1.0526x`/`1.0318x`, all 15/15. GCC `benchc` text shrinks 684 bytes and BSS shrinks 2,048 bytes because the old compaction LUT becomes dead. No cache, external object, table, API, or wire-format change is added. |
 | GCC AVX512VBMI/VBMI2 wide rejection decode | Accepted for GCC native AVX512VBMI+VBMI2+BW+VL; a compaction-only VBMI2 fallback remains available | A masked 48-byte ZMM load and `VPERMB` now expand 32 packed 12-bit candidates before one unsigned compare, one register-result `VPCOMPRESSW`, one ordinary store, and one popcount. Against the preceding register-compaction path, the direct parser and complete matrix improve `1.1852x` and `1.0225x` paired geometric mean. Fifteen-pair cache-disabled KEM medians improve keygen/encaps-core/decaps-core/roundtrip-core by `1.0076x`/`1.0067x`/`1.0075x`/`1.0074x`; repeated-key controls remain neutral. The parser shrinks 30 bytes while linked GCC native text grows 32 bytes. No cache, external object, table, API, or wire-format change is added. |
@@ -477,6 +478,102 @@ single-state AVX512VL round core whose schedule is already disclosed as derived
 from Intel/liboqs, and the existing wide parser designed in baby-mlkem. It does
 not claim a new Keccak schedule and links no external object or runtime library.
 No persistent cache, table, API, or wire-format change is added.
+
+### Latest Core Optimization Diagnostic (2026-07-17, GCC sparse x7 final-output slice)
+
+A fresh 500,000-iteration GCC native profile at `fd05412` attributed `28.35%`
+of self time to fixed `H(pk)`, `19.79%` to the checked x8 matrix assembly,
+`8.45%` to `keccakf8_sparse_32()`, `6.78%` to prepared encryption,
+`5.73%` to the forward-NTT tail, `4.28%` to rejection parsing, and `4.22%`
+to the shared inverse. The first two entries had already exhausted their local
+schedule candidates, so the live sparse helper was audited next.
+
+The accepted Clang x7 path computes only final state words 0..15 because ETA2
+consumes one 128-byte SHAKE256 block. Its final round keeps complete Theta,
+computes output rows 0..2, and computes only word 15 in row 3. GCC still used
+its shared sparse helper, completed all 25 final words, and stored only the
+first 16 for pure x7 calls. The same backward output-liveness argument is exact
+for both compilers, but the compiler schedules are not interchangeable.
+
+The existing GCC primitive oracle already covers this contract. For 256 seeds,
+four sparse modes, and every x8 lane, it compares the live output against the
+complete generic permutation; pure x7 compares all 16 observable words.
+A separate 4,096-fixture test compares all seven complete ETA2 polynomials with
+serial SHAKE256 and scalar CBD. GCC native KAT and complete stage validation
+passed every prototype below.
+
+Three bounded source shapes failed before the final branchless diagnostic
+(paired geometric means):
+
+| GCC native prototype | Canonical raw x7 | Compact-int8 raw x7 | Complete PRF/CBD | Cached K-PKE | Decision |
+|---|---:|---:|---:|---:|---|
+| final-round branch inside shared helper | `0.9941x` | not isolated | `0.9986x` | `0.9962x` | shared schedule regressed |
+| dedicated Clang four-round shape | `0.9920x` | `0.9932x` | `0.9967x` | `0.9944x` | Clang schedule did not transfer |
+| compact GCC helper with a final-round loop branch | `0.9920x` | `0.9922x` | `0.9964x` | `0.9828x` | branch changed GCC dependency placement |
+
+The only direct winner preserved GCC's accepted round-0 peel and `1,2,3,0`
+phase order, ran rounds 0..22 completely, and spelled rounds 21..23 outside
+the loop so round 23 could finish only word 15 without a branch in the round
+body. Pure canonical and compact-int8 producers called that dedicated entry;
+mixed encryption, mixed keygen, and matrix modes retained the shared helper.
+
+Code placement had to be controlled before evaluating it. A `.text.*` section
+was merged into ordinary `.text` and moved the hot matrix assembly by about
+6 KiB. The final diagnostic instead used an orphan executable section after
+the existing matrix assembly. GCC `noipa` kept the shared multi-mode helper's
+baseline `0x1399`-byte code shape after its pure callers moved. The addresses
+and sizes of the shared helper, keygen, prepared encryption, and matrix assembly
+then matched `fd05412` exactly.
+
+With that layout, CPU 0, two warmups, seven alternating pairs, and 30,000 stage
+iterations measured:
+
+| GCC native stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| canonical raw x7 PRF/CBD | `1.0120x` | `1.0124x` | 7/7 | `1.0127x` / `1.0117x` |
+| compact-int8 raw x7 PRF/CBD | `1.0151x` | `1.0145x` | 7/7 | `1.0144x` / `1.0145x` |
+| complete canonical PRF/CBD | `1.0039x` | `1.0038x` | 7/7 | `1.0038x` / `1.0038x` |
+| cached K-PKE encryption | `0.9997x` | `0.9994x` | 3/7 | `0.9990x` / `1.0007x` |
+| keygen noise/NTT control | `1.0014x` | `0.9996x` | 3/7 | `0.9993x` / `1.0010x` |
+
+The removed vector work is real at the direct producer, but it does not
+propagate through cached encryption. A first nine-pair, 100,000-iteration KEM
+screen put encaps and decaps at `1.0065x` and `1.0064x` geometric mean, while
+unchanged keygen moved by `1.0054x`. Because the control moved by essentially
+the same amount, the candidate advanced to an independent 15-pair gate rather
+than treating the screen as a production win.
+
+The final gate used three warmups and 15 alternating pairs:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS='-march=native' ./scripts/bench_core_ab.sh fd05412
+```
+
+| GCC native KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | `1.0018x` | `1.0030x` | 10/15 | `1.0030x` / `1.0027x` |
+| `mlkem_encaps_core` | `1.0001x` | `1.0019x` | 11/15 | `1.0035x` / `1.0014x` |
+| `mlkem_decaps` | `1.0025x` | `1.0017x` | 9/15 | `1.0021x` / `0.9998x` |
+| `mlkem_decaps_core` | `0.9929x` | `0.9990x` | 5/15 | `0.9945x` / `0.9991x` |
+| `mlkem_roundtrip` | `0.9965x` | `0.9996x` | 7/15 | `0.9955x` / `1.0008x` |
+| `mlkem_roundtrip_core` | `0.9964x` | `0.9988x` | 5/15 | `0.9992x` / `0.9988x` |
+| `mlkem_keygen` control | `0.9976x` | `1.0008x` | 9/15 | `1.0000x` / `1.0008x` |
+| `mlkem_keygen_core` control | `0.9999x` | `1.0019x` | 10/15 | `1.0013x` / `1.0019x` |
+
+The complete encapsulation result is too small to offset the candidate-first
+decapsulation loss and both negative roundtrip geometric means. The dedicated
+helper was `0x1956` bytes; linked GCC `benchc` text grew from 81,803 to 88,521
+bytes (`+6,718`), while data and BSS remained 708 and 37,120 bytes. This is a
+poor production trade even though the direct primitive is faster.
+
+All prototype source was removed. GCC retains the complete final round in its
+shared sparse helper; Clang retains its independently accepted sliced helper.
+No cache, table, external object, runtime library, API, or wire-format change
+remains. The result also narrows future Keccak work: a GCC output slice must
+avoid both a round-body branch and a second 4-6 KiB schedule, and must improve
+the complete prepared-encryption boundary before another KEM gate.
 
 ### Latest Core Optimization Diagnostic (2026-07-17, Clang lazy keygen `ehat` handoff)
 
