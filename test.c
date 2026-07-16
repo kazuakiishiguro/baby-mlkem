@@ -414,6 +414,47 @@ void test_ntts() {
   }
 }
 
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+static void test_sha3_256_1184_avx512vl(void) {
+  uint8_t input[1184];
+  uint8_t reference[32];
+  uint8_t actual[32];
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    if (fixture == 0) {
+      memset(input, 0, sizeof(input));
+    } else if (fixture == 1) {
+      memset(input, 0xff, sizeof(input));
+    } else if (fixture == 2) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (uint8_t)i;
+      }
+    } else if (fixture == 3) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (i & 1u) ? 0xff : 0x00;
+      }
+    } else {
+      uint64_t x = UINT64_C(0x1184000000000000) + fixture;
+      for (size_t i = 0; i < sizeof(input); i++) {
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        x *= UINT64_C(0x2545f4914f6cdd1d);
+        input[i] = (uint8_t)(x >> 56);
+      }
+    }
+
+    keccak_ctx ctx;
+    keccak_init(&ctx, 136);
+    keccak_absorb(&ctx, input, sizeof(input));
+    keccak_finalize(&ctx, 0x06);
+    keccak_squeeze(&ctx, reference, sizeof(reference));
+    mlkem_sha3_256_1184_avx512vl(input, actual);
+    assert(memcmp(reference, actual, sizeof(reference)) == 0);
+  }
+}
+#endif
+
 static void test_sample_ntt() {
   for (int idx = 0; idx < 5; idx++) {
     uint8_t seed[35];
@@ -614,6 +655,9 @@ void test_mlkem() {
 int main(void) {
   test_randombytes();
   test_sha3_256();
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+  test_sha3_256_1184_avx512vl();
+#endif
   test_sha3_512();
   test_shake128();
   test_shake256();
