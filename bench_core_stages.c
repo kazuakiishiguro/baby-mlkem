@@ -2613,6 +2613,56 @@ static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
 }
 
 #if defined(__AVX512VNNI__) || defined(__clang__)
+static void validate_ntt_acc4_dot_lazy_avx512(void) {
+  static const int16_t edge[] = {
+      INT16_MIN, INT16_MAX, -(Q - 1), -1, 0, 1, Q - 1, Q};
+  int16_t x[32];
+  int16_t y[32];
+  uint32_t accum[16];
+  uint32_t got[16];
+  uint32_t state = 0x243f6a88u;
+
+  for (size_t fixture = 0; fixture < 4096; fixture++) {
+    for (size_t lane = 0; lane < 16; lane++) {
+      state = state * 1664525u + 1013904223u;
+      accum[lane] = state;
+      for (size_t word = 0; word < 2; word++) {
+        size_t index = 2 * lane + word;
+        state = state * 1664525u + 1013904223u;
+        if (fixture < sizeof(edge) / sizeof(edge[0])) {
+          x[index] = edge[(fixture + index) %
+                          (sizeof(edge) / sizeof(edge[0]))];
+        } else {
+          x[index] = (int16_t)(state >> 16);
+        }
+        state = state * 1664525u + 1013904223u;
+        if (fixture < sizeof(edge) / sizeof(edge[0])) {
+          y[index] = edge[(3 * fixture + 5 * index) %
+                          (sizeof(edge) / sizeof(edge[0]))];
+        } else {
+          y[index] = (int16_t)(state >> 16);
+        }
+      }
+    }
+
+    __m512i value = ntt_acc4_dot_lazy_i32x16_avx512(
+        _mm512_loadu_si512((const void *)accum),
+        _mm512_loadu_si512((const void *)x),
+        _mm512_loadu_si512((const void *)y));
+    _mm512_storeu_si512((void *)got, value);
+    for (size_t lane = 0; lane < 16; lane++) {
+      uint32_t expected = accum[lane];
+      expected += (uint32_t)((int32_t)x[2 * lane] * y[2 * lane]);
+      expected += (uint32_t)((int32_t)x[2 * lane + 1] * y[2 * lane + 1]);
+      if (got[lane] != expected) {
+        fprintf(stderr, "AVX512 lazy dot mismatch at %zu,%zu\n",
+                fixture, lane);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
 static int stage_poly_equal_mod_q(const poly256 a, const poly256 b);
 
 static void validate_encrypt_accum_lazy_inverse_avx512(
@@ -3643,6 +3693,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt_final_l1_mont_block32_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__) || defined(__clang__)
+  validate_ntt_acc4_dot_lazy_avx512();
   validate_encrypt_accum_lazy512_avx512();
 #endif
 #endif
