@@ -249,6 +249,7 @@ Near-term target selection:
 | GCC AVX512VBMI2 register rejection compaction | Accepted for GCC native AVX512VBMI2+VL; Clang and narrower ISA builds are byte-identical | Two 16-lane decoded vectors are compacted with register `VPCOMPRESSW`, then written with bounded ordinary stores. The direct 504-byte parser, x8 sampler, matrix generation, and uncached K-PKE encryption improve `1.8626x`/`1.0981x`/`1.0661x`/`1.0466x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0306x`/`1.0339x`/`1.0526x`/`1.0318x`, all 15/15. GCC `benchc` text shrinks 684 bytes and BSS shrinks 2,048 bytes because the old compaction LUT becomes dead. No cache, external object, table, API, or wire-format change is added. |
 | GCC AVX512VBMI/VBMI2 wide rejection decode | Accepted for GCC native AVX512VBMI+VBMI2+BW+VL; a compaction-only VBMI2 fallback remains available | A masked 48-byte ZMM load and `VPERMB` now expand 32 packed 12-bit candidates before one unsigned compare, one register-result `VPCOMPRESSW`, one ordinary store, and one popcount. Against the preceding register-compaction path, the direct parser and complete matrix improve `1.1852x` and `1.0225x` paired geometric mean. Fifteen-pair cache-disabled KEM medians improve keygen/encaps-core/decaps-core/roundtrip-core by `1.0076x`/`1.0067x`/`1.0075x`/`1.0074x`; repeated-key controls remain neutral. The parser shrinks 30 bytes while linked GCC native text grows 32 bytes. No cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512VBMI/VBMI2 wide rejection decode | Accepted for Clang native AVX512VBMI+VBMI2+BW+VL; GCC and narrower ISA text byte-identical | The existing repository-local masked 48-byte load, `VPERMB` decode, register-result `VPCOMPRESSW`, ordinary store, and popcount path is now enabled for Clang. A Clang-only `noinline` boundary prevents LLVM from cloning the shorter parser across samplers. Direct parser, complete x8 sampler, matrix generation, and uncached K-PKE improve `1.9449x`/`1.0932x`/`1.0602x`/`1.0506x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0347x`/`1.0406x`/`1.0348x`/`1.0363x`; repeated-key controls remain neutral. Clang `benchc` text shrinks 329 bytes and BSS shrinks 2,048 bytes. No cache, external object, table, API, or wire-format change is added. |
+| Clang AVX512VBMI final masked-store tail | Closed | One final 32-candidate decode plus a mask-limited ordinary `VMOVDQU16` store improved the one-stream parser by `1.1807x` paired geometric mean, but it did not compose across the four production streams: the four-stream parser fell to `0.8529x`, complete/sparse x8 sampling to `0.9734x`/`0.9776x`, and matrix generation to `0.9923x`. This is distinct from the known slow memory-form compress: disassembly used register-result `VPCOMPRESSW` followed by an ordinary masked store. The existing XMM/scalar tail remains; no candidate code remains. |
 | GCC x8 SHAKE rate materialization boundary | Closed | Padding each stream row to 512 bytes made an isolated parser about `1.22x` faster but left complete x8/matrix medians at `0.9991x`/`0.9986x`. Storing 63 word-major vectors made the producer `1.0335x` faster but reduced complete x8/matrix to `0.9508x`/`0.9741x`. Wider store rewrites reached only `0.9973x` and `0.9992x` median. A selective final-word design improved its producer median by `1.0012x`, but an independent-object same-process complete-x8 gate measured `0.9993x` median with 5/21 wins. Keep the existing AVX2 transpose/store plus wide parser; no candidate code remains. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
@@ -340,6 +341,62 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization Diagnostic (2026-07-17, Clang VBMI final masked-store tail)
+
+A 500,000-iteration Clang native profile after the accepted wide parser put
+fixed `H(pk)` at `26.02%`, checked x8 matrix assembly at `19.48%`, inlined
+keygen work at `12.55%`, sparse x7 Keccak at `6.77%`, the shared inverse at
+`6.66%`, four-output accumulation at `5.56%`, and rejection parsing at `5.02%`.
+A line-attributed profile located much of the remaining parser cost in the wide
+compress/store chain and the final XMM/scalar tail. The tail was therefore
+measured as the next local parser target rather than inferred from its isolated
+instruction count.
+
+The prototype decoded one additional 48-byte, 32-candidate ZMM chunk after the
+full-store loop. It compacted accepted words into a register with
+`VPCOMPRESSW`, limited the destination mask to the remaining output capacity,
+and wrote those lanes with an ordinary masked `VMOVDQU16`. It did not use the
+previously rejected memory-destination compress instruction. A first version
+retained the old XMM tail and enlarged the focused parser from `0x21c` to
+`0x2dc` bytes. The narrower second version was enabled only for Clang VBMI,
+replaced that XMM tail, and limited growth to `0x25c` bytes. Disassembly
+confirmed a register-result compress and a regular masked store.
+
+The second version passed the complete Clang-native test suite. Its production
+stage gate compared the working-tree prototype with baseline `12e6a1a` on CPU
+0, using two warmups, seven alternating pairs, and 50,000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 12e6a1a
+```
+
+| Clang native stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| 504-byte parser, one stream | `1.1807x` | `1.1853x` | 7/7 | not used for acceptance |
+| 504-byte parser, four streams | `0.8529x` | `0.7535x` | 3/7 | `0.7496x` / `1.0495x` |
+| complete x8 sampler | `0.9734x` | `0.9876x` | 0/7 | mixed negative |
+| sparse-first complete x8 sampler | `0.9776x` | `0.9735x` | 1/7 | mixed negative |
+| complete matrix generation | `0.9923x` | `0.9986x` | 3/7 | mixed negative |
+| scalar-refill matrix generation | `0.9902x` | `0.9884x` | 2/7 | mixed negative |
+| sparse matrix generation | `0.9807x` | `0.9894x` | 2/7 | mixed negative |
+| keygen-full stage | `1.0130x` | `1.0128x` | 6/7 | positive layout-sensitive row |
+| no-cache public preparation | `0.9986x` | `1.0032x` | 4/7 | neutral |
+| cache-disabled K-PKE encryption | `0.9952x` | `0.9999x` | 3/7 | neutral-to-negative |
+| repeated-key K-PKE control | `0.9925x` | `0.9977x` | 2/7 | unchanged-path control |
+
+The one-stream result shows that the masked final write can reduce local tail
+work. It is not an integrated optimization: four independent parser calls lose
+strongly in one object order, and every complete x8 sampling row regresses.
+The positive keygen-full row is inconsistent with its slower matrix producer
+and the neutral-to-negative preparation/encryption boundaries, so it is treated
+as layout noise rather than a reason to advance to a final KEM gate.
+
+The prototype was removed. Production retains the smaller XMM/scalar tail and
+the accepted wide common loop. No cache, table, external object, runtime
+library, API, or wire-format change remains.
 
 ### Latest Core Optimization A/B (2026-07-17, Clang AVX512VBMI/VBMI2 wide rejection decode)
 
