@@ -2314,6 +2314,7 @@ static inline void ntt_inv_sub_recover_from_inplace_avx512(
   }
 }
 
+#if defined(__clang__)
 static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
   int k = 0;
   for (int log2len = 7; log2len > 4; log2len--) {
@@ -2349,6 +2350,91 @@ static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
                          _mm256_sub_epi16(a, t));
   }
 }
+#else
+static MLKEM_ALWAYS_INLINE void ntt_head_mont_butterfly_i16x32_avx512(
+    __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
+    __m512i *sum, __m512i *diff) {
+  __m512i t = ntt_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+  *sum = _mm512_add_epi16(a, t);
+  *diff = _mm512_sub_epi16(a, t);
+}
+
+static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
+  /* Keep l7 through l5 in the eight ZMM blocks loaded below. */
+  __m512i x0 = _mm512_loadu_si512((const void *)(f + 0 * 32));
+  __m512i x1 = _mm512_loadu_si512((const void *)(f + 1 * 32));
+  __m512i x2 = _mm512_loadu_si512((const void *)(f + 2 * 32));
+  __m512i x3 = _mm512_loadu_si512((const void *)(f + 3 * 32));
+  __m512i x4 = _mm512_loadu_si512((const void *)(f + 4 * 32));
+  __m512i x5 = _mm512_loadu_si512((const void *)(f + 5 * 32));
+  __m512i x6 = _mm512_loadu_si512((const void *)(f + 6 * 32));
+  __m512i x7 = _mm512_loadu_si512((const void *)(f + 7 * 32));
+
+  __m512i zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[0];
+  __m512i zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[0];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x0, x4, zeta_lo, zeta_hi, &x0, &x4);
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x1, x5, zeta_lo, zeta_hi, &x1, &x5);
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x2, x6, zeta_lo, zeta_hi, &x2, &x6);
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x3, x7, zeta_lo, zeta_hi, &x3, &x7);
+
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[1];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[1];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x0, x2, zeta_lo, zeta_hi, &x0, &x2);
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x1, x3, zeta_lo, zeta_hi, &x1, &x3);
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[2];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[2];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x4, x6, zeta_lo, zeta_hi, &x4, &x6);
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x5, x7, zeta_lo, zeta_hi, &x5, &x7);
+
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[3];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[3];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x0, x1, zeta_lo, zeta_hi, &x0, &x1);
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[4];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[4];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x2, x3, zeta_lo, zeta_hi, &x2, &x3);
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[5];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[5];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x4, x5, zeta_lo, zeta_hi, &x4, &x5);
+  zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[6];
+  zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[6];
+  ntt_head_mont_butterfly_i16x32_avx512(
+      x6, x7, zeta_lo, zeta_hi, &x6, &x7);
+
+  _mm512_storeu_si512((void *)(f + 0 * 32), x0);
+  _mm512_storeu_si512((void *)(f + 1 * 32), x1);
+  _mm512_storeu_si512((void *)(f + 2 * 32), x2);
+  _mm512_storeu_si512((void *)(f + 3 * 32), x3);
+  _mm512_storeu_si512((void *)(f + 4 * 32), x4);
+  _mm512_storeu_si512((void *)(f + 5 * 32), x5);
+  _mm512_storeu_si512((void *)(f + 6 * 32), x6);
+  _mm512_storeu_si512((void *)(f + 7 * 32), x7);
+
+  for (int start = 0, k = 7; start < N; start += 32, k++) {
+    __m256i zeta_lo_256 =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_LO_AVX512[k]);
+    __m256i zeta_hi_256 =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_HI_AVX512[k]);
+    __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
+    __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
+    __m256i t =
+        ntt_mont_mul_precomp_i16x16(b, zeta_lo_256, zeta_hi_256);
+    _mm256_storeu_si256((__m256i *)(f + start), _mm256_add_epi16(a, t));
+    _mm256_storeu_si256((__m256i *)(f + start + 16),
+                         _mm256_sub_epi16(a, t));
+  }
+}
+#endif
 
 static void ntt_head_avx512(poly256 f) {
   ntt_head_mont_lazy_raw_avx512(f);
