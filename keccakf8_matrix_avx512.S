@@ -1,10 +1,16 @@
 # Fixed-shape AVX512 x8 SHAKE128 matrix initial squeeze for Clang.
 #
-# The four-round logical-lane mapping is adapted from Ronny Van Keer's CC0
-# XKCP KeccakP-1600-times8 AVX512 core. The instruction schedule below was
-# captured from baby-mlkem's repository-local GCC C helper with GCC 13.3.0,
-# -O3, and -march=native. Checking it in gives Clang the same stable schedule
-# without linking XKCP, a GCC-built object, or any runtime library.
+# The dense four-round logical-lane mapping used after round 0 is adapted from
+# Ronny Van Keer's CC0 XKCP KeccakP-1600-times8 AVX512 core. Its instruction
+# schedule and integrated rate stores were captured from baby-mlkem's
+# repository-local GCC C helper with GCC 13.3.0, -O3, and -march=native.
+#
+# The initial SHAKE state has only lanes 0..4 and 20 nonzero. The first round
+# below is a repository-local partial evaluation of that sparse state. It
+# materializes the five Theta corrections, evaluates the five output planes,
+# then maps them into the existing dense round-1 register layout. Checking this
+# combined schedule in gives Clang the stable path without linking XKCP, a
+# GCC-built object, or any runtime library.
 #
 # The function constructs eight fixed matrix states from one 32-byte seed,
 # keeps all 25 ZMM lanes live through three permutations, stores three
@@ -25,40 +31,166 @@ mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512:
 	movq	%rsp, %rbp
 	andq	$-64, %rsp
 	subq	$264, %rsp
-	vpbroadcastq	(%rdi), %zmm20
+	vpbroadcastq	0(%rdi), %zmm0
 	vpbroadcastq	8(%rdi), %zmm1
-	vmovdqa64	%zmm1, 200(%rsp)
-	vpbroadcastq	16(%rdi), %zmm6
-	vmovdqa64	%zmm6, 136(%rsp)
-	vpbroadcastq	24(%rdi), %zmm19
-	leaq	504(%rdx), %rdi
-	vpxor	%xmm7, %xmm7, %xmm7
-	vmovdqa64	%zmm7, %zmm21
-	vmovdqa64	%zmm7, %zmm8
-	vmovdqa64	%zmm7, %zmm23
+	vpbroadcastq	16(%rdi), %zmm2
+	vpbroadcastq	24(%rdi), %zmm3
+	vmovdqa64	.Lmlkem_matrix_init(%rip), %zmm4
 	movabsq	$-9223372036854775808, %rax
-	vpbroadcastq	%rax, %zmm16
-	vmovdqa64	%zmm7, %zmm5
-	vmovdqa64	%zmm7, %zmm6
-	vmovdqa64	%zmm7, %zmm2
-	vmovdqa64	%zmm7, %zmm9
-	vmovdqa64	%zmm7, %zmm27
-	vmovdqa64	%zmm7, %zmm17
-	vmovdqa64	%zmm7, %zmm0
-	vmovdqa64	%zmm7, %zmm1
-	vmovdqa64	%zmm7, %zmm3
-	vmovdqa64	%zmm7, %zmm13
-	vmovdqa64	%zmm7, %zmm30
-	vmovdqa64	.Lmlkem_matrix_init(%rip), %zmm26
+	vpbroadcastq	%rax, %zmm20
+	leaq	504(%rdx), %rdi
 	leaq	192+.Lmlkem_keccak_rc(%rip), %rcx
-	vmovdqa64	%zmm19, %zmm18
-	vmovdqa64	%zmm20, %zmm14
-	vmovdqa64	%zmm7, %zmm20
-	vmovdqa64	%zmm7, %zmm19
-	vmovdqa64	%zmm7, %zmm25
-	vmovdqa64	%zmm7, %zmm29
-	vmovdqa64	%zmm26, %zmm31
-	vmovdqa64	%zmm14, %zmm22
+	leaq	.Lmlkem_keccak_rc(%rip), %rax
+	vmovdqa64	%zmm0, %zmm25
+	vpxorq	%zmm20, %zmm25, %zmm25
+	vprolq	$1, %zmm2, %zmm26
+	vpxorq	%zmm25, %zmm26, %zmm26
+	vprolq	$1, %zmm25, %zmm29
+	vpxorq	%zmm3, %zmm29, %zmm29
+	vprolq	$1, %zmm1, %zmm25
+	vpxorq	%zmm4, %zmm25, %zmm25
+	vprolq	$1, %zmm3, %zmm27
+	vpxorq	%zmm1, %zmm27, %zmm27
+	vprolq	$1, %zmm4, %zmm28
+	vpxorq	%zmm2, %zmm28, %zmm28
+	vpxorq	%zmm25, %zmm0, %zmm0
+	vpxorq	%zmm26, %zmm1, %zmm1
+	vpxorq	%zmm27, %zmm2, %zmm2
+	vpxorq	%zmm28, %zmm3, %zmm3
+	vpxorq	%zmm29, %zmm4, %zmm4
+	vmovdqa64	%zmm25, %zmm5
+	vmovdqa64	%zmm26, %zmm6
+	vmovdqa64	%zmm27, %zmm7
+	vmovdqa64	%zmm28, %zmm8
+	vmovdqa64	%zmm29, %zmm9
+	vmovdqa64	%zmm25, %zmm10
+	vmovdqa64	%zmm26, %zmm11
+	vmovdqa64	%zmm27, %zmm12
+	vmovdqa64	%zmm28, %zmm13
+	vmovdqa64	%zmm29, %zmm14
+	vmovdqa64	%zmm25, %zmm15
+	vmovdqa64	%zmm26, %zmm16
+	vmovdqa64	%zmm27, %zmm17
+	vmovdqa64	%zmm28, %zmm18
+	vmovdqa64	%zmm29, %zmm19
+	vpxorq	%zmm25, %zmm20, %zmm20
+	vmovdqa64	%zmm26, %zmm21
+	vmovdqa64	%zmm27, %zmm22
+	vmovdqa64	%zmm28, %zmm23
+	vmovdqa64	%zmm29, %zmm24
+	# Output plane y=0, B shift=0.
+	vprolq	$44, %zmm6, %zmm6
+	vprolq	$43, %zmm12, %zmm12
+	vprolq	$21, %zmm18, %zmm18
+	vprolq	$14, %zmm24, %zmm24
+	vmovdqa64	%zmm0, %zmm25
+	vpternlogq	$0xD2, %zmm12, %zmm6, %zmm0
+	vmovdqa64	%zmm6, %zmm26
+	vpternlogq	$0xD2, %zmm18, %zmm12, %zmm6
+	vpternlogq	$0xD2, %zmm24, %zmm18, %zmm12
+	vpternlogq	$0xD2, %zmm25, %zmm24, %zmm18
+	vpternlogq	$0xD2, %zmm26, %zmm25, %zmm24
+
+	# Output plane y=1, B shift=2.
+	vprolq	$3, %zmm10, %zmm10
+	vprolq	$45, %zmm16, %zmm16
+	vprolq	$61, %zmm22, %zmm22
+	vprolq	$28, %zmm3, %zmm3
+	vprolq	$20, %zmm9, %zmm9
+	vmovdqa64	%zmm10, %zmm25
+	vpternlogq	$0x9C, %zmm9, %zmm3, %zmm10
+	vmovdqa64	%zmm16, %zmm26
+	vpternlogq	$0x9C, %zmm25, %zmm9, %zmm16
+	vpternlogq	$0x9C, %zmm3, %zmm22, %zmm9
+	vpternlogq	$0x9C, %zmm22, %zmm26, %zmm3
+	vpternlogq	$0x9C, %zmm26, %zmm25, %zmm22
+
+	# Output plane y=2, B shift=4.
+	vprolq	$18, %zmm20, %zmm20
+	vprolq	$1, %zmm1, %zmm1
+	vprolq	$6, %zmm7, %zmm7
+	vprolq	$25, %zmm13, %zmm13
+	vprolq	$8, %zmm19, %zmm19
+	vmovdqa64	%zmm20, %zmm25
+	vmovdqa64	%zmm1, %zmm20
+	vpternlogq	$0xD2, %zmm13, %zmm7, %zmm20
+	vmovdqa64	%zmm1, %zmm26
+	vmovdqa64	%zmm7, %zmm1
+	vpternlogq	$0xD2, %zmm19, %zmm13, %zmm1
+	vmovdqa64	%zmm7, %zmm27
+	vmovdqa64	%zmm13, %zmm7
+	vpternlogq	$0xD2, %zmm25, %zmm19, %zmm7
+	vmovdqa64	%zmm19, %zmm13
+	vpternlogq	$0xD2, %zmm26, %zmm25, %zmm13
+	vmovdqa64	%zmm25, %zmm19
+	vpternlogq	$0xD2, %zmm27, %zmm26, %zmm19
+
+	# Output plane y=3, B shift=1.
+	vprolq	$36, %zmm5, %zmm5
+	vprolq	$10, %zmm11, %zmm11
+	vprolq	$15, %zmm17, %zmm17
+	vprolq	$56, %zmm23, %zmm23
+	vprolq	$27, %zmm4, %zmm4
+	vmovdqa64	%zmm5, %zmm25
+	vpternlogq	$0xC6, %zmm11, %zmm4, %zmm5
+	vmovdqa64	%zmm11, %zmm26
+	vpternlogq	$0xC6, %zmm17, %zmm25, %zmm11
+	vmovdqa64	%zmm23, %zmm27
+	vpternlogq	$0xC6, %zmm4, %zmm17, %zmm23
+	vpternlogq	$0xC6, %zmm27, %zmm26, %zmm17
+	vpternlogq	$0xC6, %zmm25, %zmm27, %zmm4
+
+	# Output plane y=4, B shift=3.
+	vprolq	$41, %zmm15, %zmm15
+	vprolq	$2, %zmm21, %zmm21
+	vprolq	$62, %zmm2, %zmm2
+	vprolq	$55, %zmm8, %zmm8
+	vprolq	$39, %zmm14, %zmm14
+	vmovdqa64	%zmm15, %zmm25
+	vmovdqa64	%zmm2, %zmm15
+	vpternlogq	$0xD2, %zmm14, %zmm8, %zmm15
+	vmovdqa64	%zmm21, %zmm26
+	vmovdqa64	%zmm8, %zmm21
+	vpternlogq	$0xD2, %zmm25, %zmm14, %zmm21
+	vmovdqa64	%zmm2, %zmm27
+	vmovdqa64	%zmm14, %zmm2
+	vpternlogq	$0xD2, %zmm26, %zmm25, %zmm2
+	vmovdqa64	%zmm26, %zmm14
+	vpternlogq	$0xD2, %zmm8, %zmm27, %zmm14
+	vmovdqa64	%zmm25, %zmm8
+	vpternlogq	$0xD2, %zmm27, %zmm26, %zmm8
+	vpbroadcastq	0(%rax), %zmm31
+	vpxorq	%zmm31, %zmm0, %zmm0
+	# Map the specialized round-0 outputs to the existing round-1 register layout.
+	vmovdqa64	%zmm3, %zmm28
+	vmovdqa64	%zmm5, %zmm31
+	vmovdqa64	%zmm6, %zmm26
+	vmovdqa64	%zmm11, %zmm25
+	vmovdqa64	%zmm16, %zmm27
+	vmovdqa64	%zmm21, %zmm30
+	vmovdqa64	%zmm12, 72(%rsp)
+	vmovdqa64	%zmm22, %zmm12
+	vmovdqa64	%zmm9, %zmm22
+	vmovdqa64	%zmm13, %zmm9
+	vmovdqa64	%zmm0, %zmm13
+	vmovdqa64	%zmm1, %zmm6
+	vmovdqa64	%zmm8, %zmm1
+	vmovdqa64	%zmm23, %zmm8
+	vmovdqa64	%zmm2, %zmm3
+	vmovdqa64	%zmm4, %zmm2
+	vmovdqa64	%zmm3, %zmm4
+	vmovdqa64	%zmm14, %zmm5
+	vmovdqa64	%zmm18, %zmm14
+	vmovdqa64	%zmm15, %zmm18
+	vmovdqa64	%zmm7, %zmm3
+	vmovdqa64	%zmm20, %zmm7
+	vmovdqa64	%zmm19, %zmm20
+	vmovdqa64	%zmm3, %zmm19
+	vmovdqa64	%zmm10, %zmm3
+	vmovdqa64	%zmm24, %zmm10
+	vmovdqa64	%zmm3, %zmm24
+	vmovdqa64	%zmm17, %zmm11
+	jmp	.Lmlkem_matrix_round1
 .Lmlkem_matrix_block:
 	leaq	.Lmlkem_keccak_rc(%rip), %rax
 	vmovdqa64	%zmm18, %zmm28
@@ -195,6 +327,7 @@ mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512:
 	vpternlogq	$210, %zmm1, %zmm15, %zmm5
 	vmovdqa64	%zmm29, %zmm1
 	vpternlogq	$210, %zmm15, %zmm0, %zmm1
+.Lmlkem_matrix_round1:
 	vmovdqa64	%zmm13, %zmm21
 	vpternlogq	$150, %zmm24, %zmm31, %zmm21
 	vpternlogq	$150, %zmm7, %zmm18, %zmm21
