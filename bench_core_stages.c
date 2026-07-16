@@ -2575,6 +2575,7 @@ static void validate_ntt_full_lazy_canonical_range_avx512(void) {
   const int lower = -7 * Q + 1;
   const int upper = 8 * Q - 1;
   poly256 input;
+  int16_t raw_got[32];
   int16_t got[32];
 
   for (int base = lower; base <= upper; base += 32) {
@@ -2584,11 +2585,22 @@ static void validate_ntt_full_lazy_canonical_range_avx512(void) {
       input[lane] = (int16_t)(lane < active ? base + lane : upper);
     }
 
+    __m512i raw = ntt_barrett_reduce_i16x32_avx512(
+        _mm512_loadu_si512((const void *)input));
     __m512i reduced = ntt_canonicalize_lazy_block32_avx512(input, 0);
+    _mm512_storeu_si512((void *)raw_got, raw);
     _mm512_storeu_si512((void *)got, reduced);
     for (int lane = 0; lane < active; lane++) {
       int expected = input[lane] % Q;
       if (expected < 0) expected += Q;
+      if (raw_got[lane] < 0 || raw_got[lane] > Q ||
+          (raw_got[lane] != expected &&
+           !(expected == 0 && raw_got[lane] == Q))) {
+        fprintf(stderr,
+                "AVX512 full-lazy raw range mismatch at %d: %d != %d\n",
+                (int)input[lane], (int)raw_got[lane], expected);
+        exit(EXIT_FAILURE);
+      }
       if (got[lane] != expected) {
         fprintf(stderr,
                 "AVX512 full-lazy canonical range mismatch at %d: %d != %d\n",
