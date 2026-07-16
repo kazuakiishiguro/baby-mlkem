@@ -635,8 +635,10 @@ void test_ntts() {
 #if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
 static void test_sha3_256_1184_avx512vl(void) {
   uint8_t input[1184];
+  uint8_t copied[1184];
   uint8_t reference[32];
   uint8_t actual[32];
+  uint8_t copy_hash[32];
 
   for (unsigned fixture = 0; fixture < 256; fixture++) {
     if (fixture == 0) {
@@ -669,6 +671,11 @@ static void test_sha3_256_1184_avx512vl(void) {
     keccak_squeeze(&ctx, reference, sizeof(reference));
     mlkem_sha3_256_1184_avx512vl(input, actual);
     assert(memcmp(reference, actual, sizeof(reference)) == 0);
+    memset(copied, 0xa5, sizeof(copied));
+    memset(copy_hash, 0xa5, sizeof(copy_hash));
+    sha3_256_copy_1184(copied, input, copy_hash);
+    assert(memcmp(input, copied, sizeof(input)) == 0);
+    assert(memcmp(reference, copy_hash, sizeof(reference)) == 0);
   }
 }
 #endif
