@@ -233,6 +233,7 @@ Near-term target selection:
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC and Clang native; narrower ISA unchanged | One loop keeps canonical `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The original GCC gate improved 100k KEM keygen/keygen-core by `1.0218x`/`1.0210x`. Routing current Clang through the same validated kernel improves direct accumulation `1.1342x`, full-keygen stage median `1.0179x`, and 100k KEM keygen/keygen-core geometric means `1.0100x`/`1.0072x`; Clang `benchc` text shrinks 2,752 bytes. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 keygen final-L1/accumulation/d12 boundary | Accepted for GCC and Clang native; AVX2-only/scalar byte-identical | Keygen leaves `shat[0..2]` one NTT level short, then each canonical 32-coefficient ZMM feeds all three `A^T * s` columns and secret-key d12 packing before being discarded. This removes 7,680 bytes of intermediate coefficient traffic per keygen. Direct fused-boundary geometric means improve `1.0247x`/`1.0114x` under Clang/GCC; 100k KEM keygen improves `1.0104x`/`1.0084x`, with 13/14 and 12/14 wins. Clang product text shrinks 2,816 bytes; GCC grows 1,340 bytes but retains the measured win. The existing Montgomery/Harvey and asymmetric multiplication arithmetic remains externally attributed; the lifetime fusion is repository-local and adds no external object, cache, table, or wire-format change. |
 | Clang AVX512 keygen accumulation/add/public-d12 boundary | Accepted for Clang native; GCC retained the split path; AVX2-only/scalar byte-identical | Each canonical `A^T * s` ZMM now receives `ehat`, emits public-key d12 bytes, and stores the final cached `that` tile before being discarded. This removes 4,608 bytes of intermediate coefficient traffic per keygen. Clang's direct boundary improves `1.0133x` geometric mean with 9/9 wins; 100k KEM keygen/keygen-core improve `1.0043x`/`1.0094x` geometric mean with 11/14 and 12/14 wins. Product text shrinks 1,088 bytes. GCC's paired median was `0.9998x`, so its existing path and binary remain unchanged. No cache shortcut, external object, table, API, or wire-format change is added. |
+| Clang AVX512 lazy keygen `ehat` handoff | Closed; exhaustive oracle retained | Keeping all three keygen error NTTs in the proved full-lazy range removed their standalone canonicalization scans, while the fused accumulation/add/d12 consumer reduced `accum + lazy_ehat` once. The direct consumer fell to `0.9727x`; complete keygen reached only `1.0009x` paired median, and the final 15-pair `keygen_core` gate regressed to `0.9986x` geometric mean, `0.9989x` median, and 5/15 wins. Production keeps canonical `ehat`; test commit `02e4418` retains the exhaustive `(-7Q,9Q)` range and 4,096-fixture equivalence oracle. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off after its cache-disabled KEM gate regressed. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
 | GCC AVX512VNNI four-output encryption accumulation | Accepted for GCC AVX512VNNI; non-VNNI/Clang/narrower ISA unchanged | `VPDPWSSD` replaces each bounded `vpmaddwd` plus `vpaddd` pair in the four-output K=3 kernel. The direct interval improves `1.0117x` geometric mean with 9/9 wins; cached/uncached K-PKE paired medians improve `1.0056x`/`1.0041x`, and 40k `encaps`/`decaps` improve `1.0041x`/`1.0053x` geometric mean with 13/15 wins each. The compiler/ISA-gated repository-local intrinsics add no external object, cache, table, or wire-format dependency. |
@@ -341,6 +342,89 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization Diagnostic (2026-07-17, Clang lazy keygen `ehat` handoff)
+
+The current Clang AVX512 keygen already carries `shat[0..2]` through the full
+forward NTT in lazy form and canonicalizes each 32-coefficient block only in the
+fused accumulation/secret-d12 consumer. Its three `ehat` polynomials still ran
+the same transform, scanned each complete output to canonicalize it, and were
+then loaded by the fused accumulation/add/public-d12 consumer. This left one
+bounded representation handoff after the wider keygen fusion work.
+
+The prototype kept `ehat[0..2]` in the full-lazy NTT range and reduced the sum
+with the already canonical K=3 accumulation inside the fused consumer. The
+range proof is exhaustive over the consumer contract:
+
+```text
+full-lazy ehat:             -7Q < e < 8Q
+canonical accumulation:       0 <= c < Q
+combined signed-16-bit sum: -7Q < c + e < 9Q
+integer endpoints:          -23302 .. 29959
+```
+
+The sum cannot overflow a signed 16-bit lane. For every integer in that
+53,262-value interval, the existing signed Barrett step returns `[0,Q]`, so one
+comparison and masked subtract handles only the possible value `Q`. Test commit
+`02e4418` retains that exhaustive SIMD oracle and a separate 4,096-fixture
+check of
+
+```text
+canonical NTT(ehat) + canonical accumulation
+    ==
+canonicalize(full-lazy NTT(ehat) + canonical accumulation)
+```
+
+The production prototype was restricted to Clang AVX512BW. GCC, AVX2-only, and
+scalar paths were not routed through it. Clang native KAT and complete stage
+validation passed with the established sink `16374744525661797297`.
+
+The stage gate compared the working-tree prototype with `02e4418` on CPU 0,
+using two warmups, seven alternating pairs, and 50,000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 02e4418
+```
+
+| Clang native stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| fused shat NTT/accumulation/lazy-ehat add/d12 | `0.9727x` | `0.9741x` | 0/7 | `0.9737x` / `0.9741x` |
+| complete K-PKE keygen | `1.0074x` | `1.0009x` | 5/7 | `1.0085x` / `1.0001x` |
+
+The local consumer regression is expected: it replaces a canonical add with a
+Barrett reduction. The intended saving is the removal of three separate
+canonicalization scans after the error NTTs. That saving produced only a weak,
+order-sensitive complete-stage signal, so the candidate advanced only to the
+cache-independent product gate.
+
+The final gate used three warmups and 15 alternating pairs of 100,000 KEM
+iterations against the same baseline:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 02e4418
+```
+
+| Clang native KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` | `1.0027x` | `1.0009x` | 10/15 | `1.0033x` / `1.0006x` |
+| `mlkem_keygen_core` | `0.9986x` | `0.9989x` | 5/15 | `0.9994x` / `0.9979x` |
+| `mlkem_roundtrip` | `1.0025x` | `0.9999x` | 7/15 | `1.0010x` / `0.9999x` |
+| `mlkem_roundtrip_core` | `1.0014x` | `1.0003x` | 8/15 | `1.0001x` / `1.0024x` |
+
+The more direct `keygen_core` boundary loses by geometric mean, median, win
+count, and both run orders. Top-level keygen's sub-0.1% median does not override
+that result, and roundtrip is neutral. This confirms the earlier AVX2 finding
+under the newer, broader Clang ZMM consumer: moving only `ehat`'s final
+canonicalization still pays too much back at the add-and-encode boundary.
+
+The production prototype and its stage-only lazy fixture were removed.
+Canonical `ehat` remains in the core; only the independent correctness oracle
+is retained. No cache, external object, runtime library, table, API, or
+wire-format change is present.
 
 ### Latest Core Optimization Diagnostic (2026-07-17, Clang VBMI final masked-store tail)
 
