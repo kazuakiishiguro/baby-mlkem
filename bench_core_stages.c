@@ -1548,10 +1548,15 @@ static void validate_encrypt_prf_cbd_tail_x8_avx512(void) {
       exit(EXIT_FAILURE);
     }
     for (int output = 0; output < K; output++) {
-      if (memcmp(got_r[output], want_r[output], sizeof(poly256)) != 0) {
-        fprintf(stderr, "x8 encrypt mixed-noise mismatch at %zu,%d\n",
-                fixture, output);
-        exit(EXIT_FAILURE);
+      for (int coeff = 0; coeff < N; coeff++) {
+        int value = want_r[output][coeff];
+        if (value > Q / 2) value -= Q;
+        if (got_r[output][coeff] != value) {
+          fprintf(stderr,
+                  "x8 encrypt mixed-r mismatch at %zu,%d,%d\n",
+                  fixture, output, coeff);
+          exit(EXIT_FAILURE);
+        }
       }
       for (int coeff = 0; coeff < N; coeff++) {
         int value = want_e1[output][coeff];

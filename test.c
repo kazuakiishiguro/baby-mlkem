@@ -1057,8 +1057,11 @@ static void test_decaps_hash_tail_noise6_gcc_avx512(void) {
     poly256 want_tail;
     poly256 got_r[3];
     poly256 want_r[3];
+    poly256 canonical_r[3];
+    poly256 producer_r[3];
     int8_t got_e[4][N];
     int8_t want_e[4][N];
+    int8_t producer_e[4][N];
 
     for (size_t i = 0; i < 32; i++) {
       in0[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
@@ -1069,9 +1072,49 @@ static void test_decaps_hash_tail_noise6_gcc_avx512(void) {
     memcpy(input + 32, in1, 32);
     sha3_512(input, sizeof(input), want_hash);
     sample_ntt(rho, 2, 2, want_tail);
+
+    for (int output = 0; output < 7; output++) {
+      uint8_t stream[64 * ETA2];
+      poly256 canonical;
+
+      mlkem_prf(ETA2, want_hash + 32, 32, (uint8_t)output, stream);
+      test_sample_poly_cbd_eta2_scalar(stream, canonical);
+      for (int coeff = 0; coeff < N; coeff++) {
+        int centered = canonical[coeff];
+        if (centered > Q / 2) centered -= Q;
+        assert(centered >= -ETA2 && centered <= ETA2);
+        if (output < 3) {
+          canonical_r[output][coeff] = canonical[coeff];
+          want_r[output][coeff] = (int16_t)centered;
+        } else {
+          want_e[output - 3][coeff] = (int8_t)centered;
+        }
+      }
+    }
+
     mlkem_prf_cbd_eta2x3x4_i8_32(
-        want_hash + 32, nonce, want_r[0], want_r[1], want_r[2],
-        want_e[0], want_e[1], want_e[2], want_e[3]);
+        want_hash + 32, nonce, producer_r[0], producer_r[1], producer_r[2],
+        producer_e[0], producer_e[1], producer_e[2], producer_e[3]);
+
+    if (memcmp(producer_r, want_r, sizeof(producer_r)) != 0 ||
+        memcmp(producer_e, want_e, sizeof(producer_e)) != 0) {
+      fprintf(stderr, "GCC signed x7 PRF/CBD mismatch at fixture %u\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+
+    for (int output = 0; output < 3; output++) {
+      poly256 signed_ntt;
+      poly256 canonical_ntt;
+
+      ntt(want_r[output], signed_ntt);
+      ntt(canonical_r[output], canonical_ntt);
+      if (memcmp(signed_ntt, canonical_ntt, sizeof(signed_ntt)) != 0) {
+        fprintf(stderr, "GCC signed NTT mismatch at fixture %u output %d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
 
     sha3_512_sample_ntt_tail_noise6_gcc_avx512(
         in0, in1, rho, got_tail, got_hash, got_r[0], got_r[1], got_r[2],
