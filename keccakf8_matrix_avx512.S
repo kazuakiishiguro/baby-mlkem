@@ -863,28 +863,7 @@ mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512:
 	addq	$168, %rdx
 	cmpq	%rdx, %rdi
 	jne	.Lmlkem_matrix_block
-	vmovdqa64	%zmm28, (%rsi)
-	vmovdqa64	%zmm15, 64(%rsi)
-	vmovdqa64	136(%rsp), %zmm4
-	vmovdqa64	%zmm4, 128(%rsi)
-	vmovdqa64	%zmm18, 192(%rsi)
-	vmovdqa64	%zmm31, 256(%rsi)
-	vmovdqa64	%zmm23, 320(%rsi)
-	vmovdqa64	%zmm20, 384(%rsi)
-	vmovdqa64	%zmm3, 448(%rsi)
-	vmovdqa64	%zmm25, 512(%rsi)
-	vmovdqa64	%zmm19, 576(%rsi)
-	vmovdqa64	%zmm13, 640(%rsi)
-	vmovdqa64	%zmm30, 704(%rsi)
-	vmovdqa64	%zmm24, 768(%rsi)
-	vmovdqa64	%zmm0, 832(%rsi)
-	vmovdqa64	%zmm17, 896(%rsi)
-	vmovdqa64	%zmm27, 960(%rsi)
-	vmovdqa64	%zmm9, 1024(%rsi)
-	vmovdqa64	%zmm2, 1088(%rsi)
-	vmovdqa64	%zmm6, 1152(%rsi)
-	vmovdqa64	%zmm5, 1216(%rsi)
-	vmovdqa64	%zmm16, 1280(%rsi)
+	# Rate words 0..20 are already in stream; retain capacity for refill.
 	vmovdqa64	%zmm29, 1344(%rsi)
 	vmovdqa64	%zmm8, 1408(%rsi)
 	vmovdqa64	%zmm21, 1472(%rsi)

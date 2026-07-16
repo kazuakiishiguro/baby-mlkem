@@ -710,6 +710,8 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
 
 #if defined(__AVX512F__)
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+/* The assembly emits all three rates, but returns only capacity words
+ * st[21..24]; rebuild rate words 0..20 only when a refill is needed. */
 extern void mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
     const uint8_t seed[32], __m512i st[25], uint8_t stream[8][504]);
 #endif
@@ -5705,6 +5707,65 @@ static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
                          stream[6] + off, stream[7] + off, st);
 }
 
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+static MLKEM_ALWAYS_INLINE void sample_ntt4_load4x4(
+    const uint8_t *s0, const uint8_t *s1,
+    const uint8_t *s2, const uint8_t *s3,
+    __m256i *v0, __m256i *v1, __m256i *v2, __m256i *v3) {
+  __m256i r0 = _mm256_loadu_si256((const __m256i *)(const void *)s0);
+  __m256i r1 = _mm256_loadu_si256((const __m256i *)(const void *)s1);
+  __m256i r2 = _mm256_loadu_si256((const __m256i *)(const void *)s2);
+  __m256i r3 = _mm256_loadu_si256((const __m256i *)(const void *)s3);
+  __m256i t0 = _mm256_unpacklo_epi64(r0, r1);
+  __m256i t1 = _mm256_unpackhi_epi64(r0, r1);
+  __m256i t2 = _mm256_unpacklo_epi64(r2, r3);
+  __m256i t3 = _mm256_unpackhi_epi64(r2, r3);
+  *v0 = _mm256_permute2x128_si256(t0, t2, 0x20);
+  *v2 = _mm256_permute2x128_si256(t0, t2, 0x31);
+  *v1 = _mm256_permute2x128_si256(t1, t3, 0x20);
+  *v3 = _mm256_permute2x128_si256(t1, t3, 0x31);
+}
+
+/* Rate words 0..20 are already present in stream; retain only capacity
+ * words 21..24 on the common path and rebuild the rate for rare refills. */
+static MLKEM_NOINLINE void sample_ntt8_restore_last_rate(
+    const uint8_t stream[8][504], __m512i st[25]) {
+  const size_t rate_off = 2 * 168;
+#if defined(__clang__)
+#pragma clang loop unroll(disable)
+#endif
+  for (int word = 0; word < 20; word += 4) {
+    size_t off = rate_off + (size_t)word * 8;
+    __m256i lo0, lo1, lo2, lo3;
+    __m256i hi0, hi1, hi2, hi3;
+    sample_ntt4_load4x4(stream[0] + off, stream[1] + off,
+                        stream[2] + off, stream[3] + off,
+                        &lo0, &lo1, &lo2, &lo3);
+    sample_ntt4_load4x4(stream[4] + off, stream[5] + off,
+                        stream[6] + off, stream[7] + off,
+                        &hi0, &hi1, &hi2, &hi3);
+    st[word + 0] = _mm512_inserti64x4(
+        _mm512_castsi256_si512(lo0), hi0, 1);
+    st[word + 1] = _mm512_inserti64x4(
+        _mm512_castsi256_si512(lo1), hi1, 1);
+    st[word + 2] = _mm512_inserti64x4(
+        _mm512_castsi256_si512(lo2), hi2, 1);
+    st[word + 3] = _mm512_inserti64x4(
+        _mm512_castsi256_si512(lo3), hi3, 1);
+  }
+
+  st[20] = _mm512_set_epi64(
+      (long long)load64_le(stream[7] + rate_off + 160),
+      (long long)load64_le(stream[6] + rate_off + 160),
+      (long long)load64_le(stream[5] + rate_off + 160),
+      (long long)load64_le(stream[4] + rate_off + 160),
+      (long long)load64_le(stream[3] + rate_off + 160),
+      (long long)load64_le(stream[2] + rate_off + 160),
+      (long long)load64_le(stream[1] + rate_off + 160),
+      (long long)load64_le(stream[0] + rate_off + 160));
+}
+#endif
+
 static void sample_ntt8_matrix(const uint8_t *seed,
                                poly256 out0,
                                poly256 out1,
@@ -5749,6 +5810,10 @@ static void sample_ntt8_matrix(const uint8_t *seed,
         stream[lane], sizeof(stream[lane]), outs[lane], 0);
     need_more |= count[lane] < N;
   }
+
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+  if (need_more) sample_ntt8_restore_last_rate(stream, st);
+#endif
 
   while (need_more) {
     uint8_t extra[8][168];
