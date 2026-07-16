@@ -2566,6 +2566,34 @@ static void validate_ntt_full_mont_lazy_blocks_avx512(void) {
   }
 }
 
+static void validate_ntt_full_lazy_canonical_range_avx512(void) {
+  const int lower = -7 * Q + 1;
+  const int upper = 8 * Q - 1;
+  poly256 input;
+  int16_t got[32];
+
+  for (int base = lower; base <= upper; base += 32) {
+    int active = upper - base + 1;
+    if (active > 32) active = 32;
+    for (int lane = 0; lane < 32; lane++) {
+      input[lane] = (int16_t)(lane < active ? base + lane : upper);
+    }
+
+    __m512i reduced = ntt_canonicalize_lazy_block32_avx512(input, 0);
+    _mm512_storeu_si512((void *)got, reduced);
+    for (int lane = 0; lane < active; lane++) {
+      int expected = input[lane] % Q;
+      if (expected < 0) expected += Q;
+      if (got[lane] != expected) {
+        fprintf(stderr,
+                "AVX512 full-lazy canonical range mismatch at %d: %d != %d\n",
+                (int)input[lane], (int)got[lane], expected);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
 static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   const int32_t lower = -6 * (Q - 1) * (Q / 2);
   const int32_t upper = 6 * (Q - 1) * (Q - 1);
@@ -3690,6 +3718,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt3_mul_acc4_fused_final_madd512_avx512();
 #if defined(__GNUC__)
   validate_ntt_full_mont_lazy_blocks_avx512();
+  validate_ntt_full_lazy_canonical_range_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__) || defined(__clang__)
   validate_ntt_acc4_dot_lazy_avx512();
