@@ -396,6 +396,103 @@ void test_poly256_add() {
   }
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    !defined(__clang__)
+static MLKEM_NOINLINE void
+test_ntt_head_mont_lazy_raw_avx512_reference(poly256 f) {
+  int k = 0;
+  for (int log2len = 7; log2len > 4; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m512i zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[k];
+      __m512i zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[k++];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i t =
+            ntt_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+        _mm512_storeu_si512((void *)(f + start + j),
+                            _mm512_add_epi16(a, t));
+        _mm512_storeu_si512((void *)(f + start + length + j),
+                            _mm512_sub_epi16(a, t));
+      }
+    }
+  }
+
+  for (int start = 0; start < N; start += 32) {
+    __m256i zeta_lo =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_LO_AVX512[k]);
+    __m256i zeta_hi =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_HI_AVX512[k++]);
+    __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
+    __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
+    __m256i t = ntt_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+    _mm256_storeu_si256((__m256i *)(f + start), _mm256_add_epi16(a, t));
+    _mm256_storeu_si256((__m256i *)(f + start + 16),
+                        _mm256_sub_epi16(a, t));
+  }
+}
+
+static uint64_t test_ntt_head_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_gcc_avx512_ntt_head_fusion(void) {
+  poly256 expected;
+  poly256 actual;
+  uint64_t state = UINT64_C(0x6e74742d68656164);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (int i = 0; i < N; i++) {
+      int16_t value;
+      switch (fixture) {
+        case 0:
+          value = 0;
+          break;
+        case 1:
+          value = Q - 1;
+          break;
+        case 2:
+          value = (int16_t)(i % Q);
+          break;
+        case 3:
+          value = (i & 1) ? Q - 1 : 0;
+          break;
+        case 4:
+          value = (int16_t)(i % 5 - 2);
+          break;
+        case 5:
+          value = (i & 1) ? 2 : -2;
+          break;
+        default: {
+          uint64_t random = test_ntt_head_next_u64(&state);
+          value = (fixture & 1)
+              ? (int16_t)((int)(random % 5) - 2)
+              : (int16_t)(random % Q);
+          break;
+        }
+      }
+      expected[i] = value;
+      actual[i] = value;
+    }
+
+    test_ntt_head_mont_lazy_raw_avx512_reference(expected);
+    ntt_head_mont_lazy_raw_avx512(actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] > -5 * Q);
+      assert(actual[i] < 5 * Q);
+    }
+  }
+}
+#endif
+
 void test_ntts() {
   poly256 a,b, ntt_res, poly_res;
   for (int i = 0; i < N; i++){
@@ -675,6 +772,10 @@ int main(void) {
   test_kpke();
   test_mlkem();
   test_init_ntt_roots();
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    !defined(__clang__)
+  test_gcc_avx512_ntt_head_fusion();
+#endif
   test_ntts();
   printf("OK\n");
 }
