@@ -216,6 +216,7 @@ Near-term target selection:
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
+| GCC compact sparse x8 round-0 peel | Accepted for GCC native AVX512; Clang and narrower ISA byte-identical | The x7-noise, mixed-encryption, mixed-keygen, and diagnostic matrix modes can have only lanes `0..4`, `16`, and `20` nonzero before their first permutation. Round 0 is evaluated once outside the rotating four-phase loop, while rounds 1..23 reuse one compact `1,2,3,0` body. Raw x7 PRF/CBD and cached K-PKE improve `1.0023x`/`1.0025x` paired geometric mean; 100k encaps-core and keygen improve `1.0051x`/`1.0026x` with 12/15 wins each. Decaps and roundtrip are neutral and are not credited. GCC `benchc` text grows 804 bytes. No cache, external object, table, API, or wire-format change is added. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
@@ -262,6 +263,123 @@ results. A new attempt must use a compact rotating plane window, controlled
 assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization A/B (2026-07-16, GCC compact sparse x8 round-0 peel)
+
+A fresh 500,000-iteration GCC native profile after routing matrix sampling
+through the checked assembly placed `keccakf8_sparse_32()` at `9.53%` self
+time. Fixed `H(pk)` and matrix assembly remained larger at `27.26%` and
+`19.01%`, but both had just passed separate compiler-specific gates. The sparse
+single-permutation helper was therefore the next independent core target.
+
+The helper serves four initial-state shapes: eight SHAKE256 ETA2 streams,
+seven ETA2 streams plus one SHAKE128 matrix tail, six ETA2 streams plus one
+matrix tail and one inactive lane, and the diagnostic eight-stream matrix
+shape. Across all four modes, only Keccak words `0..4`, `16`, and `20` can be
+nonzero before permutation. The old four-round loop nevertheless entered round
+0 through the same loop-carried variables used by later dense rounds, preventing
+GCC from specializing the known-zero first state.
+
+Core commit `30c1935` evaluates round 0 once before the loop. It then executes
+round phases 1, 2, 3, and 0 in one rotating loop until round 23, preserving the
+existing four-round logical-lane mapping and round-constant order:
+
+```text
+old: loop [phase 0, phase 1, phase 2, phase 3] six times
+new: sparse phase 0; loop [phase 1, phase 2, phase 3, phase 0] to round 23
+```
+
+The function keeps GCC's existing `no-schedule-insns2` setting and adds
+`no-unroll-loops` so the compiler does not duplicate the rotating body. This is
+fixed-state partial evaluation, not a new Keccak schedule. The four-round
+mapping remains the repository's already disclosed XKCP-derived schedule.
+
+Two code-shape diagnostics prevented accepting a misleading local result. A
+first candidate peeled the complete four-round macro. It improved the short raw
+x7 row by `1.0035x` geometric mean with 5/5 wins, but duplicated about 3.1 KiB
+of round body: the helper grew from `0x10f9` to `0x1d2a`, and linked text grew
+from 80,631 to 84,059 bytes. Cached K-PKE regressed to `0.9745x` geometric mean
+and `0.9928x` median with 0/5 wins; uncached K-PKE reached only `0.9913x`, and
+keygen `0.9984x`. That form was removed.
+
+The compact form was also tested without `no-unroll-loops`. It was 64 linked
+text bytes smaller, but against the retained schedule its cached K-PKE median
+was `0.9995x` with 1/7 wins and keygen was `0.9986x` with 3/7 wins. The smaller
+binary did not preserve the measured integration, so the function-local
+schedule constraint remains.
+
+The final stage gate used CPU 0, two warmups, seven alternating pairs, and
+50,000 iterations against `8613fcb`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 8613fcb
+```
+
+| GCC native stage metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| raw x7 PRF/CBD | `1.0023x` | `1.0021x` | 7/7 | `1.0019x` / `1.0026x` |
+| raw compact-int8 PRF/CBD | `1.0011x` | `1.0009x` | 4/7 | `1.0014x` / `1.0009x` |
+| complete encryption noise stage | `1.0075x` | `1.0059x` | 7/7 | `1.0063x` / `1.0050x` |
+| mixed x8 int8 tail producer | `1.0006x` | `1.0004x` | 6/7 | `1.0004x` / `1.0001x` |
+| cached K-PKE encryption | `1.0025x` | `1.0014x` | 6/7 | `1.0010x` / `1.0014x` |
+| uncached K-PKE encryption | `1.0000x` | `0.9992x` | 3/7 | `1.0021x` / `0.9947x` |
+| full K-PKE keygen | `1.0091x` | `1.0017x` | 5/7 | `1.0030x` / `1.0000x` |
+
+Uncached encryption is order-sensitive and is not credited as a gain. The
+short keygen stage also contains an inflated geometric mean relative to its
+median, so keygen acceptance relies on the longer complete-KEM gate below.
+
+The final gate used three warmups, fifteen alternating pairs, and 100,000 KEM
+iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 8613fcb
+```
+
+| GCC native KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | `1.0006x` | `1.0010x` | 10/15 | `1.0014x` / `1.0003x` |
+| `mlkem_encaps_core` | `1.0051x` | `1.0013x` | 12/15 | `1.0014x` / `1.0002x` |
+| `mlkem_keygen` | `1.0026x` | `1.0014x` | 12/15 | `1.0016x` / `1.0013x` |
+| `mlkem_keygen_core` | `1.0021x` | `1.0005x` | 9/15 | `1.0003x` / `1.0005x` |
+| `mlkem_decaps` control | `1.0046x` | `1.0003x` | 8/15 | `0.9989x` / `1.0003x` |
+| `mlkem_decaps_core` control | `1.0023x` | `1.0006x` | 8/15 | `0.9999x` / `1.0007x` |
+| `mlkem_roundtrip` control | `1.0015x` | `1.0008x` | 9/15 | `0.9996x` / `1.0011x` |
+| `mlkem_roundtrip_core` control | `1.0008x` | `0.9996x` | 7/15 | `1.0002x` / `0.9990x` |
+
+Decapsulation and roundtrip are neutral: each has only 7-9 wins and at least
+one execution-order median at or below one. They are reported as controls, not
+as product speedups. The accepted claims are the direct sparse producer,
+cached encryption, encapsulation core, and keygen results.
+
+The compact helper grows from `0x10f9` to `0x1399` bytes. Static instruction
+lines grow from 665 to 759 and `%rsp` references from 33 to 37 because round 0
+now has a separate specialized copy; those are code-shape counts, not dynamic
+work counts. Linked `benchc` text grows from 80,631 to 81,435 bytes (`+804`),
+and ordinary `.text` from `0x11e5a` to `0x120fa` (`+672`). Data and BSS remain
+708 and 39,168 bytes. The measured gain comes from doing less work in the first
+round while retaining a compact loop for the remaining 23 rounds, not from
+reducing total static instructions.
+
+A new native-GCC differential test independently constructs all four initial
+state shapes for 256 fixtures and compares the helper with generic `keccakf8()`.
+It compares words 0..15 for the x7 16-word output ABI and all 25 words for
+the three full-state modes. The existing 4,096-fixture x7 PRF/CBD test also
+continues to compare every output polynomial with scalar SHAKE256 plus CBD.
+
+GCC and Clang native, explicit AVX2-only, and scalar tests pass. GCC native
+UBSan and Clang native ASan+UBSan pass. The GCC UBSan complete stage validator
+passes with sink `16374744525661797297`. Clang native and both compilers'
+AVX2-only and scalar `testc` and `benchc` are byte-identical to `8613fcb`.
+
+The change adds no key, matrix, or output cache; no table, API, or wire-format
+change; and no external object or runtime library. It is repository-local
+first-state specialization over the already attributed x8 Keccak mapping, not
+a claim of new Keccak mathematics or schedule design.
 
 ### Latest Core Optimization Diagnostic (2026-07-16, GCC flattened full forward NTT)
 
