@@ -2599,6 +2599,90 @@ static void validate_ntt_full_lazy_canonical_range_avx512(void) {
   }
 }
 
+static inline __m512i stage_ntt_canonicalize_lazy_sum_avx512(
+    __m512i canonical, const poly256 lazy, int offset) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  __m512i sum = _mm512_add_epi16(
+      canonical, _mm512_loadu_si512((const void *)(lazy + offset)));
+  __m512i reduced = ntt_barrett_reduce_i16x32_avx512(sum);
+  __mmask32 ge_q = _mm512_cmpgt_epi16_mask(reduced, q_minus_1);
+  return _mm512_mask_sub_epi16(reduced, ge_q, reduced, q);
+}
+
+static void validate_ntt_lazy_ehat_sum_range_avx512(void) {
+  const int lower = -7 * Q + 1;
+  const int upper = 9 * Q - 2;
+  const __m512i zero = _mm512_setzero_si512();
+  poly256 input;
+  int16_t got[32];
+
+  for (int base = lower; base <= upper; base += 32) {
+    int active = upper - base + 1;
+    if (active > 32) active = 32;
+    for (int lane = 0; lane < 32; lane++) {
+      input[lane] = (int16_t)(lane < active ? base + lane : upper);
+    }
+
+    __m512i reduced = stage_ntt_canonicalize_lazy_sum_avx512(
+        zero, input, 0);
+    _mm512_storeu_si512((void *)got, reduced);
+    for (int lane = 0; lane < active; lane++) {
+      int expected = input[lane] % Q;
+      if (expected < 0) expected += Q;
+      if (got[lane] != expected) {
+        fprintf(stderr,
+                "AVX512 lazy ehat sum range mismatch at %d: %d != %d\n",
+                (int)input[lane], (int)got[lane], expected);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
+static void validate_ntt_lazy_ehat_add_avx512(void) {
+  uint32_t state = 0x243f6a88u;
+
+  for (size_t fixture = 0; fixture < 4096; fixture++) {
+    poly256 canonical_ehat;
+    poly256 lazy_ehat;
+    poly256 accum;
+    poly256 expected;
+    poly256 got;
+
+    for (int i = 0; i < N; i++) {
+      int16_t e = validate_keygen_ntt_input(
+          fixture, (size_t)i, &state);
+      canonical_ehat[i] = e;
+      lazy_ehat[i] = e;
+      accum[i] = (int16_t)validate_keygen_asym_coeff(
+          fixture, (size_t)i, &state);
+    }
+
+    ntt(canonical_ehat, canonical_ehat);
+    ntt_full_mont_lazy_raw_avx512(lazy_ehat);
+    ntt_add(accum, canonical_ehat, expected);
+    for (int offset = 0; offset < N; offset += 32) {
+      __m512i canonical = _mm512_loadu_si512(
+          (const void *)(accum + offset));
+      __m512i result = stage_ntt_canonicalize_lazy_sum_avx512(
+          canonical, lazy_ehat, offset);
+      _mm512_storeu_si512((void *)(got + offset), result);
+    }
+
+    if (memcmp(expected, got, sizeof(expected)) != 0) {
+      for (int i = 0; i < N; i++) {
+        if (expected[i] != got[i]) {
+          fprintf(stderr,
+                  "AVX512 lazy ehat add mismatch at %zu,%d: %d != %d\n",
+                  fixture, i, (int)got[i], (int)expected[i]);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+
 static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   const int32_t lower = -6 * (Q - 1) * (Q / 2);
   const int32_t upper = 6 * (Q - 1) * (Q - 1);
@@ -3724,6 +3808,8 @@ static void validate_core_stage_helpers(void) {
 #if defined(__GNUC__)
   validate_ntt_full_mont_lazy_blocks_avx512();
   validate_ntt_full_lazy_canonical_range_avx512();
+  validate_ntt_lazy_ehat_sum_range_avx512();
+  validate_ntt_lazy_ehat_add_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
 #if defined(__AVX512VNNI__) || defined(__clang__)
   validate_ntt_acc4_dot_lazy_avx512();
