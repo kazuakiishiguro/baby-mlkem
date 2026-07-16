@@ -698,6 +698,110 @@ static void test_sample_ntt() {
   }
 }
 
+#if defined(__AVX2__)
+static uint64_t test_sample_ntt_parse_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_sample_ntt_pack_pair(uint8_t out[3], unsigned d0,
+                                      unsigned d1) {
+  out[0] = (uint8_t)d0;
+  out[1] = (uint8_t)((d0 >> 8) | (d1 << 4));
+  out[2] = (uint8_t)(d1 >> 4);
+}
+
+static int test_sample_ntt_parse_scalar(const uint8_t *stream,
+                                        size_t stream_len, poly256 out,
+                                        int count) {
+  for (size_t pos = 0; pos + 3 <= stream_len && count < N; pos += 3) {
+    unsigned d0 = (unsigned)stream[pos] |
+                  (((unsigned)stream[pos + 1] & 0x0fu) << 8);
+    unsigned d1 = ((unsigned)stream[pos + 1] >> 4) |
+                  ((unsigned)stream[pos + 2] << 4);
+    if (d0 < Q) out[count++] = (int16_t)d0;
+    if (d1 < Q && count < N) out[count++] = (int16_t)d1;
+  }
+  return count;
+}
+
+typedef struct {
+  uint64_t before[4];
+  poly256 values;
+  uint64_t after[4];
+} test_sample_ntt_parse_buffer;
+
+static void test_sample_ntt_parse_case(const uint8_t stream[504],
+                                       size_t stream_len, int initial_count) {
+  test_sample_ntt_parse_buffer expected;
+  test_sample_ntt_parse_buffer actual;
+  memset(&expected, 0xa5, sizeof(expected));
+  memset(&actual, 0xa5, sizeof(actual));
+
+  int expected_count = test_sample_ntt_parse_scalar(
+      stream, stream_len, expected.values, initial_count);
+  int actual_count = sample_ntt_parse_stream_avx2(
+      stream, stream_len, actual.values, initial_count);
+
+  assert(actual_count == expected_count);
+  assert(memcmp(actual.before, expected.before, sizeof(actual.before)) == 0);
+  assert(memcmp(actual.after, expected.after, sizeof(actual.after)) == 0);
+  assert(memcmp(actual.values, expected.values,
+                (size_t)actual_count * sizeof(actual.values[0])) == 0);
+}
+
+static void test_sample_ntt_parse_stream_avx2(void) {
+  static const size_t stream_lengths[] = {
+      0, 1, 2, 3, 5, 6, 11, 12, 15, 16, 47, 48, 55, 56, 59, 60, 503, 504};
+  static const int initial_counts[] = {
+      0, 1, 7, 8, 223, 224, 225, 247, 248, 249, 255, 256};
+  uint8_t stream[504];
+  uint64_t state = UINT64_C(0x72656a656374696f);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    if (fixture == 0) {
+      memset(stream, 0, sizeof(stream));
+    } else if (fixture == 1) {
+      memset(stream, 0xff, sizeof(stream));
+    } else if (fixture == 2) {
+      for (size_t pair = 0; pair < sizeof(stream) / 3; pair++) {
+        static const unsigned boundary[] = {Q - 1, Q, 0, 0xfff};
+        test_sample_ntt_pack_pair(stream + 3 * pair,
+                                  boundary[pair & 3u],
+                                  boundary[(pair + 1) & 3u]);
+      }
+    } else if (fixture == 3) {
+      for (size_t pair = 0; pair < sizeof(stream) / 3; pair++) {
+        test_sample_ntt_pack_pair(stream + 3 * pair,
+                                  (unsigned)(pair * 73u) & 0xfffu,
+                                  (unsigned)(pair * 151u + 1u) & 0xfffu);
+      }
+    } else {
+      for (size_t i = 0; i < sizeof(stream); i++) {
+        stream[i] = (uint8_t)test_sample_ntt_parse_next_u64(&state);
+      }
+    }
+
+    test_sample_ntt_parse_case(stream, sizeof(stream), 0);
+    if (fixture < 1024) {
+      for (size_t len = 0;
+           len < sizeof(stream_lengths) / sizeof(stream_lengths[0]); len++) {
+        for (size_t count = 0;
+             count < sizeof(initial_counts) / sizeof(initial_counts[0]);
+             count++) {
+          test_sample_ntt_parse_case(
+              stream, stream_lengths[len], initial_counts[count]);
+        }
+      }
+    }
+  }
+}
+#endif
+
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
 static void test_keccakf8_matrix_asm(void) {
   int saw_refill = 0;
@@ -1176,6 +1280,7 @@ int main(void) {
   test_decaps_hash_tail_noise6_gcc_avx512();
 #endif
 #if defined(__AVX2__)
+  test_sample_ntt_parse_stream_avx2();
   test_sample_ntt_cmpgt_epi16_avx2();
 #if defined(__AVX512F__)
   test_avx512_encrypt_prf_cbd_eta2x7();
