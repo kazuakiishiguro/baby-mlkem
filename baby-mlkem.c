@@ -5987,6 +5987,8 @@ static MLKEM_NOINLINE void sample_ntt_tail_lane0_state_avx2(
   }
 }
 
+#endif
+
 /* A single surviving XOF stream should not occupy four Keccak lanes. */
 static MLKEM_ALWAYS_INLINE void sample_ntt_tail_scalar_state(
     uint64_t st[25], poly256 out) {
@@ -5999,7 +6001,6 @@ static MLKEM_ALWAYS_INLINE void sample_ntt_tail_scalar_state(
         (const uint8_t *)st, 21 * sizeof(*st), out, count);
   }
 }
-#endif
 
 #if defined(__AVX512BW__) && defined(__GNUC__) && !defined(__clang__)
 static inline uint64_t sample_ntt8_lane7_u64(__m512i v) {
@@ -6105,12 +6106,7 @@ mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
     poly256 s0, poly256 s1, poly256 s2,
     poly256 e0, poly256 e1, poly256 e2) {
   __m512i st[25];
-#if defined(__GNUC__) && !defined(__clang__)
   uint64_t tail_st[25];
-#else
-  __m256i tail_st[25];
-  uint64_t stream[21];
-#endif
 #if defined(__GNUC__) && !defined(__clang__)
   keccakf8_sparse_32(sigma, NULL, rho, st);
 #else
@@ -6168,34 +6164,10 @@ mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
   sample_poly_cbd_eta2x6_signed_state_avx512(st, s0, s1, s2, e0, e1, e2);
 
   for (int lane = 0; lane < 25; lane++) {
-    uint64_t w = sample_ntt8_lane6_u64(st[lane]);
-#if defined(__GNUC__) && !defined(__clang__)
-    tail_st[lane] = w;
-#else
-    tail_st[lane] = _mm256_set_epi64x(0, 0, 0, (long long)w);
-    if (lane < 21) {
-      stream[lane] = w;
-    }
-#endif
+    tail_st[lane] = sample_ntt8_lane6_u64(st[lane]);
   }
 
-#if defined(__GNUC__) && !defined(__clang__)
   sample_ntt_tail_scalar_state(tail_st, tail);
-#else
-  sample_ntt_parse_init_avx2();
-  int count = sample_ntt_parse_stream_avx2_ready(
-      (const uint8_t *)stream, sizeof(stream), tail, 0);
-  while (count < N) {
-    uint64_t extra[21];
-    keccakf4(tail_st);
-    for (int lane = 0; lane < 21; lane++) {
-      extra[lane] = (uint64_t)_mm_cvtsi128_si64(
-          _mm256_castsi256_si128(tail_st[lane]));
-    }
-    count = sample_ntt_parse_stream_avx2_ready(
-        (const uint8_t *)extra, sizeof(extra), tail, count);
-  }
-#endif
 }
 #endif
 
