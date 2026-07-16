@@ -4931,6 +4931,18 @@ static inline void sample_poly_cbd_eta2_store1_avx2(__m128i bytes,
                       cbd_eta2_canonicalize_i8x16(coeffs));
 }
 
+static inline void sample_poly_cbd_eta2_store1_signed_avx2(
+    __m128i bytes, int16_t *out) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  __m128i coeffs = _mm_unpacklo_epi8(lo8, hi8);
+  _mm256_storeu_si256((__m256i *)out, _mm256_cvtepi8_epi16(coeffs));
+}
+
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static inline void sample_poly_cbd_eta2_store1_i8_avx2(
     __m128i bytes, int8_t *out) {
@@ -5023,12 +5035,21 @@ static void sample_poly_cbd_eta2x3x4_i8_state_avx512(
   for (int i = 0; i < 16; i++) {
     uint64_t words[8];
     _mm512_storeu_si512((void *)words, st[i]);
+#if defined(__GNUC__) && !defined(__clang__)
+    sample_poly_cbd_eta2_store2_signed_avx2(
+        _mm_loadu_si128((const __m128i *)(const void *)&words[0]),
+        out0 + 16 * i, out1 + 16 * i);
+    sample_poly_cbd_eta2_store1_signed_avx2(
+        _mm_loadl_epi64((const __m128i *)(const void *)&words[2]),
+        out2 + 16 * i);
+#else
     sample_poly_cbd_eta2_store2_avx2(
         _mm_loadu_si128((const __m128i *)(const void *)&words[0]),
         out0 + 16 * i, out1 + 16 * i);
     sample_poly_cbd_eta2_store1_avx2(
         _mm_loadl_epi64((const __m128i *)(const void *)&words[2]),
         out2 + 16 * i);
+#endif
     sample_poly_cbd_eta2_store2_i8_avx2(
         _mm_loadu_si128((const __m128i *)(const void *)&words[3]),
         out3 + 16 * i, out4 + 16 * i);
@@ -6483,10 +6504,11 @@ static MLKEM_NOINLINE void sha3_512_sample_ntt_tail_noise6_gcc_avx512(
   sha3_tail_set_noise3_avx2(st, ghash + 32, 0, 1, 2);
   mlkem_decaps_keccakf4_avx2(st);
   for (int word = 0; word < 16; word++) {
-    sample_poly_cbd_eta2_store1_avx2(_mm256_castsi256_si128(st[word]),
-                                     r0 + 16 * word);
-    sample_poly_cbd_eta2_store2_avx2(_mm256_extracti128_si256(st[word], 1),
-                                     r1 + 16 * word, r2 + 16 * word);
+    sample_poly_cbd_eta2_store1_signed_avx2(
+        _mm256_castsi256_si128(st[word]), r0 + 16 * word);
+    sample_poly_cbd_eta2_store2_signed_avx2(
+        _mm256_extracti128_si256(st[word], 1),
+        r1 + 16 * word, r2 + 16 * word);
   }
   for (int word = 0; word < 21; word++) stream[21 + word] = keccak_lane1_u64(st[word]);
 
