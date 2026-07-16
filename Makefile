@@ -82,8 +82,8 @@ ifeq ($(CORE_AVX512VL_ENABLED),yes)
 CORE_ASM_SRCS += sha3_256_1184_avx512vl.S
 CORE_ASM_DEF += -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM
 endif
-CORE_CLANG_AVX512_MATRIX_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__clang__/ { c = 1 } /__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__AVX2__/ { a = 1 } /__AVX512F__/ { f = 1 } /__AVX512DQ__/ { d = 1 } /__AVX512VL__/ { v = 1 } END { if (c && x && e && a && f && d && v) print "yes" }')
-ifeq ($(CORE_CLANG_AVX512_MATRIX_ENABLED),yes)
+CORE_AVX512_MATRIX_ASM_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__AVX2__/ { a = 1 } /__AVX512F__/ { f = 1 } /__AVX512DQ__/ { d = 1 } /__AVX512VL__/ { v = 1 } END { if (x && e && a && f && d && v) print "yes" }')
+ifeq ($(CORE_AVX512_MATRIX_ASM_ENABLED),yes)
 CORE_ASM_SRCS += keccakf8_matrix_avx512.S
 CORE_ASM_DEF += -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM
 endif

@@ -1,4 +1,4 @@
-# Fixed-shape AVX512 x8 SHAKE128 matrix initial squeeze for Clang.
+# Fixed-shape AVX512 x8 SHAKE128 matrix initial squeeze for GCC and Clang.
 #
 # The dense four-round logical-lane mapping used after round 0 is adapted from
 # Ronny Van Keer's CC0 XKCP KeccakP-1600-times8 AVX512 core. Its instruction
@@ -9,12 +9,13 @@
 # below is a repository-local partial evaluation of that sparse state. It
 # materializes the five Theta corrections, evaluates the five output planes,
 # then maps them into the existing dense round-1 register layout. Checking this
-# combined schedule in gives Clang the stable path without linking XKCP, a
-# GCC-built object, or any runtime library.
+# combined schedule in gives both compilers a stable fixed path without linking
+# XKCP, a compiler-built object, or any runtime library.
 #
 # The function constructs eight fixed matrix states from one 32-byte seed,
 # keeps all 25 ZMM lanes live through three permutations, stores three
-# 168-byte rates per stream, and returns the final state for rare refills.
+# 168-byte rates per stream, and returns the four final capacity vectors needed
+# for rare refills.
 #
 # XKCP source and provenance:
 # https://github.com/XKCP/XKCP/tree/master/lib/low/KeccakP-1600-times8/AVX512
