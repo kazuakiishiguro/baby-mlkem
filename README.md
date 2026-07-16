@@ -149,6 +149,7 @@ Near-term target selection:
 |---|---|---|
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery path accepted | ZMM handles `l7`..`l5`, YMM handles `l4`, and the existing local YMM lazy tail handles `l3`..`l1`; one final ZMM Barrett pass restores canonical coefficients. GCC/Clang in-place medians improve `2.4952x`/`2.4623x`, and all eight 50k KEM rows win 15/15 under both compilers. It is repository-local intrinsics code with no external object, library, cache, or wire-format dependency; the Montgomery/Harvey arithmetic is inherited from the disclosed local AVX2 design rather than claimed as new mathematics. |
+| GCC AVX512 forward-NTT three-level register merge | Accepted for GCC native; Clang and narrower ISAs unchanged | Eight 32-coefficient ZMM blocks now stay live through `l7`..`l5`, replacing 24 ZMM loads plus 24 stores with 8 plus 8 before the unchanged YMM `l4`. The direct head and full in-place NTT improve `1.1929x`/`1.0883x` paired geometric mean with 9/9 wins; 100k keygen/encaps/decaps/roundtrip improve `1.0125x`/`1.0179x`/`1.0124x`/`1.0163x`. GCC `benchc` text grows 36 bytes. The arithmetic and range contract are unchanged, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 partial forward-NTT boundary | Accepted for GCC and Clang native; AVX2-only unchanged | The fused K=3 consumers now carry the forward transform through `l2` in signed 16-bit Montgomery form and canonicalize once before their unchanged unsigned final `l1`. This removes the old head canonicalization plus two levels of 32-bit widening, reciprocal reduction, and per-butterfly correction. Production-aligned GCC/Clang encryption stage medians improve `1.1303x`/`1.1395x`; decrypt NTT+accum improves `1.0756x`/`1.2593x`. GCC 100k KEM paired medians improve encaps/decaps/roundtrip by `1.0724x`/`1.1137x`/`1.0432x`, all 14/14. No external object, runtime library, cache, or wire-format dependency is added; the Montgomery arithmetic remains attributed to the existing upstream-derived local design. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
 | Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
@@ -8425,6 +8426,143 @@ commit `1408d72` compares the helper against the complete generic sponge for
 pseudorandom public keys. GCC and Clang native complete tests pass; AVX2-only
 and scalar paths are unchanged. The optimization adds no cache, table, external
 object, runtime library, API change, or wire-format change.
+
+### Local Core Optimization A/B (2026-07-16, GCC AVX512 forward-NTT head layer merge)
+
+A 500,000-iteration Clang 18.1.3 native gprof run after the preceding
+lazy-accumulation work identified the remaining shared forward-NTT boundary:
+
+| Profile symbol | Self time |
+|---|---:|
+| fixed 1184-byte `H(pk)` | 21.77% |
+| fixed x8 matrix Keccak | 19.17% |
+| prepared-public encryption | 9.56% |
+| rejection parser | 8.31% |
+| four-output accumulation | 5.71% |
+| shared four-output inverse NTT | 4.88% |
+| forward-NTT head | 3.12% |
+| forward-NTT tail | 2.96% |
+
+The profile only selected the next arithmetic target. A compiler-specific
+disassembly audit then showed different opportunities: GCC preserved the
+source loop's materialization boundary after every upper level, while Clang
+already retained enough values across those loops that a source rewrite had
+only a small direct effect. Acceptance was therefore evaluated separately for
+each compiler rather than routing both through one nominally cleaner schedule.
+
+The change is the classical NTT technique commonly called layer merging.
+[Towards ML-KEM & ML-DSA on OpenTitan](https://eprint.iacr.org/2024/1192.pdf)
+defines a merged group as loading its coefficient set once, processing several
+NTT layers, and storing it once, with the merge depth limited by the register
+file. The processor and instruction set in that work differ, but the memory
+lifetime principle is the same. This implementation performs a three-level
+merge using the 32 architectural ZMM registers available on AVX512:
+
+```text
+old l7 -> memory -> l6 -> memory -> l5 -> memory -> l4
+new load x0..x7 -> l7 -> l6 -> l5 -> store -> unchanged l4
+```
+
+The eight values `x0..x7` each hold 32 coefficients. For `l7` through
+`l5`, the source-level coefficient traffic changes from 24 ZMM loads plus 24
+ZMM stores to 8 loads plus 8 stores. This removes 1,024 loaded bytes and 1,024
+stored bytes per transform. These are hot intermediate accesses, not a DRAM or
+benchmark-cache claim. Level `l4` keeps the prior YMM implementation because
+its 16-coefficient stride already maps directly without adding cross-lane
+permutations.
+
+Core commit `853d629` changes only the non-Clang AVX512F+AVX512BW path.
+Butterfly order, twiddle indices, Montgomery low/high factors, additions,
+subtractions, and the single final canonicalization are unchanged. If a
+Montgomery product is in `(-Q,Q)`, four lazy head levels map canonical input
+to `(-4Q,5Q)`; ETA2 input in `[-2,2]` maps inside
+`(-4Q-2,4Q+2)`. Both fit the conservative test contract `(-5Q,5Q)` and
+the existing complete-transform signed-16-bit bound.
+
+A fixed-H Iota-load-hoisting probe was evaluated before this change because
+the hash led the profile. Five direct 200,000-iteration pairs were neutral at
+`1.0000x` geometric mean with 3/5 wins, so it was reverted. The accepted
+NTT change instead removes an observable producer/consumer memory boundary.
+
+The direct acceptance gate used CPU 0, two warmups, nine alternating pairs,
+and 200,000 iterations against `522cb4c`:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=ntt NTT_ITERS=200000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 522cb4c
+```
+
+| GCC native NTT metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|---:|---:|
+| current `l7`..`l4` head | 32.39 | 27.40 | 1.1929x | 1.1822x | 9/9 |
+| full in-place NTT | 77.03 | 70.88 | 1.0883x | 1.0862x | 9/9 |
+| copy plus NTT | 79.20 | 72.77 | 1.0792x | 1.0879x | 9/9 |
+| three in-place NTTs | 230.50 | 212.96 | 1.0836x | 1.0833x | 9/9 |
+| four in-place NTTs | 308.67 | 285.04 | 1.0890x | 1.0822x | 9/9 |
+| six in-place NTTs | 464.69 | 428.90 | 1.0868x | 1.0848x | 9/9 |
+| canonical CBD input plus NTT | 78.91 | 72.12 | 1.0965x | 1.0941x | 9/9 |
+| signed pre-canonical input plus NTT | 83.39 | 76.73 | 1.0881x | 1.0867x | 9/9 |
+
+The production gate used three warmups, fourteen alternating pairs, and
+100,000 KEM iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem KEM_ITERS=100000 \
+  PIN_CPU=0 C_COMPILER=gcc ./scripts/bench_core_ab.sh 522cb4c
+```
+
+| GCC native KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first median | Candidate-first median |
+|---|---:|---:|---:|---:|---:|
+| `mlkem_keygen` | 1.0125x | 1.0096x | 12/14 | 1.0117x | 1.0094x |
+| `mlkem_keygen_core` | 1.0089x | 1.0093x | 13/14 | 1.0085x | 1.0097x |
+| `mlkem_encaps` | 1.0179x | 1.0168x | 14/14 | 1.0170x | 1.0156x |
+| `mlkem_encaps_core` | 1.0031x | 1.0051x | 11/14 | 1.0037x | 1.0063x |
+| `mlkem_decaps` | 1.0124x | 1.0111x | 14/14 | 1.0107x | 1.0115x |
+| `mlkem_decaps_core` | 1.0074x | 1.0084x | 13/14 | 1.0087x | 1.0083x |
+| `mlkem_roundtrip` | 1.0163x | 1.0123x | 13/14 | 1.0109x | 1.0130x |
+| `mlkem_roundtrip_core` | 1.0059x | 1.0062x | 11/14 | 1.0057x | 1.0075x |
+
+The same source schedule was not accepted for Clang. Its nine-pair direct gate
+improved the head, one NTT, and three NTTs by only `1.0261x`, `1.0038x`,
+and `1.0074x` paired geometric mean. In the fourteen-pair KEM gate,
+encapsulation and decapsulation improved, but unrelated common-path costs
+moved in the wrong direction:
+
+| Clang native probe | Paired geometric mean | Paired median | Wins |
+|---|---:|---:|---:|
+| `mlkem_encaps` | 1.0182x | 1.0144x | 14/14 |
+| `mlkem_decaps` | 1.0112x | 1.0115x | 14/14 |
+| `mlkem_keygen` | 0.9979x | 0.9986x | 5/14 |
+| `mlkem_keygen_core` | 0.9978x | 1.0000x | 7/14 |
+| `mlkem_encaps_core` | 0.9960x | 1.0048x | 8/14 |
+| `mlkem_roundtrip_core` | 0.9980x | 1.0013x | 8/14 |
+
+Separate section and noinline/split layouts still left Clang keygen near
+`0.998x` geometric mean and made roundtrip order-sensitive. Clang therefore
+keeps its original loop exactly. Its current product `benchc` SHA-256 remains
+byte-identical to the baseline at
+`a1d6353e9caec12f265fe4c825d4605e6d59113f5ab6013fdaf9e99a375f3028`.
+
+GCC code generation confirms that the removed accesses were not replaced by
+stack traffic. `ntt_head_mont_lazy_raw_avx512` is `0x4d0` bytes with 245
+instructions and no `%rsp` references. Linked `benchc` text grows only from
+85,768 to 85,804 bytes; data remains 708 bytes and BSS remains 36,096 bytes.
+
+Test commit `8dc77d7` keeps the old four-level loop as a GCC-native
+`noinline` reference. It compares all 256 coefficients after the head for
+4,096 deterministic fixtures covering zero, `Q-1`, sequential, alternating,
+canonical pseudorandom, and signed ETA2 inputs, and asserts the conservative
+`(-5Q,5Q)` range. Normal GCC and Clang native tests pass, as does GCC AVX512
+without VNNI. Both compilers' AVX2-only and scalar builds pass. GCC native
+UBSan and Clang AVX2-only ASan+UBSan pass. The 148-row NTT helper validator
+and the GCC/Clang native 173/171-row complete stage validators also pass.
+
+This is repository-local scheduling and lifetime work. The Montgomery/Harvey
+arithmetic remains covered by the existing upstream Kyber attribution, and no
+secp256k1 endomorphism, NAF recoding, ZKP arithmetic, or external NTT code is
+used. The transferable optimization idea is to retain an algebraic working set
+across layers; it links no external object or runtime library, adds no
+persistent cache or table, and changes no API or wire format.
 
 ### Local Core Optimization A/B (2026-07-16, Clang sparse x8 round-0 peel)
 
