@@ -5393,6 +5393,38 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
 
 #if defined(__AVX512VBMI2__) && defined(__AVX512VL__) && \
     defined(__GNUC__) && !defined(__clang__)
+  const __m512i bound512 = _mm512_set1_epi16(Q);
+
+#if defined(__AVX512VBMI__) && defined(__AVX512BW__)
+  const __m512i mask512 = _mm512_set1_epi16(0x0fff);
+  /* Expand each [a,b,c] group to [a,b,b,c] before 12-bit extraction. */
+  const __m512i idx48 = _mm512_set_epi64(
+      (long long)UINT64_C(0x2f2e2e2d2c2b2b2a),
+      (long long)UINT64_C(0x2928282726252524),
+      (long long)UINT64_C(0x23222221201f1f1e),
+      (long long)UINT64_C(0x1d1c1c1b1a191918),
+      (long long)UINT64_C(0x1716161514131312),
+      (long long)UINT64_C(0x1110100f0e0d0d0c),
+      (long long)UINT64_C(0x0b0a0a0908070706),
+      (long long)UINT64_C(0x0504040302010100));
+
+  while (count <= N - 32 && pos + 48 <= stream_len) {
+    __m512i values = _mm512_maskz_loadu_epi8(
+        (__mmask64)UINT64_C(0x0000ffffffffffff), stream + pos);
+    values = _mm512_permutexvar_epi8(idx48, values);
+    __m512i shifted = _mm512_srli_epi16(values, 4);
+    values = _mm512_mask_mov_epi16(values, (__mmask32)0xaaaaaaaau,
+                                   shifted);
+    values = _mm512_and_si512(values, mask512);
+    pos += 48;
+
+    __mmask32 good =
+        _mm512_cmp_epu16_mask(values, bound512, _MM_CMPINT_LT);
+    __m512i packed = _mm512_maskz_compress_epi16(good, values);
+    _mm512_storeu_si512((void *)(out + count), packed);
+    count += __builtin_popcount(good);
+  }
+#else
   while (count <= N - 32 && pos + 56 <= stream_len) {
     __m256i f0 = _mm256_loadu_si256((const __m256i *)(stream + pos));
     __m256i f1 = _mm256_loadu_si256((const __m256i *)(stream + pos + 24));
@@ -5406,17 +5438,16 @@ static int sample_ntt_parse_stream_avx2_ready(const uint8_t *stream,
     f1 = _mm256_and_si256(_mm256_blend_epi16(f1, g1, 0xaa), mask);
     pos += 48;
 
-    __mmask16 good0 =
-        _mm256_cmp_epu16_mask(f0, bound, _MM_CMPINT_LT);
-    __mmask16 good1 =
-        _mm256_cmp_epu16_mask(f1, bound, _MM_CMPINT_LT);
-    __m256i packed0 = _mm256_maskz_compress_epi16(good0, f0);
-    __m256i packed1 = _mm256_maskz_compress_epi16(good1, f1);
-    _mm256_storeu_si256((__m256i *)(void *)(out + count), packed0);
-    count += __builtin_popcount((unsigned)good0);
-    _mm256_storeu_si256((__m256i *)(void *)(out + count), packed1);
-    count += __builtin_popcount((unsigned)good1);
+    __m512i values = _mm512_castsi256_si512(f0);
+    values = _mm512_inserti64x4(values, f1, 1);
+    __mmask32 good =
+        _mm512_cmp_epu16_mask(values, bound512, _MM_CMPINT_LT);
+    __m512i packed = _mm512_maskz_compress_epi16(good, values);
+    _mm512_storeu_si512((void *)(out + count), packed);
+    count += __builtin_popcount(good);
   }
+
+#endif
 
   while (count <= N - 8 && pos + 16 <= stream_len) {
     __m128i f = _mm_loadu_si128((const __m128i *)(stream + pos));
