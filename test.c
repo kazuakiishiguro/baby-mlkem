@@ -493,6 +493,127 @@ static void test_gcc_avx512_ntt_head_fusion(void) {
 }
 #endif
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t test_ntt_tail_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static MLKEM_NOINLINE void test_ntt_scalar_reference(const poly256 in,
+                                                     poly256 out) {
+  memcpy(out, in, sizeof(poly256));
+  int k = 1;
+  for (int log2len = 7; log2len > 0; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      uint16_t zeta = ZETA[k++];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = mod_q_reduce_ntt_u32(
+            (uint32_t)zeta * (uint32_t)(uint16_t)out[idx + length]);
+        int16_t a = out[idx];
+        out[idx + length] = mod_q_sub_i16(a, t);
+        out[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+}
+
+static void test_avx512_ntt_tail_fusion(void) {
+  poly256 source;
+  poly256 expected;
+  poly256 actual;
+  uint64_t state = UINT64_C(0x6e74742d7461696c);
+
+  ensure_ntt_roots();
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (int i = 0; i < N; i++) {
+      int16_t value;
+      switch (fixture) {
+        case 0:
+          value = 0;
+          break;
+        case 1:
+          value = Q - 1;
+          break;
+        case 2:
+          value = (int16_t)(i % Q);
+          break;
+        case 3:
+          value = (i & 1) ? Q - 1 : 0;
+          break;
+        case 4:
+          value = (int16_t)(i % 5 - 2);
+          break;
+        case 5:
+          value = (i & 1) ? 2 : -2;
+          break;
+        default: {
+          uint64_t random = test_ntt_tail_next_u64(&state);
+          value = (fixture & 1)
+              ? (int16_t)((int)(random % 5) - 2)
+              : (int16_t)(random % Q);
+          break;
+        }
+      }
+      source[i] = value;
+    }
+
+    ntt_head_mont_lazy_raw_avx512(source);
+    memcpy(expected, source, sizeof(poly256));
+    memcpy(actual, source, sizeof(poly256));
+    ntt_tail_mont_lazy_raw_avx2(expected);
+    ntt_tail_mont_lazy_raw_avx512(actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] > -8 * Q);
+      assert(actual[i] < 8 * Q);
+    }
+  }
+
+  state = UINT64_C(0x6e74742d66756c6c);
+  for (unsigned fixture = 0; fixture < 1024; fixture++) {
+    for (int i = 0; i < N; i++) {
+      switch (fixture) {
+        case 0:
+          source[i] = 0;
+          break;
+        case 1:
+          source[i] = Q - 1;
+          break;
+        case 2:
+          source[i] = (int16_t)(i % Q);
+          break;
+        case 3:
+          source[i] = (i & 1) ? Q - 1 : 0;
+          break;
+        default:
+          source[i] = (int16_t)(test_ntt_tail_next_u64(&state) % Q);
+          break;
+      }
+    }
+
+    test_ntt_scalar_reference(source, expected);
+    ntt(source, actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] >= 0);
+      assert(actual[i] < Q);
+    }
+
+    memcpy(actual, source, sizeof(poly256));
+    ntt(actual, actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+    }
+  }
+}
+#endif
+
 void test_ntts() {
   poly256 a,b, ntt_res, poly_res;
   for (int i = 0; i < N; i++){
@@ -775,6 +896,9 @@ int main(void) {
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     !defined(__clang__)
   test_gcc_avx512_ntt_head_fusion();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  test_avx512_ntt_tail_fusion();
 #endif
   test_ntts();
   printf("OK\n");
