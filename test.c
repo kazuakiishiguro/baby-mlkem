@@ -947,6 +947,98 @@ void test_mlkem() {
   assert(memcmp(k1,k2,32)==0);
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
+static void test_keccakf8_sparse_32(void) {
+  const uint64_t final_pad = UINT64_C(0x80) << 56;
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32];
+    uint8_t mixed_seed[32];
+    uint8_t nonce[8];
+
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      seed[i] = (uint8_t)(fixture * 73u + i * 29u + (i >> 1));
+      mixed_seed[i] = (uint8_t)(fixture * 37u + i * 61u + (i >> 2));
+    }
+    for (size_t i = 0; i < sizeof(nonce); i++) {
+      nonce[i] = (uint8_t)(fixture + 17u * i);
+    }
+
+    for (int mode = 0; mode < 4; mode++) {
+      uint64_t state[25][8] = {{0}};
+      __m512i want[25];
+      __m512i got[25];
+      const uint8_t *nonce_arg = NULL;
+      const uint8_t *mixed_arg = NULL;
+      int output_words = 25;
+
+      if (mode == 0) {
+        for (int lane = 0; lane < 8; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        nonce_arg = nonce;
+        output_words = 16;
+      } else if (mode == 1) {
+        for (int lane = 0; lane < 7; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        for (int word = 0; word < 4; word++) {
+          state[word][7] = load64_le(mixed_seed + 8 * word);
+        }
+        state[4][7] = UINT64_C(0x1f0202);
+        state[20][7] = final_pad;
+        nonce_arg = nonce;
+        mixed_arg = mixed_seed;
+      } else if (mode == 2) {
+        for (int lane = 0; lane < 6; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)lane | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        for (int word = 0; word < 4; word++) {
+          state[word][6] = load64_le(mixed_seed + 8 * word);
+        }
+        state[4][6] = UINT64_C(0x1f0202);
+        state[20][6] = final_pad;
+        mixed_arg = mixed_seed;
+      } else {
+        for (int lane = 0; lane < 8; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)(lane / 3) |
+                           ((uint64_t)(lane % 3) << 8) |
+                           (UINT64_C(0x1f) << 16);
+          state[20][lane] = final_pad;
+        }
+      }
+
+      for (int word = 0; word < 25; word++) {
+        want[word] = _mm512_loadu_si512((const void *)state[word]);
+        got[word] = _mm512_set1_epi64((long long)UINT64_C(0xa5a5a5a5a5a5a5a5));
+      }
+      keccakf8(want);
+      keccakf8_sparse_32(seed, nonce_arg, mixed_arg, got);
+      if (memcmp(got, want, (size_t)output_words * sizeof(got[0])) != 0) {
+        fprintf(stderr, "GCC sparse x8 mismatch at fixture %u mode %d\n",
+                fixture, mode);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 int main(void) {
   test_randombytes();
   test_sha3_256();
@@ -962,6 +1054,9 @@ int main(void) {
   test_sample_ntt();
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
   test_keccakf8_matrix_asm();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
+  test_keccakf8_sparse_32();
 #endif
 #if defined(__AVX2__)
   test_sample_ntt_cmpgt_epi16_avx2();

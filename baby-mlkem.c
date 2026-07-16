@@ -912,7 +912,7 @@ static MLKEM_NOINLINE void keccakf8_sparse_eta2x7_32(
 
 /* Fresh x8 SHAKE states are sparse; one lane may carry an independent seed. */
 /* GCC post-reload scheduling regresses this register-heavy round schedule. */
-static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2"))) void
+static MLKEM_NOINLINE __attribute__((optimize("no-schedule-insns2,no-unroll-loops"))) void
 keccakf8_sparse_32(
     const uint8_t seed[32], const uint8_t *nonce,
     const uint8_t *mixed_seed, __m512i *st) {
@@ -1034,8 +1034,43 @@ keccakf8_sparse_32(
     sa = _mm512_set1_epi64((long long)(0x80ULL << 56));
   }
 
-  for (int round = 0; round < 24; round += 4) {
-    MLKEM_KECCAKF8_FOUR_ROUNDS(round);
+  /* Peel only sparse round 0; keep rounds 1..23 in one rotating loop body. */
+  MLKEM_KECCAKF8_ROUND0(ba, ge, ki, mo, su, 0);
+  MLKEM_KECCAKF8_ROW1(ka, me, si, bo, gu);
+  MLKEM_KECCAKF8_ROW2(sa, be, gi, ko, mu);
+  MLKEM_KECCAKF8_ROW3(ga, ke, mi, so, bu);
+  MLKEM_KECCAKF8_ROW4(ma, se, bi, go, ku);
+
+  int round = 1;
+  for (;;) {
+    MLKEM_KECCAKF8_ROUND0(ba, me, gi, so, ku, round);
+    MLKEM_KECCAKF8_ROW1(sa, ke, bi, mo, gu);
+    MLKEM_KECCAKF8_ROW2(ma, ge, si, ko, bu);
+    MLKEM_KECCAKF8_ROW3(ka, be, mi, go, su);
+    MLKEM_KECCAKF8_ROW4(ga, se, ki, bo, mu);
+    round++;
+
+    MLKEM_KECCAKF8_ROUND0(ba, ke, si, go, mu, round);
+    MLKEM_KECCAKF8_ROW1(ma, be, ki, so, gu);
+    MLKEM_KECCAKF8_ROW2(ga, me, bi, ko, su);
+    MLKEM_KECCAKF8_ROW3(sa, ge, mi, bo, ku);
+    MLKEM_KECCAKF8_ROW4(ka, se, gi, mo, bu);
+    round++;
+
+    MLKEM_KECCAKF8_ROUND0(ba, be, bi, bo, bu, round);
+    MLKEM_KECCAKF8_ROW1(ga, ge, gi, go, gu);
+    MLKEM_KECCAKF8_ROW2(ka, ke, ki, ko, ku);
+    MLKEM_KECCAKF8_ROW3(ma, me, mi, mo, mu);
+    MLKEM_KECCAKF8_ROW4(sa, se, si, so, su);
+    round++;
+    if (round == 24) break;
+
+    MLKEM_KECCAKF8_ROUND0(ba, ge, ki, mo, su, round);
+    MLKEM_KECCAKF8_ROW1(ka, me, si, bo, gu);
+    MLKEM_KECCAKF8_ROW2(sa, be, gi, ko, mu);
+    MLKEM_KECCAKF8_ROW3(ga, ke, mi, so, bu);
+    MLKEM_KECCAKF8_ROW4(ma, se, bi, go, ku);
+    round++;
   }
 
   st[0] = ba;   st[1] = be;   st[2] = bi;   st[3] = bo;
