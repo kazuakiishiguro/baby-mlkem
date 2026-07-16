@@ -767,6 +767,75 @@ static void test_sample_ntt_cmpgt_epi16_avx2(void) {
 }
 #endif
 
+#if defined(__AVX2__) && defined(__AVX512F__)
+static uint64_t test_eta2x7_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_sample_poly_cbd_eta2_scalar(const uint8_t data[128],
+                                             poly256 out) {
+  for (int i = 0; i < N / 8; i++) {
+    uint32_t t = load32_le(data + 4 * i);
+    uint32_t d = t & UINT32_C(0x55555555);
+    d += (t >> 1) & UINT32_C(0x55555555);
+    for (int j = 0; j < 8; j++) {
+      int a = (int)((d >> (4 * j)) & 3u);
+      int b = (int)((d >> (4 * j + 2)) & 3u);
+      int value = a - b;
+      out[8 * i + j] = (int16_t)(value < 0 ? value + Q : value);
+    }
+  }
+}
+
+static void test_avx512_encrypt_prf_cbd_eta2x7(void) {
+  uint8_t seed[32];
+  uint8_t stream[64 * ETA2];
+  poly256 got[7];
+  poly256 expected;
+  uint64_t state = UINT64_C(0x6574613278372d32);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      switch (fixture) {
+        case 0:
+          seed[i] = 0;
+          break;
+        case 1:
+          seed[i] = UINT8_MAX;
+          break;
+        case 2:
+          seed[i] = (uint8_t)i;
+          break;
+        case 3:
+          seed[i] = (uint8_t)(UINT8_MAX - i);
+          break;
+        default:
+          seed[i] = (uint8_t)test_eta2x7_next_u64(&state);
+          break;
+      }
+    }
+
+    mlkem_encrypt_prf_cbd_eta2_32(seed, got[0], got[1], got[2], got[3],
+                                  got[4], got[5], got[6]);
+    for (int output = 0; output < 7; output++) {
+      mlkem_prf(ETA2, seed, sizeof(seed), (uint8_t)output, stream);
+      test_sample_poly_cbd_eta2_scalar(stream, expected);
+      if (memcmp(got[output], expected, sizeof(expected)) != 0) {
+        fprintf(stderr,
+                "AVX-512 x7 PRF/CBD mismatch at fixture %u output %d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
 static void test_byte_encode() {
   {
     poly256 f, f_decoded;
@@ -888,6 +957,9 @@ int main(void) {
 #endif
 #if defined(__AVX2__)
   test_sample_ntt_cmpgt_epi16_avx2();
+#if defined(__AVX512F__)
+  test_avx512_encrypt_prf_cbd_eta2x7();
+#endif
 #endif
   test_byte_encode();
   test_kpke();
