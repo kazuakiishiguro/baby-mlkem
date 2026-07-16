@@ -9156,6 +9156,88 @@ The optimization adds no persistent cache, factor table, external runtime
 library, API, or wire-format dependency. It does not call upstream Kyber,
 PQClean, liboqs, secp256k1, a ZKP library, or XKCP at runtime.
 
+### Local Core Optimization Diagnostic (2026-07-16, Clang x7 spill-free Keccak)
+
+The next experiment targeted the eight ZMM spill/reload pairs left in Clang's
+accepted `keccakf8_sparse_eta2x7_32()` helper. A checked generator adapted the
+repository's existing four-round Team Algorithm 4 register mapping from XMM to
+ZMM registers. Twenty-five registers held the Keccak state and registers 25-31
+held parity, Theta, Chi, and Iota temporaries, so the generated permutation had
+no stack frame or stack reference.
+
+Three forms were tested against accepted commit `9ba9233`:
+
+| Clang native candidate | Helper instructions | Helper bytes | Stack references | Raw x7 PRF/CBD gmean | Cached K-PKE gmean | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| accepted C helper | 519 | 3,266 | 16 | 1.0000x | 1.0000x | baseline |
+| generic four-round ZMM loop | 526 | 3,534 | 0 | 0.9894x | 0.9990x | reject |
+| sparse round-0 peel with duplicated rounds 1-3 | 980 | 6,606 | 0 | 0.9975x | 0.9961x | reject |
+| sparse round-0 peel folded into one shared loop | 622 | 4,174 | 0 | 0.9972x | 1.0088x | KEM gate below |
+
+The generic schedule establishes that removing spills alone is not a speedup.
+It replaces Clang.s spill-assisted instruction schedule with a register-only
+schedule and regresses the direct producer in all seven pairs. The spill
+saving therefore does not outweigh the changed dependency and ILP tradeoff. Partial evaluation
+of sparse round 0 removes the initial zero-state work. The first peeled form,
+however, duplicates three dense rounds and loses at the cached boundary. The
+folded form jumps from specialized round 0 into round 1 of the one shared
+four-round loop, preserving the dynamic saving without that duplication.
+
+All three forms passed the native Clang KAT and the 4,096-fixture differential
+test. For every seed, all seven 256-coefficient outputs matched serial
+`mlkem_prf()` plus the independent scalar ETA2 CBD reference. The folded
+candidate's final function had zero `%rsp`/`%rbp` references, but linked
+`benchc` text grew from 139,417 to 140,576 bytes; linked data and BSS remained
+696 and 38,272 bytes.
+
+The final folded screen used CPU 0, two warmups, seven alternating pairs, and
+30,000 stage iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 9ba9233
+```
+
+| Stage metric | Baseline median ns/op | Candidate median ns/op | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| raw x7 PRF/CBD | 333.10 | 334.04 | 0.9972x | 0.9974x | 0/7 | 0.9966x / 0.9980x |
+| complete PRF/CBD with full-polynomial checksums | 875.34 | 869.22 | 1.0071x | 1.0070x | 7/7 | 1.0071x / 1.0064x |
+| PRF/CBD plus three NTTs and checksum | 683.26 | 677.25 | 1.0079x | 1.0086x | 7/7 | 1.0087x / 1.0068x |
+| cached K-PKE encryption | 987.59 | 978.75 | 1.0088x | 1.0083x | 6/7 | 1.0073x / 1.0083x |
+| uncached K-PKE encryption | 2546.48 | 2547.39 | 1.0021x | 0.9989x | 3/7 | 1.0007x / 0.9989x |
+
+The full-checksum and cached rows justified a production gate despite the
+negative raw probe. The gate used three warmups, fifteen alternating pairs, and
+100,000 iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=clang \
+  ./scripts/bench_core_ab.sh 9ba9233
+```
+
+| KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_encaps` | 0.9959x | 0.9980x | 5/15 | 0.9937x / 0.9987x |
+| `mlkem_decaps` | 1.0002x | 0.9988x | 7/15 | 1.0000x / 0.9988x |
+| `mlkem_decaps_core` | 0.9946x | 1.0003x | 8/15 | 1.0004x / 0.9990x |
+| `mlkem_roundtrip` | 1.0015x | 0.9998x | 7/15 | 0.9997x / 0.9998x |
+| `mlkem_encaps_core` | 0.9830x | 0.9985x | 7/15 | 0.9954x / 1.0014x |
+| `mlkem_roundtrip_core` | 0.9913x | 0.9984x | 5/15 | 0.9955x / 0.9984x |
+
+Reject the spill-free assembly path. Encapsulation regresses, and decapsulation
+and roundtrip do not remain positive in both execution orders. The local cached
+stage gain is therefore not accepted as a production speedup. Keep the current
+Clang C helper and its eight spill/reload pairs: on this target, register-only
+allocation is subordinate to dependency-chain scheduling, front-end footprint,
+and the full KEM boundary.
+
+No generated assembly, generator, build gate, runtime object, external library,
+API change, or wire-format change from this experiment remains in the tree. The
+prototype reused the already attributed XKCP CC0 four-round mapping and did not
+link XKCP at runtime.
+
 A branchless modular add/sub experiment was rejected. Replacing
 `mod_q_add_i16()` and `mod_q_sub_i16()` with shift-and-mask corrections kept
 correctness, but AVX2 NTT microbench A/B against `a403d5f` with `RUNS=11` and
