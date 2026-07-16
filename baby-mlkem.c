@@ -4932,6 +4932,18 @@ static inline void sample_poly_cbd_eta2_store1_avx2(__m128i bytes,
 }
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
+static inline void sample_poly_cbd_eta2_store1_i8_avx2(
+    __m128i bytes, int8_t *out) {
+  const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
+                                   -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m128i mask = _mm_set1_epi8(0x0f);
+  __m128i lo8 = _mm_shuffle_epi8(lut, _mm_and_si128(bytes, mask));
+  __m128i hi8 = _mm_shuffle_epi8(
+      lut, _mm_and_si128(_mm_srli_epi16(bytes, 4), mask));
+  _mm_storeu_si128((__m128i *)(void *)out,
+                   _mm_unpacklo_epi8(lo8, hi8));
+}
+
 static inline void sample_poly_cbd_eta2_store2_i8_avx2(
     __m128i bytes, int8_t *out0, int8_t *out1) {
   const __m128i lut = _mm_setr_epi8(0, 1, 1, 2, -1, 0, 0, 1,
@@ -6384,6 +6396,123 @@ static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
         (const uint8_t *)extra, sizeof(extra), out, count);
   }
 }
+
+#if defined(__AVX512BW__) && defined(__GNUC__) && !defined(__clang__)
+static MLKEM_ALWAYS_INLINE void sha3_tail_set_noise3_avx2(
+    __m256i st[25], const uint8_t seed[32], uint8_t nonce0,
+    uint8_t nonce1, uint8_t nonce2) {
+  const __m256i keep_tail_lane = _mm256_set_epi64x(0, 0, -1LL, 0);
+
+  for (int word = 0; word < 25; word++) {
+    st[word] = _mm256_and_si256(st[word], keep_tail_lane);
+  }
+  for (int word = 0; word < 4; word++) {
+    uint64_t seed_word = load64_le(seed + 8 * word);
+    st[word] = _mm256_or_si256(
+        st[word], _mm256_set_epi64x((long long)seed_word,
+                                   (long long)seed_word, 0,
+                                   (long long)seed_word));
+  }
+  st[4] = _mm256_or_si256(
+      st[4], _mm256_set_epi64x(
+                 (long long)((uint64_t)nonce2 | (0x1fULL << 8)),
+                 (long long)((uint64_t)nonce1 | (0x1fULL << 8)), 0,
+                 (long long)((uint64_t)nonce0 | (0x1fULL << 8))));
+  st[16] = _mm256_or_si256(
+      st[16], _mm256_set_epi64x((long long)(0x80ULL << 56),
+                                (long long)(0x80ULL << 56), 0,
+                                (long long)(0x80ULL << 56)));
+}
+
+static MLKEM_ALWAYS_INLINE void mlkem_prf_cbd_eta2_i8_scalar_32(
+    const uint8_t seed[32], uint8_t nonce, int8_t out[N]) {
+  uint64_t st[25] = {0};
+  st[0] = load64_le(seed + 0);
+  st[1] = load64_le(seed + 8);
+  st[2] = load64_le(seed + 16);
+  st[3] = load64_le(seed + 24);
+  st[4] = (uint64_t)nonce | (0x1fULL << 8);
+  st[16] = 0x80ULL << 56;
+  keccakf(st);
+  for (int block = 0; block < 8; block++) {
+    __m128i bytes = _mm_loadu_si128(
+        (const __m128i *)(const void *)(st + 2 * block));
+    sample_poly_cbd_eta2_store2_i8_avx2(
+        bytes, out + 32 * block, out + 32 * block + 16);
+  }
+}
+
+static MLKEM_NOINLINE void mlkem_decaps_keccakf4_avx2(__m256i st[25]) {
+  keccakf4(st);
+}
+
+/* Hash first, then fill the tail continuation's six idle x4 lanes with
+ * dependent encryption noise. Only nonce 6 remains for scalar Keccak. */
+static MLKEM_NOINLINE void sha3_512_sample_ntt_tail_noise6_gcc_avx512(
+    const uint8_t in0[32], const uint8_t in1[32], const uint8_t rho[32],
+    poly256 tail, uint8_t ghash[64], poly256 r0, poly256 r1, poly256 r2,
+    int8_t e10[N], int8_t e11[N], int8_t e12[N], int8_t e2[N]) {
+  __m256i st[25];
+  uint64_t stream[63];
+
+  for (int word = 0; word < 25; word++) st[word] = _mm256_setzero_si256();
+  st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0),
+                            (long long)load64_le(in0 + 0));
+  st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8),
+                            (long long)load64_le(in0 + 8));
+  st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16),
+                            (long long)load64_le(in0 + 16));
+  st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24),
+                            (long long)load64_le(in0 + 24));
+  st[4] = _mm256_set_epi64x(0, 0, 0x1f0202LL,
+                            (long long)load64_le(in1 + 0));
+  st[5] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 8));
+  st[6] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 16));
+  st[7] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 24));
+  st[8] = _mm256_set_epi64x(0, 0, 0,
+                            (long long)0x8000000000000006ULL);
+  st[20] = _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56), 0);
+
+  mlkem_decaps_keccakf4_avx2(st);
+  for (int word = 0; word < 8; word++) {
+    uint64_t value = keccak_lane0_u64(st[word]);
+    memcpy(ghash + 8 * word, &value, sizeof(value));
+  }
+  for (int word = 0; word < 21; word++) stream[word] = keccak_lane1_u64(st[word]);
+
+  sha3_tail_set_noise3_avx2(st, ghash + 32, 0, 1, 2);
+  mlkem_decaps_keccakf4_avx2(st);
+  for (int word = 0; word < 16; word++) {
+    sample_poly_cbd_eta2_store1_avx2(_mm256_castsi256_si128(st[word]),
+                                     r0 + 16 * word);
+    sample_poly_cbd_eta2_store2_avx2(_mm256_extracti128_si256(st[word], 1),
+                                     r1 + 16 * word, r2 + 16 * word);
+  }
+  for (int word = 0; word < 21; word++) stream[21 + word] = keccak_lane1_u64(st[word]);
+
+  sha3_tail_set_noise3_avx2(st, ghash + 32, 3, 4, 5);
+  mlkem_decaps_keccakf4_avx2(st);
+  for (int word = 0; word < 16; word++) {
+    sample_poly_cbd_eta2_store1_i8_avx2(_mm256_castsi256_si128(st[word]),
+                                        e10 + 16 * word);
+    sample_poly_cbd_eta2_store2_i8_avx2(_mm256_extracti128_si256(st[word], 1),
+                                        e11 + 16 * word, e12 + 16 * word);
+  }
+  for (int word = 0; word < 21; word++) stream[42 + word] = keccak_lane1_u64(st[word]);
+  mlkem_prf_cbd_eta2_i8_scalar_32(ghash + 32, 6, e2);
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), tail, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    mlkem_decaps_keccakf4_avx2(st);
+    for (int word = 0; word < 21; word++) extra[word] = keccak_lane1_u64(st[word]);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), tail, count);
+  }
+}
+#endif
 #endif
 
 static void sample_matrix(const uint8_t *seed, poly256 out[K][K]) {
@@ -8073,6 +8202,10 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   /* ghash = sha3_512(mdash||h) => 64 => kdash||rdash */
   uint8_t ghash[64];
   int public_prepared = 0;
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+  int eta2_i8_prepared = 0;
+#endif
 #if defined(__AVX2__) && !defined(__AVX512F__)
   static poly256 prepared_rhat[K];
   static poly256 prepared_e1[K];
@@ -8080,7 +8213,26 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   int noise_prepared = 0;
 #endif
   if (!mlkem_internal_caches_enabled) {
-#if defined(__AVX2__) && !defined(__AVX512F__)
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+    const uint8_t *rho = ek_pke + K * 384;
+    for (int i = 0; i < K; i++) {
+      byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
+    }
+    sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                       kpke_public_cache_ahat[0][1],
+                       kpke_public_cache_ahat[0][2],
+                       kpke_public_cache_ahat[1][0],
+                       kpke_public_cache_ahat[1][1],
+                       kpke_public_cache_ahat[1][2],
+                       kpke_public_cache_ahat[2][0],
+                       kpke_public_cache_ahat[2][1]);
+    sha3_512_sample_ntt_tail_noise6_gcc_avx512(
+        mdash, h, rho, kpke_public_cache_ahat[2][2], ghash,
+        rhat[0], rhat[1], rhat[2], e1_i8[0], e1_i8[1], e1_i8[2], e2_i8);
+    public_prepared = 1;
+    eta2_i8_prepared = 1;
+#elif defined(__AVX2__) && !defined(__AVX512F__)
     uint8_t inbuf[64];
     memcpy(inbuf, mdash, 32);
     memcpy(inbuf + 32, h, 32);
@@ -8126,6 +8278,13 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   uint8_t cdash[CT_BYTES];
   size_t cdash_len = 0;
   if (public_prepared) {
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+    if (eta2_i8_prepared) {
+      kpke_encrypt_prepared_public_impl(
+          mdash, 32, rdash, 32, cdash, &cdash_len, 1);
+    } else
+#endif
 #if defined(__AVX2__) && !defined(__AVX512F__)
     if (noise_prepared) {
       kpke_encrypt_prepared_public_with_noise_avx2(

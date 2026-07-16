@@ -1039,6 +1039,76 @@ static void test_keccakf8_sparse_32(void) {
 }
 #endif
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+static void test_decaps_hash_tail_noise6_gcc_avx512(void) {
+  const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+  int saw_refill = 0;
+  uint64_t fixture_state = UINT64_C(0x6465636170737834);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    uint8_t in0[32];
+    uint8_t in1[32];
+    uint8_t rho[32];
+    uint8_t input[64];
+    uint8_t got_hash[64];
+    uint8_t want_hash[64];
+    poly256 got_tail;
+    poly256 want_tail;
+    poly256 got_r[3];
+    poly256 want_r[3];
+    int8_t got_e[4][N];
+    int8_t want_e[4][N];
+
+    for (size_t i = 0; i < 32; i++) {
+      in0[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+      in1[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+      rho[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+    }
+    memcpy(input, in0, 32);
+    memcpy(input + 32, in1, 32);
+    sha3_512(input, sizeof(input), want_hash);
+    sample_ntt(rho, 2, 2, want_tail);
+    mlkem_prf_cbd_eta2x3x4_i8_32(
+        want_hash + 32, nonce, want_r[0], want_r[1], want_r[2],
+        want_e[0], want_e[1], want_e[2], want_e[3]);
+
+    sha3_512_sample_ntt_tail_noise6_gcc_avx512(
+        in0, in1, rho, got_tail, got_hash, got_r[0], got_r[1], got_r[2],
+        got_e[0], got_e[1], got_e[2], got_e[3]);
+
+    if (memcmp(got_hash, want_hash, sizeof(got_hash)) != 0 ||
+        memcmp(got_tail, want_tail, sizeof(got_tail)) != 0 ||
+        memcmp(got_r, want_r, sizeof(got_r)) != 0 ||
+        memcmp(got_e, want_e, sizeof(got_e)) != 0) {
+      fprintf(stderr, "GCC decaps hash/tail/noise mismatch at fixture %u\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+
+    uint64_t tail_state[25] = {0};
+    uint64_t first_rates[63];
+    poly256 first_output;
+    tail_state[0] = load64_le(rho + 0);
+    tail_state[1] = load64_le(rho + 8);
+    tail_state[2] = load64_le(rho + 16);
+    tail_state[3] = load64_le(rho + 24);
+    tail_state[4] = UINT64_C(0x1f0202);
+    tail_state[20] = UINT64_C(0x80) << 56;
+    for (int block = 0; block < 3; block++) {
+      keccakf(tail_state);
+      memcpy(first_rates + 21 * block, tail_state,
+             21 * sizeof(tail_state[0]));
+    }
+    if (sample_ntt_parse_stream((const uint8_t *)first_rates,
+                                sizeof(first_rates), first_output, 0) < N) {
+      saw_refill = 1;
+    }
+  }
+  assert(saw_refill);
+}
+#endif
+
 int main(void) {
   test_randombytes();
   test_sha3_256();
@@ -1057,6 +1127,10 @@ int main(void) {
 #endif
 #if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
   test_keccakf8_sparse_32();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+  test_decaps_hash_tail_noise6_gcc_avx512();
 #endif
 #if defined(__AVX2__)
   test_sample_ntt_cmpgt_epi16_avx2();
