@@ -96,6 +96,15 @@ permutations, the `ceil(34/4)` lane-capacity lower bound. It changes real
 Keccak/dataflow work and adds no cache, external object, library dependency, or
 wire-format change.
 
+The GCC native AVX512BW cache-disabled decapsulation re-encryption path also
+uses a repository-local dependent lane schedule. Its first x4 permutation
+computes `SHA3-512(m' || H(pk))` while advancing matrix `(2,2)`. Once that hash
+produces the encryption seed, the next two tail permutations fill their six
+otherwise idle lanes with ETA2 nonces 0..5; nonce 6 uses the existing local
+single-state Keccak path. This removes a separate x8 noise permutation without
+using a cross-operation cache, external object, library dependency, or
+wire-format change.
+
 The repository still keeps in-tree comparator backends. Set
 `AVX2_BACKEND=upstream` to use the vendored upstream Kyber AVX2 sources under
 `include/kyber_upstream/avx2`, or `AVX2_BACKEND=pqclean` to use the vendored
@@ -217,6 +226,7 @@ Near-term target selection:
 | GCC AVX512 rejection-parser compare lowering | Accepted for GCC native AVX512; Clang and narrower ISA unchanged | GCC expanded each pair of 16-bit rejection comparisons in the hot 48-byte parser loop into four `VPMINSW`/`VPCMPEQW` instructions. A dialect-safe local `VPCMPGTW` wrapper restores the two intended comparisons. The 504-byte parser, complete x8 sampler, and matrix paired medians improve `1.0306x`/`1.0087x`/`1.0046x`; 100k keygen/keygen-core improve `1.0040x`/`1.0039x`. GCC `benchc` text shrinks 32 bytes. Clang native, AVX2-only, and scalar product text remains byte-identical. No cache, external object, table, or wire-format change is added. |
 | GCC AVX512 mixed sparse x8 keygen entry | Accepted for GCC native; Clang/narrower ISA byte-identical | The six SHAKE256 keygen-noise lanes and lane-6 SHAKE128 matrix tail now enter the shared sparse x8 round core directly, avoiding a 25-vector zero state and generic permutation entry. Final 100k KEM keygen/keygen-core paired medians improve `1.0081x`/`1.0084x` with 11/15 and 13/15 wins; text grows 124 bytes. No external object, cache, or wire-format change. |
 | GCC compact sparse x8 round-0 peel | Accepted for GCC native AVX512; Clang and narrower ISA byte-identical | The x7-noise, mixed-encryption, mixed-keygen, and diagnostic matrix modes can have only lanes `0..4`, `16`, and `20` nonzero before their first permutation. Round 0 is evaluated once outside the rotating four-phase loop, while rounds 1..23 reuse one compact `1,2,3,0` body. Raw x7 PRF/CBD and cached K-PKE improve `1.0023x`/`1.0025x` paired geometric mean; 100k encaps-core and keygen improve `1.0051x`/`1.0026x` with 12/15 wins each. Decaps and roundtrip are neutral and are not credited. GCC `benchc` text grows 804 bytes. No cache, external object, table, API, or wire-format change is added. |
+| GCC native decaps hash/tail/noise lane filling | Accepted for cache-disabled GCC AVX512BW decapsulation; Clang/narrower ISA byte-identical | After `SHA3-512(m' || H(pk))` produces `rdash`, the remaining two x4 matrix-tail permutations fill six idle lanes with ETA2 nonces 0..5 and generate nonce 6 with single-state Keccak, replacing the old separate sparse x8 noise permutation. The direct boundary improves `1.1308x` paired geometric mean with 11/11 wins; 100k `decaps_core` improves `1.0263x` geometric mean and `1.0256x` median with 15/15 wins, and `roundtrip_core` improves `1.0050x` with 13/15 wins. Cached decapsulation is neutral and is not credited. GCC `benchc` text grows 1,152 bytes; no cache, external object, table, API, or wire-format change is added. |
 | Native GCC mixed sparse x8 encryption tail | Accepted for GCC AVX512BW cold public-key preparation; Clang/narrower ISA byte-identical | Seven SHAKE256 encryption-noise lanes now share one sparse x8 permutation with the independent SHAKE128 matrix `(2,2)` tail in lane 7. The production-shaped boundary improves `1.1596x` directly, and uncached K-PKE improves `1.0427x` paired geometric mean with 9/9 wins. Repeated-key KEM rows remain neutral because they reuse prepared public data. The change adds no external object, cache, table, or wire-format dependency and does not claim a new Keccak round schedule. |
 | Native Clang canonical mixed-x8 encryption tail | Accepted for Clang AVX512BW cold public-key preparation; GCC/narrower ISA unchanged | Seven canonical SHAKE256 ETA2 lanes share one x8 permutation with the independent SHAKE128 matrix `(2,2)` tail, then lane 7 continues through the existing single-state AVX512VL Keccak core. Uncached K-PKE improves `1.0509x` paired geometric mean and `1.0605x` paired median with 9/9 wins; cached K-PKE remains neutral at a `1.0005x` paired median. Clang `benchc` text shrinks 1,568 bytes while data/BSS are unchanged. No external object, persistent cache, table, or wire-format dependency is added. |
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
@@ -254,6 +264,12 @@ the x4 permutation, state reset, CBD, or surrounding arithmetic cheaper. The
 refreshed uncached K-PKE median is `3835.53 ns`; attribution uses the controlled
 A/B below rather than this cross-run snapshot.
 
+The GCC native cache-disabled decapsulation path now fills the six x4 lanes
+that become free after its dependent SHA3-512 result is available. This removes
+a separate x8 noise permutation but does not make the common x4 permutation
+itself cheaper. The standalone x4 sampler therefore remains a frontier for the
+other matrix-heavy paths.
+
 The next independent target therefore remains the common x4 sampler. Its 24
 nonzero lanes form the Rho/Pi cycle and still ping-pong through memory every
 round. Seed-load hoisting, lane regrouping, scalar refill tweaks, two-stream
@@ -263,6 +279,107 @@ results. A new attempt must use a compact rotating plane window, controlled
 assembly/register allocation, or another representation that removes state
 traffic without recreating spill or instruction-cache pressure. A sampler win
 would now improve both keygen and the compressed cold public-preparation path.
+
+### Latest Core Optimization A/B (2026-07-16, GCC decaps hash/tail/noise lane filling)
+
+The post-peel GCC native profile left `mlkem_decaps.constprop.0` at `6.21%`
+self time after fixed `H(pk)`, matrix sampling, sparse x8 Keccak, rejection
+parsing, and prepared encryption. A temporary valid-ciphertext cycle split
+showed why local compare/copy work was not the next target:
+
+| Decapsulation phase | Cached cycles/op | Cache-disabled cycles/op |
+|---|---:|---:|
+| K-PKE decrypt | 1566 | 1598 |
+| hash/public preparation | 796 | 6257 |
+| re-encryption | 3080 | 3041 |
+| compare + key copy | 65 | 71 |
+
+The counters include serializing timestamp overhead and are used only for phase
+selection. The fixed-length `cdash` check was already constant-folded, and the
+successful 32-byte key copy was already one YMM load/store pair. Public
+preparation and re-encryption were the real cache-disabled targets.
+
+Before core commit `47bedef`, native no-cache decapsulation prepared the first
+eight public-matrix streams with the existing x8 sampler, then used three x4
+permutations for two dependent streams:
+
+```text
+x4 #1: SHA3-512(m' || H(pk)) + matrix tail block 1 + 2 idle lanes
+x4 #2: completed hash state       + matrix tail block 2 + 2 idle lanes
+x4 #3: completed hash state       + matrix tail block 3 + 2 idle lanes
+then:   one sparse x8 permutation for ETA2 nonces 0..6
+```
+
+The encryption seed `rdash` does not exist before x4 #1 completes, so noise
+cannot occupy its idle lanes. It is available before x4 #2. The accepted
+schedule therefore preserves the matrix-tail lane, replaces the other three
+lanes with fresh noise states between permutations, and leaves only one noise
+stream after the tail finishes:
+
+```text
+x4 #1: SHA3-512(m' || H(pk)) + matrix tail block 1
+x4 #2: ETA2 nonces 0,1,2     + matrix tail block 2
+x4 #3: ETA2 nonces 3,4,5     + matrix tail block 3
+then:   ETA2 nonce 6 with one single-state Keccak permutation
+```
+
+This keeps the three required x4 calls but replaces a complete x8 noise
+permutation with one single-state permutation. The first three centered noise
+polynomials retain the existing int16 representation; the four error
+polynomials retain the accepted signed-int8 representation through the shared
+inverse-final consumer.
+
+An initial implementation expanded the always-inline x4 round body three times.
+Its mixed helper was `0x24ec` bytes and linked `benchc` text grew from 81,435 to
+87,059 bytes. The retained form puts one x4 permutation behind a candidate-only
+noinline boundary and calls it three times. The mixed helper is `0x0e31`, the
+shared x4 body `0x04f2`, and `mlkem_decaps.constprop.0` shrinks from `0x3806` to
+`0x284b`. Final linked text is 82,587 bytes, only 1,152 bytes above the 81,435
+baseline; data and BSS remain 708 and 39,168 bytes.
+
+A focused same-binary boundary benchmark used CPU 0, GCC native, 300,000
+iterations per side, and eleven runs with alternating execution order:
+
+| Boundary | Average ns/op | Median ns/op | Paired geometric speedup | Wins |
+|---|---:|---:|---:|---:|
+| separate hash/tail x4 + noise x8 | 881.14 | 881.55 | baseline | - |
+| dependent hash/tail/noise x4 + scalar nonce 6 | 779.24 | 777.01 | `1.1308x` | 11/11 |
+
+The final KEM gate compared `47bedef` with `d0e5a2c` using three warmups,
+fifteen alternating pairs, and 100,000 iterations:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh d0e5a2c
+```
+
+| GCC native KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| `mlkem_decaps_core` | `1.0263x` | `1.0256x` | 15/15 | `1.0260x` / `1.0235x` |
+| `mlkem_roundtrip_core` | `1.0050x` | `1.0067x` | 13/15 | `1.0043x` / `1.0077x` |
+| cached `mlkem_decaps` control | `0.9970x` | `1.0012x` | 9/15 | `1.0024x` / `0.9946x` |
+| cached `mlkem_roundtrip` control | `0.9988x` | `1.0007x` | 9/15 | `1.0003x` / `1.0007x` |
+| `mlkem_encaps_core` control | `0.9991x` | `1.0007x` | 9/15 | `1.0007x` / `0.9998x` |
+
+The cache-disabled decapsulation and complete core roundtrip are accepted.
+Cached decapsulation/roundtrip and unrelated encapsulation are neutral and are
+not claimed as gains; in particular, cached decapsulation has a candidate-first
+median below one.
+
+A GCC-native differential test covers 4,096 independent fixtures. It compares
+the mixed helper's SHA3-512 output with the scalar fixed-length hash, matrix
+`(2,2)` with scalar `sample_ntt()` including observed rejection refill, and all
+seven noise outputs with the established sparse x8 producer. GCC and Clang
+native, both compilers' AVX2-only, and both scalar tests pass. GCC native UBSan
+and Clang native ASan+UBSan pass. Clang native and both compilers' AVX2-only and
+scalar `testc` and `benchc` remain byte-identical to `d0e5a2c`.
+
+The change fills otherwise idle lanes with independent work from the same
+ML-KEM operation. It adds no key, matrix, hash, or output cache; no external
+object or runtime library; and no table, API, or wire-format change. The x4 and
+single-state Keccak round schedules retain their existing disclosed provenance;
+this commit claims only the repository-local dependent lane schedule.
 
 ### Latest Core Optimization A/B (2026-07-16, GCC compact sparse x8 round-0 peel)
 
