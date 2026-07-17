@@ -4638,10 +4638,6 @@ static MLKEM_ALWAYS_INLINE void
 ntt3_mul_acc4_fused_final_lazy512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
     poly256 out[K], poly256 outv) {
-#if !defined(__clang__)
-  const __m512i even_mask = _mm512_set1_epi32(0xffff);
-#endif
-
   ntt_full_mont_lazy_raw_avx512(b[0]);
   ntt_full_mont_lazy_raw_avx512(b[1]);
   ntt_full_mont_lazy_raw_avx512(b[2]);
@@ -4672,18 +4668,11 @@ ntt3_mul_acc4_fused_final_lazy512_avx512(
     __m512i y2_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
         y2, gamma_lo, gamma_hi);
 #else
-    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
-    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
-    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
-    __m512i gamma = _mm512_cvtepu16_epi32(
-        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
-    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
-    __m512i y0_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
-    __m512i y1_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
-    __m512i y2_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    __m512i y0_c0;
+    __m512i y1_c0;
+    __m512i y2_c0;
+    ntt_acc4_asym_c0_factors3_mont_gcc_avx512(
+        y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #endif
     __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
