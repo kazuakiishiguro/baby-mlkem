@@ -251,6 +251,7 @@ Near-term target selection:
 | Canonical GCC AVX512 NTT accumulation factors | Accepted for GCC AVX512; Clang and narrower ISA unchanged | The asymmetric K=3 kernels now keep final-NTT and gamma-weighted factors in canonical `[0,Q)` form instead of centering each vector. A wider reciprocal reducer proves the resulting `6*(Q-1)^2` signed-32-bit bound without adding instructions. Direct madd/VNNI/keygen accumulation medians improve `1.0310x`/`1.0293x`/`1.0471x`; cached K-PKE improves `1.0211x`, and 100k encaps/decaps improve `1.0181x`/`1.0170x`, both 14/14. This is local arithmetic-range redesign with no cache, external object, table, or wire-format dependency. |
 | Lazy GCC AVX512 encryption final-L1 boundary | Accepted for GCC AVX512; Clang and narrower ISA unchanged | The four-output encryption path now keeps six forward-NTT levels lazy, completes final `l1` with existing 16-bit Montgomery factors, and canonicalizes only each returned 32-coefficient block. This removes three full 256-coefficient canonicalization passes and the 32-bit unsigned final butterfly. Direct madd/VNNI medians improve `1.0536x`/`1.0563x`; cached K-PKE improves `1.0401x`, and 100k encaps/decaps improve `1.0338x`/`1.0272x`. GCC `benchc` text/BSS shrink 416/512 bytes. No cache, external object, new table, or wire-format dependency is added. |
 | GCC AVX512 inverse scale/noise single reduction | Accepted for GCC AVX512 compact ETA2 encryption; Clang and narrower ISA unchanged | Final inverse Montgomery products now receive signed-int8 ETA2 noise and the optional message before one canonicalization, replacing scale canonicalization followed by a second add/correction pass. The exact pre-canonical range is `[-1896,3587]`. Direct inverse-final improves `1.0683x` geometric mean, cached/uncached K-PKE `1.0183x`/`1.0067x`, and 100k encaps/decaps `1.0165x`/`1.0109x`; all target stage pairs win. GCC `benchc` text shrinks 224 bytes. No cache, external object, table, or wire-format change is added. |
+| Bounded AVX512 inverse-final canonicalization | Accepted for GCC/Clang AVX512 with and without VNNI; AVX2-only/scalar byte-identical | The proved inverse-scale/noise/message interval `[-1896,3587]` needs only one masked negative correction and one masked high correction, replacing the arbitrary-int16 Barrett canonicalizer. GCC/Clang direct inverse-final improves `1.1265x`/`1.0993x`, cached K-PKE `1.0361x`/`1.0316x`, and 100k encaps `1.0236x`/`1.0163x`; linked text shrinks 352/448 bytes. No cache, external object, runtime library, table, API, or wire-format dependency is added. |
 | Native AVX512 periodic inverse sum reductions | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | The shared four-output inverse NTT now leaves sum branches lazy for levels 0-1 and 3-4, applying signed Barrett only at levels 2 and 5. Exact conservative propagation keeps every sum/difference and the final add inside int16. GCC/Clang compact-direct geometric means improve `1.1318x`/`1.1531x`, cached K-PKE `1.0429x`/`1.0313x`, and 100k encaps `1.0262x`/`1.0287x`. GCC `benchc` text shrinks 160 bytes. The fixed arithmetic schedule adds no cache, external object, table, or wire-format change. |
 | GCC AVX512VNNI lazy accumulation/inverse boundary | Accepted for GCC AVX512VNNI; Clang/non-VNNI/narrower ISA unchanged | The four-output K=3 kernel now stops its reciprocal reduction at a congruent `[-440,4570]` result and carries that representation into the shared inverse NTT, whose two Barrett passes move from levels 2/5 to the range-proved levels 1/4. This removes the accumulator's canonical correction without adding an inverse reduction. Direct VNNI accumulation, shared inverse, and cached K-PKE paired geometric means improve `1.0583x`/`1.0151x`/`1.0487x`; 100k encaps/decaps/roundtrip improve `1.0394x`/`1.0256x`/`1.0110x`. GCC `benchc` text shrinks 160 bytes. No cache, external object, table, or wire-format change is added. |
 | Clang AVX512 lazy accumulation/inverse boundary | Accepted for Clang AVX512 with or without VNNI; GCC native text byte-identical; narrower ISAs unchanged | Clang now keeps each four-output K=3 dot product in the congruent `[-440,4570]` interval and carries it into the shared inverse NTT, moving its two Barrett passes from levels 2/5 to the range-proved levels 1/4. Clang native 100k encaps/decaps/roundtrip paired geometric means improve `1.0296x`/`1.0210x`/`1.0102x`; an explicit `-mno-avx512vnni` gate improves them `1.0394x`/`1.0353x`/`1.0113x`. At that commit LLVM emitted `VPMADDWD`/`VPADDD`, not `VPDPWSSD`, so its gain was delayed canonicalization; the separately measured VNNI lowering follow-up is listed below. Clang `benchc` text shrinks 256 bytes, while GCC native text is byte-identical. No cache, external object, table, API, or wire-format change is added. |
@@ -357,6 +358,111 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, bounded AVX512 inverse-final correction)
+
+Commit `d2abb15` specializes the final normalization in the compact four-output
+inverse path. Its baseline is `0ba5317`, which already folds the final inverse
+Montgomery product, signed ETA2 noise, and the optional message coefficient
+into one canonicalization.
+
+The retained exhaustive oracle proves the two final Montgomery factors produce
+`[-1894,1920]` and `[-1793,1793]` over every int16 input. ETA2 in `[-2,2]`
+and the optional `(Q + 1) / 2` message term therefore put the combined value in
+exactly `[-1896,3587]`. The previous path nevertheless used the arbitrary-int16
+Barrett canonicalizer. The new constant-time bounded form adds `Q` only to
+negative lanes, yielding `[0,3587]`, then subtracts `Q` only from lanes in
+`[Q,3587]`, yielding canonical `[0,Q)`. This removes the Barrett multiply,
+high-half extraction, shift, second multiply, and their generic correction
+sequence from each inlined inverse-final result.
+
+Measurements used GCC 13.3.0 and Clang 18.1.3 on an AMD Ryzen Threadripper
+7980X, pinned to CPU 0, with alternating baseline/candidate order. The native
+stage gate used two warmups, nine measured pairs, and 100,000 iterations:
+
+```bash
+for cc in gcc clang; do
+  RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+    STAGE_ITERS=100000 PIN_CPU=0 C_COMPILER="$cc" \
+    ARCH_CFLAGS="-march=native" \
+    ./scripts/bench_core_ab.sh 0ba5317
+done
+```
+
+| Native build / production stage | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| GCC direct compact inverse-final | `1.1265x` | `1.1309x` | 9/9 | `1.1314x` / `1.1287x` |
+| GCC cached K-PKE encryption | `1.0361x` | `1.0343x` | 9/9 | `1.0343x` / `1.0400x` |
+| GCC cache-disabled K-PKE encryption | `1.0072x` | `1.0117x` | 7/9 | `1.0014x` / `1.0144x` |
+| Clang direct compact inverse-final | `1.0993x` | `1.1014x` | 9/9 | `1.0986x` / `1.1056x` |
+| Clang cached K-PKE encryption | `1.0316x` | `1.0299x` | 8/9 | `1.0301x` / `1.0297x` |
+| Clang cache-disabled K-PKE encryption | `1.0113x` | `1.0108x` | 7/9 | `1.0089x` / `1.0128x` |
+
+The explicit no-VNNI gate used `-march=skylake-avx512`, two warmups, seven
+measured pairs, and 50,000 iterations:
+
+```bash
+for cc in gcc clang; do
+  RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+    STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER="$cc" \
+    ARCH_CFLAGS="-march=skylake-avx512" \
+    ./scripts/bench_core_ab.sh 0ba5317
+done
+```
+
+| AVX512 non-VNNI build / production stage | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| GCC direct compact inverse-final | `1.1278x` | `1.1331x` | 7/7 | `1.1311x` / `1.1331x` |
+| GCC cached K-PKE encryption | `1.0317x` | `1.0319x` | 7/7 | `1.0330x` / `1.0316x` |
+| GCC cache-disabled K-PKE encryption | `1.0014x` | `1.0147x` | 6/7 | `1.0163x` / `1.0129x` |
+| Clang direct compact inverse-final | `1.1029x` | `1.1052x` | 7/7 | `1.1033x` / `1.1054x` |
+| Clang cached K-PKE encryption | `1.0287x` | `1.0275x` | 7/7 | `1.0278x` / `1.0275x` |
+| Clang cache-disabled K-PKE encryption | `1.0079x` | `1.0061x` | 5/7 | `1.0020x` / `1.0061x` |
+
+The complete native KEM confirmation used three warmups, 14 measured pairs,
+and 100,000 iterations:
+
+```bash
+for cc in gcc clang; do
+  RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+    KEM_ITERS=100000 PIN_CPU=0 C_COMPILER="$cc" \
+    ARCH_CFLAGS="-march=native" \
+    ./scripts/bench_core_ab.sh 0ba5317
+done
+```
+
+| Native complete-KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| GCC encaps | `1.0236x` | `1.0235x` | 14/14 | `1.0242x` / `1.0232x` |
+| GCC encaps core | `1.0093x` | `1.0077x` | 12/14 | `1.0074x` / `1.0078x` |
+| GCC decaps | `1.0128x` | `1.0144x` | 14/14 | `1.0144x` / `1.0143x` |
+| GCC decaps core | `1.0178x` | `1.0129x` | 13/14 | `1.0096x` / `1.0135x` |
+| GCC roundtrip | `1.0061x` | `1.0069x` | 11/14 | `1.0066x` / `1.0077x` |
+| GCC roundtrip core | `1.0046x` | `1.0042x` | 12/14 | `1.0039x` / `1.0042x` |
+| Clang encaps | `1.0163x` | `1.0198x` | 11/14 | `1.0193x` / `1.0201x` |
+| Clang encaps core | `1.0043x` | `1.0053x` | 10/14 | `1.0049x` / `1.0055x` |
+| Clang decaps | `1.0133x` | `1.0126x` | 12/14 | `1.0086x` / `1.0136x` |
+| Clang decaps core | `1.0005x` | `1.0096x` | 10/14 | `1.0087x` / `1.0104x` |
+| Clang roundtrip | `1.0107x` | `1.0103x` | 11/14 | `1.0079x` / `1.0136x` |
+| Clang roundtrip core | `1.0022x` | `1.0030x` | 8/14 | `0.9998x` / `1.0047x` |
+
+GCC shrinks the inlined four-output helper from 1,255 to 902 bytes and from
+211 to 156 instructions; linked `benchc` text shrinks from 81,701 to 81,349
+bytes. Clang shrinks the helper from 5,077 to 4,581 bytes and linked text from
+132,499 to 132,051 bytes. Data and BSS are unchanged for both compilers.
+
+Correctness passed GCC and Clang native KATs and complete 412-line stage
+validators, plus native UBSan KATs and the same complete validators. The
+inverse-final oracle checks 1,310,720 combinations covering every int16 input,
+both final factors, all five ETA2 values, and both message values; the existing
+256-fixture four-output comparison also passes. GCC/Clang no-VNNI validators
+and AVX2-only/scalar KATs pass. Against `0ba5317`, GCC/Clang AVX2-only and
+scalar `testc`/`benchc` products are byte-identical.
+
+This is a repository-local arithmetic-range specialization, not a cache
+shortcut. It adds no table, external object, runtime library, API, or wire
+format dependency; the underlying Montgomery/NTT arithmetic retains its
+existing upstream attribution.
 
 ### Rejected Core Optimization A/B (2026-07-17, GCC AVX512VNNI three-NTT tail factor sharing)
 
