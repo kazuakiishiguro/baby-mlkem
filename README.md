@@ -238,6 +238,7 @@ Near-term target selection:
 | AVX512 ZMM three-output K=3 keygen accumulation | Accepted for GCC and Clang native; narrower ISA unchanged | One loop keeps canonical `shat[0..2]`, forms each gamma-weighted odd factor once, and reuses those factors across all three columns of `A^T * s`. The original GCC gate improved 100k KEM keygen/keygen-core by `1.0218x`/`1.0210x`. Routing current Clang through the same validated kernel improves direct accumulation `1.1342x`, full-keygen stage median `1.0179x`, and 100k KEM keygen/keygen-core geometric means `1.0100x`/`1.0072x`; Clang `benchc` text shrinks 2,752 bytes. The factors are transient registers and add no cache, table, external object, or wire-format change. |
 | Native AVX512 keygen final-L1/accumulation/d12 boundary | Accepted for GCC and Clang native; AVX2-only/scalar byte-identical | Keygen leaves `shat[0..2]` one NTT level short, then each canonical 32-coefficient ZMM feeds all three `A^T * s` columns and secret-key d12 packing before being discarded. This removes 7,680 bytes of intermediate coefficient traffic per keygen. Direct fused-boundary geometric means improve `1.0247x`/`1.0114x` under Clang/GCC; 100k KEM keygen improves `1.0104x`/`1.0084x`, with 13/14 and 12/14 wins. Clang product text shrinks 2,816 bytes; GCC grows 1,340 bytes but retains the measured win. The existing Montgomery/Harvey and asymmetric multiplication arithmetic remains externally attributed; the lifetime fusion is repository-local and adds no external object, cache, table, or wire-format change. |
 | Clang AVX512 keygen accumulation/add/public-d12 boundary | Accepted for Clang native; GCC retained the split path; AVX2-only/scalar byte-identical | Each canonical `A^T * s` ZMM now receives `ehat`, emits public-key d12 bytes, and stores the final cached `that` tile before being discarded. This removes 4,608 bytes of intermediate coefficient traffic per keygen. Clang's direct boundary improves `1.0133x` geometric mean with 9/9 wins; 100k KEM keygen/keygen-core improve `1.0043x`/`1.0094x` geometric mean with 11/14 and 12/14 wins. Product text shrinks 1,088 bytes. GCC's paired median was `0.9998x`, so its existing path and binary remain unchanged. No cache shortcut, external object, table, API, or wire-format change is added. |
+| Native AVX512VNNI keygen column dots | Accepted for GCC and Clang AVX512VNNI; non-VNNI/AVX2-only/scalar byte-identical | Row 0 seeds each canonical `c0`/`c1` sum with `VPMADDWD`, and rows 1-2 accumulate with `VPDPWSSD`, removing 12 vector instructions per 32-coefficient three-column tile without zero accumulators. GCC/Clang direct accumulation improves `1.0284x`/`1.0185x`, and fused add/encode improves `1.0078x`/`1.0103x`, all 7/7. Cache-disabled GCC `keygen_core` improves `1.0041x`; Clang whole-KEM movement is neutral and is not credited. GCC/Clang `benchc` text shrinks 96/64 bytes. No cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512 lazy keygen `ehat` handoff | Closed; exhaustive oracle retained | Keeping all three keygen error NTTs in the proved full-lazy range removed their standalone canonicalization scans, while the fused accumulation/add/d12 consumer reduced `accum + lazy_ehat` once. The direct consumer fell to `0.9727x`; complete keygen reached only `1.0009x` paired median, and the final 15-pair `keygen_core` gate regressed to `0.9986x` geometric mean, `0.9989x` median, and 5/15 wins. Production keeps canonical `ehat`; test commit `02e4418` retains the exhaustive `(-7Q,9Q)` range and 4,096-fixture equivalence oracle. |
 | Native AVX512 four-output inverse-add scheduling | Accepted for GCC/Clang native; AVX2-only/scalar unchanged | Prepared-public encryption advances the three `u` outputs and `v` through one shared inverse-twiddle schedule. Direct GCC/Clang medians improve `1.2448x`/`1.2315x`; cached K-PKE paired medians improve `1.0623x`/`1.0571x`, and encapsulation improves `1.0464x`/`1.0449x`. Butterflies and coefficient traffic are unchanged; repository-local intrinsics add no external object, persistent cache, table, or wire-format dependency. |
 | Native GCC AVX512 compact ETA2 noise boundary | Accepted for GCC native; Clang/AVX2-only/scalar unchanged | Encryption keeps the four ETA2 error polynomials in signed int8 form from CBD output to the inverse-final consumer, then widens 32 coefficients at a time and folds the message into the same masked normalization. Seven-pair GCC A/B improves cached/uncached K-PKE geometric means by `1.0104x`/`1.0052x` and encaps/decaps by `1.0144x`/`1.0204x`. The representation is transient working data, not a key or matrix cache; repository-local intrinsics add no external object, runtime library, table, or wire-format dependency. Clang was explicitly gated off at that 2026-07-15 baseline after its direct compact extension regressed the cache-disabled KEM gate; the later lane-local four-stream redesign is recorded separately below. Correctness commit `4368b3a` restores the non-AVX512 message add accidentally scoped into the AVX512 branch; native measurements are unaffected. |
@@ -351,6 +352,144 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, AVX512VNNI keygen column dots)
+
+Commit `b8210e7` applies the already validated non-saturating AVX512VNNI dot
+instruction to keygen's canonical three-column `A^T * s` accumulation. The
+encryption kernel already used `VPDPWSSD`, but keygen still accumulated each
+`c0` and `c1` lane as one `VPMADDWD` followed by two
+`VPMADDWD + VPADDD` pairs.
+
+The new keygen-only helper seeds row 0 with `VPMADDWD`, then folds rows 1 and
+2 into the same signed-32-bit accumulator with `VPDPWSSD`. Seeding from the
+first product avoids the zero-register setup required by a three-dot form:
+
+| All three columns per 32-coefficient tile | `VPMADDWD` | `VPADDD` | `VPDPWSSD` | Dot/accumulate instructions |
+|---|---:|---:|---:|---:|
+| Baseline | 18 | 12 | 0 | 30 |
+| Candidate | 6 | 0 | 12 | 18 |
+| Delta | -12 | -12 | +12 | -12 |
+
+There are eight tiles per keygen, so the fixed schedule removes 96 dynamic
+vector instructions. It changes neither factor construction nor reciprocal
+reduction. The existing canonical K=3 proof bounds every signed accumulator by
+
+```text
+[-6*(Q-1)*(Q/2), 6*(Q-1)^2]
+  = [-33,226,752, 66,453,504],
+```
+
+which is strictly inside signed 32-bit. `VPDPWSSD` is non-saturating, so its
+result is bit-exact to the replaced add/multiply sequence on that domain. The
+standalone three-column kernel and both compiler-specific fused keygen
+consumers use the helper; encryption remains on its preceding kernel. Builds
+without AVX512VNNI call the original helper directly.
+
+The production stage gate compared `b8210e7` with `d860ec5` on CPU 0 using
+two warmups, seven alternating pairs, and 50,000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=<clang-or-gcc> \
+  ./scripts/bench_core_ab.sh d860ec5
+```
+
+| Compiler | Production stage metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| Clang | three-column accumulation | `1.0185x` | `1.0186x` | 7/7 | `1.0189x` / `1.0179x` |
+| Clang | fused final-l1/accum/d12 | `1.0102x` | `1.0104x` | 7/7 | `1.0109x` / `1.0090x` |
+| Clang | fused accum/add/two d12 outputs | `1.0103x` | `1.0099x` | 7/7 | `1.0097x` / `1.0099x` |
+| Clang | complete K-PKE keygen | `0.9903x` | `0.9959x` | 2/7 | `0.9898x` / `1.0002x` |
+| GCC | three-column accumulation | `1.0284x` | `1.0277x` | 7/7 | `1.0277x` / `1.0274x` |
+| GCC | fused final-l1/accum/d12 | `1.0031x` | `1.0026x` | 7/7 | `1.0025x` / `1.0027x` |
+| GCC | fused accum/add/two d12 outputs | `1.0078x` | `1.0073x` | 7/7 | `1.0076x` / `1.0073x` |
+| GCC | complete K-PKE keygen | `1.0185x` | `1.0063x` | 7/7 | `1.0253x` / `1.0004x` |
+
+The Clang complete-keygen row is not credited as a regression or a gain. In
+that same all-stage run, unchanged error NTT and cached encryption rows moved
+to `0.9861x` and `0.9859x`, while unchanged uncached encryption moved to
+`1.0193x`. A 15-pair, 100,000-iteration keygen-only runtime filter retained
+all original stage references in the linked binary and measured Clang direct,
+fused-final, and fused-add at `1.0203x`, `1.0178x`, and `1.0095x`
+geometric mean with 15/15, 15/15, and 14/15 wins. Its complete-keygen row was
+neutral at `0.9987x` geometric mean and `1.0016x` median. No diagnostic
+filter is committed.
+
+The corresponding GCC diagnostic measured direct, fused-final, and fused-add
+at `1.0319x`, `1.0040x`, and `1.0085x`, with 15/15, 14/15, and
+15/15 wins. Complete K-PKE keygen was `1.0007x` geometric mean,
+`1.0033x` median, and 10/15 wins. This independently confirms the
+production stage's local signal without relying on its positive
+complete-keygen outlier.
+
+The final cache-enabled/cache-disabled KEM gate used three warmups and 14
+balanced alternating pairs of 100,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=<clang-or-gcc> \
+  ./scripts/bench_core_ab.sh d860ec5
+```
+
+| Compiler | KEM metric | Paired geometric mean | Paired median | Wins | Base-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| Clang | `mlkem_keygen` | `0.9976x` | `0.9986x` | 7/14 | `0.9934x` / `1.0043x` |
+| Clang | cache-disabled `mlkem_keygen_core` | `0.9991x` | `0.9970x` | 6/14 | `0.9961x` / `0.9980x` |
+| GCC | `mlkem_keygen` | `0.9989x` | `0.9991x` | 5/14 | `0.9993x` / `0.9986x` |
+| GCC | cache-disabled `mlkem_keygen_core` | `1.0041x` | `1.0021x` | 10/14 | `1.0026x` / `1.0013x` |
+| GCC | `mlkem_roundtrip` | `1.0031x` | `1.0020x` | 11/14 | `1.0022x` / `1.0019x` |
+
+Only GCC's cache-disabled keygen row is credited as a whole-KEM gain. Clang's
+whole-KEM effect is below the noise floor and is reported as neutral. Its
+unchanged `encaps_core` and `decaps_core` controls moved to `0.9932x` and
+`0.9867x` in the same run, so normalizing away that run-wide shift would be
+more favorable, but no normalized speedup is claimed. This optimization does
+not depend on an internal cache and does not touch random-byte generation.
+
+Production disassembly confirms that the local win is removed work, not a
+spill or code-size tradeoff:
+
+| Native product property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| Clang `benchc` text | 132,627 | 132,563 | -64 bytes |
+| Clang `bench_keygen` bytes | `0x2eba` | `0x2e70` | -74 bytes |
+| Clang `bench_keygen` stack frame | `0x1400` | `0x1400` | 0 |
+| Clang stack references / vector stack moves | 230 / 97 | 230 / 97 | 0 / 0 |
+| GCC `benchc` text | 81,803 | 81,707 | -96 bytes |
+| GCC `mlkem_keygen` bytes | `0x1035` | `0x0fe7` | -78 bytes |
+
+Clang's timed keygen starts at `0x59d0` in both binaries; GCC's starts at
+`0xacd0` in both. Clang removes twelve `VPMADDWD` and twelve `VPADDD`
+instructions, adds twelve `VPDPWSSD`, and leaves every measured stack access
+unchanged. Linked data and BSS are unchanged under both compilers.
+
+Correctness is covered by the existing 256-fixture keygen accumulator oracle.
+It compares all three output polynomials against independent scalar-shaped
+factored multiplication, then checks the fused secret/public d12 encodings and
+final coefficients. Native Clang/GCC KAT and complete stage validation pass.
+Clang native ASan+UBSan and GCC native UBSan pass both KAT and the complete
+stage validator.
+
+The compile-time scope is exact. Against `d860ec5`, both compilers'
+`-mno-avx512vnni` `testc`, `benchc`, and stage binaries are byte-identical;
+their AVX2-only and scalar `testc`/`benchc` products are also
+byte-identical:
+
+| Compiler/ISA | `testc` SHA-256 | `benchc` SHA-256 | Stage SHA-256 |
+|---|---|---|---|
+| Clang AVX512 without VNNI | `644021a1eecc4497de76304e660f644c7278e1bfba3ec596cc066c85e5d18979` | `a5c49de447be38a1ed76c0a4fd12947241c1a785567e8d826fc69946c11feef6` | `1838a93499d86a2a2fcb447d98c34ae7a933667f10540ebff7511d4164a7914c` |
+| GCC AVX512 without VNNI | `edbc56b684cfed7b856163bd47804d2b95255a4622e01eddf1b08f2bc3a70b7c` | `63f7b41053603bf13e928ba3b87b3125d3513e0b658519189b3b795a4dde83d3` | `6cf6df953ab1a07921d15257bbaca0bbc0ae88c29a4f52a8935026c05abdb9d8` |
+| Clang AVX2-only | `f0c30198ba580d6245008b497598185ea2b439fd304e8af3a990f1a1f0042a83` | `11999577e4f7e60097d4448a5982a12db53d9bab16faf2826ad05e6967520bca` | - |
+| GCC AVX2-only | `1fe0929cef1728673cef8678078ffadb7f397a43a954c326e2901cfbd2cece04` | `13c191ee00513ad79c4f297f7a357417036a4d165acdf8db82a3f6016b1adf47` | - |
+| Clang scalar | `09771e3e3ba9d35506856ff6a82b98cc6173f5245db87cd3b2dfec7e3cffac7f` | `228a55310da764c85cc1a5b53dbe2db5abb80195a32a895cf4fb148b12be0323` | - |
+| GCC scalar | `16b80c169718214caad78a2c1bed6d8b8e7a2722e5139aecce19782556d24eab` | `8ff14b5ff43bb6e5d3231f33f97c3c44669065915e70f4aeecf35074395c279b` | - |
+
+This is repository-local instruction selection over the already proved K=3
+arithmetic, not a new ML-KEM algorithm. It reuses the project's existing
+Clang-safe `VPDPWSSD` lowering and links no secp256k1, ZKP, Kyber, PQClean,
+XKCP, liboqs, or other external runtime object. It adds no persistent cache,
+table, API, or wire-format dependency.
 
 ### Latest Core Optimization A/B (2026-07-17, Clang lane-local compact ETA2 boundary)
 
