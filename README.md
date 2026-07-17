@@ -189,7 +189,8 @@ Near-term target selection:
 | Clang AVX512 Montgomery gamma factors | Accepted for Clang native; GCC and narrower ISAs byte-identical | Three shared `gamma*rhat_odd` factors now use precomputed signed Montgomery low/high constants instead of widening through the general 32-bit reciprocal reducer. The exhaustive output range is `[-1739,1739]`; the direct accumulator and cached K-PKE improve `1.0286x`/`1.0373x` geometric mean. 100k encaps/decaps improve `1.0390x`/`1.0337x`, both 15/15. The public-factor path adds 512 bytes of linked text and 512 bytes of BSS but no key/result cache, external object, API, or wire-format dependency. |
 | Clang AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; GCC and narrower ISA products byte-identical | Keygen now reuses the existing public low/high Montgomery tables for its three shared `gamma*shat_odd` factors instead of running three general signed-32-bit reciprocal reducers per 32 coefficients. Native direct/fused-add accumulation improves `1.1088x`/`1.0594x`, while non-VNNI improves `1.0972x`/`1.0484x`, all 7/7. Native 100k KEM keygen/keygen-core improves `1.0119x`/`1.0105x`; non-VNNI improves `1.0031x`/`1.0071x`. Clang `benchc` text shrinks 64 bytes with unchanged data/BSS, so this adds no table, cache, external object, API, or wire-format dependency. |
 | GCC AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; Clang and narrower ISA products byte-identical | GCC keygen now keeps one 256-byte public Montgomery-high table and reconstructs the low vector once per 32 coefficients, replacing three general signed-32-bit reciprocal reductions. Native direct/fused-add stages improve `1.0868x`/`1.0646x`; non-VNNI improves `1.1024x`/`1.0462x`, all 7/7. Two native 100k KEM gates put keygen at `1.0057x` and `1.0126x`, while non-VNNI keygen improves `1.0043x`. GCC `benchc` adds 160 text bytes and 256 BSS bytes. This is fixed public-factor precomputation, not a key/result cache; it links no external object or library and changes no API or wire format. |
-| GCC AVX512VNNI Montgomery encryption gamma factors | Accepted for GCC AVX512VNNI; GCC non-VNNI, Clang, AVX2-only, and scalar products byte-identical | Encryption now reuses the existing public 256-byte GCC Montgomery-high table, reconstructs the low vector once per 32 coefficients, and replaces three general signed-32-bit reciprocal reductions for the shared `gamma*rhat_odd` factors. Direct lazy accumulation and cached K-PKE improve `1.0437x`/`1.0284x` paired geometric mean, both 9/9. An independent 100k KEM confirmation improves encaps/decaps/roundtrip by `1.0123x`/`1.0202x`/`1.0074x`. GCC `benchc` text shrinks 160 bytes with unchanged data/BSS. No new table, cache, external object, library, API, or wire-format dependency is added. |
+| GCC AVX512VNNI Montgomery encryption gamma factors | Accepted for GCC AVX512VNNI; non-VNNI follow-up below; Clang, AVX2-only, and scalar products byte-identical | Encryption now reuses the existing public 256-byte GCC Montgomery-high table, reconstructs the low vector once per 32 coefficients, and replaces three general signed-32-bit reciprocal reductions for the shared `gamma*rhat_odd` factors. Direct lazy accumulation and cached K-PKE improve `1.0437x`/`1.0284x` paired geometric mean, both 9/9. An independent 100k KEM confirmation improves encaps/decaps/roundtrip by `1.0123x`/`1.0202x`/`1.0074x`. GCC `benchc` text shrinks 160 bytes with unchanged data/BSS. No new table, cache, external object, library, API, or wire-format dependency is added. |
+| GCC AVX512 non-VNNI Montgomery encryption gamma factors | Accepted for GCC AVX512 without VNNI; GCC VNNI, Clang, AVX2-only, and scalar products byte-identical | The canonical `VPMADDWD` four-output path now reuses the existing public 256-byte GCC Montgomery-high table and reconstructs its low vector once per 32 coefficients, replacing three general signed-32-bit gamma-factor reducers. Direct production accumulation and cached K-PKE improve `1.0471x`/`1.0324x` paired geometric mean, both 9/9. Two independent 100k gates put encaps at `1.0311x`/`1.0293x`, decaps at `1.0179x`/`1.0172x`, and roundtrip at `1.0068x`/`1.0101x`. GCC non-VNNI `benchc` text shrinks 96 bytes with unchanged data/BSS. No new table, cache, external object, library, API, or wire-format dependency is added. |
 | GCC flattened full forward-NTT wrapper | Closed | A GCC-only noinline `flatten` wrapper exposed the existing upper head and lower tail in one compilation unit. Three consecutive transforms improved `1.0085x` geometric mean in a focused probe, but cached/uncached K-PKE and keygen stage gates regressed to `0.9974x`/`0.9986x`/`0.9969x`, with only 2/7, 1/7, and 1/7 wins. Linked text grew 1,536 bytes. Keep the smaller shared head/tail boundaries; no candidate code remains. |
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
@@ -357,6 +358,127 @@ parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
 
+### Latest Core Optimization A/B (2026-07-17, GCC AVX512 non-VNNI encryption Montgomery gamma factors)
+
+Commit `5c86b7f` extends the accepted GCC high-only Montgomery gamma-factor
+representation to AVX512 builds without VNNI. Its baseline is `6eec1fd`,
+which already contains the VNNI implementation and its documentation.
+
+GCC non-VNNI production uses
+`ntt3_mul_acc4_fused_final_madd512_avx512()`: it canonicalizes each lazy
+forward-NTT block, forms four K=3 outputs with `VPMADDWD` plus `VPADDD`,
+and canonicalizes each dot product before the shared inverse NTT. The dot
+backend differs from the VNNI lazy path, but it retained the same three
+general signed-32-bit reductions for the shared `gamma*rhat_odd` factors.
+
+The follow-up changes only `!__clang__ && !__AVX512VNNI__`. For each
+32-coefficient tile it loads the existing 16 public signed Montgomery-high
+values, reconstructs `gamma_lo` once with `VPMULLW`, and runs three signed
+16-bit Montgomery products. The four output dot products, canonical output
+representation, inverse boundary, and packing remain unchanged.
+
+This reuses the same proof as the VNNI path below. The exhaustive oracle checks
+128 gamma values against every input in `[0,Q]`, or 426,240 combinations,
+and observes `[-1739,1739]`. The mixed `c0` interval remains
+`[-17,362,176,50,588,928]`; the unchanged `c1` upper bound is
+`66,453,504`. Both fit signed int32 and the existing reducer interval
+`[-33,226,752,66,453,504]`. The 256-fixture four-output oracle also compares
+the accumulated residues modulo Q and the subsequent inverse outputs exactly.
+
+All measurements used GCC 13.3.0 on an AMD Ryzen Threadripper 7980X, pinned to
+CPU 0 with alternating baseline/candidate order.
+
+The stage gate used two warmups, nine measured pairs, and 50,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=skylake-avx512" \
+  ./scripts/bench_core_ab.sh 6eec1fd
+```
+
+| GCC AVX512 non-VNNI production stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| asymmetric four-output accumulation | `1.0471x` | `1.0470x` | 9/9 | `1.0470x` / `1.0469x` |
+| cached K-PKE encryption | `1.0324x` | `1.0323x` | 9/9 | `1.0320x` / `1.0324x` |
+| cache-disabled K-PKE encryption | `1.0215x` | `1.0118x` | 8/9 | `1.0118x` / `1.0107x` |
+
+The unchanged legacy madd, inverse, noise, and packing diagnostics stay near
+`1.0x`; they are controls and are not credited as gains.
+
+Two independent complete-KEM gates each used three warmups, 14 measured pairs,
+and 100,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=skylake-avx512" \
+  ./scripts/bench_core_ab.sh 6eec1fd
+```
+
+| GCC AVX512 non-VNNI KEM gate | Metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| gate 1 | `mlkem_encaps` | `1.0311x` | `1.0271x` | 14/14 | `1.0272x` / `1.0269x` |
+| gate 1 | `mlkem_encaps_core` | `1.0071x` | `1.0068x` | 14/14 | `1.0096x` / `1.0062x` |
+| gate 1 | `mlkem_decaps` | `1.0179x` | `1.0186x` | 14/14 | `1.0184x` / `1.0188x` |
+| gate 1 | `mlkem_decaps_core` | `1.0056x` | `1.0061x` | 13/14 | `1.0107x` / `1.0060x` |
+| gate 1 | `mlkem_roundtrip` | `1.0068x` | `1.0096x` | 9/14 | `1.0097x` / `0.9971x` |
+| gate 1 | `mlkem_roundtrip_core` | `1.0068x` | `1.0056x` | 13/14 | `1.0097x` / `1.0051x` |
+| confirmation | `mlkem_encaps` | `1.0293x` | `1.0270x` | 14/14 | `1.0255x` / `1.0273x` |
+| confirmation | `mlkem_encaps_core` | `1.0129x` | `1.0112x` | 14/14 | `1.0118x` / `1.0107x` |
+| confirmation | `mlkem_decaps` | `1.0172x` | `1.0180x` | 14/14 | `1.0144x` / `1.0194x` |
+| confirmation | `mlkem_decaps_core` | `0.9999x` | `1.0075x` | 13/14 | `1.0086x` / `1.0064x` |
+| confirmation | `mlkem_roundtrip` | `1.0101x` | `1.0090x` | 9/14 | `1.0084x` / `1.0102x` |
+| confirmation | `mlkem_roundtrip_core` | `1.0064x` | `1.0064x` | 10/14 | `1.0074x` / `1.0055x` |
+
+The confirmation `decaps_core` geometric mean contains one outlier; its
+median, 13/14 wins, both order medians, and the first independent gate remain
+positive. Gate 1's top-level roundtrip had one negative order subset, while its
+core row and the complete confirmation were positive in both orders.
+
+Keygen does not execute this encryption kernel. Across the two gates its
+top-level paired medians were `1.0004x` and `0.9991x`; these are treated as
+neutral layout/frequency controls rather than gains.
+
+Static non-VNNI disassembly confirms the expected trade:
+
+| Product property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| `benchc` text | 81,613 bytes | 81,517 bytes | -96 bytes |
+| `benchc` data / BSS | 708 / 39,424 bytes | 708 / 39,424 bytes | 0 / 0 |
+| `kpke_encrypt_prepared_public_impl.constprop.0` bytes | `0xa9b` | `0xa0e` | -141 bytes |
+| prepared-encryption static instruction lines | 509 | 485 | -24 |
+| `VPMADDWD` / `VPADDD` | 29 / 27 | 26 / 24 | -3 / -3 |
+| `VPMULLD` / `VPSRAD` | 22 / 33 | 16 / 24 | -6 / -9 |
+| `VPMULLW` / `VPMULHW` | 5 / 21 | 9 / 27 | +4 / +6 |
+
+The 96-byte text shrink moves later checked assembly symbols. A diagnostic
+therefore inserted exactly 96 temporary NOP bytes before those symbols,
+restoring total text, all major section addresses, and byte-identical keygen,
+generic Keccak, fixed H(pk), x8 matrix, and H(pk) suffix disassembly. The
+padding is not committed.
+
+With restored layout, an 11-pair 50,000-iteration gate retained
+`1.0273x` encaps, `1.0155x` decaps, and `1.0125x` roundtrip paired
+geometric means, all 11/11. Their cache-disabled core rows were
+`1.0131x`, `1.0001x`, and `1.0061x`; medians were positive and the
+decapsulation core row won 8/11. Unchanged keygen/keygen-core medians were
+`0.9982x`/`0.9998x`. This confirms that the arithmetic gain remains when
+downstream assembly placement is held constant.
+
+GCC non-VNNI KAT, complete stage validation, and UBSan KAT plus validation
+pass. GCC native VNNI test/bench/stage, Clang native test/bench, and both
+compilers' AVX2-only and scalar test/bench products are byte-identical to
+`6eec1fd`; every candidate KAT passes.
+
+The implementation is repository-local C/intrinsics and links no secp256k1,
+ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object or library.
+It adds no table, one-time initialization, key/result cache, API, wire-format,
+or `randombytes` change. Montgomery/NTT arithmetic and gamma roots retain
+the existing upstream Kyber attribution; the compiler/ISA routing, high-only
+reuse at this four-output boundary, range integration, and performance gate
+are baby-mlkem-local work.
+
 ### Latest Core Optimization A/B (2026-07-17, GCC AVX512VNNI encryption Montgomery gamma factors)
 
 Commit `107190b` removes GCC's remaining general reciprocal reductions from
@@ -513,9 +635,11 @@ The following validation gates pass:
 - Clang native ASan+UBSan;
 - the exhaustive gamma oracle and complete four-output stage fixtures.
 
-GCC non-VNNI, Clang native, and both compilers' AVX2-only and scalar
-production `benchc` binaries are byte-identical to `38219cc`. Only the GCC
-AVX512VNNI encryption product changes.
+At commit `107190b`, GCC non-VNNI, Clang native, and both compilers'
+AVX2-only and scalar production `benchc` binaries were byte-identical to
+`38219cc`; only the GCC AVX512VNNI encryption product changed. Commit
+`5c86b7f`, documented above, later extends the high-only representation to
+GCC non-VNNI.
 
 The implementation is repository-local C/intrinsics and links no secp256k1,
 ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object or library.
@@ -1467,8 +1591,9 @@ residue `gamma * rhat_odd mod Q` directly in 16-bit lanes. At commit `ff9b4ae`,
 only the Clang native lazy encryption accumulator used these factors; GCC and
 all keygen paths retained their previous gamma representation and reducer.
 Commit `a17360d` later reuses the same tables for Clang AVX512 keygen,
-`a4439a8` adds GCC keygen high-only factors, and `107190b` reuses the GCC
-table in AVX512VNNI encryption. AVX2-only and scalar paths remain unchanged.
+`a4439a8` adds GCC keygen high-only factors, `107190b` reuses the GCC table
+in AVX512VNNI encryption, and `5c86b7f` extends it to GCC non-VNNI. AVX2-only
+and scalar paths remain unchanged.
 
 This applies a classical technique at a narrower boundary than the older,
 rejected whole-accumulator Montgomery experiment. The official
