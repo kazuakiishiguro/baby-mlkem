@@ -4452,6 +4452,60 @@ static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_lazy_block_avx512(
 }
 #endif
 
+/*
+ * Seed row 0 with VPMADDWD, then fold rows 1-2 with exact VNNI dots.
+ * The proved K=3 interval stays within signed 32-bit accumulation.
+ */
+static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_keygen_value_avx512(
+    const poly256 a0, const poly256 a1, const poly256 a2, int offset,
+    __m512i y0_c0, __m512i y1_c0, __m512i y2_c0,
+    __m512i y0_c1, __m512i y1_c1, __m512i y2_c1) {
+#if defined(__AVX512VNNI__)
+  __m512i x = _mm512_loadu_si512((const void *)(a0 + offset));
+  __m512i c0 = _mm512_madd_epi16(x, y0_c0);
+  __m512i c1 = _mm512_madd_epi16(x, y0_c1);
+
+  x = _mm512_loadu_si512((const void *)(a1 + offset));
+  c0 = ntt_acc4_dot_lazy_i32x16_avx512(c0, x, y1_c0);
+  c1 = ntt_acc4_dot_lazy_i32x16_avx512(c1, x, y1_c1);
+
+  x = _mm512_loadu_si512((const void *)(a2 + offset));
+  c0 = ntt_acc4_dot_lazy_i32x16_avx512(c0, x, y2_c0);
+  c1 = ntt_acc4_dot_lazy_i32x16_avx512(c1, x, y2_c1);
+
+  c0 = ntt_acc4_madd_reduce_i32x16(c0);
+  c1 = ntt_acc4_madd_reduce_i32x16(c1);
+  __m256i c0_16 = _mm512_cvtusepi32_epi16(c0);
+  __m256i c1_16 = _mm512_cvtusepi32_epi16(c1);
+  __m256i lo = _mm256_unpacklo_epi16(c0_16, c1_16);
+  __m256i hi = _mm256_unpackhi_epi16(c0_16, c1_16);
+  __m512i packed = _mm512_inserti64x4(
+      _mm512_castsi256_si512(lo), hi, 1);
+  const __m512i order = _mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7);
+  return _mm512_permutexvar_epi64(order, packed);
+#else
+  return ntt_acc4_asym_madd_value_avx512(
+      a0, a1, a2, offset,
+      y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
+#endif
+}
+
+static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_keygen_block_avx512(
+    const poly256 a0, const poly256 a1, const poly256 a2, int offset,
+    __m512i y0_c0, __m512i y1_c0, __m512i y2_c0,
+    __m512i y0_c1, __m512i y1_c1, __m512i y2_c1, poly256 out) {
+#if defined(__AVX512VNNI__)
+  __m512i packed = ntt_acc4_asym_keygen_value_avx512(
+      a0, a1, a2, offset,
+      y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
+  _mm512_storeu_si512((void *)(out + offset), packed);
+#else
+  ntt_acc4_asym_madd_block_avx512(
+      a0, a1, a2, offset,
+      y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out);
+#endif
+}
+
 static MLKEM_ALWAYS_INLINE void
 ntt3_mul_acc4_fused_final_madd512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
@@ -4624,13 +4678,13 @@ ntt_mul_acc3_cols3_asym_madd512_avx512(
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
     __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
 
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][0], ahat[1][0], ahat[2][0], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][1], ahat[1][1], ahat[2][1], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][2], ahat[1][2], ahat[2][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
   }
@@ -4716,13 +4770,13 @@ ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
     __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
 
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][0], ahat[1][0], ahat[2][0], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[0]);
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][1], ahat[1][1], ahat[2][1], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[1]);
-    ntt_acc4_asym_madd_block_avx512(
+    ntt_acc4_asym_keygen_block_avx512(
         ahat[0][2], ahat[1][2], ahat[2][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1, out[2]);
   }
@@ -4768,13 +4822,13 @@ ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
     __m512i y2_c1 = _mm512_rol_epi32(y2, 16);
 
-    __m512i c0 = ntt_acc4_asym_madd_value_avx512(
+    __m512i c0 = ntt_acc4_asym_keygen_value_avx512(
         ahat[0][0], ahat[1][0], ahat[2][0], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
-    __m512i c1 = ntt_acc4_asym_madd_value_avx512(
+    __m512i c1 = ntt_acc4_asym_keygen_value_avx512(
         ahat[0][1], ahat[1][1], ahat[2][1], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
-    __m512i c2 = ntt_acc4_asym_madd_value_avx512(
+    __m512i c2 = ntt_acc4_asym_keygen_value_avx512(
         ahat[0][2], ahat[1][2], ahat[2][2], offset,
         y0_c0, y1_c0, y2_c0, y0_c1, y1_c1, y2_c1);
 
