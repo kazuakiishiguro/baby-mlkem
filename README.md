@@ -56,6 +56,9 @@ schedules are local, but the arithmetic idea is externally known and cited in
 table, or wire-format dependency. Clang does not reuse the GCC schedule: its
 accepted encryption path uses a separately gated four-output ZMM schedule,
 while broader unrestricted ZMM routing has not passed its integrated performance gates.
+The Clang lazy schedule initializes 512 bytes of public Montgomery gamma factors
+for its normal-domain base multiplication. The factors are read-only after
+initialization and are not a key or result cache.
 
 The memory-resident x4 permutation used by public-matrix sampling, ETA2
 PRF/CBD helpers, and mixed noise/matrix-tail schedules remains repository-local
@@ -183,6 +186,7 @@ Near-term target selection:
 | Native AVX512 full-tail consumer handoff | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | Fused K=3 consumers now reuse the existing register-merged ZMM `l3`..`l1` tail, leave its complete NTT output lazy, and canonicalize each contiguous 32-coefficient block only when accumulation or key encoding consumes it. This removes one 512-byte coefficient read/write boundary per transform and the consumer's YMM lane reconstruction. Clang/GCC cached K-PKE paired medians improve `1.0365x`/`1.0358x`; 100k KEM encaps improves `1.0502x`/`1.0264x`, decaps `1.0332x`/`1.0070x`, and roundtrip `1.0173x`/`1.0130x`. The scheduling and handoff are repository-local; Montgomery/Harvey arithmetic remains attributed to upstream Kyber, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 full-lazy single-correction canonicalization | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | The proved `(-7Q,8Q)` forward-NTT output reduces by the existing signed Barrett step to `[0,Q]`, so the block consumer now removes only the possible value `Q` with one compare and masked subtract instead of running generic negative and high corrections. Clang/GCC fused lazy K=3 boundaries improve `1.0217x`/`1.0230x` paired median and cached K-PKE improves `1.0111x`/`1.0106x`; 100k encaps improves `1.0094x`/`1.0111x`, decaps `1.0065x`/`1.0132x`, and roundtrip `1.0067x`/`1.0064x`. The output remains canonical, data/BSS are unchanged, and no cache, external object, table, API, or wire-format dependency is added. |
 | Clang AVX512 redundant-zero accumulator input | Accepted for Clang native; GCC and narrower ISAs byte-identical | The full-lazy Barrett output is already in `[0,Q]`, and `Q` is residue zero, so the lazy four-output K=3 path now skips three compare/masked-correction pairs per 32 coefficients under the exhaustively proved `6*(Q-1)*Q` bound. The direct accumulator and cached K-PKE improve `1.0118x` and `1.0128x` paired geometric mean; 100k encaps/decaps improve `1.0105x`/`1.0073x` with 14/15 and 12/15 wins. Clang `benchc` text shrinks 128 bytes; no cache, external object, table, API, or wire-format dependency is added. |
+| Clang AVX512 Montgomery gamma factors | Accepted for Clang native; GCC and narrower ISAs byte-identical | Three shared `gamma*rhat_odd` factors now use precomputed signed Montgomery low/high constants instead of widening through the general 32-bit reciprocal reducer. The exhaustive output range is `[-1739,1739]`; the direct accumulator and cached K-PKE improve `1.0286x`/`1.0373x` geometric mean. 100k encaps/decaps improve `1.0390x`/`1.0337x`, both 15/15. The public-factor path adds 512 bytes of linked text and 512 bytes of BSS but no key/result cache, external object, API, or wire-format dependency. |
 | GCC flattened full forward-NTT wrapper | Closed | A GCC-only noinline `flatten` wrapper exposed the existing upper head and lower tail in one compilation unit. Three consecutive transforms improved `1.0085x` geometric mean in a focused probe, but cached/uncached K-PKE and keygen stage gates regressed to `0.9974x`/`0.9986x`/`0.9969x`, with only 2/7, 1/7, and 1/7 wins. Linked text grew 1,536 bytes. Keep the smaller shared head/tail boundaries; no candidate code remains. |
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
@@ -479,6 +483,135 @@ single-state AVX512VL round core whose schedule is already disclosed as derived
 from Intel/liboqs, and the existing wide parser designed in baby-mlkem. It does
 not claim a new Keccak schedule and links no external object or runtime library.
 No persistent cache, table, API, or wire-format change is added.
+
+### Latest Core Optimization A/B (2026-07-17, Clang AVX512 Montgomery gamma factors)
+
+A fresh 500,000-iteration Clang native profile at `4966f44` attributed
+`29.02%` of self time to fixed `H(pk)`, `18.82%` to the checked x8 matrix
+assembly, `8.00%` to the ETA2 x7 producer, `6.14%` to
+`ntt3_mul_acc4_fused_final_lazy512_clang_avx512()`, `5.41%` to the shared
+inverse, and `4.73%` to rejection parsing. The first two kernels and the x7
+final slice already had bounded follow-ups accepted or closed, so the remaining
+32-bit reduction inside the four-output accumulator was audited next.
+
+For each NTT base pair, the `c0` factor needs `gamma * rhat_odd mod Q`. The
+previous Clang path widened 16 gamma values, formed three `VPMADDWD` products,
+and passed each through the general 32-bit reciprocal reducer before sharing
+the factors across all three `u` rows and `v`. Production commit `ff9b4ae`
+instead initializes two public, fixed 128-entry int16 tables:
+
+```text
+gamma_hi = centered(gamma * R mod Q)
+gamma_lo = gamma_hi * QINV mod 2^16
+R = 2^16 mod Q
+```
+
+The existing three-multiply signed Montgomery primitive then returns the normal
+residue `gamma * rhat_odd mod Q` directly in 16-bit lanes. Only the Clang native
+lazy encryption accumulator uses these factors. GCC, keygen, encoding,
+AVX2-only, and scalar paths retain their previous gamma representation and
+reducer.
+
+This applies a classical technique at a narrower boundary than the older,
+rejected whole-accumulator Montgomery experiment. The official
+[pq-crystals/kyber AVX2 implementation](https://github.com/pq-crystals/kyber/tree/main/avx2)
+already establishes low/high Montgomery factors as an optimized Kyber
+primitive. The paper
+[Cortex-M4 Optimizations for {R,M}LWE Schemes](https://eprint.iacr.org/2020/012.pdf)
+describes signed Montgomery arithmetic and lazy reduction through base
+multiplication. The design filter also follows
+[libsecp256k1](https://github.com/bitcoin-core/secp256k1)'s general practice of
+precomputing fixed public constants and tracking internal representation bounds;
+no endomorphism, NAF, elliptic-curve formula, or ZKP code is applicable or used.
+The baby-mlkem-specific contribution is applying the factor once for four ML-KEM
+outputs, the Clang schedule, exact range proof, and integrated gate.
+
+Test commit `9ea5fdd` precedes the production change. Its SIMD oracle uses the
+actual odd-lane factor packing and exhaustively checks all 128 gamma values
+against every `y` in `[0,Q]`, or 426,240 gamma/input combinations. Even lanes
+with zero factors must remain zero, every odd result must equal `gamma*y mod Q`,
+and the exact observed Montgomery output range must be `[-1739,1739]`.
+
+The mixed factor representation remains inside the already proved K=3 reducer
+interval. With canonical matrix coefficients, the `c0` lane is bounded by:
+
+```text
+lower = -3 * (Q - 1) * 1739                  = -17,362,176
+upper =  3 * (Q - 1) * Q + 3 * (Q - 1)*1739 =  50,598,912
+```
+
+The unchanged `c1` lane still provides the wider upper bound
+`6*(Q-1)*Q = 66,473,472`; the existing generic lower proof is
+`-6*(Q-1)*(Q/2) = -33,226,752`. The complete 256-fixture lazy-encryption oracle
+then compares all four accumulated outputs modulo Q and the shared inverse
+outputs exactly.
+
+In the measured Clang noinline kernel, static instructions fall from 1,180 to
+1,157 and symbol size falls from `0x19f0` to `0x1942` bytes. `VPMULLD` falls
+from 19 to 16, `VPSRAD` from 11 to 8, `VPMADDWD` from 6 to 0, and `VPCMPGTD`
+from 3 to 0. The replacement adds three `VPMULLW` and six `VPMULHW`; stack
+references remain 18, so the narrower arithmetic does not add spills.
+
+The final focused stage gate compares test-only baseline `9ea5fdd` with the
+production source, CPU 0, one warmup per saved binary, seven alternating-order
+pairs, and 30,000 iterations. Ratios are baseline time divided by candidate
+time; order columns are geometric means for each subset.
+
+| Clang native stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first subset geometric mean |
+|---|---:|---:|---:|---:|
+| fused lazy four-output accumulator | `1.0286x` | `1.0417x` | 6/7 | `1.0441x` / `1.0082x` |
+| cached K-PKE encryption | `1.0373x` | `1.0452x` | 6/7 | `1.0272x` / `1.0510x` |
+| cache-disabled K-PKE encryption | `1.0088x` | `1.0150x` | 6/7 | `1.0247x` / `0.9881x` |
+| keygen noise/NTT control | `1.0024x` | `0.9997x` | 3/7 | `1.0047x` / `0.9993x` |
+| keygen accumulation control | `1.0008x` | `1.0009x` | 4/7 | `1.0008x` / `1.0008x` |
+
+The cache-disabled stage row has an order-sensitive geometric mean, so its
+positive median is reported but not used alone. The direct and cached rows are
+the primary focused evidence.
+
+The final KEM gate used the exact `testc` and `benchc` binaries later reproduced
+by `ff9b4ae`, CPU 0, one warmup per binary, 15 alternating-order pairs, and
+100,000 iterations:
+
+| Clang native KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first subset geometric mean |
+|---|---:|---:|---:|---:|
+| `mlkem_keygen` control | `1.0012x` | `0.9996x` | 6/15 | `1.0014x` / `1.0009x` |
+| `mlkem_encaps` | `1.0390x` | `1.0298x` | 15/15 | `1.0361x` / `1.0424x` |
+| `mlkem_decaps` | `1.0337x` | `1.0249x` | 15/15 | `1.0339x` / `1.0335x` |
+| `mlkem_roundtrip` | `1.0152x` | `1.0106x` | 14/15 | `1.0158x` / `1.0145x` |
+| `mlkem_keygen_core` cache-disabled control | `1.0019x` | `0.9995x` | 7/15 | `1.0029x` / `1.0008x` |
+| `mlkem_encaps_core` cache-disabled | `1.0107x` | `1.0101x` | 13/15 | `1.0072x` / `1.0147x` |
+| `mlkem_decaps_core` cache-disabled | `1.0203x` | `1.0176x` | 13/15 | `1.0164x` / `1.0247x` |
+| `mlkem_roundtrip_core` cache-disabled | `1.0077x` | `1.0071x` | 11/15 | `1.0069x` / `1.0087x` |
+
+A one-table alternative retained only `gamma_hi` and derived `gamma_lo` with
+one hot-loop `VPMULLW`. It reduced Clang `benchc` text by 1,664 bytes and added
+only 256 BSS bytes. Its direct accumulator and cached K-PKE remained faster at
+`1.0401x` and `1.0312x` geometric mean, but the 15-pair KEM gate moved unchanged
+keygen to `0.9922x` with only 3/15 wins. It was rejected despite the smaller
+footprint. No one-table production code remains.
+
+The accepted two-table form changes Clang `benchc` text/data/BSS from
+134,931/688/36,224 to 135,443/688/36,736 bytes. The 512 BSS bytes hold
+Montgomery factors generated from public `GAMMA` constants during one-time NTT
+root initialization and are read-only thereafter; they are not a key, result,
+or cross-operation cache.
+
+Clang and GCC native KATs and complete stage validation pass, including the new
+exhaustive oracle. Clang native ASan+UBSan KAT passes. GCC native `testc`,
+`benchc`, and `bench_core_stagesc` are byte-identical to `9ea5fdd`, with hashes
+`3d996e261cdea7dcb530739eb8002c7d2aee0df9cb44e677ba6f9efec8d4dba5`,
+`fa1c5aa6fab15a36eb79b2b849037435c145439e46c496ef1ff5461ee50440d6`, and
+`4f862c52e4c6cc353d542ae3e6a64a5e744038ca01870be13c256efd51e048f5`.
+Both compilers' AVX2-only test/bench/stage binaries and both scalar test binaries
+are also byte-identical.
+
+This optimization links no upstream Kyber, secp256k1, ZKP, PQClean, XKCP,
+liboqs, or other external runtime object or library. It adds no persistent
+cache, API, or wire-format change. Montgomery reduction and low/high factor
+precomputation remain classical, explicitly attributed arithmetic; the table
+placement, four-output reuse, compiler routing, proofs, and performance gate are
+repository-local.
 
 ### Latest Core Optimization A/B (2026-07-17, Clang AVX512 redundant-zero accumulation)
 
