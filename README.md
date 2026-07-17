@@ -188,6 +188,7 @@ Near-term target selection:
 | Clang AVX512 redundant-zero accumulator input | Accepted for Clang native; GCC and narrower ISAs byte-identical | The full-lazy Barrett output is already in `[0,Q]`, and `Q` is residue zero, so the lazy four-output K=3 path now skips three compare/masked-correction pairs per 32 coefficients under the exhaustively proved `6*(Q-1)*Q` bound. The direct accumulator and cached K-PKE improve `1.0118x` and `1.0128x` paired geometric mean; 100k encaps/decaps improve `1.0105x`/`1.0073x` with 14/15 and 12/15 wins. Clang `benchc` text shrinks 128 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Clang AVX512 Montgomery gamma factors | Accepted for Clang native; GCC and narrower ISAs byte-identical | Three shared `gamma*rhat_odd` factors now use precomputed signed Montgomery low/high constants instead of widening through the general 32-bit reciprocal reducer. The exhaustive output range is `[-1739,1739]`; the direct accumulator and cached K-PKE improve `1.0286x`/`1.0373x` geometric mean. 100k encaps/decaps improve `1.0390x`/`1.0337x`, both 15/15. The public-factor path adds 512 bytes of linked text and 512 bytes of BSS but no key/result cache, external object, API, or wire-format dependency. |
 | Clang AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; GCC and narrower ISA products byte-identical | Keygen now reuses the existing public low/high Montgomery tables for its three shared `gamma*shat_odd` factors instead of running three general signed-32-bit reciprocal reducers per 32 coefficients. Native direct/fused-add accumulation improves `1.1088x`/`1.0594x`, while non-VNNI improves `1.0972x`/`1.0484x`, all 7/7. Native 100k KEM keygen/keygen-core improves `1.0119x`/`1.0105x`; non-VNNI improves `1.0031x`/`1.0071x`. Clang `benchc` text shrinks 64 bytes with unchanged data/BSS, so this adds no table, cache, external object, API, or wire-format dependency. |
+| GCC AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; Clang and narrower ISA products byte-identical | GCC keygen now keeps one 256-byte public Montgomery-high table and reconstructs the low vector once per 32 coefficients, replacing three general signed-32-bit reciprocal reductions. Native direct/fused-add stages improve `1.0868x`/`1.0646x`; non-VNNI improves `1.1024x`/`1.0462x`, all 7/7. Two native 100k KEM gates put keygen at `1.0057x` and `1.0126x`, while non-VNNI keygen improves `1.0043x`. GCC `benchc` adds 160 text bytes and 256 BSS bytes. This is fixed public-factor precomputation, not a key/result cache; it links no external object or library and changes no API or wire format. |
 | GCC flattened full forward-NTT wrapper | Closed | A GCC-only noinline `flatten` wrapper exposed the existing upper head and lower tail in one compilation unit. Three consecutive transforms improved `1.0085x` geometric mean in a focused probe, but cached/uncached K-PKE and keygen stage gates regressed to `0.9974x`/`0.9986x`/`0.9969x`, with only 2/7, 1/7, and 1/7 wins. Linked text grew 1,536 bytes. Keep the smaller shared head/tail boundaries; no candidate code remains. |
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
@@ -353,6 +354,166 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, GCC AVX512 Montgomery keygen gamma factors)
+
+Commit `a4439a8` removes GCC's remaining general reciprocal reductions from
+the three shared keygen `gamma*shat_odd` factors. GCC previously widened each
+factor through `VPMADDWD`, then ran the signed-32-bit reciprocal reducer once
+for each of `shat[0..2]` and every 32-coefficient tile. The resulting factors
+were then reused across all three columns of `A^T*s`.
+
+All GCC measurements below used GCC 13.3.0 on an AMD Ryzen Threadripper
+7980X, with the measured process pinned to CPU 0.
+
+Unlike Clang, GCC intentionally keeps encryption on its preceding canonical
+factor path. The accepted GCC keygen path stores only the 128 signed
+Montgomery-high int16 values:
+
+```text
+gamma_hi = centered(gamma * R mod Q)
+gamma_lo = gamma_hi * QINV mod 2^16
+R = 2^16 mod Q
+Q * QINV = 1 mod 2^16
+```
+
+Each tile loads 16 `gamma_hi` values, places them in the odd lanes, and
+reconstructs `gamma_lo` once with one `VPMULLW`. Three existing signed
+Montgomery products then form the shared `c0` factors. This one-table design
+adds 256 BSS bytes instead of keeping separate 256-byte low and high tables.
+
+The two-table version was evaluated but not committed. It produced a slightly
+larger direct-stage gain, but its final complete-KEM gate did not establish a
+keygen gain and it doubled the persistent public-factor footprint:
+
+| GCC native candidate | Linked text delta | BSS delta | Direct accumulation geometric mean | KEM keygen geometric mean | KEM keygen-core geometric mean |
+|---|---:|---:|---:|---:|---:|
+| two low/high tables | +224 bytes | +512 bytes | `1.0983x` | `0.9988x` | `1.0008x` |
+| accepted high-only table | +160 bytes | +256 bytes | `1.0868x` | `1.0057x` | `1.0035x` |
+
+The existing exhaustive Montgomery oracle checks all 128 gamma values against
+every input in `[0,Q]`, or 426,240 combinations, and observes the exact
+centered result range `[-1739,1739]`. The 256-fixture keygen oracle exercises
+the high-only reconstruction through all three production consumers and
+compares every accumulated polynomial and d12 output against independent
+scalar-shaped multiplication. The resulting mixed `c0` bound remains:
+
+```text
+-3 * (Q - 1) * 1739
+  = -17,362,176
+
+3 * (Q - 1)^2 + 3 * (Q - 1) * 1739
+  = 50,588,928
+```
+
+The unchanged canonical `c1` bound is `66,453,504`. Both remain inside the
+proved reducer interval `[-33,226,752,66,453,504]` and signed int32, so the
+following `VPMADDWD` or non-saturating `VPDPWSSD` column dots remain exact.
+
+The native stage gate compared `a4439a8` with `8a125f5` on CPU 0 using two
+warmups, seven alternating-order pairs, and 50,000 iterations:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 8a125f5
+```
+
+| GCC native production stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| three-column accumulation | `1.0868x` | `1.0923x` | 7/7 | `1.0886x` / `1.0938x` |
+| fused final-l1/accumulation/secret d12 | `1.0411x` | `1.0319x` | 7/7 | `1.0302x` / `1.0456x` |
+| fused accumulation/add/two d12 outputs | `1.0646x` | `1.0476x` | 7/7 | `1.0450x` / `1.0544x` |
+| complete K-PKE keygen | `1.0019x` | `1.0102x` | 5/7 | `0.9971x` / `1.0152x` |
+
+The complete stage row is order-sensitive, while all three changed kernels win
+7/7. The complete-KEM gates below are therefore the integrated acceptance
+test rather than the favorable complete-stage median.
+
+A second stage gate used `-march=skylake-avx512` to retain AVX512F/BW while
+removing AVX512VNNI:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=skylake-avx512" \
+  ./scripts/bench_core_ab.sh 8a125f5
+```
+
+| GCC AVX512 non-VNNI production stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| three-column accumulation | `1.1024x` | `1.0984x` | 7/7 | `1.1042x` / `1.0984x` |
+| fused final-l1/accumulation/secret d12 | `1.0118x` | `1.0120x` | 7/7 | `1.0123x` / `1.0117x` |
+| fused accumulation/add/two d12 outputs | `1.0462x` | `1.0471x` | 7/7 | `1.0480x` / `1.0466x` |
+| complete K-PKE keygen | `1.0033x` | `1.0129x` | 5/7 | `0.9918x` / `1.0129x` |
+
+The KEM gates used three warmups and 14 balanced alternating pairs of 100,000
+iterations. Native was repeated independently because the first run contained
+a non-target `encaps_core` outlier. Both complete keygen metrics reproduced
+the gain; the control anomaly did not:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 8a125f5
+```
+
+The non-VNNI KEM gate added
+`ARCH_CFLAGS="-march=skylake-avx512"` to the same command.
+
+| GCC configuration and KEM metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| native gate 1 `mlkem_keygen` | `1.0057x` | `1.0067x` | 11/14 | `1.0063x` / `1.0070x` |
+| native gate 1 `mlkem_keygen_core` | `1.0035x` | `1.0046x` | 11/14 | `1.0051x` / `1.0034x` |
+| native gate 1 `mlkem_roundtrip` | `1.0034x` | `1.0044x` | 12/14 | `1.0056x` / `1.0034x` |
+| native confirmation `mlkem_keygen` | `1.0126x` | `1.0072x` | 13/14 | `1.0072x` / `1.0063x` |
+| native confirmation `mlkem_keygen_core` | `1.0105x` | `1.0062x` | 12/14 | `1.0073x` / `1.0050x` |
+| native confirmation `mlkem_roundtrip` | `1.0049x` | `1.0020x` | 11/14 | `1.0013x` / `1.0022x` |
+| non-VNNI `mlkem_keygen` | `1.0043x` | `1.0050x` | 11/14 | `1.0047x` / `1.0059x` |
+| non-VNNI `mlkem_keygen_core` | `1.0066x` | `1.0061x` | 11/14 | `1.0127x` / `1.0056x` |
+| non-VNNI `mlkem_roundtrip_core` | `1.0059x` | `1.0034x` | 12/14 | `1.0039x` / `1.0028x` |
+
+Encapsulation and decapsulation do not execute the changed keygen kernel and
+are controls, not credited gains. Native gate 1 reported
+`mlkem_encaps_core=0.9951x` geometric mean despite a `1.0014x` median and
+10/14 wins. The independent confirmation reported `1.0012x` geometric mean,
+`1.0014x` median, and 11/14 wins, so that slowdown did not reproduce.
+Conversely, confirmation `decaps_core` had a `0.9967x` geometric mean but a
+`1.0009x` median in both run orders. Top-level encapsulation, decapsulation,
+and roundtrip stayed neutral-to-positive. These control fluctuations are
+reported as measurement/layout noise and are not attributed to this keygen
+change.
+
+Native GCC production disassembly confirms the intended instruction trade:
+
+| Product property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| `benchc` text | 81,707 | 81,867 bytes | +160 bytes |
+| `benchc` data / BSS | 708 / 37,120 | 708 / 37,376 bytes | 0 / +256 bytes |
+| `mlkem_keygen` bytes | `0xfe7` | `0xf32` | -181 bytes |
+| `mlkem_keygen` static instruction lines | 675 | 648 | -27 |
+| `VPMADDWD` / `VPDPWSSD` | 31 / 12 | 28 / 12 | -3 / 0 |
+| `VPMULLD` / `VPSRAD` | 18 / 27 | 12 / 18 | -6 / -9 |
+| `VPMULLW` / `VPMULHW` | 3 / 3 | 7 / 9 | +4 / +6 |
+
+GCC native and non-VNNI KATs and complete stage validation pass. GCC native
+UBSan passes KAT plus complete stage validation. Clang native and both
+compilers' AVX2-only and scalar test, benchmark, and stage products are
+byte-identical to `8a125f5`; their KATs and complete stage validators pass.
+Clang native ASan+UBSan also passes KAT and complete stage validation.
+
+The table is generated once from public `GAMMA` roots on first NTT use. The
+warmed gates therefore measure steady-state operations and do not include that
+one-time conversion; no cold-first-call speedup is claimed. This is fixed
+public-factor representation precomputation, not memoization of keys, inputs,
+results, or random data.
+
+The implementation is repository-local C/intrinsics and links no secp256k1,
+ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object or library.
+It changes no API or wire format. The low/high Montgomery factor technique is
+classical and retains the repository's existing upstream Kyber attribution;
+the high-only reconstruction, GCC routing, integrated proof, and performance
+gate are local to baby-mlkem.
 
 ### Latest Core Optimization A/B (2026-07-17, Clang AVX512 Montgomery keygen gamma factors)
 
