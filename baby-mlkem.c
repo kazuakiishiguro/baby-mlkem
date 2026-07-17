@@ -1970,6 +1970,18 @@ static inline __m512i ntt_canonicalize_i16x32_avx512(__m512i v) {
       reduced, _mm512_and_si512(_mm512_srai_epi16(reduced, 15), q));
 }
 
+/*
+ * Exact for [-1896,3587]: add Q to negatives, then subtract Q from
+ * [Q,3587], leaving [0,Q).
+ */
+static inline __m512i ntt_canonicalize_bounded_i16x32_avx512(__m512i v) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  const __m512i q_minus_1 = _mm512_set1_epi16(Q - 1);
+  v = _mm512_mask_add_epi16(v, _mm512_movepi16_mask(v), v, q);
+  return _mm512_mask_sub_epi16(
+      v, _mm512_cmpgt_epi16_mask(v, q_minus_1), v, q);
+}
+
 static inline __m512i ntt_inv_mont_level_i16x32_avx512(
     __m512i x, __m512i partner, __m512i zeta_lo, __m512i zeta_hi,
     __mmask32 product_mask) {
@@ -2306,7 +2318,7 @@ ntt_inv_mont_scale_add_eta2_i8_i16x32_avx512(
       _mm256_loadu_si256((const __m256i *)(const void *)noise));
   __m512i raw = ntt_mont_mul_precomp_i16x32_avx512(
       x, zeta_lo, zeta_hi);
-  return ntt_canonicalize_i16x32_avx512(
+  return ntt_canonicalize_bounded_i16x32_avx512(
       _mm512_add_epi16(_mm512_add_epi16(raw, small), extra));
 }
 
