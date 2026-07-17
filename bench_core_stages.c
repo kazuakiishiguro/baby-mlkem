@@ -2741,6 +2741,64 @@ static void validate_ntt_acc4_madd_reduce_range_avx512(void) {
   }
 }
 
+static void validate_ntt_acc4_gamma_mont_range_avx512(void) {
+  int16_t input[32];
+  int16_t factor_lo[32];
+  int16_t factor_hi[32];
+  int16_t got[32];
+  int16_t output_min = INT16_MAX;
+  int16_t output_max = INT16_MIN;
+
+  ensure_ntt_roots();
+  for (int pair = 0; pair < 128; pair += 16) {
+    for (int lane = 0; lane < 16; lane++) {
+      int16_t lo, hi;
+      ntt_mont_factor(GAMMA[pair + lane], &lo, &hi);
+      factor_lo[2 * lane] = 0;
+      factor_lo[2 * lane + 1] = lo;
+      factor_hi[2 * lane] = 0;
+      factor_hi[2 * lane + 1] = hi;
+    }
+    __m512i lo = _mm512_loadu_si512((const void *)factor_lo);
+    __m512i hi = _mm512_loadu_si512((const void *)factor_hi);
+
+    for (int y = 0; y <= Q; y++) {
+      for (int lane = 0; lane < 16; lane++) {
+        input[2 * lane] = Q;
+        input[2 * lane + 1] = (int16_t)y;
+      }
+      __m512i result = ntt_mont_mul_precomp_i16x32_avx512(
+          _mm512_loadu_si512((const void *)input), lo, hi);
+      _mm512_storeu_si512((void *)got, result);
+
+      for (int lane = 0; lane < 16; lane++) {
+        int expected = y * (int)GAMMA[pair + lane] % Q;
+        int got_mod = got[2 * lane + 1] % Q;
+        if (got_mod < 0) got_mod += Q;
+        if (got[2 * lane] != 0 || got_mod != expected) {
+          fprintf(stderr,
+                  "AVX512 Montgomery gamma mismatch at %d,%d: %d/%d != %d\n",
+                  pair + lane, y, (int)got[2 * lane],
+                  (int)got[2 * lane + 1], expected);
+          exit(EXIT_FAILURE);
+        }
+        if (got[2 * lane + 1] < output_min) {
+          output_min = got[2 * lane + 1];
+        }
+        if (got[2 * lane + 1] > output_max) {
+          output_max = got[2 * lane + 1];
+        }
+      }
+    }
+  }
+
+  if (output_min != -1739 || output_max != 1739) {
+    fprintf(stderr, "AVX512 Montgomery gamma range mismatch: [%d,%d]\n",
+            (int)output_min, (int)output_max);
+    exit(EXIT_FAILURE);
+  }
+}
+
 #if defined(__AVX512VNNI__) || defined(__clang__)
 static void validate_ntt_acc4_dot_lazy_avx512(void) {
   static const int16_t edge[] = {
@@ -3824,6 +3882,7 @@ static void validate_core_stage_helpers(void) {
   validate_ntt_lazy_ehat_sum_range_avx512();
   validate_ntt_lazy_ehat_add_avx512();
   validate_ntt_acc4_madd_reduce_range_avx512();
+  validate_ntt_acc4_gamma_mont_range_avx512();
 #if defined(__AVX512VNNI__) || defined(__clang__)
   validate_ntt_acc4_dot_lazy_avx512();
   validate_encrypt_accum_lazy512_avx512();
