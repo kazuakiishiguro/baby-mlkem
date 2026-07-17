@@ -5175,7 +5175,32 @@ static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[16],
 static void sample_poly_cbd_eta2x3x4_i8_state_avx512(
     const __m512i st[16], poly256 out0, poly256 out1, poly256 out2,
     int8_t out3[N], int8_t out4[N], int8_t out5[N], int8_t out6[N]) {
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+#pragma clang loop unroll_count(4)
+#endif
   for (int i = 0; i < 16; i++) {
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+    __m256i values01, values23, values45, values67;
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_castsi512_si256(st[i]), &values01, &values23);
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_extracti64x4_epi64(st[i], 1), &values45, &values67);
+    cbd_eta2_store2_i8x32_clang_avx512(
+        values01, out0 + 16 * i, out1 + 16 * i);
+    _mm256_storeu_si256(
+        (__m256i *)(void *)(out2 + 16 * i),
+        cbd_eta2_canonicalize_i8x16(_mm256_castsi256_si128(values23)));
+    _mm_storeu_si128((__m128i *)(void *)(out3 + 16 * i),
+                     _mm256_extracti128_si256(values23, 1));
+    _mm_storeu_si128((__m128i *)(void *)(out4 + 16 * i),
+                     _mm256_castsi256_si128(values45));
+    _mm_storeu_si128((__m128i *)(void *)(out5 + 16 * i),
+                     _mm256_extracti128_si256(values45, 1));
+    _mm_storeu_si128((__m128i *)(void *)(out6 + 16 * i),
+                     _mm256_castsi256_si128(values67));
+#else
     uint64_t words[8];
     _mm512_storeu_si512((void *)words, st[i]);
 #if defined(__GNUC__) && !defined(__clang__)
@@ -5199,6 +5224,7 @@ static void sample_poly_cbd_eta2x3x4_i8_state_avx512(
     sample_poly_cbd_eta2_store2_i8_avx2(
         _mm_loadu_si128((const __m128i *)(const void *)&words[5]),
         out5 + 16 * i, out6 + 16 * i);
+#endif
   }
 }
 #endif
@@ -5286,7 +5312,10 @@ static void mlkem_prf_cbd_eta2x3x4_i8_32(
     const uint8_t seed[32], const uint8_t nonce[8],
     poly256 out0, poly256 out1, poly256 out2,
     int8_t out3[N], int8_t out4[N], int8_t out5[N], int8_t out6[N]) {
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__clang__)
+  __m512i st[16];
+  keccakf8_sparse_eta2x7_32(seed, nonce, st);
+#elif defined(__GNUC__)
   __m512i st[16];
   keccakf8_sparse_32(seed, nonce, NULL, st);
 #else
@@ -6146,13 +6175,13 @@ static void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx512(
 #endif
 
 #if defined(__AVX512BW__) && defined(__clang__)
-/* Keep Clang's canonical noise representation while sharing the otherwise
- * idle eighth SHAKE256 lane with the final SHAKE128 matrix stream. */
+/* Keep ETA2 noise compact while sharing the idle eighth SHAKE256 lane with
+ * the final SHAKE128 matrix stream. */
 static MLKEM_NOINLINE void
 mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
-    poly256 r0, poly256 r1, poly256 r2, poly256 e10,
-    poly256 e11, poly256 e12, poly256 e2) {
+    poly256 r0, poly256 r1, poly256 r2, int8_t e10[N],
+    int8_t e11[N], int8_t e12[N], int8_t e2[N]) {
   __m512i st[25];
   uint64_t tail_st[25];
 
@@ -6197,7 +6226,7 @@ mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
     tail_st[word] = value;
   }
 
-  sample_poly_cbd_eta2x7_state_avx512(
+  sample_poly_cbd_eta2x3x4_i8_state_avx512(
       st, r0, r1, r2, e10, e11, e12, e2);
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
@@ -7750,11 +7779,13 @@ static int8_t e1_i8[K][N];
 static int8_t e2_i8[N];
 #elif defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__clang__)
-/* Canonical Clang work buffers are shared with its mixed producer. */
+/* Clang keeps canonical fallbacks and compact ML-KEM noise side by side. */
 static poly256 rhat[K];
 static poly256 e1[K];
 static poly256 e2;
-static int eta2_canonical_prepared;
+static int8_t e1_i8[K][N];
+static int8_t e2_i8[N];
+static int eta2_i8_prepared;
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
@@ -7785,7 +7816,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   static poly256 e2;
 #endif
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    defined(__GNUC__) && !defined(__clang__)
+    defined(__GNUC__)
   int eta2_i8_noise = 0;
 #endif
 #if defined(__AVX2__)
@@ -7795,13 +7826,13 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     eta2_i8_noise = 1;
   } else
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__clang__)
-  if (eta2_canonical_prepared) {
-    eta2_canonical_prepared = 0;
+  if (eta2_i8_prepared) {
+    eta2_i8_prepared = 0;
+    eta2_i8_noise = 1;
   } else
 #endif
   if (rlen == 32) {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
-    defined(__GNUC__) && !defined(__clang__)
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__GNUC__)
     if (mlen == 32) {
       const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
       mlkem_prf_cbd_eta2x3x4_i8_32(
@@ -7884,7 +7915,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
   if (eta2_i8_noise) {
     ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
         e1_i8[0], e1_i8[1], e1_i8[2], e2_i8, m,
@@ -8034,8 +8065,9 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                            kpke_public_cache_ahat[2][1]);
         mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
             r, rho, kpke_public_cache_ahat[2][2],
-            rhat[0], rhat[1], rhat[2], e1[0], e1[1], e1[2], e2);
-        eta2_canonical_prepared = 1;
+            rhat[0], rhat[1], rhat[2], e1_i8[0], e1_i8[1], e1_i8[2],
+            e2_i8);
+        eta2_i8_prepared = 1;
       } else
 #elif defined(__AVX2__) && !defined(__AVX512F__)
       if (rlen == 32) {

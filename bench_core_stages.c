@@ -1517,14 +1517,18 @@ static void validate_ntt_mul_acc4_madd_avx2(void) {
 }
 #endif
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
-    defined(__GNUC__) && !defined(__clang__)
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__GNUC__)
 static void stage_encrypt_prf_cbd_eta2_32_sample_tail_x8_i8_avx512(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
     poly256 r0, poly256 r1, poly256 r2,
     int8_t e10[N], int8_t e11[N], int8_t e12[N], int8_t e2[N]) {
+#if defined(__clang__)
+  mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
+      seed, rho, tail, r0, r1, r2, e10, e11, e12, e2);
+#else
   mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx512(
       seed, rho, tail, r0, r1, r2, e10, e11, e12, e2);
+#endif
 }
 
 static void validate_encrypt_prf_cbd_tail_x8_avx512(void) {
@@ -1642,7 +1646,8 @@ static void validate_encrypt_prf_cbd_tail_x8_clang_avx512(void) {
   for (size_t fixture = 0; fixture < 256; fixture++) {
     uint8_t seed[32], rho[32];
     poly256 got_tail, want_tail, got_r[K], want_r[K];
-    poly256 got_e1[K], want_e1[K], got_e2, want_e2;
+    poly256 want_e1[K], want_e2;
+    int8_t got_e1[K][N], got_e2[N];
 
     fill_bytes(seed, sizeof(seed), 0x434c414e47523800ULL + fixture);
     fill_bytes(rho, sizeof(rho), 0x434c414e47525400ULL + fixture);
@@ -1665,15 +1670,24 @@ static void validate_encrypt_prf_cbd_tail_x8_clang_avx512(void) {
                 fixture, output);
         exit(EXIT_FAILURE);
       }
-      if (memcmp(got_e1[output], want_e1[output], sizeof(poly256)) != 0) {
-        fprintf(stderr, "Clang x8 encrypt mixed-e1 mismatch at %zu,%d\n",
-                fixture, output);
-        exit(EXIT_FAILURE);
+      for (int coeff = 0; coeff < N; coeff++) {
+        int value = want_e1[output][coeff];
+        if (value > Q / 2) value -= Q;
+        if (got_e1[output][coeff] != value) {
+          fprintf(stderr, "Clang x8 encrypt mixed-i8 mismatch at %zu,%d,%d\n",
+                  fixture, output, coeff);
+          exit(EXIT_FAILURE);
+        }
       }
     }
-    if (memcmp(got_e2, want_e2, sizeof(poly256)) != 0) {
-      fprintf(stderr, "Clang x8 encrypt mixed-e2 mismatch at %zu\n", fixture);
-      exit(EXIT_FAILURE);
+    for (int coeff = 0; coeff < N; coeff++) {
+      int value = want_e2[coeff];
+      if (value > Q / 2) value -= Q;
+      if (got_e2[coeff] != value) {
+        fprintf(stderr, "Clang x8 encrypt mixed-e2 mismatch at %zu,%d\n",
+                fixture, coeff);
+        exit(EXIT_FAILURE);
+      }
     }
   }
 }
@@ -11480,8 +11494,7 @@ static uint64_t bench_encrypt_noise_lazy(size_t iters) {
 #endif
 
 #if defined(__AVX2__)
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
-    defined(__GNUC__) && !defined(__clang__)
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__GNUC__)
 static uint64_t bench_encrypt_noise_prf_cbd_tail_separate_x8_i8(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0 = now_ns();
@@ -15737,7 +15750,7 @@ int main(int argc, char **argv) {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512",
                bench_encrypt_noise_prf_cbd_i8_raw_avx512(iters), iters);
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_x8_i8",
                bench_encrypt_noise_prf_cbd_tail_separate_x8_i8(iters), iters);
   print_metric("mlkem_core_stage_encrypt_noise_prf_cbd_tail_mixed_x8_i8",
