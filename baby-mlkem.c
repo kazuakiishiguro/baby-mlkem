@@ -1788,6 +1788,9 @@ static __m512i ZETA_NTT_TAIL_L2X2[8];
 /* Montgomery gamma factors for Clang's encryption and keygen accumulators. */
 static int16_t GAMMA_MONT_LO_CLANG_AVX512[128];
 static int16_t GAMMA_MONT_HI_CLANG_AVX512[128];
+#else
+/* GCC keeps encryption canonical but uses centered Montgomery keygen factors. */
+static int16_t GAMMA_MONT_HI_GCC_AVX512[128];
 #endif
 #endif
 #endif
@@ -3125,10 +3128,19 @@ static void init_ntt_roots(void) {
     GAMMA[i] = modexp(17, e2);
   }
 #if defined(__AVX2__)
-#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__clang__)
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+#if !defined(__clang__)
+#pragma GCC unroll 1
+#endif
   for (int i = 0; i < 128; i++) {
+#if defined(__clang__)
     ntt_mont_factor(GAMMA[i], &GAMMA_MONT_LO_CLANG_AVX512[i],
                     &GAMMA_MONT_HI_CLANG_AVX512[i]);
+#else
+    int16_t gamma_lo_unused;
+    ntt_mont_factor(GAMMA[i], &gamma_lo_unused,
+                    &GAMMA_MONT_HI_GCC_AVX512[i]);
+#endif
   }
 #endif
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
@@ -4368,6 +4380,35 @@ ntt_acc4_asym_c0_factors3_mont_clang_avx512(
   *y2_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
       y2, gamma_lo, gamma_hi);
 }
+#else
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_acc4_asym_c0_factor_mont_gcc_avx512(
+    __m512i y, __m512i gamma_lo, __m512i gamma_hi) {
+  __m512i weighted =
+      ntt_mont_mul_precomp_i16x32_avx512(y, gamma_lo, gamma_hi);
+  return _mm512_mask_mov_epi16(
+      y, (__mmask32)0xaaaaaaaau, weighted);
+}
+
+static MLKEM_ALWAYS_INLINE void
+ntt_acc4_asym_c0_factors3_mont_gcc_avx512(
+    __m512i y0, __m512i y1, __m512i y2, int pair,
+    __m512i *y0_c0, __m512i *y1_c0, __m512i *y2_c0) {
+  __m512i gamma_hi = _mm512_slli_epi32(
+      _mm512_cvtepu16_epi32(_mm256_loadu_si256(
+          (const __m256i *)(const void *)(
+              GAMMA_MONT_HI_GCC_AVX512 + pair))),
+      16);
+  /* QINV recovers gamma_lo because Q * QINV == 1 mod 2^16. */
+  const __m512i qinv = _mm512_set1_epi16((int16_t)-3327);
+  __m512i gamma_lo = _mm512_mullo_epi16(gamma_hi, qinv);
+  *y0_c0 = ntt_acc4_asym_c0_factor_mont_gcc_avx512(
+      y0, gamma_lo, gamma_hi);
+  *y1_c0 = ntt_acc4_asym_c0_factor_mont_gcc_avx512(
+      y1, gamma_lo, gamma_hi);
+  *y2_c0 = ntt_acc4_asym_c0_factor_mont_gcc_avx512(
+      y2, gamma_lo, gamma_hi);
+}
 #endif
 
 static MLKEM_ALWAYS_INLINE void ntt_acc4_asym_madd_block_avx512(
@@ -4676,10 +4717,6 @@ ntt3_mul_acc4_fused_final_lazy512_clang_avx512(
 static MLKEM_ALWAYS_INLINE void
 ntt_mul_acc3_cols3_asym_madd512_avx512(
     const poly256 ahat[K][K], const poly256 b[K], poly256 out[K]) {
-#if !defined(__clang__)
-  const __m512i even_mask = _mm512_set1_epi32(0xffff);
-#endif
-
   for (int offset = 0, pair = 0; offset < N; offset += 32, pair += 16) {
     __m512i y0 =
         _mm512_loadu_si512((const void *)(b[0] + offset));
@@ -4687,23 +4724,13 @@ ntt_mul_acc3_cols3_asym_madd512_avx512(
         _mm512_loadu_si512((const void *)(b[1] + offset));
     __m512i y2 =
         _mm512_loadu_si512((const void *)(b[2] + offset));
-#if defined(__clang__)
     __m512i y0_c0, y1_c0, y2_c0;
+#if defined(__clang__)
     ntt_acc4_asym_c0_factors3_mont_clang_avx512(
         y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #else
-    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
-    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
-    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
-    __m512i gamma = _mm512_cvtepu16_epi32(
-        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
-    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
-    __m512i y0_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
-    __m512i y1_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
-    __m512i y2_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    ntt_acc4_asym_c0_factors3_mont_gcc_avx512(
+        y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #endif
     __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
@@ -4759,10 +4786,6 @@ static MLKEM_ALWAYS_INLINE void
 ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
     const poly256 ahat[K][K], const poly256 b[K], poly256 out[K],
     uint8_t encoded_b[K * 384]) {
-#if !defined(__clang__)
-  const __m512i even_mask = _mm512_set1_epi32(0xffff);
-#endif
-
   for (int offset = 0, pair = 0; offset < N;
        offset += 32, pair += 16) {
     __m512i y0 = ntt_canonicalize_lazy_block32_avx512(
@@ -4787,23 +4810,13 @@ ntt_mul_acc3_cols3_fused_final_encode_madd512_avx512(
         _mm512_extracti64x4_epi64(y2, 1),
         encoded_b + 768 + encoded_offset + 24);
 
-#if defined(__clang__)
     __m512i y0_c0, y1_c0, y2_c0;
+#if defined(__clang__)
     ntt_acc4_asym_c0_factors3_mont_clang_avx512(
         y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #else
-    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
-    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
-    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
-    __m512i gamma = _mm512_cvtepu16_epi32(
-        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
-    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
-    __m512i y0_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
-    __m512i y1_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
-    __m512i y2_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    ntt_acc4_asym_c0_factors3_mont_gcc_avx512(
+        y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #endif
     __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
@@ -4827,10 +4840,6 @@ ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
     const poly256 ahat[K][K], const poly256 b[K], const poly256 ehat[K],
     poly256 out[K], uint8_t encoded_b[K * 384],
     uint8_t encoded_out[K * 384]) {
-#if !defined(__clang__)
-  const __m512i even_mask = _mm512_set1_epi32(0xffff);
-#endif
-
   for (int offset = 0, pair = 0; offset < N;
        offset += 32, pair += 16) {
     __m512i y0 = ntt_canonicalize_lazy_block32_avx512(
@@ -4847,23 +4856,13 @@ ntt_mul_acc3_cols3_fused_final_encode_add_madd512_avx512(
     byte_encode_d12_i16x32_register_avx512(
         y2, encoded_b + 768 + encoded_offset);
 
-#if defined(__clang__)
     __m512i y0_c0, y1_c0, y2_c0;
+#if defined(__clang__)
     ntt_acc4_asym_c0_factors3_mont_clang_avx512(
         y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #else
-    __m512i y0_odd = _mm512_andnot_si512(even_mask, y0);
-    __m512i y1_odd = _mm512_andnot_si512(even_mask, y1);
-    __m512i y2_odd = _mm512_andnot_si512(even_mask, y2);
-    __m512i gamma = _mm512_cvtepu16_epi32(
-        _mm256_loadu_si256((const __m256i *)(const void *)(GAMMA + pair)));
-    __m512i gamma_hi = _mm512_slli_epi32(gamma, 16);
-    __m512i y0_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y0, y0_odd, gamma_hi);
-    __m512i y1_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y1, y1_odd, gamma_hi);
-    __m512i y2_c0 =
-        ntt_acc4_asym_c0_factor_avx512(y2, y2_odd, gamma_hi);
+    ntt_acc4_asym_c0_factors3_mont_gcc_avx512(
+        y0, y1, y2, pair, &y0_c0, &y1_c0, &y2_c0);
 #endif
     __m512i y0_c1 = _mm512_rol_epi32(y0, 16);
     __m512i y1_c1 = _mm512_rol_epi32(y1, 16);
