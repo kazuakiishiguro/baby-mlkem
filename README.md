@@ -202,6 +202,7 @@ Near-term target selection:
 | Clang AVX512VL fixed H(pk) final-output slice | Accepted for Clang native fixed H(pk); GCC and narrower ISAs unchanged | The ninth permutation keeps rounds 0..22 complete, then evaluates only the final-round `y=0`, `x=0..3` lanes returned by SHA3-256. A same-binary 11-pair direct test improves by `1.0036x` paired median with 11/11 wins; the 14-pair complete-KEM gate improves keygen and roundtrip by `1.0037x` and `1.0033x` paired median. Executable assembly grows 261 bytes and linked benchmark text grows 262 bytes. No cache, external object, API, or wire-format dependency is added. |
 | GCC AVX512VL fixed H(pk) final-output slice | Closed; Clang-only selector retained | Re-enabling the validated final-round y=0 slice for GCC improved same-process direct H(pk) and copy+hash medians by `1.0031x` and `1.0032x`, but the 15-pair 100k KEM gate did not reproduce it: keygen/keygen-core geometric means were both `0.9989x`, with order medians crossing below 1.0. The GCC path therefore retains the complete final round; no candidate code, cache, external object, API, or wire-format change remains. |
 | Native AVX512VL register-per-lane generic `keccakf()` | Accepted for native AVX512VL; AVX2-only/scalar unchanged | The generic canonical-state wrapper now loads one Keccak lane into each of XMM0..XMM24 and uses the compact register-per-lane round core originally introduced for fixed H(pk). GCC/Clang direct permutation paired medians improve `1.4104x`/`1.0582x`. GCC `encaps_core`/`roundtrip_core` improve `1.1016x`/`1.0392x` with 14/14 wins; Clang improves `1.0154x`/`1.0082x`. The wrapper adds only 320 text bytes, links no external object or library, and reuses the explicitly disclosed Intel/liboqs-derived round schedule rather than claiming a new baby-mlkem Keccak design. |
+| GCC AVX512VL co-scheduled H(pk) suffix lifetime | Accepted for GCC native with and without AVX512VNNI; Clang and narrower ISAs unchanged | Cache-disabled public preparation already co-schedules the first three H(pk) permutations with the ninth matrix polynomial. The new continuation loads hash lane 0 directly from that x4 state, keeps all 25 lanes in XMM0..24 across the remaining six permutations, and writes only the 32-byte digest. Native/non-VNNI public preparation improves `1.0515x`/`1.0418x` paired geometric mean; native/non-VNNI `encaps_core` improves `1.0190x`/`1.0348x`. GCC `benchc` text shrinks 6 bytes with unchanged data/BSS. The continuation reuses the already disclosed Keccak Team Algorithm-4 and Intel/liboqs-derived local round core; it adds no external object, library, cache, table, API, or wire-format dependency. |
 | Public hash/matrix-row co-schedule | Accepted for non-AVX512 AVX2 cold preparation | Lane 0 advances all nine H(pk) permutations while lanes 1..3 generate one three-polynomial matrix row at a time. This removes six remaining single-state hash permutations, improves public preparation by `1.4624x` paired median under Clang and `1.4976x` under GCC, and needs no cache or external object. Rare matrix refills split to scalar state so they cannot advance the completed hash lane. |
 | Common `sample_ntt4()` / `sample_matrix()` layout | Rolling lane-zero round schedule accepted; four-round in-place expansion closed | Production carries theta parity across the three common permutations and now keeps lane `(0,0)` in one YMM register across all 24 rounds. Processing rows 1..4 before row 0 removes the lane-zero round load/store without a full-register spill expansion. Same-binary full-sampler median improved `1.0100x`; alternating stage A/B improved `sample_ntt4` and `sample_matrix` by `1.0111x` and `1.0053x` paired median. The local memory-resident permutation is `1.0187x` faster by median than the reference-only KeccakP times4 row. Further work must address the 24-lane nonzero Rho/Pi cycle with bounded code growth rather than another large phase expansion. |
 | AVX2 x4 byte-aligned Rho rotations | Accepted only in memory-resident path | The 8/56-bit rotations in `keccakf4_mem_parity()` use one `vpshufb` on AVX2-only builds, removing 96 GCC instructions per permutation while leaving generic `rotl64x4()` and AVX512 `vprolq` unchanged. Clang already generated the shuffle and stays neutral; GCC `keccakf4_mem` improves `1.0069x` paired median and KEM medians remain neutral-to-positive. |
@@ -354,6 +355,139 @@ boundary or reduce the permutation/rate-store work itself. Another GCC-local
 parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
+
+### Latest Core Optimization A/B (2026-07-17, GCC AVX512VL public H(pk) suffix lifetime)
+
+Commit `cdff1a9` removes the remaining canonical-state boundary from the fixed
+public-key hash inside cache-disabled public preparation. Its baseline is
+`c731d5c`, after the accepted GCC Montgomery keygen-factor change.
+
+`sha3_256_sample_ntt_tail_avx2()` already advances the first three H(pk)
+permutations in lane 0 of an x4 state while lane 1 generates the ninth matrix
+polynomial. The old continuation then copied lane 0 into a canonical
+`uint64_t[25]`, parsed the initial matrix rates, and called the generic
+`keccakf()` wrapper for H(pk) blocks 3 through 7 plus the padded tail.
+
+The accepted GCC AVX512VL path instead:
+
+1. parses the initial co-scheduled matrix rates as before;
+2. calls the suffix continuation before any rare matrix rejection refill can
+   advance lane 0;
+3. loads the low qword from each 32-byte x4 state slot into XMM0..XMM24;
+4. absorbs five full SHA3-256 rate blocks and the padded tail while retaining
+   all 25 lanes across six calls to the existing private Algorithm-4 core;
+5. stores only XMM0..XMM3, the 32-byte SHA3-256 digest.
+
+The old six generic wrapper crossings performed 25 state loads and 25 state
+stores each, or 300 qword state transfers. The continuation performs 25
+initial state loads and four final digest stores. It neither changes matrix
+rejection handling nor keeps persistent state between API calls. Clang and
+narrower-ISA builds retain the previous canonical fallback.
+
+A post-Montgomery 500,000-iteration GCC native profile attributed `28.33%`
+self time to fixed H(pk), `18.98%` to checked x8 matrix assembly, `8.51%` to
+sparse x8 Keccak, `6.23%` to prepared encryption, `5.37%` to the forward-NTT
+tail, and `5.29%` to the two matrix parsers. The distinct
+`sha3_256_sample_ntt_tail_avx2` boundary accounted for `3.39%`: 1,000,000
+calls at about `0.61 us` self and `0.64 us` total per call. Percentages are
+profile attribution rather than speedup measurements. This target removes a
+public-hash state-conversion boundary; it does not reopen the closed x8
+producer/parser or standalone fixed-H(pk) scheduling candidates.
+
+All measurements below used GCC 13.3.0 on an AMD Ryzen Threadripper 7980X,
+with the measured process pinned to CPU 0 and alternating baseline/candidate
+order.
+
+The native public-preparation gate used two warmups, nine measured pairs, and
+50,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh c731d5c
+```
+
+| GCC native cache-disabled stage | Baseline mean | Candidate mean | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|---:|---:|
+| public preparation | `2570.38 ns` | `2443.93 ns` | `1.0515x` | `1.0382x` | 8/9 | `1.0382x` / `1.0653x` |
+
+The geometric mean includes one slow baseline sample; the `1.0382x` median is
+the more conservative summary. Both execution orders remain positive.
+
+Two independent native complete-KEM gates exercised the changed
+cache-disabled core metrics. The second gate increased each run from 12,000
+to 20,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=12000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh c731d5c
+
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=20000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh c731d5c
+```
+
+| GCC native KEM gate | Metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| 12,000 iterations | `encaps_core` | `1.0188x` | `1.0177x` | 14/14 | `1.0166x` / `1.0178x` |
+| 12,000 iterations | `roundtrip_core` | `1.0053x` | `1.0051x` | 10/14 | `1.0040x` / `1.0063x` |
+| 20,000 iterations | `encaps_core` | `1.0190x` | `1.0179x` | 13/14 | `1.0231x` / `1.0167x` |
+| 20,000 iterations | `roundtrip_core` | `1.0052x` | `1.0065x` | 12/14 | `1.0069x` / `1.0062x` |
+
+The unchanged cached controls in the 20,000-iteration confirmation had paired
+medians of `0.9996x` for encapsulation, `0.9986x` for decapsulation,
+`0.9983x` for keygen, and `0.9988x` for roundtrip. They do not invoke the new
+suffix once public state is prepared, so these sub-percent shifts are treated
+as layout/frequency controls and are not credited as gains.
+
+A separate non-VNNI gate retained AVX512F/BW/VL with
+`-march=skylake-avx512`:
+
+```bash
+RUNS=7 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage,kem \
+  STAGE_ITERS=40000 KEM_ITERS=8000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=skylake-avx512" \
+  ./scripts/bench_core_ab.sh c731d5c
+```
+
+| GCC AVX512 non-VNNI metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| cache-disabled public preparation | `1.0418x` | `1.0407x` | 7/7 | `1.0376x` / `1.0433x` |
+| `encaps_core` | `1.0348x` | `1.0225x` | 7/7 | `1.0186x` / `1.0313x` |
+| `roundtrip_core` | `1.0121x` | `1.0091x` | 6/7 | `1.0094x` / `1.0091x` |
+
+Its unchanged cached-control medians were `1.0004x` for encapsulation,
+`0.9997x` for keygen, and `0.9992x` for roundtrip.
+
+The final static comparison is slightly smaller at the executable level:
+
+| GCC native `benchc` region | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| linked text | 81,867 bytes | 81,861 bytes | -6 bytes |
+| linked data | 708 bytes | 708 bytes | 0 |
+| linked BSS | 37,376 bytes | 37,376 bytes | 0 |
+| `sha3_256_sample_ntt_tail_avx2.constprop.0` | 4,256 bytes | 3,497 bytes | -759 bytes |
+| suffix continuation | 0 bytes | 730 bytes | +730 bytes |
+
+The direct suffix oracle reconstructs the production x4 state after three
+prefix permutations for 256 fixed public keys. It places nonzero poison in
+lanes 1 through 3, invokes the continuation, and compares all 32 output bytes
+with the standard SHA3-256 result. The following gates also pass:
+
+- GCC native and `-march=skylake-avx512` direct fixtures and full KAT;
+- Clang native full KAT;
+- GCC and Clang AVX2-only full KAT;
+- GCC and Clang scalar full KAT;
+- GCC native UBSan;
+- Clang native ASan+UBSan;
+- the stage/KEM validators run by each A/B gate.
+
+The continuation is repository-local assembly and reuses the previously
+disclosed Keccak Team Algorithm-4 mapping and Intel/liboqs-derived instruction
+schedule already present in `sha3_256_1184_avx512vl.S`. It adds no external
+object, runtime library, one-time initialization, persistent key/result cache,
+table, API, wire-format change, or `randombytes` change.
 
 ### Latest Core Optimization A/B (2026-07-17, GCC AVX512 Montgomery keygen gamma factors)
 
