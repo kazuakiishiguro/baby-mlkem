@@ -5089,12 +5089,70 @@ static void sample_poly_cbd_eta2x6_signed_state_avx512(
   }
 }
 
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+static MLKEM_ALWAYS_INLINE __m512i
+cbd_eta2_canonicalize_i8x32_clang_avx512(__m256i values8) {
+  __m512i values = _mm512_cvtepi8_epi16(values8);
+  return _mm512_mask_add_epi16(
+      values, _mm512_movepi16_mask(values), values, _mm512_set1_epi16(Q));
+}
+
+static MLKEM_ALWAYS_INLINE void
+cbd_eta2_store2_i8x32_clang_avx512(__m256i values8, int16_t *out0,
+                                   int16_t *out1) {
+  __m512i values = cbd_eta2_canonicalize_i8x32_clang_avx512(values8);
+  _mm256_storeu_si256((__m256i *)(void *)out0,
+                      _mm512_castsi512_si256(values));
+  _mm256_storeu_si256((__m256i *)(void *)out1,
+                      _mm512_extracti64x4_epi64(values, 1));
+}
+
+/* Decode four lane-local ETA2 streams before widening their coefficients. */
+static MLKEM_ALWAYS_INLINE void
+cbd_eta2_decode4_i8_clang_avx512(__m256i bytes, __m256i *values01,
+                                 __m256i *values23) {
+  const __m256i lut = _mm256_setr_epi8(
+      0, 1, 1, 2, -1, 0, 0, 1, -1, 0, 0, 1, -2, -1, -1, 0,
+      0, 1, 1, 2, -1, 0, 0, 1, -1, 0, 0, 1, -2, -1, -1, 0);
+  const __m256i mask = _mm256_set1_epi8(0x0f);
+  __m256i lo = _mm256_shuffle_epi8(lut, _mm256_and_si256(bytes, mask));
+  __m256i hi = _mm256_shuffle_epi8(
+      lut, _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask));
+  __m256i even = _mm256_unpacklo_epi8(lo, hi);
+  __m256i odd = _mm256_unpackhi_epi8(lo, hi);
+  *values01 = _mm256_permute2x128_si256(even, odd, 0x20);
+  *values23 = _mm256_permute2x128_si256(even, odd, 0x31);
+}
+#endif
+
 static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[16],
                                                 poly256 out0, poly256 out1,
                                                 poly256 out2, poly256 out3,
                                                 poly256 out4, poly256 out5,
                                                 poly256 out6) {
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+#pragma clang loop unroll_count(4)
+#endif
   for (int i = 0; i < 16; i++) {
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+    __m256i values01, values23, values45, values67;
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_castsi512_si256(st[i]), &values01, &values23);
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_extracti64x4_epi64(st[i], 1), &values45, &values67);
+    cbd_eta2_store2_i8x32_clang_avx512(
+        values01, out0 + 16 * i, out1 + 16 * i);
+    cbd_eta2_store2_i8x32_clang_avx512(
+        values23, out2 + 16 * i, out3 + 16 * i);
+    cbd_eta2_store2_i8x32_clang_avx512(
+        values45, out4 + 16 * i, out5 + 16 * i);
+    _mm256_storeu_si256(
+        (__m256i *)(void *)(out6 + 16 * i),
+        cbd_eta2_canonicalize_i8x16(_mm256_castsi256_si128(values67)));
+#else
     uint64_t words[8];
     _mm512_storeu_si512((__m512i *)words, st[i]);
     sample_poly_cbd_eta2_store2_avx2(
@@ -5108,6 +5166,7 @@ static void sample_poly_cbd_eta2x7_state_avx512(const __m512i st[16],
         out4 + 16 * i, out5 + 16 * i);
     sample_poly_cbd_eta2_store1_avx2(
         _mm_loadl_epi64((const __m128i *)&words[6]), out6 + 16 * i);
+#endif
   }
 }
 #endif

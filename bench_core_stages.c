@@ -1581,6 +1581,62 @@ static void validate_encrypt_prf_cbd_tail_x8_avx512(void) {
 }
 #endif
 
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__) && defined(__AVX512DQ__)
+static int8_t stage_cbd_eta2_nibble(uint8_t nibble) {
+  return (int8_t)((nibble & 1u) + ((nibble >> 1) & 1u) -
+                  ((nibble >> 2) & 1u) - ((nibble >> 3) & 1u));
+}
+
+static void validate_cbd_eta2_decode4_clang_avx512(void) {
+  uint8_t input[32];
+  int8_t got[64];
+  int16_t canonical[64];
+
+  for (int byte = 0; byte < 32; byte++) {
+    for (int value = 0; value < 256; value++) {
+      __m256i values01, values23;
+      memset(input, 0, sizeof(input));
+      input[byte] = (uint8_t)value;
+      cbd_eta2_decode4_i8_clang_avx512(
+          _mm256_loadu_si256((const __m256i *)(const void *)input),
+          &values01, &values23);
+      _mm256_storeu_si256((__m256i *)(void *)got, values01);
+      _mm256_storeu_si256((__m256i *)(void *)(got + 32), values23);
+      _mm512_storeu_si512(
+          (void *)canonical,
+          cbd_eta2_canonicalize_i8x32_clang_avx512(values01));
+      _mm512_storeu_si512(
+          (void *)(canonical + 32),
+          cbd_eta2_canonicalize_i8x32_clang_avx512(values23));
+
+      int target = (byte / 8) * 16 + (byte % 8) * 2;
+      for (int coeff = 0; coeff < 64; coeff++) {
+        int expected = 0;
+        if (coeff == target) {
+          expected = stage_cbd_eta2_nibble((uint8_t)value & 0x0f);
+        } else if (coeff == target + 1) {
+          expected = stage_cbd_eta2_nibble((uint8_t)value >> 4);
+        }
+        if (got[coeff] != expected) {
+          fprintf(stderr,
+                  "Clang CBD4 signed mismatch at byte=%d value=%d coeff=%d\n",
+                  byte, value, coeff);
+          exit(EXIT_FAILURE);
+        }
+        int expected_canonical = expected < 0 ? expected + Q : expected;
+        if (canonical[coeff] != expected_canonical) {
+          fprintf(stderr,
+                  "Clang CBD4 canonical mismatch at byte=%d value=%d coeff=%d\n",
+                  byte, value, coeff);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+#endif
+
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__clang__)
 static void validate_encrypt_prf_cbd_tail_x8_clang_avx512(void) {
   for (size_t fixture = 0; fixture < 256; fixture++) {
@@ -3909,6 +3965,9 @@ static void validate_core_stage_helpers(void) {
 #if defined(__AVX512BW__)
   validate_encrypt_prf_cbd_tail_x8_avx512();
 #endif
+#endif
+#if defined(__clang__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
+  validate_cbd_eta2_decode4_clang_avx512();
 #endif
 #if defined(__AVX512BW__) && defined(__clang__)
   validate_encrypt_prf_cbd_tail_x8_clang_avx512();
