@@ -1522,8 +1522,11 @@ static void keccak_squeeze(keccak_ctx *ctx, uint8_t *out, size_t outlen) {
 extern void mlkem_sha3_256_1184_avx512vl(const uint8_t in[1184],
                                           uint8_t out[32]);
 #if defined(__GNUC__) && !defined(__clang__)
+#define MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL 1
 extern void mlkem_sha3_256_copy_1184_avx512vl(
     const uint8_t in[1184], uint8_t copy[1184], uint8_t out[32]);
+extern void mlkem_sha3_256_1184_suffix6_avx512vl(
+    const void *state4, const uint8_t in[776], uint8_t out[32]);
 #endif
 #define sha3_256_1184_avx2 mlkem_sha3_256_1184_avx512vl
 #else
@@ -6505,7 +6508,9 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
                                            poly256 out,
                                            uint8_t h[32]) {
   __m256i st[25];
+#if !defined(MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL)
   uint64_t hst[25];
+#endif
   uint64_t stream[63];
 
   for (int i = 0; i < 25; i++) {
@@ -6530,13 +6535,19 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
     }
   }
 
+#if !defined(MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL)
   for (int lane = 0; lane < 25; lane++) {
     hst[lane] = keccak_lane0_u64(st[lane]);
   }
+#endif
 
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
       (const uint8_t *)stream, sizeof(stream), out, 0);
+#if defined(MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL)
+  // Preserve lane 0 before a rare matrix-tail refill advances x4 state.
+  mlkem_sha3_256_1184_suffix6_avx512vl(st, pk + 3 * 136, h);
+#endif
   while (count < N) {
     uint64_t extra[21];
     keccakf4(st);
@@ -6547,6 +6558,7 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
         (const uint8_t *)extra, sizeof(extra), out, count);
   }
 
+#if !defined(MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL)
   for (int block = 3; block < 8; block++) {
     const uint8_t *p = pk + (size_t)block * 136;
 #if defined(__AVX512F__)
@@ -6573,6 +6585,7 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
   hst[16] ^= 0x8000000000000000ULL;
   keccakf(hst);
   memcpy(h, hst, 32);
+#endif
 }
 
 static inline void hash_matrix_x3_init_group(

@@ -639,6 +639,10 @@ static void test_sha3_256_1184_avx512vl(void) {
   uint8_t reference[32];
   uint8_t actual[32];
   uint8_t copy_hash[32];
+#if defined(__GNUC__) && !defined(__clang__)
+  uint8_t suffix_hash[32];
+  __m256i suffix_state4[25];
+#endif
 
   for (unsigned fixture = 0; fixture < 256; fixture++) {
     if (fixture == 0) {
@@ -676,6 +680,24 @@ static void test_sha3_256_1184_avx512vl(void) {
     sha3_256_copy_1184(copied, input, copy_hash);
     assert(memcmp(input, copied, sizeof(input)) == 0);
     assert(memcmp(reference, copy_hash, sizeof(reference)) == 0);
+#if defined(__GNUC__) && !defined(__clang__)
+    uint64_t prefix_state[25] = {0};
+    for (int block = 0; block < 3; block++) {
+      const uint8_t *p = input + (size_t)block * 136;
+      for (int lane = 0; lane < 17; lane++) {
+        prefix_state[lane] ^= load64_le(p + 8 * lane);
+      }
+      keccakf(prefix_state);
+    }
+    for (int lane = 0; lane < 25; lane++) {
+      suffix_state4[lane] = _mm256_set_epi64x(
+          (long long)~prefix_state[lane], (long long)fixture,
+          (long long)lane, (long long)prefix_state[lane]);
+    }
+    mlkem_sha3_256_1184_suffix6_avx512vl(
+        suffix_state4, input + 3 * 136, suffix_hash);
+    assert(memcmp(reference, suffix_hash, sizeof(reference)) == 0);
+#endif
   }
 }
 #endif

@@ -305,6 +305,85 @@ mlkem_sha3_256_1184_avx512vl:
     ret
 .size mlkem_sha3_256_1184_avx512vl,.-mlkem_sha3_256_1184_avx512vl
 
+#if !defined(__clang__)
+.section .mlkem_sha3_suffix6,"ax",@progbits
+# Load hash lane 0 directly from the x4 prefix state and keep it in registers.
+# void mlkem_sha3_256_1184_suffix6_avx512vl(const void *state4,
+#                                            const uint8_t in[776],
+#                                            uint8_t out[32]);
+.globl mlkem_sha3_256_1184_suffix6_avx512vl
+.type mlkem_sha3_256_1184_suffix6_avx512vl,@function
+.hidden mlkem_sha3_256_1184_suffix6_avx512vl
+.balign 32
+mlkem_sha3_256_1184_suffix6_avx512vl:
+    pushq %rbx
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    subq $8, %rsp
+
+    movq %rsi, %r12
+    movq %rdx, %r9
+    vmovq   (32*0)(%rdi), %xmm0
+    vmovq   (32*1)(%rdi), %xmm1
+    vmovq   (32*2)(%rdi), %xmm2
+    vmovq   (32*3)(%rdi), %xmm3
+    vmovq   (32*4)(%rdi), %xmm4
+    vmovq   (32*5)(%rdi), %xmm5
+    vmovq   (32*6)(%rdi), %xmm6
+    vmovq   (32*7)(%rdi), %xmm7
+    vmovq   (32*8)(%rdi), %xmm8
+    vmovq   (32*9)(%rdi), %xmm9
+    vmovq  (32*10)(%rdi), %xmm10
+    vmovq  (32*11)(%rdi), %xmm11
+    vmovq  (32*12)(%rdi), %xmm12
+    vmovq  (32*13)(%rdi), %xmm13
+    vmovq  (32*14)(%rdi), %xmm14
+    vmovq  (32*15)(%rdi), %xmm15
+    vmovq  (32*16)(%rdi), %xmm16
+    vmovq  (32*17)(%rdi), %xmm17
+    vmovq  (32*18)(%rdi), %xmm18
+    vmovq  (32*19)(%rdi), %xmm19
+    vmovq  (32*20)(%rdi), %xmm20
+    vmovq  (32*21)(%rdi), %xmm21
+    vmovq  (32*22)(%rdi), %xmm22
+    vmovq  (32*23)(%rdi), %xmm23
+    vmovq  (32*24)(%rdi), %xmm24
+
+    movl $5, %ebx
+.balign 32
+.Lmlkem_sha3_256_1184_suffix6_blocks:
+    mlkem_absorb_rate %r12
+    call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
+    addq $136, %r12
+    decl %ebx
+    jnz .Lmlkem_sha3_256_1184_suffix6_blocks
+
+    mlkem_absorb_tail %r12
+    movl $0x06, %eax
+    vmovq %rax, %xmm31
+    vpxorq %xmm31, %xmm12, %xmm12
+    movabsq $0x8000000000000000, %rax
+    vmovq %rax, %xmm31
+    vpxorq %xmm31, %xmm16, %xmm16
+    call .Lmlkem_keccakf1600_avx512vl_inplace4_permute
+
+    vmovq %xmm0, 0(%r9)
+    vmovq %xmm1, 8(%r9)
+    vmovq %xmm2, 16(%r9)
+    vmovq %xmm3, 24(%r9)
+    vzeroupper
+
+    addq $8, %rsp
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    ret
+.size mlkem_sha3_256_1184_suffix6_avx512vl,.-mlkem_sha3_256_1184_suffix6_avx512vl
+.text
+#endif
+
 # Copy the public key while feeding the same loaded words to the fixed sponge.
 # void mlkem_sha3_256_copy_1184_avx512vl(const uint8_t *in, uint8_t *copy,
 #                                        uint8_t out[32]);
