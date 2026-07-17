@@ -358,6 +358,55 @@ parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
 
+### Rejected Core Optimization A/B (2026-07-17, GCC AVX512VNNI three-NTT tail factor sharing)
+
+A post-Montgomery-factor 500,000-iteration GCC native profile attributed
+`31.09%` self time to fixed `H(pk)`, `20.02%` to checked x8 matrix assembly,
+`8.21%` to sparse x8 Keccak, `5.65%` to prepared encryption, and `5.28%` to
+the forward-NTT tail. The forward-tail entry includes 25.5 million profiled
+function calls, so `-pg` entry overhead inflates its share; it nevertheless
+motivated a direct arithmetic/dataflow experiment.
+
+The experiment applied multi-buffer factor hoisting to the three encryption
+noise polynomials. For each 32-coefficient block, it loaded the six Montgomery
+twiddle vectors for levels 4-6 once and reused them across all three forward
+NTT tails. An empty GCC vector-register constraint prevented the compiler from
+folding the factors back into repeated memory operands. Disassembly confirmed
+six factor loads per block, register reuse for all three rows, and no spills.
+
+Both tested forms passed the GCC native KAT and the complete 412-line stage
+validator. Measurements used GCC 13.3.0 on an AMD Ryzen Threadripper 7980X,
+pinned to CPU 0, with two warmups, nine alternating measured pairs, and
+100,000 stage iterations against `6003ca7`:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=native" \
+  ./scripts/bench_core_ab.sh 6003ca7
+```
+
+| Form | Metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| fully unrolled rows | direct lazy three-NTT accumulation | `1.0036x` | `1.0062x` | 7/9 | `1.0034x` / `1.0080x` |
+| fully unrolled rows | cached K-PKE encryption | `1.0017x` | `1.0043x` | 7/9 | `1.0043x` / `1.0039x` |
+| fully unrolled rows | cache-disabled K-PKE encryption | `1.0032x` | `0.9985x` | 2/9 | `0.9985x` / `0.9979x` |
+| compact three-row loop | direct lazy three-NTT accumulation | `1.0022x` | `1.0017x` | 8/9 | `1.0017x` / `1.0023x` |
+| compact three-row loop | cached K-PKE encryption | `1.0004x` | `1.0027x` | 8/9 | `1.0016x` / `1.0029x` |
+| compact three-row loop | cache-disabled K-PKE encryption | `0.9871x` | `0.9963x` | 4/9 | `0.9959x` / `0.9995x` |
+
+The fully unrolled helper was 749 bytes and increased linked `benchc` text from
+81,701 to 82,465 bytes. Preventing the three-row loop from unrolling reduced
+the helper to 379 bytes and total text to 82,081 bytes, but added 24 short row
+loops per encryption and weakened the already small direct gain.
+
+This target is rejected. The twiddle vectors are already hot L1 data, so
+removing their repeated loads saves too little relative to either duplicated
+instruction text or loop control. Most importantly, neither form passes the
+cache-disabled K-PKE gate: both paired medians regress and the order-separated
+medians provide no hidden positive signal. A complete-KEM gate was therefore
+not run. No implementation, table, cache, or external dependency is retained.
+
 ### Latest Core Optimization A/B (2026-07-17, GCC AVX512 non-VNNI encryption Montgomery gamma factors)
 
 Commit `5c86b7f` extends the accepted GCC high-only Montgomery gamma-factor
