@@ -252,6 +252,7 @@ Near-term target selection:
 | Clang AVX512 sparse x7 encryption-noise entry | Accepted for Clang native AVX512; GCC/AVX2-only/scalar byte-identical | The seven fixed SHAKE256 encryption-noise streams now enter the existing repository-local four-round x8 mapping from a directly constructed sparse state and write only the 16 rate vectors consumed by ETA2 CBD. Raw PRF/CBD and cached K-PKE paired geometric means improve `1.0436x`/`1.0157x`; 100k encaps/decaps improve `1.0099x`/`1.0106x`. Clang `benchc` text shrinks 192 bytes. This reuses the already attributed XKCP-derived mapping but links no external object and adds no cache, table, API, or wire-format dependency. |
 | Clang AVX512 sparse x7 final-output slice | Accepted for Clang native cached encryption; GCC/AVX2-only/scalar byte-identical | ETA2 consumes only state words `0..15`, so rounds 0..22 remain complete while round 23 computes all Theta corrections, output rows 0..2, and only word 15 from row 3; words 16..24 are dead. Across two same-binary object layouts, raw Keccak geometric means improve `1.0365x`/`1.0348x`, PRF/CBD `1.0175x`/`1.0201x`, and complete cached K-PKE `1.0072x`/`1.0031x`. Two 100k KEM gates improve encaps by `1.0039x` and `1.0124x`; decaps is mixed and is treated as neutral. Linked Clang text is unchanged, the helper grows seven padding bytes, and no cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512 lane-local compact ETA2 boundary | Accepted for Clang native AVX512F/BW/DQ; GCC native and narrower ISA products unchanged | Two lane-local YMM `VPSHUFB` decoders process four SHAKE256 streams each, interleave signed bytes before widening, keep only `rhat[0..2]` canonical int16, and carry `e1[0..2]`/`e2` as signed int8 into the existing inverse-final consumer. The compact producer improves `1.0915x` paired geometric mean; against the canonical four-stream commit, 100k encaps/encaps-core/decaps improve `1.0250x`/`1.0174x`/`1.0175x`. Against the pre-redesign tree, encaps/decaps improve `1.0227x`/`1.0206x`. Clang `benchc` text/BSS shrink 2,816/1,024 bytes from that tree. No cache, external object, runtime library, API, table, or wire-format change is added. |
+| Clang sparse-Keccak/compact-CBD direct handoff | Closed; the 16-word materialized boundary remains production | Four exact prototypes removed either 256 or 1,024 bytes of final-state store/reload traffic. Full inline decode grew `benchc` text by 3,008 bytes and reached only `0.9828x` paired median with 1/7 wins. Four-word partial inline/noinline forms reached `0.9916x`/`0.9922x` median, and a shared four-word consumer over all 16 words reached `0.9827x` with 0/7 wins. The shared form forced 12 live ZMM values into a 768-byte stack spill area before its first call because vector registers are caller-saved. No candidate code remains; this hot-L1 boundary should be reopened only with a spill-free compact assembly continuation that also controls instruction footprint. |
 | GCC AVX512 sparse x7 final-output slice | Closed; complete shared round remains production | A GCC-specific branchless final slice improved canonical and compact-int8 raw x7 PRF/CBD by `1.0120x` and `1.0151x`, but cached K-PKE was neutral at `0.9997x`. The 15-pair 100k KEM gate reached only `1.0018x` encaps, produced an order-negative decaps result, and regressed roundtrip/roundtrip-core to `0.9965x`/`0.9964x`, while linked text grew 6,718 bytes. Shared-loop, Clang-shape, and compact-loop variants were directly slower. No candidate code remains. |
 | Native AVX512 shared inverse-to-ciphertext packing | Closed | A Clang prototype sent each final shared-inverse ZMM directly into d10/d4 packing, eliminating 4,096 bytes of coefficient store/reload traffic per encryption. Cached/uncached K-PKE regressed to `0.9607x`/`0.9876x` paired geometric mean with 0/9 wins. The fused helper introduced 19 stack references despite shrinking linked text by 5,504 bytes. Keep the compact spill-free inverse and dense packer as separate loops unless a future design also reduces packing operations. |
 | GCC AVX512VBMI2 register rejection compaction | Accepted for GCC native AVX512VBMI2+VL; Clang and narrower ISA builds are byte-identical | Two 16-lane decoded vectors are compacted with register `VPCOMPRESSW`, then written with bounded ordinary stores. The direct 504-byte parser, x8 sampler, matrix generation, and uncached K-PKE encryption improve `1.8626x`/`1.0981x`/`1.0661x`/`1.0466x` paired geometric mean, all 7/7. Fifteen-pair cache-disabled KEM core improves keygen/encaps/decaps/roundtrip by `1.0306x`/`1.0339x`/`1.0526x`/`1.0318x`, all 15/15. GCC `benchc` text shrinks 684 bytes and BSS shrinks 2,048 bytes because the old compaction LUT becomes dead. No cache, external object, table, API, or wire-format change is added. |
@@ -511,6 +512,55 @@ introduce no secret-dependent branch or memory address. Randomness generation,
 wire encoding, public API, and ML-KEM arithmetic semantics are unchanged. The
 implementation links no Kyber, PQClean, liboqs, XKCP, secp256k1, ZKP, or other
 external object or runtime library.
+
+### Closed Core Optimization A/B (2026-07-17, Clang sparse-Keccak/CBD direct handoff)
+
+The accepted sparse x7 producer returns 16 ZMM rate words, or 1,024 bytes, through
+a stack array before the compact ETA2 decoder reads them. That apparent
+producer/consumer materialization boundary was the next bounded experiment.
+All candidates kept the same sparse final-round slice, lane-local nibble
+decoder, canonical `rhat[0..2]`, signed-int8 error outputs, public API, and wire
+format. They changed only how the final Keccak registers reached the decoder.
+
+Each prototype passed the Clang native KAT and complete stage oracle. The
+performance gate pinned execution to CPU 0, ran two warmups, and then measured
+seven alternating pairs of 30,000 raw x7 PRF/CBD operations against `535d28a`.
+A ratio above one favors the candidate:
+
+| Direct-handoff candidate | Handoff shape | `benchc` text delta | Paired geometric mean | Paired median | Wins |
+|---|---|---:|---:|---:|---:|
+| full inline | Decode all 16 final ZMM values inside the sparse helper | +3,008 bytes | `0.9998x` | `0.9828x` | 1/7 |
+| four-word inline | Forward words 12..15; materialize words 0..11 | +1,984 bytes | `0.9911x` | `0.9916x` | 0/7 |
+| four-word `noinline` | Forward words 12..15 through one shared consumer | +1,344 bytes | `0.9954x` | `0.9922x` | 1/7 |
+| four shared calls | Forward all 16 words in four groups | +1,280 bytes | `0.9745x` | `0.9827x` | 0/7 |
+
+The full-inline geometric mean is distorted by one baseline-side outlier; its
+median, six ordinary pairs near `0.983x`, and 1/7 wins show the regression.
+Its sparse helper grew from the baseline `0x0cd9` plus `0x0348` decoder to one
+`0x1856` body. Eliminating the full state array did not repay the front-end and
+instruction-cache cost of 16 literal decoder bodies.
+
+The partial forms limited code growth but removed only 256 bytes of L1-resident
+traffic. Their stable roughly 0.8% regressions show that this saving does not
+repay the extra handoff and altered decoder loop. Marking the remaining decoder
+`noinline` reduced linked text from +1,984 to +1,344 bytes but did not change
+the ordinary-pair result.
+
+The four-call form shared one `0x0312` four-word decoder and kept the two hot
+symbols only 209 bytes larger than the baseline producer plus decoder. It still
+regressed more severely. SysV x86-64 treats ZMM registers as caller-saved, so
+Clang preserved the twelve values needed by later calls in a `0x300`-byte
+stack area before the first consumer call, then reloaded four values before
+each later call. The nominal register handoff therefore recreated most of the
+materialization traffic under a less compact schedule. Avoiding those spills
+requires inlining, which returns to the first candidate's code-size failure.
+
+Production consequently retains the compact four-way loop over the 16-word
+hot-L1 state. Reopening this boundary requires a checked spill-free assembly
+continuation or a representation change that also reduces decoder operations;
+another C inline/noinline rearrangement is not supported by the measurements.
+No candidate source, cache, external object, runtime library, API, table, or
+wire-format change remains.
 
 ### Latest Core Optimization A/B (2026-07-17, Clang mixed-x8 keygen single-state continuation)
 
