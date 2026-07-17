@@ -189,6 +189,7 @@ Near-term target selection:
 | Clang AVX512 Montgomery gamma factors | Accepted for Clang native; GCC and narrower ISAs byte-identical | Three shared `gamma*rhat_odd` factors now use precomputed signed Montgomery low/high constants instead of widening through the general 32-bit reciprocal reducer. The exhaustive output range is `[-1739,1739]`; the direct accumulator and cached K-PKE improve `1.0286x`/`1.0373x` geometric mean. 100k encaps/decaps improve `1.0390x`/`1.0337x`, both 15/15. The public-factor path adds 512 bytes of linked text and 512 bytes of BSS but no key/result cache, external object, API, or wire-format dependency. |
 | Clang AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; GCC and narrower ISA products byte-identical | Keygen now reuses the existing public low/high Montgomery tables for its three shared `gamma*shat_odd` factors instead of running three general signed-32-bit reciprocal reducers per 32 coefficients. Native direct/fused-add accumulation improves `1.1088x`/`1.0594x`, while non-VNNI improves `1.0972x`/`1.0484x`, all 7/7. Native 100k KEM keygen/keygen-core improves `1.0119x`/`1.0105x`; non-VNNI improves `1.0031x`/`1.0071x`. Clang `benchc` text shrinks 64 bytes with unchanged data/BSS, so this adds no table, cache, external object, API, or wire-format dependency. |
 | GCC AVX512 Montgomery keygen gamma factors | Accepted with and without AVX512VNNI; Clang and narrower ISA products byte-identical | GCC keygen now keeps one 256-byte public Montgomery-high table and reconstructs the low vector once per 32 coefficients, replacing three general signed-32-bit reciprocal reductions. Native direct/fused-add stages improve `1.0868x`/`1.0646x`; non-VNNI improves `1.1024x`/`1.0462x`, all 7/7. Two native 100k KEM gates put keygen at `1.0057x` and `1.0126x`, while non-VNNI keygen improves `1.0043x`. GCC `benchc` adds 160 text bytes and 256 BSS bytes. This is fixed public-factor precomputation, not a key/result cache; it links no external object or library and changes no API or wire format. |
+| GCC AVX512VNNI Montgomery encryption gamma factors | Accepted for GCC AVX512VNNI; GCC non-VNNI, Clang, AVX2-only, and scalar products byte-identical | Encryption now reuses the existing public 256-byte GCC Montgomery-high table, reconstructs the low vector once per 32 coefficients, and replaces three general signed-32-bit reciprocal reductions for the shared `gamma*rhat_odd` factors. Direct lazy accumulation and cached K-PKE improve `1.0437x`/`1.0284x` paired geometric mean, both 9/9. An independent 100k KEM confirmation improves encaps/decaps/roundtrip by `1.0123x`/`1.0202x`/`1.0074x`. GCC `benchc` text shrinks 160 bytes with unchanged data/BSS. No new table, cache, external object, library, API, or wire-format dependency is added. |
 | GCC flattened full forward-NTT wrapper | Closed | A GCC-only noinline `flatten` wrapper exposed the existing upper head and lower tail in one compilation unit. Three consecutive transforms improved `1.0085x` geometric mean in a focused probe, but cached/uncached K-PKE and keygen stage gates regressed to `0.9974x`/`0.9986x`/`0.9969x`, with only 2/7, 1/7, and 1/7 wins. Linked text grew 1,536 bytes. Keep the smaller shared head/tail boundaries; no candidate code remains. |
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
@@ -356,6 +357,174 @@ parser shuffle,
 memory-form `VPCOMPRESSW`, fixed-hash reschedule, or `rhat` materialization
 fusion is not supported by the current evidence.
 
+### Latest Core Optimization A/B (2026-07-17, GCC AVX512VNNI encryption Montgomery gamma factors)
+
+Commit `107190b` removes GCC's remaining general reciprocal reductions from
+the three shared encryption `gamma*rhat_odd` factors. Its baseline is
+`38219cc`, after the accepted public-H(pk) suffix lifetime change.
+
+A post-suffix 500,000-iteration GCC native profile attributed `28.82%` self
+time to fixed H(pk), `21.07%` to checked x8 matrix assembly, `7.74%` to
+sparse x8 Keccak, `6.78%` to prepared encryption, and `5.76%` to the
+forward-NTT tail. The suffix boundary itself fell from `3.39%` to `3.05%`.
+These percentages selected the next arithmetic target; they are not a speedup
+claim.
+
+For every 32-coefficient tile, the encryption kernel finishes the three lazy
+forward NTTs and shares their `rhat[0..2]` factors across the three `u`
+rows and `v`. GCC previously formed each odd factor by:
+
+1. clearing the even int16 lanes;
+2. widening 16 public gamma values;
+3. using `VPMADDWD` to compute `gamma*rhat_odd` in signed int32;
+4. running the general reciprocal reducer separately for all three `rhat`
+   vectors;
+5. inserting each reduced odd result beside its unchanged even coefficient.
+
+The accepted AVX512VNNI path instead calls the high-only Montgomery helper
+already validated for GCC keygen. It loads the existing 16 public signed
+Montgomery-high values and reconstructs the low vector once per tile:
+
+```text
+gamma_hi = centered(gamma * R mod Q)
+gamma_lo = gamma_hi * QINV mod 2^16
+R = 2^16 mod Q
+Q * QINV = 1 mod 2^16
+```
+
+Three signed 16-bit Montgomery products then form the odd factors while the
+even coefficients remain unchanged. The factors are still transient vectors
+shared by four dot products. The change adds neither a table nor one-time
+initialization: it reuses the 256-byte public high table introduced for GCC
+keygen.
+
+The exhaustive Montgomery oracle checks all 128 gamma values against every
+input in `[0,Q]`, or 426,240 combinations, and observes the exact centered
+output range `[-1739,1739]`. The mixed `c0` dot-product bound remains:
+
+```text
+-3 * (Q - 1) * 1739
+  = -17,362,176
+
+3 * (Q - 1)^2 + 3 * (Q - 1) * 1739
+  = 50,588,928
+```
+
+The unchanged `c1` bound is `66,453,504`. Both fit signed int32 and the
+existing proved reducer interval `[-33,226,752,66,453,504]`, so
+non-saturating `VPDPWSSD` remains exact. A separate 256-fixture oracle
+compares all four accumulated polynomials modulo Q with the preceding
+canonical kernel, then carries both results through the shared inverse NTT and
+requires byte-exact outputs.
+
+All performance measurements below used GCC 13.3.0 on an AMD Ryzen
+Threadripper 7980X, pinned to CPU 0 with alternating baseline/candidate order.
+
+The native stage gate used two warmups, nine measured pairs, and 50,000
+iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=50000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 38219cc
+```
+
+| GCC native production stage metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| lazy four-output accumulation | `1.0437x` | `1.0430x` | 9/9 | `1.0426x` / `1.0441x` |
+| cached K-PKE encryption | `1.0284x` | `1.0289x` | 9/9 | `1.0299x` / `1.0250x` |
+| cache-disabled K-PKE encryption | `1.0242x` | `1.0134x` | 8/9 | `1.0134x` / `1.0142x` |
+
+The unchanged inverse, noise, and packing rows remain near `1.0x`; they are
+controls rather than credited gains.
+
+Two independent complete-KEM gates used 100,000 iterations. The first used 15
+measured pairs; the confirmation used 14:
+
+```bash
+RUNS=15 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 38219cc
+
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ./scripts/bench_core_ab.sh 38219cc
+```
+
+| GCC native KEM gate | Metric | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---|---:|---:|---:|---:|
+| gate 1 | `mlkem_encaps` | `1.0245x` | `1.0248x` | 15/15 | `1.0254x` / `1.0248x` |
+| gate 1 | `mlkem_decaps` | `1.0144x` | `1.0174x` | 14/15 | `1.0179x` / `1.0153x` |
+| confirmation | `mlkem_encaps` | `1.0123x` | `1.0232x` | 12/14 | `1.0234x` / `1.0221x` |
+| confirmation | `mlkem_encaps_core` | `1.0032x` | `1.0087x` | 11/14 | `1.0085x` / `1.0088x` |
+| confirmation | `mlkem_decaps` | `1.0202x` | `1.0190x` | 14/14 | `1.0169x` / `1.0225x` |
+| confirmation | `mlkem_decaps_core` | `1.0054x` | `1.0126x` | 12/14 | `1.0099x` / `1.0136x` |
+| confirmation | `mlkem_roundtrip` | `1.0074x` | `1.0083x` | 13/14 | `1.0085x` / `1.0082x` |
+| confirmation | `mlkem_roundtrip_core` | `1.0020x` | `1.0064x` | 9/14 | `1.0056x` / `1.0069x` |
+
+Gate 1 also put `decaps_core` at `1.0088x` geometric mean and `1.0085x`
+median with 13/15 wins, and roundtrip at `1.0012x` geometric mean and
+`1.0076x` median with 11/15 wins. Its `roundtrip_core` geometric mean was
+`0.9964x` because of an outlier, while its median was `1.0045x` with 10/15
+wins; the independent confirmation reproduces a positive geometric mean.
+Gate 1's cache-disabled `encaps_core` control was `0.9941x` geometric mean
+but `1.0004x` median; the confirmation moved to `1.0032x` geometric mean
+and `1.0087x` median.
+
+Keygen does not execute the changed encryption kernel. Its confirmation
+medians were `0.9984x` for `mlkem_keygen` and `0.9971x` for
+`mlkem_keygen_core`; these small negative controls are not credited to the
+change.
+
+Native GCC disassembly confirms the intended instruction trade:
+
+| Product property | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| `benchc` text | 81,861 bytes | 81,701 bytes | -160 bytes |
+| `benchc` data / BSS | 708 / 37,376 bytes | 708 / 37,376 bytes | 0 / 0 |
+| `kpke_encrypt_prepared_public_impl.constprop.0` bytes | `0x9c3` | `0x912` | -177 bytes |
+| `kpke_encrypt_prepared_public_impl.constprop.0` instruction lines | 437 | 411 | -26 |
+| `VPMADDWD` / `VPDPWSSD` | 5 / 24 | 2 / 24 | -3 / 0 |
+| `VPMULLD` / `VPSRAD` | 22 / 25 | 16 / 16 | -6 / -9 |
+| `VPMULLW` / `VPMULHW` | 5 / 21 | 9 / 27 | +4 / +6 |
+
+Shrinking the C helper moves the following checked assembly symbols 160 bytes
+earlier, so a separate diagnostic temporarily inserted exactly 160 NOP bytes
+before those symbols. This restored total text size and every downstream
+assembly address; SHA-256 comparison then proved unchanged keygen, x8
+matrix, and copy-H(pk) code bytes identical; rodata, data, and BSS addresses
+also matched. The padding was only an attribution control and is not committed.
+
+With restored layout, an 11-pair 50,000-iteration KEM gate retained paired
+geometric means of `1.0227x` for encapsulation, `1.0153x` for
+decapsulation, `1.0058x` for `encaps_core`, `1.0076x` for
+`decaps_core`, `1.0070x` for roundtrip, and `1.0071x` for
+`roundtrip_core`. The unchanged keygen median was `0.9992x`. This isolates
+the arithmetic gain from downstream code-placement effects without adding
+production padding.
+
+The following validation gates pass:
+
+- GCC native and `-march=skylake-avx512` KAT;
+- Clang native KAT;
+- GCC and Clang AVX2-only KAT;
+- GCC and Clang scalar KAT;
+- GCC native UBSan;
+- Clang native ASan+UBSan;
+- the exhaustive gamma oracle and complete four-output stage fixtures.
+
+GCC non-VNNI, Clang native, and both compilers' AVX2-only and scalar
+production `benchc` binaries are byte-identical to `38219cc`. Only the GCC
+AVX512VNNI encryption product changes.
+
+The implementation is repository-local C/intrinsics and links no secp256k1,
+ZKP, Kyber, PQClean, XKCP, liboqs, or other external runtime object or library.
+It adds no key/result cache and changes no API, wire format, or `randombytes`
+path. The Montgomery/NTT arithmetic and gamma roots retain the repository's
+existing upstream Kyber attribution; reusing the high-only table in this GCC
+four-output boundary, its range integration, and its measured routing are
+baby-mlkem-local work.
+
 ### Latest Core Optimization A/B (2026-07-17, GCC AVX512VL public H(pk) suffix lifetime)
 
 Commit `cdff1a9` removes the remaining canonical-state boundary from the fixed
@@ -500,7 +669,7 @@ were then reused across all three columns of `A^T*s`.
 All GCC measurements below used GCC 13.3.0 on an AMD Ryzen Threadripper
 7980X, with the measured process pinned to CPU 0.
 
-Unlike Clang, GCC intentionally keeps encryption on its preceding canonical
+At commit `a4439a8`, GCC still kept encryption on its preceding canonical
 factor path. The accepted GCC keygen path stores only the 128 signed
 Montgomery-high int16 values:
 
@@ -1297,8 +1466,9 @@ The existing three-multiply signed Montgomery primitive then returns the normal
 residue `gamma * rhat_odd mod Q` directly in 16-bit lanes. At commit `ff9b4ae`,
 only the Clang native lazy encryption accumulator used these factors; GCC and
 all keygen paths retained their previous gamma representation and reducer.
-Commit `a17360d`, documented above, later reuses the same tables for Clang
-AVX512 keygen. GCC, AVX2-only, and scalar paths remain unchanged.
+Commit `a17360d` later reuses the same tables for Clang AVX512 keygen,
+`a4439a8` adds GCC keygen high-only factors, and `107190b` reuses the GCC
+table in AVX512VNNI encryption. AVX2-only and scalar paths remain unchanged.
 
 This applies a classical technique at a narrower boundary than the older,
 rejected whole-accumulator Montgomery experiment. The official
