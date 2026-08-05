@@ -29,6 +29,12 @@ int pqcrystals_kyber768_avx2_enc_derand(uint8_t *ct, uint8_t *ss,
                                         const uint8_t *coins);
 int pqcrystals_kyber768_avx2_dec(uint8_t *ss, const uint8_t *ct,
                                  const uint8_t *sk);
+#elif defined(USE_BABY_MLKEM_PRODUCT_API)
+#include "baby_mlkem_api.h"
+#define N 256
+#define K 3
+#define DU 10
+#define DV 4
 #else
 #include "baby-mlkem.c"
 #endif
@@ -85,6 +91,8 @@ static inline void bench_keygen(const uint8_t coins_kp[64],
   (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(ek, dk, coins_kp);
 #elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins_kp);
+#elif defined(USE_BABY_MLKEM_PRODUCT_API)
+  baby_mlkem768_keypair_derand(ek, dk, coins_kp);
 #else
   mlkem_keygen_derand(coins_kp, ek, dk);
 #endif
@@ -98,6 +106,8 @@ static inline void bench_encaps(const uint8_t *ek,
   (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(ct, ss, ek, coins_enc);
 #elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   (void)pqcrystals_kyber768_avx2_enc_derand(ct, ss, ek, coins_enc);
+#elif defined(USE_BABY_MLKEM_PRODUCT_API)
+  baby_mlkem768_encaps_derand(ct, ss, ek, coins_enc);
 #else
   mlkem_encaps_derand(ek, coins_enc, ss, ct, NULL);
 #endif
@@ -110,20 +120,26 @@ static inline void bench_decaps(const uint8_t *ct,
   (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_dec(ss, ct, dk);
 #elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   (void)pqcrystals_kyber768_avx2_dec(ss, ct, dk);
+#elif defined(USE_BABY_MLKEM_PRODUCT_API)
+  baby_mlkem768_decaps(ss, ct, dk);
 #else
   mlkem_decaps_ct(ct, dk, ss);
 #endif
 }
 
 static inline void bench_clear_caches(void) {
-#if !defined(USE_PQCLEAN_AVX2_BACKEND) && \
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  baby_mlkem768_clear_internal_caches();
+#elif !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_clear_internal_caches();
 #endif
 }
 
 static inline void bench_set_caches_enabled(int enabled) {
-#if !defined(USE_PQCLEAN_AVX2_BACKEND) && \
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  baby_mlkem768_set_internal_caches_enabled(enabled);
+#elif !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_set_internal_caches_enabled(enabled);
 #else

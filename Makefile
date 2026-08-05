@@ -72,6 +72,8 @@ CFLAGS = -D_GNU_SOURCE $(OPT_CFLAGS) -Wall -Wextra -std=c99 $(EXTRA_CFLAGS)
 ARCH_CFLAGS = -march=native
 TARGET = testc
 BENCH_TARGET = benchc
+BENCH_PRODUCT_TARGET = bench_productc
+BENCH_PRODUCT_OBJ = bench_product.o
 BENCH_NTT_TARGET = bench_nttc
 BENCH_KECCAK_TARGET = bench_keccakc
 BENCH_KECCAK_VENDOR_TARGET = bench_keccak_vendorc
@@ -163,10 +165,10 @@ BENCH_KECCAK_OBJS += $(CORE_ASM_OBJS)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_SRCS:.c=.o)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_OBJS:.S=.o)
 BENCH_STAGES_OBJS += $(CORE_ASM_OBJS)
-OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS) $(PRODUCT_OBJS) test_product.o $(PRODUCT_TARGET))
-TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET) $(PRODUCT_TEST_TARGET)
+OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS) $(PRODUCT_OBJS) test_product.o $(PRODUCT_TARGET) $(BENCH_PRODUCT_OBJ))
+TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET) $(PRODUCT_TEST_TARGET) $(BENCH_PRODUCT_TARGET)
 
-.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run product product-size test-product
+.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run product product-size test-product bench-product bench-product-run
 
 all: $(TARGET)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
@@ -207,6 +209,9 @@ bench_keccak.o: CFLAGS += -Wno-unused-function
 bench_keccak_vendor.o: CFLAGS += -Wno-unused-function -DMLKEM_BENCH_VENDOR_KECCAKP
 bench_core_stages.o: CFLAGS += -Wno-unused-function
 bench.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
+bench_product.o: CFLAGS += -DBENCH_CT_STRIDE=$(BENCH_CT_STRIDE)
+bench_product.o: CFLAGS += -DUSE_BABY_MLKEM_PRODUCT_API
+bench_product.o: CFLAGS += -Wno-unused-function
 bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += -Wno-unused-function
@@ -217,6 +222,9 @@ bench_ntt.o: baby-mlkem.c keccakf1600_avx2.h
 bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h
 bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h
 bench_core_stages.o: baby-mlkem.c keccakf1600_avx2.h
+
+bench_product.o: bench.c baby_mlkem_api.h
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
 
 baby_mlkem_api.product.o: baby_mlkem_api.c baby_mlkem_api.h baby-mlkem.c keccakf1600_avx2.h
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(PRODUCT_SECTION_FLAGS) $(CORE_ASM_DEF) -Wno-unused-function
@@ -235,6 +243,9 @@ $(TARGET): $(TEST_OBJS)
 
 $(BENCH_TARGET): $(BENCH_OBJS)
 	$(CC) $(BENCH_OBJS) -o $(BENCH_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
+$(BENCH_PRODUCT_TARGET): $(BENCH_PRODUCT_OBJ) $(PRODUCT_TARGET)
+	$(CC) $(BENCH_PRODUCT_OBJ) $(PRODUCT_TARGET) -o $(BENCH_PRODUCT_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
 
 $(BENCH_NTT_TARGET): $(BENCH_NTT_OBJS)
 	$(CC) $(BENCH_NTT_OBJS) -o $(BENCH_NTT_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
@@ -274,6 +285,11 @@ test-product: $(PRODUCT_TEST_TARGET)
 	./$(PRODUCT_TEST_TARGET)
 
 bench: $(BENCH_TARGET)
+
+bench-product: $(BENCH_PRODUCT_TARGET)
+
+bench-product-run: $(BENCH_PRODUCT_TARGET)
+	./$(BENCH_PRODUCT_TARGET) $(BENCH_ITERS)
 
 bench-run: $(BENCH_TARGET)
 	./$(BENCH_TARGET) $(BENCH_ITERS)
