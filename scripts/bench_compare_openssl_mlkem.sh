@@ -15,13 +15,19 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
+BENCH_PROFILE_TAG="${BENCH_PROFILE_TAG:-$BENCH_ISA_PROFILE}"
 OPENSSL_REPO_URL="${OPENSSL_REPO_URL:-https://github.com/openssl/openssl.git}"
 OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL="${OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL:-1}"
-BUILD_TAG="$(echo "${C_COMPILER}" | tr '/ ' '__')"
+COMPILER_TAG="$(echo "${C_COMPILER}" | tr '/ ' '__')"
+PROFILE_TAG="$(printf '%s' "$BENCH_PROFILE_TAG" | tr -c 'A-Za-z0-9_.-' '_')"
+BUILD_TAG="${COMPILER_TAG}-${PROFILE_TAG}"
 OPENSSL_DIR="${OPENSSL_DIR:-/tmp/openssl-mlkem-$BUILD_TAG}"
 OPENSSL_CONFIG_TARGET="${OPENSSL_CONFIG_TARGET:-linux-x86_64}"
 OPENSSL_CONFIG_OPTS="${OPENSSL_CONFIG_OPTS:-no-shared no-tests}"
 OPENSSL_CFLAGS="${OPENSSL_CFLAGS:--O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt}"
+OPENSSL_HARNESS_CFLAGS="${OPENSSL_HARNESS_CFLAGS:--O3 -march=native}"
+OPENSSL_IA32CAP="${OPENSSL_IA32CAP:-}"
 OPENSSL_BUILD_JOBS="${OPENSSL_BUILD_JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-openssl.XXXXXX)"
@@ -104,7 +110,10 @@ echo "openssl_dir=${OPENSSL_DIR}"
 echo "openssl_fallback_clone_on_update_fail=${OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL}"
 echo "openssl_config_target=${OPENSSL_CONFIG_TARGET}"
 echo "openssl_config_opts=${OPENSSL_CONFIG_OPTS}"
+echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
 echo "openssl_cflags=${OPENSSL_CFLAGS}"
+echo "openssl_harness_cflags=${OPENSSL_HARNESS_CFLAGS}"
+echo "openssl_ia32cap=${OPENSSL_IA32CAP:-<unset>}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -434,9 +443,13 @@ C_EOF
 
 echo "[3/4] Building OpenSSL benchmark harness"
 OPENSSL_BIN="$WORK_DIR/openssl_mlkem_bench"
-"$C_COMPILER" -O3 -I"$OPENSSL_DIR/include" \
+read -r -a openssl_harness_cflags_arr <<< "$OPENSSL_HARNESS_CFLAGS"
+"$C_COMPILER" "${openssl_harness_cflags_arr[@]}" -I"$OPENSSL_DIR/include" \
   "$WORK_DIR/openssl_mlkem_bench.c" "$OPENSSL_DIR/libcrypto.a" \
   -ldl -lpthread -o "$OPENSSL_BIN"
+if [ -n "$OPENSSL_IA32CAP" ]; then
+  BENCH_COMPETITOR_ENV="${BENCH_COMPETITOR_ENV:+$BENCH_COMPETITOR_ENV }OPENSSL_ia32cap=$OPENSSL_IA32CAP"
+fi
 bench_pair_capture "$LOCAL_BENCH_BIN" "$OPENSSL_BIN" "$ITERS" "$WORK_DIR"
 LOCAL_OUT="$BENCH_LOCAL_OUT"
 OPENSSL_OUT="$BENCH_COMPETITOR_OUT"

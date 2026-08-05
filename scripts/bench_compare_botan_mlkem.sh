@@ -18,6 +18,9 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
+BENCH_PROFILE_TAG="${BENCH_PROFILE_TAG:-$BENCH_ISA_PROFILE}"
+PROFILE_TAG="$(printf '%s' "$BENCH_PROFILE_TAG" | tr -c 'A-Za-z0-9_.-' '_')"
 BOTAN_AUTO_CLANGPP_BROKEN_STAMP="$BOTAN_DIR/.botan_clangpp_broken"
 if [ "${BOTAN_RESET_AUTO_FALLBACK:-0}" = "1" ]; then
   rm -f "$BOTAN_AUTO_CLANGPP_BROKEN_STAMP"
@@ -39,6 +42,8 @@ fi
 BOTAN_BUILD_JOBS="${BOTAN_BUILD_JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
 BOTAN_MODULES="${BOTAN_MODULES:-ffi,ml_kem,system_rng,auto_rng,sha3,shake,asn1,base64,pem,pubkey,hex,rng}"
 BOTAN_CXXFLAGS="${BOTAN_CXXFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition}"
+BOTAN_DISABLED_MODULES="${BOTAN_DISABLED_MODULES:-}"
+BOTAN_HARNESS_CXXFLAGS="${BOTAN_HARNESS_CXXFLAGS:--O3}"
 BOTAN_CC_FAMILY="${BOTAN_CC_FAMILY:-}"
 BOTAN_CC_FAMILY_EXPLICIT=0
 if [ -n "$BOTAN_CC_FAMILY" ]; then
@@ -55,7 +60,7 @@ default_botan_build_dir() {
   local cxx="$1"
   local tag
   tag="$(echo "$cxx" | tr '/ ' '__')"
-  echo "$BOTAN_DIR/build-baby-mlkem-$tag"
+  echo "$BOTAN_DIR/build-baby-mlkem-$tag-$PROFILE_TAG"
 }
 
 infer_botan_cc_family() {
@@ -161,7 +166,10 @@ echo "botan_fallback_clone_on_update_fail=${BOTAN_FALLBACK_CLONE_ON_UPDATE_FAIL}
 echo "botan_cxx=${BOTAN_CXX}"
 echo "botan_cc_family=${BOTAN_CC_FAMILY}"
 echo "botan_modules=${BOTAN_MODULES}"
+echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
 echo "botan_cxxflags=${BOTAN_CXXFLAGS}"
+echo "botan_disabled_modules=${BOTAN_DISABLED_MODULES:-<none>}"
+echo "botan_harness_cxxflags=${BOTAN_HARNESS_CXXFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -195,15 +203,21 @@ build_botan_once() {
 
   if [ "$need_configure" = "1" ]; then
     rm -rf "$BOTAN_BUILD_DIR"
-    python3 "$BOTAN_DIR/configure.py" \
-      --with-build-dir="$BOTAN_BUILD_DIR" \
-      --cc="$BOTAN_CC_FAMILY" \
-      --cc-bin="$BOTAN_CXX" \
-      --disable-shared-library \
-      --build-targets=static \
-      --minimized-build \
-      --enable-modules="$BOTAN_MODULES" \
-      --extra-cxxflags="$BOTAN_CXXFLAGS" >>"$BOTAN_LAST_BUILD_LOG" 2>&1
+    botan_configure_cmd=(
+      python3 "$BOTAN_DIR/configure.py"
+      --with-build-dir="$BOTAN_BUILD_DIR"
+      --cc="$BOTAN_CC_FAMILY"
+      --cc-bin="$BOTAN_CXX"
+      --disable-shared-library
+      --build-targets=static
+      --minimized-build
+      --enable-modules="$BOTAN_MODULES"
+      --extra-cxxflags="$BOTAN_CXXFLAGS"
+    )
+    if [ -n "$BOTAN_DISABLED_MODULES" ]; then
+      botan_configure_cmd+=(--disable-modules="$BOTAN_DISABLED_MODULES")
+    fi
+    "${botan_configure_cmd[@]}" >>"$BOTAN_LAST_BUILD_LOG" 2>&1
   fi
 
   make -C "$BOTAN_DIR" -f "$BOTAN_BUILD_DIR/Makefile" -j"$BOTAN_BUILD_JOBS" libs >>"$BOTAN_LAST_BUILD_LOG" 2>&1
@@ -604,7 +618,9 @@ CPP_EOF
 
 echo "[3/4] Building Botan benchmark harness"
 BOTAN_BIN="$WORK_DIR/botan_mlkem_bench"
-"$BOTAN_CXX" -O3 -DNDEBUG -std=c++17 -I"$BOTAN_BUILD_DIR/build/include/public" \
+read -r -a botan_harness_cxxflags_arr <<< "$BOTAN_HARNESS_CXXFLAGS"
+"$BOTAN_CXX" "${botan_harness_cxxflags_arr[@]}" -DNDEBUG -std=c++17 \
+  -I"$BOTAN_BUILD_DIR/build/include/public" \
   "$WORK_DIR/botan_mlkem_bench.cpp" \
   "$BOTAN_BUILD_DIR/libbotan-3.a" \
   -ldl -lpthread -lm \

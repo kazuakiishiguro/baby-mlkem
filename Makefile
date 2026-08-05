@@ -69,7 +69,7 @@ endif
 endif
 ASFLAGS ?= -Wa,--noexecstack
 CFLAGS = -D_GNU_SOURCE $(OPT_CFLAGS) -Wall -Wextra -std=c99 $(EXTRA_CFLAGS)
-ARCH_CFLAGS = -march=native
+ARCH_CFLAGS ?= -march=native
 TARGET = testc
 BENCH_TARGET = benchc
 BENCH_PRODUCT_TARGET = bench_productc

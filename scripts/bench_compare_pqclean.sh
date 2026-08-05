@@ -18,6 +18,9 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+PQCLEAN_CLEAN_CFLAGS="${PQCLEAN_CLEAN_CFLAGS:--O3 -march=native -std=c99}"
+PQCLEAN_AVX2_CFLAGS="${PQCLEAN_AVX2_CFLAGS:--mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common}"
+PQCLEAN_HARNESS_CFLAGS="${PQCLEAN_HARNESS_CFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-compare.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
@@ -84,6 +87,9 @@ echo "pin_cpu=${PIN_CPU:-<unset>}"
 echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
 echo "pqclean_fallback_clone_on_update_fail=${PQCLEAN_FALLBACK_CLONE_ON_UPDATE_FAIL}"
+echo "pqclean_clean_cflags=${PQCLEAN_CLEAN_CFLAGS}"
+echo "pqclean_avx2_cflags=${PQCLEAN_AVX2_CFLAGS}"
+echo "pqclean_harness_cflags=${PQCLEAN_HARNESS_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -98,7 +104,8 @@ fi
 
 echo "[2/4] Building PQClean clean benchmark"
 CLEAN_BIN="$WORK_DIR/pqclean_clean_bench"
-"$C_COMPILER" -D_POSIX_C_SOURCE=200809L -O3 -march=native -std=c99 \
+read -r -a pqclean_clean_cflags_arr <<< "$PQCLEAN_CLEAN_CFLAGS"
+"$C_COMPILER" -D_POSIX_C_SOURCE=200809L "${pqclean_clean_cflags_arr[@]}" \
   -DKEM_PREFIX=PQCLEAN_MLKEM768_CLEAN \
   -I"$PQCLEAN_DIR/common" -I"$PQCLEAN_DIR/crypto_kem/ml-kem-768/clean" \
   "$ROOT_DIR/scripts/pqclean_bench_generic.c" \
@@ -116,9 +123,12 @@ CLEAN_BIN="$WORK_DIR/pqclean_clean_bench"
   -o "$CLEAN_BIN"
 
 echo "[3/4] Building PQClean avx2 benchmark"
-make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" >/dev/null
+make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" clean >/dev/null
+make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" \
+  CC="$C_COMPILER" CFLAGS="$PQCLEAN_AVX2_CFLAGS" >/dev/null
 AVX2_BIN="$WORK_DIR/pqclean_avx2_bench"
-"$C_COMPILER" -D_POSIX_C_SOURCE=200809L -O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99 \
+read -r -a pqclean_harness_cflags_arr <<< "$PQCLEAN_HARNESS_CFLAGS"
+"$C_COMPILER" -D_POSIX_C_SOURCE=200809L "${pqclean_harness_cflags_arr[@]}" \
   -DKEM_PREFIX=PQCLEAN_MLKEM768_AVX2 \
   -I"$PQCLEAN_DIR/common" -I"$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" \
   "$ROOT_DIR/scripts/pqclean_bench_generic.c" \

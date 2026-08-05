@@ -19,6 +19,7 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+MLKEM_NATIVE_HARNESS_CFLAGS="${MLKEM_NATIVE_HARNESS_CFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-mlkem-native.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
@@ -92,6 +93,7 @@ echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
 echo "mlkem_native_auto=${MLKEM_NATIVE_AUTO}"
 echo "mlkem_native_dir=${MLKEM_NATIVE_DIR}"
+echo "mlkem_native_harness_cflags=${MLKEM_NATIVE_HARNESS_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -287,18 +289,12 @@ C_EOF
 
 echo "[3/4] Building mlkem-native benchmark harness"
 MLKEM_NATIVE_BIN="$WORK_DIR/mlkem_native_bench"
+read -r -a mlkem_native_harness_cflags_arr <<< "$MLKEM_NATIVE_HARNESS_CFLAGS"
 compile_cmd=(
   "$C_COMPILER"
   -D_GNU_SOURCE
   -D_POSIX_C_SOURCE=200809L
-  -O3
-  -march=native
-  -mavx2
-  -mbmi2
-  -mpopcnt
-  -maes
-  -fomit-frame-pointer
-  -std=c99
+  "${mlkem_native_harness_cflags_arr[@]}"
 )
 compile_cmd+=("${MLKEM_EXTRA_DEFINES[@]}")
 compile_cmd+=("${MLKEM_INCLUDE_FLAGS[@]}")

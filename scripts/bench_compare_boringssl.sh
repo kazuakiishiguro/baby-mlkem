@@ -18,6 +18,10 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
+BENCH_PROFILE_TAG="${BENCH_PROFILE_TAG:-$BENCH_ISA_PROFILE}"
+BORINGSSL_C_FLAGS="${BORINGSSL_C_FLAGS:-}"
+BORINGSSL_HARNESS_FLAGS="${BORINGSSL_HARNESS_FLAGS:--O3 -march=native}"
 if [ -n "${CXX_COMPILER:-}" ]; then
   CXX_COMPILER="$CXX_COMPILER"
 elif [[ "$C_COMPILER" == *clang* ]]; then
@@ -38,7 +42,9 @@ if [[ "$CXX_COMPILER" == *clang++* ]]; then
   fi
 fi
 
-BUILD_TAG="$(echo "${C_COMPILER}_${CXX_COMPILER}" | tr '/ ' '__')"
+COMPILER_TAG="$(echo "${C_COMPILER}_${CXX_COMPILER}" | tr '/ ' '__')"
+PROFILE_TAG="$(printf '%s' "$BENCH_PROFILE_TAG" | tr -c 'A-Za-z0-9_.-' '_')"
+BUILD_TAG="${COMPILER_TAG}-${PROFILE_TAG}"
 BORINGSSL_BUILD_DIR_EXPLICIT=0
 if [ -n "${BORINGSSL_BUILD_DIR+x}" ]; then
   BORINGSSL_BUILD_DIR_EXPLICIT=1
@@ -128,7 +134,10 @@ echo "update_repos=${UPDATE_REPOS}"
 echo "boringssl_dir=${BORINGSSL_DIR}"
 echo "boringssl_build_dir=${BORINGSSL_BUILD_DIR}"
 echo "boringssl_fallback_clone_on_update_fail=${BORINGSSL_FALLBACK_CLONE_ON_UPDATE_FAIL}"
+echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
+echo "boringssl_c_flags=${BORINGSSL_C_FLAGS:-<none>}"
 echo "boringssl_cxx_flags=${BORINGSSL_CXX_FLAGS:-<none>}"
+echo "boringssl_harness_flags=${BORINGSSL_HARNESS_FLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -150,6 +159,9 @@ cmake_args=(
   -DCMAKE_C_COMPILER="$C_COMPILER"
   -DCMAKE_CXX_COMPILER="$CXX_COMPILER"
 )
+if [ -n "$BORINGSSL_C_FLAGS" ]; then
+  cmake_args+=("-DCMAKE_C_FLAGS=$BORINGSSL_C_FLAGS")
+fi
 if [ -n "$BORINGSSL_CXX_FLAGS" ]; then
   cmake_args+=("-DCMAKE_CXX_FLAGS=$BORINGSSL_CXX_FLAGS")
 fi
@@ -336,10 +348,10 @@ C_EOF
 
 echo "[3/4] Building boringssl benchmark harness"
 BORINGSSL_BIN="$WORK_DIR/boringssl_mlkem_bench"
+read -r -a boringssl_harness_flags_arr <<< "$BORINGSSL_HARNESS_FLAGS"
 harness_cmd=(
   "$CXX_COMPILER"
-  -O3
-  -march=native
+  "${boringssl_harness_flags_arr[@]}"
   -I"$BORINGSSL_DIR"
   -I"$BORINGSSL_DIR/include"
 )

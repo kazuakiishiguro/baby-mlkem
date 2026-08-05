@@ -18,12 +18,20 @@ else
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
+BENCH_PROFILE_TAG="${BENCH_PROFILE_TAG:-$BENCH_ISA_PROFILE}"
 CC_TAG="$(echo "$C_COMPILER" | tr '/ ' '__')"
+PROFILE_TAG="$(printf '%s' "$BENCH_PROFILE_TAG" | tr -c 'A-Za-z0-9_.-' '_')"
+BUILD_TAG="${CC_TAG}-${PROFILE_TAG}"
+LIBOQS_DIST_BUILD="${LIBOQS_DIST_BUILD:-OFF}"
+LIBOQS_OPT_TARGET="${LIBOQS_OPT_TARGET:-native}"
+LIBOQS_CFLAGS="${LIBOQS_CFLAGS:--O3 -march=native}"
+LIBOQS_HARNESS_CFLAGS="${LIBOQS_HARNESS_CFLAGS:--O3 -march=native}"
 LIBOQS_BUILD_DIR_EXPLICIT=0
 if [ -n "${LIBOQS_BUILD_DIR+x}" ]; then
   LIBOQS_BUILD_DIR_EXPLICIT=1
 fi
-LIBOQS_BUILD_DIR="${LIBOQS_BUILD_DIR:-$LIBOQS_DIR/build-$CC_TAG}"
+LIBOQS_BUILD_DIR="${LIBOQS_BUILD_DIR:-$LIBOQS_DIR/build-$BUILD_TAG}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-liboqs.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
@@ -77,7 +85,7 @@ elif [ "$UPDATE_REPOS" = "1" ]; then
         if git clone --depth 1 "$LIBOQS_REPO_URL" "$FALLBACK_DIR" >/dev/null 2>&1; then
           LIBOQS_DIR="$FALLBACK_DIR"
           if [ "$LIBOQS_BUILD_DIR_EXPLICIT" = "0" ]; then
-            LIBOQS_BUILD_DIR="$LIBOQS_DIR/build-$CC_TAG"
+            LIBOQS_BUILD_DIR="$LIBOQS_DIR/build-$BUILD_TAG"
           fi
           echo "info: using fallback fresh clone: $LIBOQS_DIR" >&2
         else
@@ -99,6 +107,11 @@ echo "update_repos=${UPDATE_REPOS}"
 echo "liboqs_dir=${LIBOQS_DIR}"
 echo "liboqs_build_dir=${LIBOQS_BUILD_DIR}"
 echo "liboqs_fallback_clone_on_update_fail=${LIBOQS_FALLBACK_CLONE_ON_UPDATE_FAIL}"
+echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
+echo "liboqs_dist_build=${LIBOQS_DIST_BUILD}"
+echo "liboqs_opt_target=${LIBOQS_OPT_TARGET}"
+echo "liboqs_cflags=${LIBOQS_CFLAGS}"
+echo "liboqs_harness_cflags=${LIBOQS_HARNESS_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
@@ -114,11 +127,12 @@ fi
 echo "[2/4] Building liboqs (ml-kem only)"
 cmake -S "$LIBOQS_DIR" -B "$LIBOQS_BUILD_DIR" \
   -DCMAKE_C_COMPILER="$C_COMPILER" \
+  -DCMAKE_C_FLAGS="$LIBOQS_CFLAGS" \
   -DCMAKE_BUILD_TYPE=Release \
   -DOQS_BUILD_ONLY_LIB=ON \
   -DOQS_USE_OPENSSL=OFF \
-  -DOQS_DIST_BUILD=OFF \
-  -DOQS_OPT_TARGET=native \
+  -DOQS_DIST_BUILD="$LIBOQS_DIST_BUILD" \
+  -DOQS_OPT_TARGET="$LIBOQS_OPT_TARGET" \
   -DOQS_ALGS_ENABLED=STD \
   -DOQS_ENABLE_KEM_ML_KEM=ON \
   -DOQS_ENABLE_KEM_BIKE=OFF \
@@ -319,7 +333,9 @@ C_EOF
 
 echo "[3/4] Building liboqs benchmark harness"
 LIBOQS_BIN="$WORK_DIR/liboqs_mlkem_bench"
-"$C_COMPILER" -D_GNU_SOURCE -O3 -march=native -I"$LIBOQS_BUILD_DIR/include" \
+read -r -a liboqs_harness_cflags_arr <<< "$LIBOQS_HARNESS_CFLAGS"
+"$C_COMPILER" -D_GNU_SOURCE "${liboqs_harness_cflags_arr[@]}" \
+  -I"$LIBOQS_BUILD_DIR/include" \
   "$WORK_DIR/liboqs_mlkem_bench.c" \
   -L"$LIBOQS_BUILD_DIR/lib" -loqs -Wl,-rpath,"$LIBOQS_BUILD_DIR/lib" \
   -o "$LIBOQS_BIN"

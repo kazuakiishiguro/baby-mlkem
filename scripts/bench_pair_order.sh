@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 BENCH_PAIR_ORDER="${BENCH_PAIR_ORDER:-local-first}"
+BENCH_LOCAL_ENV="${BENCH_LOCAL_ENV:-}"
+BENCH_COMPETITOR_ENV="${BENCH_COMPETITOR_ENV:-}"
 case "$BENCH_PAIR_ORDER" in
   local-first|competitor-first) ;;
   *)
@@ -8,6 +10,26 @@ case "$BENCH_PAIR_ORDER" in
     return 1
     ;;
 esac
+
+bench_pair_run_one() {
+  if [ "$#" -ne 4 ]; then
+    echo "bench_pair_run_one expects: env-spec bin iters output" >&2
+    return 1
+  fi
+
+  local env_spec="$1"
+  local bin="$2"
+  local iters="$3"
+  local output="$4"
+  local -a env_args=()
+
+  if [ -n "$env_spec" ]; then
+    read -r -a env_args <<< "$env_spec"
+    env "${env_args[@]}" "${RUNNER[@]}" "$bin" "$iters" > "$output"
+  else
+    "${RUNNER[@]}" "$bin" "$iters" > "$output"
+  fi
+}
 
 bench_pair_run() {
   if [ "$#" -ne 5 ]; then
@@ -22,11 +44,11 @@ bench_pair_run() {
   local competitor_out="$5"
 
   if [ "$BENCH_PAIR_ORDER" = "local-first" ]; then
-    "${RUNNER[@]}" "$local_bin" "$iters" > "$local_out"
-    "${RUNNER[@]}" "$competitor_bin" "$iters" > "$competitor_out"
+    bench_pair_run_one "$BENCH_LOCAL_ENV" "$local_bin" "$iters" "$local_out"
+    bench_pair_run_one "$BENCH_COMPETITOR_ENV" "$competitor_bin" "$iters" "$competitor_out"
   else
-    "${RUNNER[@]}" "$competitor_bin" "$iters" > "$competitor_out"
-    "${RUNNER[@]}" "$local_bin" "$iters" > "$local_out"
+    bench_pair_run_one "$BENCH_COMPETITOR_ENV" "$competitor_bin" "$iters" "$competitor_out"
+    bench_pair_run_one "$BENCH_LOCAL_ENV" "$local_bin" "$iters" "$local_out"
   fi
 }
 
