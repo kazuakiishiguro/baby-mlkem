@@ -202,11 +202,15 @@ For both comparison profiles, completion requires:
 - GCC and Clang internal A/B gates show no operation-level regression greater
   than `0.5%` relative to the preceding accepted baby-mlkem commit.
 
-As of commit `51eb31b`, `verify_world_fastest.sh` defaults to the exact
-production artifact and `mlkem_roundtrip_core_ns_per_op`. Its `1.000x`
-aggregate threshold, aggregate-only statistics, and short retry policy are still
-insufficient for goal completion. A completion runner must additionally enforce
-the paired confidence, per-operation, profile, and margin criteria above.
+Commit `755c4a0` adds `verify_goal_native_speed.sh`, a fail-closed native
+completion runner that requires the exact comparator set, current clean
+checkouts, 15 measured pairs, three warmups, alternating order, the production
+no-cache metric, 20,000 paired bootstrap samples, every per-operation bound,
+and the 1.05x aggregate margin. Commit `e762e18` additionally refuses Kyber
+comparator sources containing the known persistent public-key, matrix, hash, or
+precomputed-encryption caches. `verify_world_fastest.sh` remains a shorter
+aggregate diagnostic and cannot complete the Goal. An equivalent strict
+AVX2-only runner is still required.
 
 ### Size Gate
 
@@ -306,6 +310,35 @@ measurements therefore use the product result rather than trying to credit the
 faster inline-only layout. These A/B results align the measurement target but do
 not close either external speed gate.
 
+### Native Clean Kyber AVX2 Milestone
+
+A 2026-08-06 native-profile diagnostic compared the Clang production/no-cache
+artifact at `755c4a0` against the cache-free `include/kyber_upstream` snapshot
+exported from its initial repository import at `9320136`. It used 15 paired
+100,000-iteration runs after three warmups, alternating order, and a paired
+20,000-sample bootstrap interval.
+
+| Operation | Ratio of medians | Paired 95% CI | Wins |
+|---|---:|---:|---:|
+| keygen | 1.3168x | 1.3116x-1.3228x | 15/15 |
+| encaps | 1.4594x | 1.4425x-1.4607x | 15/15 |
+| decaps | 2.0359x | 2.0104x-2.0391x | 15/15 |
+| roundtrip | 1.5651x | 1.5571x-1.5695x | 15/15 |
+
+The numerical Goal verifier passes this one comparator. The imported source has
+no persistent public-key cache, but its external pq-crystals commit was not
+recorded, so this is a historical clean-snapshot milestone, not a current
+upstream or all-comparator completion result.
+
+An earlier run against the current repository-vendored Kyber tree is explicitly
+rejected. That tree contains baby-mlkem experiment commits `13c7e19`, `182f644`,
+and `24f0b10`, which cache the decoded public key, transposed matrix, and
+`H(pk)`. Its fixed-key encapsulation result (`0.3630x` local speedup) measured a
+warmed comparator cache and is not valid no-cache evidence. Commit `e762e18`
+now rejects such a source before timing. The [complete report and both raw
+outputs](benchmarks/2026-08-06-clean-kyber-product-core/README.md) preserve this
+distinction.
+
 ### Completion and Reopening
 
 The goal is complete only when one clean, committed revision passes the
@@ -325,16 +358,16 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status as of 2026-08-06:
+Current status as of `e762e18` on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass for `51eb31b` | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
-| Native aggregate speed | open | The 2026-07-01 snapshot used the historical inline harness, only two strict runs, and an older revision; it is not evidence for the product-artifact gate. |
-| Native operation speed | open | The verifier does not yet enforce fastest-per-operation confidence bounds. |
-| AVX2-only speed | open | No current all-comparator completion run demonstrates the required AVX2-only margins with the product artifact. |
+| Correctness | provisional pass | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
+| Native aggregate speed | partial | The historical cache-free Kyber AVX2 snapshot passes at 1.5651x with a 1.5571x CI lower bound. The strict current ten-comparator run remains pending. |
+| Native operation speed | partial | The numerical verifier now enforces every operation; the clean Kyber snapshot passes all four rows, but the other current comparators remain unmeasured under the completion protocol. |
+| AVX2-only speed | open | No strict AVX2-only completion runner or current all-comparator report exists yet. |
 | Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
-| Clean final revision | provisional pass | The inverse-NTT scheduling candidate was rejected and removed; no experimental source remains. |
+| Clean final revision | provisional pass | Comparator-cache contamination is now rejected and no core experiment remains in the production source. Final correctness and all-gate reports are still required. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
