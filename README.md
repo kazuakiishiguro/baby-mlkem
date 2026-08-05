@@ -135,6 +135,129 @@ The repository still keeps in-tree comparator backends. Set
 PQClean AVX2 sources. Results from those opt-in backends measure integration with
 external-origin vendored code, not an independent baby-mlkem core.
 
+## Optimization Goal and Completion Contract
+
+The optimization goal is to make the independent ML-KEM-768 core both the
+fastest and the smallest production implementation within the explicitly
+defined comparison scope below. "Fastest" and "smallest" are measured claims,
+not claims of a mathematical or permanent global optimum. A new CPU,
+toolchain, implementation, or measurement can reopen the goal.
+
+The goal applies only to the default independent core. A qualifying build must
+not call a vendored Kyber/PQClean backend or another external cryptographic
+runtime object, retain results across KEM operations, or include `randombytes`
+or benchmark-fixture generation in the timed region. Repository-local source
+whose provenance is disclosed in `THIRD_PARTY_NOTICES.md` remains eligible.
+
+### Comparison Profiles
+
+Both profiles are required. CPU model, microcode, OS, compiler version, flags,
+comparator commit, and baby-mlkem commit must be recorded with every final run.
+
+| Profile | Required build and purpose |
+|---|---|
+| native | The fastest production build supported by the host, currently the AMD Ryzen Threadripper 7980X native AVX512 profile. Every comparator may use its fastest supported production path on the same host. |
+| AVX2-only | `-mavx2 -mbmi2 -mpopcnt -mno-avx512f` or an equivalent hard AVX512 exclusion. This separates core algorithm and scheduling quality from the native AVX512 advantage. |
+
+The required comparator set is upstream Kyber AVX2, upstream Kyber AVX2 with
+fair local flags, mlkem-native, PQClean AVX2, liboqs, BoringSSL, libcrux,
+libjade Kyber768 AVX2, Botan ML-KEM, and OpenSSL ML-KEM. A final verification
+must update each comparator from its authoritative repository and fail closed
+if an update or commit identification fails. Adding a credible faster or
+smaller implementation to the set reopens the corresponding gate.
+
+### Correctness Gate
+
+The same candidate commit used for the final speed and size measurements must
+pass all of the following:
+
+- FIPS 203/KAT and complete stage-oracle validation.
+- GCC and Clang native builds.
+- GCC and Clang AVX2-only builds.
+- GCC and Clang scalar builds.
+- Native UBSan KAT and stage-oracle validation.
+- Byte-identical public keys, ciphertexts, and shared secrets across eligible
+  implementation paths for the deterministic test corpus.
+
+### Speed Gate
+
+The timed interface is deterministic ML-KEM-768 core work. It measures fresh
+`keygen`, `encaps`, and `decaps` inputs without a persistent key, matrix,
+transformed-key, or cross-operation cache. The aggregate metric is the sum of
+those three operations, exposed locally as
+`mlkem_roundtrip_core_ns_per_op`. Cache-assisted `mlkem_roundtrip_ns_per_op`
+cannot satisfy this gate.
+
+For both comparison profiles, completion requires:
+
+- At least 15 paired measured runs after at least three untimed warmups, with
+  baseline/candidate or local/comparator execution order alternated.
+- The local median aggregate time is at least `1.05x` faster than every
+  comparator.
+- The lower bound of a paired 95% confidence interval is greater than `1.00x`
+  for every aggregate comparison.
+- Local `keygen`, `encaps`, and `decaps` medians are each no slower than the
+  fastest comparator operation, and each paired 95% confidence-interval lower
+  bound is at least `1.00x`.
+- GCC and Clang internal A/B gates show no operation-level regression greater
+  than `0.5%` relative to the preceding accepted baby-mlkem commit.
+
+`verify_world_fastest.sh` is currently a useful snapshot gate, but its default
+`1.000x` aggregate threshold, cache-assisted default metric, and short retry
+policy are not by themselves sufficient for goal completion. The completion
+runner must explicitly select `mlkem_roundtrip_core_ns_per_op` and enforce the
+criteria above.
+
+### Size Gate
+
+"Smallest" means the smallest production code footprint, not repository size,
+source lines, benchmark executable size, or wire-format size. For each profile,
+build a production-only ML-KEM-768 artifact with the same exported KEM
+operations and required SHA-3/SHAKE code, then remove benchmark/test code,
+debug/unwind metadata, unused backend code, and unreachable sections in the
+same way for every implementation.
+
+The primary footprint is the sum of allocatable executable and read-only
+sections, including `.text`, `.rodata`, constants, and repository-local
+assembly. `.data + .bss` and measured maximum stack usage must be reported
+separately. The exact artifact used for the speed gate must have a primary
+footprint no larger than every comparator artifact in the same profile. A
+separate `-Os` build cannot establish the simultaneous fastest-and-smallest
+claim.
+
+### Completion and Reopening
+
+The goal is complete only when one clean, committed revision passes the
+correctness, native speed, AVX2-only speed, and native/AVX2 size gates above,
+with reproducible reports committed to the repository. All experimental
+candidates must be accepted, rejected, or removed before that decision.
+
+Optimization search is considered locally exhausted when three consecutive
+independent redesigns of the current profiled top bottlenecks each fail to
+produce a reproducible `1.01x` aggregate no-cache KEM improvement. Local
+exhaustion is a stopping condition for experimentation, not a substitute for
+the correctness, speed, or size gates.
+
+The goal must be reopened when a required comparator becomes faster or smaller,
+a supported compiler/ISA fails a gate, a correctness issue is found, or a new
+measurement no longer meets a required margin. A dated speed milestone may be
+reported before full completion, but it must name its CPU, ISA, compiler,
+metric, comparator set, and remaining failed or unmeasured gates.
+
+Current status as of 2026-08-06:
+
+| Gate | Status | Evidence or gap |
+|---|---|---|
+| Correctness | provisional pass for accepted `d5daeb4` | Accepted paths passed the existing KAT/stage/compiler/ISA gates, but the final completion corpus has not been frozen. |
+| Native aggregate speed | milestone only | The 2026-07-01 no-cache snapshot beat the ten listed comparators, but used only two strict runs and predates the current accepted revision. |
+| Native operation speed | open | The verifier does not yet enforce fastest-per-operation confidence bounds. |
+| AVX2-only speed | open | No current all-comparator completion run demonstrates the required AVX2-only margins. |
+| Production size | open | No normalized production-artifact comparison exists yet. |
+| Clean final revision | open | An inverse-NTT scheduling candidate remains under evaluation. |
+
+Therefore baby-mlkem does not currently claim that this completion contract has
+been met.
+
 ## Current Core Optimization Frontier (2026-07-17)
 
 The active optimization goal is to keep improving the independent baby-mlkem
