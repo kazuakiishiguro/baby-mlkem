@@ -202,11 +202,11 @@ For both comparison profiles, completion requires:
 - GCC and Clang internal A/B gates show no operation-level regression greater
   than `0.5%` relative to the preceding accepted baby-mlkem commit.
 
-`verify_world_fastest.sh` is currently a useful snapshot gate, but its default
-`1.000x` aggregate threshold, cache-assisted default metric, and short retry
-policy are not by themselves sufficient for goal completion. The completion
-runner must explicitly select `mlkem_roundtrip_core_ns_per_op` and enforce the
-criteria above.
+As of commit `51eb31b`, `verify_world_fastest.sh` defaults to the exact
+production artifact and `mlkem_roundtrip_core_ns_per_op`. Its `1.000x`
+aggregate threshold, aggregate-only statistics, and short retry policy are still
+insufficient for goal completion. A completion runner must additionally enforce
+the paired confidence, per-operation, profile, and margin criteria above.
 
 ### Size Gate
 
@@ -275,10 +275,36 @@ make test-product product-size CC=gcc \
 
 GCC and Clang product smoke tests and the existing KAT passed in native,
 AVX2-only, and scalar builds. These numbers establish only the local
-baby-mlkem baseline. Maximum stack remains unmeasured, the external comparators
-do not yet emit artifacts under the same rules, and the speed harness does not
-yet link this product artifact. The completion-contract size gate therefore
-remains open.
+baby-mlkem baseline. Maximum stack remains unmeasured and external comparators
+do not yet emit artifacts under the same rules, so the completion-contract size
+gate remains open.
+
+### Production Artifact Speed Baseline
+
+`make bench-product` links `bench_productc` against the exact relocatable
+artifact measured by `make product-size`. Commit `51eb31b` makes this binary and
+`mlkem_roundtrip_core_ns_per_op` the defaults for every external comparison
+script and `verify_world_fastest.sh`. The historical `benchc` single-translation-
+unit build remains an internal candidate diagnostic and cannot support an
+external speed claim.
+
+A 2026-08-06 diagnostic compared both harnesses over 15 paired 100,000-iteration
+runs after three warmups, alternating order and using a paired 20,000-sample
+bootstrap interval. Clang was aligned at the measured resolution. GCC exposed
+a repeatable production-boundary cost in no-cache decapsulation: the
+`inline_time / product_time` geometric mean was `0.9856x` native (95% CI
+`0.9716x-0.9965x`) and `0.9893x` AVX2-only (95% CI
+`0.9811x-0.9983x`). Native GCC no-cache roundtrip was `0.9921x` (95% CI
+`0.9847x-0.9981x`).
+
+The [complete report](benchmarks/2026-08-06-product-inline-ab/README.md) and its
+four raw outputs record every cached and no-cache operation. The generated GCC
+AVX2-only decapsulation bodies have the same size in both binaries, but the
+product path additionally crosses the exported API and a finalized LTO
+boundary; code placement can also contribute. Future baseline and comparator
+measurements therefore use the product result rather than trying to credit the
+faster inline-only layout. These A/B results align the measurement target but do
+not close either external speed gate.
 
 ### Completion and Reopening
 
@@ -303,10 +329,10 @@ Current status as of 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass for `634da7d` | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
-| Native aggregate speed | milestone only | The 2026-07-01 no-cache snapshot beat the ten listed comparators, but used only two strict runs and predates the current accepted revision. |
+| Correctness | provisional pass for `51eb31b` | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
+| Native aggregate speed | open | The 2026-07-01 snapshot used the historical inline harness, only two strict runs, and an older revision; it is not evidence for the product-artifact gate. |
 | Native operation speed | open | The verifier does not yet enforce fastest-per-operation confidence bounds. |
-| AVX2-only speed | open | No current all-comparator completion run demonstrates the required AVX2-only margins. |
+| AVX2-only speed | open | No current all-comparator completion run demonstrates the required AVX2-only margins with the product artifact. |
 | Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
 | Clean final revision | provisional pass | The inverse-NTT scheduling candidate was rejected and removed; no experimental source remains. |
 

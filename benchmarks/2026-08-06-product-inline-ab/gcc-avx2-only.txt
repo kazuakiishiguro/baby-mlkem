@@ -1,0 +1,23 @@
+compiler=gcc runs=15 warmup_runs=3 kem_iters=100000 pin_cpu=0
+arch_cflags=-mavx2 -mbmi2 -mpopcnt -mno-avx512f
+speedup_direction=inline_time/product_time
+
+metric inline_avg product_avg product_speedup inline_median product_median median_speedup
+mlkem_decaps 3011.58 3016.06 0.9985x 3008.74 3017.09 0.9972x
+mlkem_decaps_core 5263.46 5319.84 0.9894x 5207.96 5317.70 0.9794x
+mlkem_encaps 1939.68 1952.19 0.9936x 1939.06 1950.63 0.9941x
+mlkem_encaps_core 4740.83 4754.43 0.9971x 4739.88 4746.94 0.9985x
+mlkem_keygen 7519.27 7514.32 1.0007x 7501.22 7506.03 0.9994x
+mlkem_keygen_core 7492.42 7488.35 1.0005x 7476.62 7474.82 1.0002x
+mlkem_roundtrip 12561.45 12589.26 0.9978x 12539.99 12573.03 0.9974x
+mlkem_roundtrip_core 17891.13 17869.88 1.0012x 17832.90 17858.27 0.9986x
+
+paired_metric gmean ci95_low ci95_high median wins inline_first_median product_first_median
+mlkem_decaps 0.9985x 0.9970x 1.0001x 0.9986x 5/15 0.9987x 0.9986x
+mlkem_decaps_core 0.9893x 0.9811x 0.9983x 0.9796x 4/15 0.9851x 0.9796x
+mlkem_encaps 0.9936x 0.9913x 0.9956x 0.9937x 1/15 0.9940x 0.9933x
+mlkem_encaps_core 0.9972x 0.9939x 0.9995x 0.9983x 6/15 0.9972x 1.0006x
+mlkem_keygen 1.0006x 0.9961x 1.0064x 0.9999x 7/15 1.0001x 0.9995x
+mlkem_keygen_core 1.0005x 0.9958x 1.0065x 1.0001x 8/15 1.0010x 1.0000x
+mlkem_roundtrip 0.9978x 0.9948x 1.0012x 0.9976x 3/15 0.9977x 0.9974x
+mlkem_roundtrip_core 1.0012x 0.9981x 1.0049x 0.9983x 5/15 0.9986x 0.9983x
