@@ -224,6 +224,14 @@ extract_comp_roundtrip() {
   esac
 }
 
+pair_order_for_run() {
+  if (( $1 % 2 == 1 )); then
+    printf "local-first\n"
+  else
+    printf "competitor-first\n"
+  fi
+}
+
 run_suite() {
   local label="$1"
   local script="$2"
@@ -238,11 +246,14 @@ run_suite() {
   : > "$comp_vals"
 
   for i in $(seq 1 "$WARMUP_RUNS"); do
+    local pair_order
+    pair_order="$(pair_order_for_run "$i")"
     local warmup_file="$raw_dir/warmup_${i}.txt"
-    echo "[$label] warmup=$i/$WARMUP_RUNS"
+    echo "[$label] warmup=$i/$WARMUP_RUNS order=$pair_order"
     if [ -n "$upstream_flags" ]; then
       UPDATE_REPOS="$update_repos_once" \
       C_COMPILER="$C_COMPILER" \
+      BENCH_PAIR_ORDER="$pair_order" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
       LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
@@ -251,6 +262,7 @@ run_suite() {
     else
       UPDATE_REPOS="$update_repos_once" \
       C_COMPILER="$C_COMPILER" \
+      BENCH_PAIR_ORDER="$pair_order" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
       LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
@@ -260,11 +272,14 @@ run_suite() {
   done
 
   for i in $(seq 1 "$RUNS"); do
+    local pair_order
+    pair_order="$(pair_order_for_run "$i")"
     local out_file="$raw_dir/run_${i}.txt"
-    echo "[$label] run=$i/$RUNS"
+    echo "[$label] run=$i/$RUNS order=$pair_order"
     if [ -n "$upstream_flags" ]; then
       UPDATE_REPOS="$update_repos_once" \
       C_COMPILER="$C_COMPILER" \
+      BENCH_PAIR_ORDER="$pair_order" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
       LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
@@ -273,6 +288,7 @@ run_suite() {
     else
       UPDATE_REPOS="$update_repos_once" \
       C_COMPILER="$C_COMPILER" \
+      BENCH_PAIR_ORDER="$pair_order" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
       LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \

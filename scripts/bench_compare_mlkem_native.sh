@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 MLKEM_NATIVE_DIR="${MLKEM_NATIVE_DIR:-$ROOT_DIR/../mlkem-native}"
 MLKEM_NATIVE_AUTO="${MLKEM_NATIVE_AUTO:-1}"
@@ -102,7 +103,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building mlkem-native ML-KEM-768 static library"
 make -C "$MLKEM_NATIVE_DIR" CC="$C_COMPILER" OPT=1 AUTO="$MLKEM_NATIVE_AUTO" test/build/libmlkem768.a >/dev/null
@@ -310,7 +310,9 @@ compile_cmd+=(
   -o "$MLKEM_NATIVE_BIN"
 )
 "${compile_cmd[@]}"
-MLKEM_NATIVE_OUT="$("${RUNNER[@]}" "$MLKEM_NATIVE_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$MLKEM_NATIVE_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+MLKEM_NATIVE_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

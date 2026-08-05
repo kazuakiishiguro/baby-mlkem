@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 PQCLEAN_DIR="${PQCLEAN_DIR:-/tmp/PQClean}"
 PQCLEAN_REPO_URL="${PQCLEAN_REPO_URL:-https://github.com/PQClean/PQClean.git}"
@@ -94,7 +95,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building PQClean clean benchmark"
 CLEAN_BIN="$WORK_DIR/pqclean_clean_bench"
@@ -114,7 +114,6 @@ CLEAN_BIN="$WORK_DIR/pqclean_clean_bench"
   "$PQCLEAN_DIR/common/fips202.c" \
   "$PQCLEAN_DIR/common/randombytes.c" \
   -o "$CLEAN_BIN"
-CLEAN_OUT="$("${RUNNER[@]}" "$CLEAN_BIN" "$ITERS")"
 
 echo "[3/4] Building PQClean avx2 benchmark"
 make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" >/dev/null
@@ -127,7 +126,11 @@ AVX2_BIN="$WORK_DIR/pqclean_avx2_bench"
   "$PQCLEAN_DIR/common/fips202.c" \
   "$PQCLEAN_DIR/common/randombytes.c" \
   -o "$AVX2_BIN"
-AVX2_OUT="$("${RUNNER[@]}" "$AVX2_BIN" "$ITERS")"
+
+CLEAN_OUT="$("${RUNNER[@]}" "$CLEAN_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$AVX2_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+AVX2_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

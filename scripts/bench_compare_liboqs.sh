@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 LIBOQS_DIR="${LIBOQS_DIR:-/tmp/liboqs}"
 LIBOQS_REPO_URL="${LIBOQS_REPO_URL:-https://github.com/open-quantum-safe/liboqs.git}"
@@ -109,7 +110,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building liboqs (ml-kem only)"
 cmake -S "$LIBOQS_DIR" -B "$LIBOQS_BUILD_DIR" \
@@ -323,7 +323,9 @@ LIBOQS_BIN="$WORK_DIR/liboqs_mlkem_bench"
   "$WORK_DIR/liboqs_mlkem_bench.c" \
   -L"$LIBOQS_BUILD_DIR/lib" -loqs -Wl,-rpath,"$LIBOQS_BUILD_DIR/lib" \
   -o "$LIBOQS_BIN"
-LIBOQS_OUT="$("${RUNNER[@]}" "$LIBOQS_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$LIBOQS_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+LIBOQS_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

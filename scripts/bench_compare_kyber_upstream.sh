@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 KYBER_DIR="${KYBER_DIR:-/tmp/kyber}"
 KYBER_REPO_URL="${KYBER_REPO_URL:-https://github.com/pq-crystals/kyber.git}"
@@ -279,10 +280,12 @@ KYBER_BIN="$WORK_DIR/kyber_avx2_bench"
   -o "$KYBER_BIN"
 
 if [ "$SKIP_LOCAL_BUILD" = "1" ] && [ "$LOCAL_PREHEAT_ITERS" -gt 0 ]; then
-  "${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$LOCAL_PREHEAT_ITERS" >/dev/null
+  bench_pair_run "$LOCAL_BENCH_BIN" "$KYBER_BIN" "$LOCAL_PREHEAT_ITERS" \
+    /dev/null /dev/null
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
-KYBER_OUT="$("${RUNNER[@]}" "$KYBER_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$KYBER_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+KYBER_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[3/4] Results"
 echo "--- local (baby-mlkem) ---"

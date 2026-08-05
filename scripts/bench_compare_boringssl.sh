@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 BORINGSSL_DIR="${BORINGSSL_DIR:-/tmp/boringssl}"
 BORINGSSL_REPO_URL="${BORINGSSL_REPO_URL:-https://boringssl.googlesource.com/boringssl}"
@@ -139,7 +140,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building boringssl (libcrypto)"
 cmake_args=(
@@ -355,7 +355,9 @@ harness_cmd+=(
   -o "$BORINGSSL_BIN"
 )
 "${harness_cmd[@]}"
-BORINGSSL_OUT="$("${RUNNER[@]}" "$BORINGSSL_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$BORINGSSL_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+BORINGSSL_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

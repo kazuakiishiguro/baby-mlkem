@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 BOTAN_REPO_URL="${BOTAN_REPO_URL:-https://github.com/randombit/botan.git}"
 BOTAN_DIR="${BOTAN_DIR:-/tmp/botan-mlkem}"
@@ -172,7 +173,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building Botan (ffi + ml-kem minimal static)"
 build_botan_once() {
@@ -609,7 +609,9 @@ BOTAN_BIN="$WORK_DIR/botan_mlkem_bench"
   "$BOTAN_BUILD_DIR/libbotan-3.a" \
   -ldl -lpthread -lm \
   -o "$BOTAN_BIN"
-BOTAN_OUT="$("${RUNNER[@]}" "$BOTAN_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$BOTAN_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+BOTAN_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

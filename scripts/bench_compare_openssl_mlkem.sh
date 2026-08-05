@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 UPDATE_REPOS="${UPDATE_REPOS:-0}"
 PIN_CPU="${PIN_CPU:-}"
@@ -115,7 +116,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building OpenSSL (libcrypto)"
 read -r -a openssl_cfg_opts_arr <<< "$OPENSSL_CONFIG_OPTS"
@@ -437,7 +437,9 @@ OPENSSL_BIN="$WORK_DIR/openssl_mlkem_bench"
 "$C_COMPILER" -O3 -I"$OPENSSL_DIR/include" \
   "$WORK_DIR/openssl_mlkem_bench.c" "$OPENSSL_DIR/libcrypto.a" \
   -ldl -lpthread -o "$OPENSSL_BIN"
-OPENSSL_OUT="$("${RUNNER[@]}" "$OPENSSL_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$OPENSSL_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+OPENSSL_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

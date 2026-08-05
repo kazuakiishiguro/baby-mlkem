@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 LIBCRUX_BENCH_DIR="${LIBCRUX_BENCH_DIR:-/tmp/libcrux-mlkem-bench}"
 LIBCRUX_CRATE_VERSION="${LIBCRUX_CRATE_VERSION:-0.0.8}"
@@ -225,7 +226,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 echo "[2/4] Building libcrux benchmark harness"
 (
@@ -242,7 +242,9 @@ if [ ! -x "$LIBCRUX_BIN" ]; then
   echo "libcrux benchmark binary missing: $LIBCRUX_BIN" >&2
   exit 1
 fi
-LIBCRUX_OUT="$("${RUNNER[@]}" "$LIBCRUX_BIN" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$LIBCRUX_BIN" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+LIBCRUX_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"

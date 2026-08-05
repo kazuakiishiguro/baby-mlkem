@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
 UPDATE_REPOS="${UPDATE_REPOS:-0}"
 PIN_CPU="${PIN_CPU:-}"
@@ -111,7 +112,6 @@ else
     exit 1
   fi
 fi
-LOCAL_OUT="$("${RUNNER[@]}" "$LOCAL_BENCH_BIN" "$ITERS")"
 
 cat > "$WORK_DIR/libjade_kyber_bench.c" <<'C_EOF'
 #include <errno.h>
@@ -365,7 +365,9 @@ read -r -a libjade_cflags_arr <<< "$LIBJADE_HARNESS_CFLAGS"
   -o "$WORK_DIR/libjade_kyber_bench"
 
 echo "[3/4] Running libjade benchmark harness"
-LIBJADE_OUT="$("${RUNNER[@]}" "$WORK_DIR/libjade_kyber_bench" "$ITERS")"
+bench_pair_capture "$LOCAL_BENCH_BIN" "$WORK_DIR/libjade_kyber_bench" "$ITERS" "$WORK_DIR"
+LOCAL_OUT="$BENCH_LOCAL_OUT"
+LIBJADE_OUT="$BENCH_COMPETITOR_OUT"
 
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"
