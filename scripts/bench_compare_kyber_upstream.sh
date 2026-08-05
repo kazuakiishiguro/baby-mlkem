@@ -20,6 +20,7 @@ UPSTREAM_CFLAGS="${UPSTREAM_CFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -fo
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 LOCAL_PREHEAT_ITERS="${LOCAL_PREHEAT_ITERS:-64}"
+ALLOW_CACHED_COMPARATOR="${ALLOW_CACHED_COMPARATOR:-0}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-kyber.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
@@ -61,6 +62,11 @@ if ! [[ "$LOCAL_PREHEAT_ITERS" =~ ^[0-9]+$ ]]; then
   echo "invalid LOCAL_PREHEAT_ITERS: $LOCAL_PREHEAT_ITERS" >&2
   exit 1
 fi
+if [ "$ALLOW_CACHED_COMPARATOR" != "0" ] &&
+    [ "$ALLOW_CACHED_COMPARATOR" != "1" ]; then
+  echo "ALLOW_CACHED_COMPARATOR must be 0 or 1" >&2
+  exit 1
+fi
 
 if [ ! -d "$KYBER_DIR" ]; then
   git clone --depth 1 "$KYBER_REPO_URL" "$KYBER_DIR"
@@ -83,6 +89,33 @@ elif [ "$UPDATE_REPOS" = "1" ]; then
   fi
 fi
 
+if ! command -v rg >/dev/null 2>&1; then
+  echo "rg is required for the comparator cache audit" >&2
+  exit 1
+fi
+KYBER_CACHE_PATTERN='(pk|public_key|matrix|at|hash)[[:alnum:]_]*cache|indcpa_enc_precomp'
+KYBER_CACHE_REPORT="$WORK_DIR/kyber-cache-audit.txt"
+cache_scan_status=0
+rg -n --glob '*.[ch]' "$KYBER_CACHE_PATTERN" \
+  "$KYBER_DIR/avx2" "$KYBER_DIR/ref" > "$KYBER_CACHE_REPORT" ||
+  cache_scan_status=$?
+if [ "$cache_scan_status" -gt 1 ]; then
+  echo "failed to audit Kyber comparator sources" >&2
+  exit 1
+fi
+if [ -s "$KYBER_CACHE_REPORT" ]; then
+  if [ "$ALLOW_CACHED_COMPARATOR" != "1" ]; then
+    cat "$KYBER_CACHE_REPORT" >&2
+    echo "persistent comparator cache detected; no-cache comparison refused" >&2
+    echo "set ALLOW_CACHED_COMPARATOR=1 only for a non-qualifying diagnostic" >&2
+    exit 1
+  fi
+  echo "warning: cached Kyber comparator explicitly allowed; result cannot qualify" >&2
+  comparator_cache_audit=override
+else
+  comparator_cache_audit=pass
+fi
+
 echo "[1/4] Building local benchmark"
 echo "local_AVX2_BACKEND=${AVX2_BACKEND:-core (Makefile default)}"
 echo "local_roundtrip_metric=${LOCAL_ROUNDTRIP_METRIC}"
@@ -93,6 +126,7 @@ echo "kyber_fallback_clone_on_update_fail=${KYBER_FALLBACK_CLONE_ON_UPDATE_FAIL}
 echo "upstream_cflags=${UPSTREAM_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 echo "local_preheat_iters=${LOCAL_PREHEAT_ITERS}"
+echo "comparator_cache_audit=${comparator_cache_audit}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
   make -C "$ROOT_DIR" bench-product CC="$C_COMPILER" >/dev/null
