@@ -318,6 +318,7 @@ Near-term target selection:
 | GCC AVX512VL public-key copy/H(pk) fusion | Accepted for GCC native; Clang and narrower ISAs unchanged | Top-level keygen must both copy the 1,184-byte encoded public key into the decapsulation key and compute `H(pk)`. A GCC-only fixed-shape entry now loads each source word once, stores that XMM value to the copy, and absorbs the same value before the existing nine Keccak permutations. Direct copy+hash improves `1.0064x` paired median with 7/7 wins; 100k keygen/keygen-core improve `1.0020x`/`1.0022x` with 12/15 and 13/15 wins. Clang's direct probe improved but its complete keygen gate regressed, so its product remains byte-identical. GCC text grows 1,002 bytes; no cache, external object, table, API, or wire-format dependency is added. |
 | Native AVX512 inverse-NTT representation | YMM Montgomery baseline accepted, then superseded on native builds | The first accepted path kept all seven levels in signed 16-bit YMM lanes and improved GCC/Clang plain inverse medians by `2.0362x`/`1.8715x` over the former 32-bit native path. It remains the AVX2-only implementation, while native AVX512 now uses the register-fused ZMM row below. The implementation is repository-local intrinsics code with no external object or library dependency; its Montgomery arithmetic remains explicitly attributed to upstream Kyber. |
 | Native AVX512 register-fused inverse NTT | Accepted for native AVX512; AVX2-only path unchanged | One ZMM keeps each contiguous 32-coefficient block resident through inverse lengths 2, 4, 8, and 16; lengths 32/64 and final scale/output handling also stay in 16-bit ZMM lanes. Against the accepted YMM baseline, GCC/Clang plain inverse medians improve another `1.0985x`/`1.1434x`; 15-pair encaps improves `1.0446x`/`1.0579x`, decaps `1.0390x`/`1.0615x`, and roundtrip `1.0197x`/`1.0277x`. No vendored object, runtime library, cache, or wire-format dependency is added. |
+| GCC AVX512 shared inverse l4/l5 fusion | Closed | Keeping four 32-coefficient blocks resident across inverse lengths 32 and 64 improves the direct compact/shared inverse stages by `1.0430x`/`1.0343x` geometric mean and shrinks GCC linked text by 420 bytes. Two 100k KEM confirmations nevertheless put the untouched `keygen_core` control at `0.9952x` and `0.9921x` geometric mean; the repeat median `0.9937x` fails the operation-level regression gate. Integrated `roundtrip_core` remains only `1.0034x`/`1.0022x`. No candidate code remains. |
 | Single-state AVX2 `keccakf()` mapping | Accepted, external-derived schedule disclosed | A fresh KEM profile put scalar `keccakf()` first at `22.87%` self time. The new canonical-state AVX2 path adapts XKCP/CRYPTOGAMS' seven-vector schedule and improves direct permutation median from `215.44` to `190.67 ns` (`1.1299x`). It is compiled into the local core with no external object dependency, but is not claimed as an independently designed schedule. The original two-round scalar implementation remains the non-AVX2 fallback. |
 | Long single-state SHA3 state boundary | Persistent seven-vector state accepted | The fixed 1184-byte public-key hash now stays in the seven-YMM layout across all nine permutations, and AVX2 copy+hash uses a separate `memcpy` plus the same packed hash instead of materializing canonical state each block. Direct hash and copy+hash medians improved `1.0393x` and `1.0411x`; 13-run KEM confirmation kept `keygen`/`keygen_core` at `1.0102x`/`1.0094x`. |
 | Native AVX512VL fixed H(pk) rotates | Accepted for GCC AVX512; Clang and AVX2-only paths unchanged | The fixed 1184-byte public-key hash uses native 256-bit variable rotates while preserving its seven-YMM state across all nine permutations. GCC direct H(pk)/copy+hash paired medians improve `1.0481x`/`1.0479x`; 14-pair keygen/keygen-core improve `1.0187x`/`1.0173x`, both with 14/14 wins. Clang already emitted `vprolvq`; its native Keccak benchmark and both compilers' AVX2-only test/Keccak binaries remain byte-identical. No external object, cache, or wire-format dependency is added. |
@@ -586,6 +587,80 @@ This is a repository-local arithmetic-range specialization, not a cache
 shortcut. It adds no table, external object, runtime library, API, or wire
 format dependency; the underlying Montgomery/NTT arithmetic retains its
 existing upstream attribution.
+
+### Rejected Core Optimization A/B (2026-08-06, GCC AVX512 shared inverse l4/l5 fusion)
+
+The candidate fused inverse lengths 32 and 64 across the four output
+polynomials used by encryption. For each 128-coefficient group it loaded four
+ZMM blocks once, completed both inverse levels in registers, and stored the four
+results once. This removed an intermediate load/store boundary and reused the
+level factors across the four outputs. The final form was GCC-only; the broad
+Clang form left the direct compact stage neutral and regressed cached and
+cache-disabled K-PKE geometric means to `0.9953x` and `0.9952x`, so Clang
+was restored to byte-identical baseline code.
+
+The code baseline is `d5daeb4`; the repeat used documentation-only commit
+`866f99c`, which has identical production code. GCC 13.3.0 native stage
+measurements used two warmups, nine alternating pairs, and 100,000 iterations:
+
+```bash
+RUNS=9 WARMUP_RUNS=2 RUN_ORDER=alternating SUITES=stage \
+  STAGE_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=native" \
+  ./scripts/bench_core_ab.sh d5daeb4
+```
+
+| GCC native stage | Paired geometric mean | Paired median | Wins | Baseline-first / candidate-first median |
+|---|---:|---:|---:|---:|
+| compact inverse plus ETA2/message final | `1.0430x` | `1.0428x` | 9/9 | `1.0428x` / `1.0414x` |
+| shared four-output inverse | `1.0343x` | `1.0322x` | 9/9 | `1.0334x` / `1.0308x` |
+| cached K-PKE encryption | `1.0013x` | `1.0025x` | 7/9 | `1.0026x` / `1.0018x` |
+| cache-disabled K-PKE encryption | `1.0182x` | `1.0005x` | 6/9 | `1.0005x` / `1.0006x` |
+
+The cache-disabled geometric mean contains an outlier; its median and both
+order-separated medians show that the direct improvement is almost completely
+diluted at the K-PKE boundary.
+
+Two independent complete-KEM confirmations used three warmups, fourteen
+alternating pairs, and 100,000 iterations:
+
+```bash
+RUNS=14 WARMUP_RUNS=3 RUN_ORDER=alternating SUITES=kem \
+  KEM_ITERS=100000 PIN_CPU=0 C_COMPILER=gcc \
+  ARCH_CFLAGS="-march=native" \
+  ./scripts/bench_core_ab.sh 866f99c
+```
+
+| Metric | First geometric mean / median / wins | Repeat geometric mean / median / wins |
+|---|---:|---:|
+| `mlkem_encaps` | `1.0101x` / `1.0092x` / 14/14 | `1.0040x` / `1.0115x` / 13/14 |
+| `mlkem_encaps_core` | `0.9984x` / `1.0015x` / 10/14 | `1.0030x` / `1.0050x` / 12/14 |
+| `mlkem_decaps` | `1.0046x` / `1.0054x` / 9/14 | `1.0072x` / `1.0081x` / 12/14 |
+| `mlkem_decaps_core` | `1.0046x` / `1.0062x` / 9/14 | `1.0062x` / `1.0074x` / 12/14 |
+| `mlkem_keygen` control | `0.9973x` / `0.9980x` / 3/14 | `0.9972x` / `0.9982x` / 1/14 |
+| `mlkem_keygen_core` control | `0.9952x` / `0.9959x` / 1/14 | `0.9921x` / `0.9937x` / 0/14 |
+| `mlkem_roundtrip` | `1.0022x` / `1.0027x` / 11/14 | `1.0028x` / `1.0039x` / 12/14 |
+| `mlkem_roundtrip_core` | `1.0034x` / `1.0033x` / 10/14 | `1.0022x` / `1.0018x` / 12/14 |
+
+GCC reduced the shared inverse helper from 1,955 to 1,547 bytes and linked
+`benchc` text from 81,349 to 80,929 bytes. The keygen machine code itself was
+unchanged, but shrinking the preceding helper shifted `mlkem_keygen` from
+address `0xab30` to `0xa990` and shifted later hot code by 416 bytes. The two
+independent control regressions therefore expose a repeatable front-end/layout
+cost rather than inverse arithmetic executed by keygen.
+
+The candidate is rejected. Its repeated `keygen_core` median of `0.9937x`
+exceeds the completion contract operation-regression limit of `0.5%`, while
+both integrated `roundtrip_core` gains remain below the `1.01x` local-search
+threshold. Padding away the layout change would surrender the measured size
+benefit and would not turn the sub-percent aggregate result into a robust
+redesign win.
+
+The experimental GCC and Clang native forms passed KAT and the complete
+412-line stage validator before the compiler gate; the gated Clang products
+were byte-identical to the baseline. The rejected source has been removed. It
+added no cache, table, external object, runtime library, API, or wire-format
+dependency.
 
 ### Rejected Core Optimization A/B (2026-07-17, GCC AVX512VNNI three-NTT tail factor sharing)
 
