@@ -127,6 +127,83 @@ def require_metadata(metadata, key: str) -> str:
     return metadata[key]
 
 
+AVX2_FLAG_KEYS = (
+    "local_ARCH_CFLAGS",
+    "mlkem_native_harness_cflags",
+    "upstream_cflags",
+    "fair_upstream_cflags",
+    "pqclean_clean_cflags",
+    "pqclean_avx2_cflags",
+    "pqclean_harness_cflags",
+    "liboqs_cflags",
+    "liboqs_harness_cflags",
+    "boringssl_c_flags",
+    "boringssl_cxx_flags",
+    "boringssl_harness_flags",
+    "libjade_harness_cflags",
+    "botan_cxxflags",
+    "botan_harness_cxxflags",
+    "openssl_cflags",
+    "openssl_harness_cflags",
+)
+
+
+def validate_goal_profile(metadata, profile: str, failures: list[str]) -> None:
+    if require_metadata(metadata, "bench_isa_profile") != profile:
+        failures.append("bench_isa_profile does not match goal_profile")
+    if require_metadata(metadata, "allow_cached_comparator") != "0":
+        failures.append("cached comparator override is not disabled")
+
+    expected_tag = f"goal-{profile}"
+    if require_metadata(metadata, "bench_profile_tag") != expected_tag:
+        failures.append(f"bench_profile_tag is not {expected_tag}")
+
+    if profile == "native":
+        if require_metadata(metadata, "local_ARCH_CFLAGS") != "-march=native":
+            failures.append("native local_ARCH_CFLAGS is not -march=native")
+        if require_metadata(metadata, "local_avx512_instruction_audit") != (
+            "not-applicable"
+        ):
+            failures.append("native local AVX512 audit marker is invalid")
+        return
+
+    if profile != "avx2":
+        failures.append(f"unsupported profile metadata: {profile}")
+        return
+
+    required_tokens = ("-march=x86-64-v3", "-mavx2", "-mno-avx512f")
+    for key in AVX2_FLAG_KEYS:
+        value = require_metadata(metadata, key)
+        tokens = value.split()
+        for token in required_tokens:
+            if token not in tokens:
+                failures.append(f"{key} is missing {token}")
+        if "-march=native" in tokens:
+            failures.append(f"{key} contains forbidden -march=native")
+        positive_avx512 = [
+            token
+            for token in tokens
+            if token.startswith("-mavx512") and not token.startswith("-mno-")
+        ]
+        if positive_avx512:
+            failures.append(
+                f"{key} enables forbidden AVX512 flags: {positive_avx512}"
+            )
+
+    exact_values = {
+        "mlkem_native_auto": "1",
+        "liboqs_dist_build": "OFF",
+        "liboqs_opt_target": "x86-64-v3",
+        "libcrux_rustflags": "-C target-cpu=x86-64-v3 -C codegen-units=1",
+        "botan_disabled_modules": "keccak_perm_avx512",
+        "openssl_ia32cap": ":~0x10000",
+        "local_avx512_instruction_audit": "pass",
+    }
+    for key, expected in exact_values.items():
+        if require_metadata(metadata, key) != expected:
+            failures.append(f"{key} does not match the AVX2-only policy")
+
+
 def validate_orders(
     label: str, orders, expected_count: int, kind: str, failures: list[str]
 ) -> None:
@@ -197,10 +274,10 @@ def main() -> int:
         failures.append("local_bench_bin is not the production-artifact harness")
     if require_metadata(metadata, "stats_mode") != "median":
         failures.append("stats_mode is not median")
-    if args.expected_profile is not None and require_metadata(
-        metadata, "goal_profile"
-    ) != args.expected_profile:
-        failures.append("goal_profile does not match the requested profile")
+    if args.expected_profile is not None:
+        if require_metadata(metadata, "goal_profile") != args.expected_profile:
+            failures.append("goal_profile does not match the requested profile")
+        validate_goal_profile(metadata, args.expected_profile, failures)
     if args.require_updated_repos and require_metadata(metadata, "UPDATE_REPOS") != "1":
         failures.append("UPDATE_REPOS is not 1")
 
