@@ -225,6 +225,61 @@ footprint no larger than every comparator artifact in the same profile. A
 separate `-Os` build cannot establish the simultaneous fastest-and-smallest
 claim.
 
+### Production Artifact and Local Size Baseline
+
+Commit `634da7d` adds a deterministic ML-KEM-768 product API and a normalized
+relocatable artifact. `make product` compiles the independent core with
+`-ffunction-sections -fdata-sections`, roots only the three KEM operations and
+the two benchmark cache controls, links the required repository-local assembly,
+and applies section garbage collection. GCC LTO builds use
+`-flinker-output=nolto-rel` so the measured artifact contains final machine
+code rather than LTO metadata.
+
+`make test-product` links that exact artifact and checks a deterministic
+keygen/encaps/decaps roundtrip plus implicit rejection with internal caches
+disabled. `make product-size` verifies the five exported symbols and reports:
+
+- `code_bytes`: allocatable read-only executable sections.
+- `readonly_data_bytes`: allocatable read-only non-code sections.
+- `primary_bytes`: `code_bytes + readonly_data_bytes`.
+- `writable_bytes`: initialized writable data plus zero-fill storage.
+- ELF notes, unwind sections, comments, debug metadata, test code, and benchmark
+  code are excluded from the primary total.
+
+The 2026-08-06 local baselines use the normal compiler-specific speed flags:
+
+| Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
+|---|---|---:|---:|---:|---:|---:|---:|
+| native AVX512 | Clang 18.1.3 | 105,710 | 5,573 | 111,283 | 12 | 35,446 | 35,458 |
+| native AVX512 | GCC 13.3.0 LTO | 67,274 | 2,337 | 69,611 | 12 | 37,376 | 37,388 |
+| AVX2-only | Clang 18.1.3 | 68,243 | 5,743 | 73,986 | 12 | 42,005 | 42,017 |
+| AVX2-only | GCC 13.3.0 LTO | 57,221 | 2,353 | 59,574 | 20 | 42,144 | 42,164 |
+
+Reproduce one profile at a time after cleaning ISA-specific objects:
+
+```bash
+make clean
+make test-product product-size CC=clang
+
+make clean
+make test-product product-size CC=gcc
+
+make clean
+make test-product product-size CC=clang \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+
+make clean
+make test-product product-size CC=gcc \
+  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+```
+
+GCC and Clang product smoke tests and the existing KAT passed in native,
+AVX2-only, and scalar builds. These numbers establish only the local
+baby-mlkem baseline. Maximum stack remains unmeasured, the external comparators
+do not yet emit artifacts under the same rules, and the speed harness does not
+yet link this product artifact. The completion-contract size gate therefore
+remains open.
+
 ### Completion and Reopening
 
 The goal is complete only when one clean, committed revision passes the
@@ -248,12 +303,12 @@ Current status as of 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass for accepted `d5daeb4` | Accepted paths passed the existing KAT/stage/compiler/ISA gates, but the final completion corpus has not been frozen. |
+| Correctness | provisional pass for `634da7d` | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
 | Native aggregate speed | milestone only | The 2026-07-01 no-cache snapshot beat the ten listed comparators, but used only two strict runs and predates the current accepted revision. |
 | Native operation speed | open | The verifier does not yet enforce fastest-per-operation confidence bounds. |
 | AVX2-only speed | open | No current all-comparator completion run demonstrates the required AVX2-only margins. |
-| Production size | open | No normalized production-artifact comparison exists yet. |
-| Clean final revision | open | An inverse-NTT scheduling candidate remains under evaluation. |
+| Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
+| Clean final revision | provisional pass | The inverse-NTT scheduling candidate was rejected and removed; no experimental source remains. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
