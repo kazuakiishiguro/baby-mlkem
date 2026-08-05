@@ -61,6 +61,12 @@ ifeq ($(origin EXTRA_CFLAGS), file)
 EXTRA_CFLAGS := -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
 endif
 endif
+PRODUCT_LTO_FINAL_FLAGS =
+ifeq ($(findstring clang,$(notdir $(CC))),)
+ifneq ($(filter -flto%,$(OPT_CFLAGS)),)
+PRODUCT_LTO_FINAL_FLAGS += -flinker-output=nolto-rel
+endif
+endif
 ASFLAGS ?= -Wa,--noexecstack
 CFLAGS = -D_GNU_SOURCE $(OPT_CFLAGS) -Wall -Wextra -std=c99 $(EXTRA_CFLAGS)
 ARCH_CFLAGS = -march=native
@@ -70,6 +76,16 @@ BENCH_NTT_TARGET = bench_nttc
 BENCH_KECCAK_TARGET = bench_keccakc
 BENCH_KECCAK_VENDOR_TARGET = bench_keccak_vendorc
 BENCH_STAGES_TARGET = bench_core_stagesc
+PRODUCT_TARGET = baby_mlkem768_product.o
+PRODUCT_TEST_TARGET = product_testc
+PRODUCT_ROOT_SYMBOLS = \
+	baby_mlkem768_keypair_derand \
+	baby_mlkem768_encaps_derand \
+	baby_mlkem768_decaps \
+	baby_mlkem768_set_internal_caches_enabled \
+	baby_mlkem768_clear_internal_caches
+PRODUCT_ROOT_FLAGS = $(foreach symbol,$(PRODUCT_ROOT_SYMBOLS),-Wl,--undefined=$(symbol))
+PRODUCT_SECTION_FLAGS = -ffunction-sections -fdata-sections
 BENCH_ITERS ?= 200
 BENCH_CT_STRIDE ?= 1088
 BENCH_NTT_ITERS ?= 200000
@@ -88,6 +104,9 @@ CORE_ASM_SRCS += keccakf8_matrix_avx512.S
 CORE_ASM_DEF += -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM
 endif
 CORE_ASM_OBJS := $(CORE_ASM_SRCS:.S=.o)
+PRODUCT_API_OBJ = baby_mlkem_api.product.o
+PRODUCT_ASM_OBJS := $(patsubst %.S,%.product.o,$(CORE_ASM_SRCS))
+PRODUCT_OBJS := $(PRODUCT_API_OBJ) $(PRODUCT_ASM_OBJS)
 CORE_ASM_CLEAN_OBJS = sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o
 ifeq ($(origin KYBER_FIPS202_CFLAGS), undefined)
 ifneq ($(findstring clang,$(notdir $(CC))),)
@@ -144,10 +163,10 @@ BENCH_KECCAK_OBJS += $(CORE_ASM_OBJS)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_SRCS:.c=.o)
 BENCH_STAGES_OBJS := $(BENCH_STAGES_OBJS:.S=.o)
 BENCH_STAGES_OBJS += $(CORE_ASM_OBJS)
-OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS))
-TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET)
+OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS) $(PRODUCT_OBJS) test_product.o $(PRODUCT_TARGET))
+TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET) $(PRODUCT_TEST_TARGET)
 
-.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run
+.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run product product-size test-product
 
 all: $(TARGET)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
@@ -199,6 +218,18 @@ bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h
 bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h
 bench_core_stages.o: baby-mlkem.c keccakf1600_avx2.h
 
+baby_mlkem_api.product.o: baby_mlkem_api.c baby_mlkem_api.h baby-mlkem.c keccakf1600_avx2.h
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(PRODUCT_SECTION_FLAGS) $(CORE_ASM_DEF) -Wno-unused-function
+%.product.o: %.S
+	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(ASFLAGS) $(PRODUCT_SECTION_FLAGS)
+test_product.o: baby_mlkem_api.h
+
+$(PRODUCT_TARGET): $(PRODUCT_OBJS)
+	$(CC) -r -nostdlib $(PRODUCT_OBJS) -o $(PRODUCT_TARGET) $(CFLAGS) $(ARCH_CFLAGS) $(PRODUCT_LTO_FINAL_FLAGS) $(PRODUCT_ROOT_FLAGS) -Wl,--gc-sections
+
+$(PRODUCT_TEST_TARGET): test_product.o $(PRODUCT_TARGET)
+	$(CC) test_product.o $(PRODUCT_TARGET) -o $(PRODUCT_TEST_TARGET) $(CFLAGS) $(ARCH_CFLAGS)
+
 $(TARGET): $(TEST_OBJS)
 	$(CC) $(TEST_OBJS) -o $(TARGET) $(CFLAGS) $(ARCH_CFLAGS)
 
@@ -231,6 +262,16 @@ clean:
 
 test: $(TARGET)
 	./$(TARGET)
+
+product: $(PRODUCT_TARGET)
+
+product-size: $(PRODUCT_TARGET)
+	@printf "compiler=%s\n" "$(CC)"
+	@printf "arch_cflags=%s\n" "$(ARCH_CFLAGS)"
+	./scripts/measure_product_size.sh $(PRODUCT_TARGET)
+
+test-product: $(PRODUCT_TEST_TARGET)
+	./$(PRODUCT_TEST_TARGET)
 
 bench: $(BENCH_TARGET)
 
