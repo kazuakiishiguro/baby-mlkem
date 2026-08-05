@@ -9,8 +9,8 @@ STATS_MODE="${STATS_MODE:-mean}"
 TRIM_COUNT="${TRIM_COUNT:-1}"
 LOCAL_BENCH_REUSE="${LOCAL_BENCH_REUSE:-1}"
 GLOBAL_SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
-GLOBAL_LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/benchc}"
-LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
+GLOBAL_LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
 elif command -v clang >/dev/null 2>&1; then
@@ -245,6 +245,7 @@ run_suite() {
       C_COMPILER="$C_COMPILER" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
+      LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
       UPSTREAM_CFLAGS="$upstream_flags" \
       "$ROOT_DIR/$script" "$ITERS" > "$warmup_file"
     else
@@ -252,6 +253,7 @@ run_suite() {
       C_COMPILER="$C_COMPILER" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
+      LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
       "$ROOT_DIR/$script" "$ITERS" > "$warmup_file"
     fi
     update_repos_once=0
@@ -265,6 +267,7 @@ run_suite() {
       C_COMPILER="$C_COMPILER" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
+      LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
       UPSTREAM_CFLAGS="$upstream_flags" \
       "$ROOT_DIR/$script" "$ITERS" > "$out_file"
     else
@@ -272,6 +275,7 @@ run_suite() {
       C_COMPILER="$C_COMPILER" \
       SKIP_LOCAL_BUILD="$GLOBAL_SKIP_LOCAL_BUILD" \
       LOCAL_BENCH_BIN="$GLOBAL_LOCAL_BENCH_BIN" \
+      LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
       "$ROOT_DIR/$script" "$ITERS" > "$out_file"
     fi
     update_repos_once=0
@@ -307,9 +311,9 @@ if [ "$GLOBAL_SKIP_LOCAL_BUILD" = "1" ]; then
 elif [ "$LOCAL_BENCH_REUSE" = "1" ]; then
   echo "[all-stats] building local benchmark once for reuse"
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
-  make -C "$ROOT_DIR" bench CC="$C_COMPILER" >/dev/null
+  make -C "$ROOT_DIR" bench-product CC="$C_COMPILER" >/dev/null
   GLOBAL_SKIP_LOCAL_BUILD=1
-  GLOBAL_LOCAL_BENCH_BIN="$ROOT_DIR/benchc"
+  GLOBAL_LOCAL_BENCH_BIN="$ROOT_DIR/bench_productc"
 fi
 
 printf "iters=%s runs=%s\n" "$ITERS" "$RUNS"

@@ -13,7 +13,7 @@ else
   C_COMPILER="gcc"
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
-LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/benchc}"
+LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 OPENSSL_REPO_URL="${OPENSSL_REPO_URL:-https://github.com/openssl/openssl.git}"
 OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL="${OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL:-1}"
 BUILD_TAG="$(echo "${C_COMPILER}" | tr '/ ' '__')"
@@ -22,7 +22,7 @@ OPENSSL_CONFIG_TARGET="${OPENSSL_CONFIG_TARGET:-linux-x86_64}"
 OPENSSL_CONFIG_OPTS="${OPENSSL_CONFIG_OPTS:-no-shared no-tests}"
 OPENSSL_CFLAGS="${OPENSSL_CFLAGS:--O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt}"
 OPENSSL_BUILD_JOBS="${OPENSSL_BUILD_JOBS:-$(command -v nproc >/dev/null 2>&1 && nproc || echo 4)}"
-LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-openssl.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -107,7 +107,7 @@ echo "openssl_cflags=${OPENSSL_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
-  make -C "$ROOT_DIR" bench CC="$C_COMPILER" >/dev/null
+  make -C "$ROOT_DIR" bench-product CC="$C_COMPILER" >/dev/null
   LOCAL_BUILD_DONE=1
 else
   if [ ! -x "$LOCAL_BENCH_BIN" ]; then

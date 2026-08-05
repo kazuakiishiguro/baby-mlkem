@@ -13,7 +13,7 @@ C_COMPILER="${C_COMPILER:-}"
 MAX_RETRIES="${MAX_RETRIES:-1}"
 RETRY_LABELS="${RETRY_LABELS:-kyber_upstream_avx2,kyber_upstream_avx2_fair}"
 SHOW_FULL_OUTPUT_ON_FAIL="${SHOW_FULL_OUTPUT_ON_FAIL:-1}"
-LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 
 if ! [[ "$ITERS" =~ ^[0-9]+$ ]] || [ "$ITERS" -le 0 ]; then
   echo "invalid iteration count: $ITERS" >&2
@@ -167,6 +167,7 @@ while [ "$attempt" -le "$total_attempts" ]; do
   STATS_MODE="$STATS_MODE" \
   TRIM_COUNT="$TRIM_COUNT" \
   C_COMPILER="$C_COMPILER" \
+  LOCAL_ROUNDTRIP_METRIC="$LOCAL_ROUNDTRIP_METRIC" \
   "${run_cmd[@]}" > "$out_file"
 
   printf "\n%-28s %-12s %-12s %-8s\n" "label" "speedup" "min" "status"

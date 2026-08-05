@@ -13,12 +13,12 @@ else
   C_COMPILER="gcc"
 fi
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
-LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/benchc}"
+LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz}"
 LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
 LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/libjade/crypto_kem/kyber_kyber768_avx2}"
 LIBJADE_HARNESS_CFLAGS="${LIBJADE_HARNESS_CFLAGS:--D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99}"
-LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_ns_per_op}"
+LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 WORK_DIR="$(mktemp -d /tmp/baby-mlkem-libjade.XXXXXX)"
 BENCH_LOCK_FILE="${BENCH_LOCK_FILE:-$ROOT_DIR/.bench-compare.lock}"
 CLEAN_LOCAL_BUILD_ARTIFACTS="${CLEAN_LOCAL_BUILD_ARTIFACTS:-1}"
@@ -103,7 +103,7 @@ echo "libjade_harness_cflags=${LIBJADE_HARNESS_CFLAGS}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
   make -C "$ROOT_DIR" clean CC="$C_COMPILER" >/dev/null
-  make -C "$ROOT_DIR" bench CC="$C_COMPILER" >/dev/null
+  make -C "$ROOT_DIR" bench-product CC="$C_COMPILER" >/dev/null
   LOCAL_BUILD_DONE=1
 else
   if [ ! -x "$LOCAL_BENCH_BIN" ]; then
