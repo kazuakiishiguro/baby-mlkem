@@ -11,6 +11,12 @@ LOCAL_BENCH_REUSE="${LOCAL_BENCH_REUSE:-1}"
 GLOBAL_SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 GLOBAL_LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
+BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-20000}"
+OPERATIONS=(keygen encaps decaps roundtrip)
+DEFAULT_BENCH_SUITES="kyber_upstream_avx2,kyber_upstream_avx2_fair,"
+DEFAULT_BENCH_SUITES+="mlkem_native,pqclean_avx2,liboqs,boringssl,"
+DEFAULT_BENCH_SUITES+="libcrux_rust,libjade_kyber768_avx2,botan_mlkem,openssl_mlkem"
+BENCH_SUITES="${BENCH_SUITES:-$DEFAULT_BENCH_SUITES}"
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
 elif command -v clang >/dev/null 2>&1; then
@@ -35,6 +41,14 @@ if ! [[ "$WARMUP_RUNS" =~ ^[0-9]+$ ]]; then
 fi
 if ! [[ "$TRIM_COUNT" =~ ^[0-9]+$ ]]; then
   echo "invalid trim count: $TRIM_COUNT" >&2
+  exit 1
+fi
+if ! [[ "$BOOTSTRAP_SAMPLES" =~ ^[0-9]+$ ]] || [ "$BOOTSTRAP_SAMPLES" -le 0 ]; then
+  echo "invalid bootstrap sample count: $BOOTSTRAP_SAMPLES" >&2
+  exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required for paired statistics" >&2
   exit 1
 fi
 if ! [[ "$LOCAL_BENCH_REUSE" =~ ^(0|1)$ ]]; then
@@ -175,53 +189,69 @@ END {
 }' "$paired"
 }
 
-extract_local_roundtrip() {
-  local file="$1"
-  awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}' "$file"
+extract_local_operation() {
+  local operation="$1"
+  local file="$2"
+  local metric
+
+  if [ "$operation" = "roundtrip" ]; then
+    metric="$LOCAL_ROUNDTRIP_METRIC"
+  else
+    metric="mlkem_${operation}_core_ns_per_op"
+  fi
+  awk -F= -v target="$metric" '$1 == target { print $2; exit }' "$file"
 }
 
-extract_comp_roundtrip() {
-  local label="$1"
-  local file="$2"
-
-  case "$label" in
-    pqclean_avx2)
-      awk -F= '
-        /^--- pqclean avx2 ---$/ { in_avx2 = 1; next }
-        in_avx2 && $1 == "roundtrip_ns_per_op" { print $2; exit }
-      ' "$file"
-      ;;
-    liboqs)
-      awk -F= '$1 == "liboqs_mlkem768_roundtrip_ns_per_op" {print $2; exit}' "$file"
-      ;;
-    kyber_upstream_avx2)
-      awk -F= '$1 == "kyber_avx2_roundtrip_ns_per_op" {print $2; exit}' "$file"
-      ;;
-    kyber_upstream_avx2_fair)
-      awk -F= '$1 == "kyber_avx2_roundtrip_ns_per_op" {print $2; exit}' "$file"
+competitor_metric_prefix() {
+  case "$1" in
+    kyber_upstream_avx2|kyber_upstream_avx2_fair)
+      printf "kyber_avx2_\n"
       ;;
     mlkem_native)
-      awk -F= '$1 == "mlkem_native_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "mlkem_native_\n"
+      ;;
+    liboqs)
+      printf "liboqs_mlkem768_\n"
       ;;
     boringssl)
-      awk -F= '$1 == "boringssl_mlkem768_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "boringssl_mlkem768_\n"
       ;;
     libcrux_rust)
-      awk -F= '$1 == "libcrux_mlkem768_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "libcrux_mlkem768_\n"
       ;;
     libjade_kyber768_avx2)
-      awk -F= '$1 == "libjade_kyber768_avx2_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "libjade_kyber768_avx2_\n"
       ;;
     botan_mlkem)
-      awk -F= '$1 == "botan_mlkem768_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "botan_mlkem768_\n"
       ;;
     openssl_mlkem)
-      awk -F= '$1 == "openssl_mlkem768_roundtrip_ns_per_op" {print $2; exit}' "$file"
+      printf "openssl_mlkem768_\n"
       ;;
     *)
       return 1
       ;;
   esac
+}
+
+extract_comp_operation() {
+  local label="$1"
+  local operation="$2"
+  local file="$3"
+  local metric
+
+  if [ "$label" = "pqclean_avx2" ]; then
+    metric="${operation}_ns_per_op"
+    awk -F= -v target="$metric" '
+      /^--- pqclean avx2 ---$/ { in_avx2 = 1; next }
+      in_avx2 && /^--- / { in_avx2 = 0 }
+      in_avx2 && $1 == target { print $2; exit }
+    ' "$file"
+    return
+  fi
+
+  metric="$(competitor_metric_prefix "$label")${operation}_ns_per_op"
+  awk -F= -v target="$metric" '$1 == target { print $2; exit }' "$file"
 }
 
 pair_order_for_run() {
@@ -238,12 +268,15 @@ run_suite() {
   local upstream_flags="${3:-}"
   local update_repos_once="${UPDATE_REPOS:-0}"
   local raw_dir="$WORK_DIR/${label}_raw"
-  local local_vals="$WORK_DIR/${label}_local.txt"
-  local comp_vals="$WORK_DIR/${label}_comp.txt"
+  local local_vals="$raw_dir/roundtrip_local.txt"
+  local comp_vals="$raw_dir/roundtrip_competitor.txt"
+  local operation
 
   mkdir -p "$raw_dir"
-  : > "$local_vals"
-  : > "$comp_vals"
+  for operation in "${OPERATIONS[@]}"; do
+    : > "$raw_dir/${operation}_local.txt"
+    : > "$raw_dir/${operation}_competitor.txt"
+  done
 
   for i in $(seq 1 "$WARMUP_RUNS"); do
     local pair_order
@@ -296,26 +329,39 @@ run_suite() {
     fi
     update_repos_once=0
 
-    local local_rt
-    local comp_rt
-    local_rt="$(extract_local_roundtrip "$out_file")"
-    comp_rt="$(extract_comp_roundtrip "$label" "$out_file")"
+    local -a operation_summary=()
+    for operation in "${OPERATIONS[@]}"; do
+      local local_value
+      local competitor_value
+      local_value="$(extract_local_operation "$operation" "$out_file")"
+      competitor_value="$(extract_comp_operation "$label" "$operation" "$out_file")"
 
-    if [ -z "$local_rt" ] || [ -z "$comp_rt" ]; then
-      echo "[$label] failed to parse run $i output" >&2
-      echo "--- begin output ---" >&2
-      cat "$out_file" >&2
-      echo "--- end output ---" >&2
-      return 1
-    fi
+      if [ -z "$local_value" ] || [ -z "$competitor_value" ]; then
+        echo "[$label] failed to parse $operation for run $i" >&2
+        echo "--- begin output ---" >&2
+        cat "$out_file" >&2
+        echo "--- end output ---" >&2
+        return 1
+      fi
 
-    echo "$local_rt" >> "$local_vals"
-    echo "$comp_rt" >> "$comp_vals"
+      echo "$local_value" >> "$raw_dir/${operation}_local.txt"
+      echo "$competitor_value" >> "$raw_dir/${operation}_competitor.txt"
+      operation_summary+=("${operation}=${local_value}/${competitor_value}")
+    done
 
-    printf "[%s] run=%d local=%s competitor=%s\n" "$label" "$i" "$local_rt" "$comp_rt"
+    printf "[%s] run=%d %s\n" "$label" "$i" "${operation_summary[*]}"
   done
 
   calc_stats "$label" "$local_vals" "$comp_vals"
+  printf "paired_bootstrap_samples=%s\n" "$BOOTSTRAP_SAMPLES"
+  for operation in "${OPERATIONS[@]}"; do
+    "$ROOT_DIR/scripts/paired_benchmark_stats.py" \
+      --metric "$operation" \
+      --local "$raw_dir/${operation}_local.txt" \
+      --competitor "$raw_dir/${operation}_competitor.txt" \
+      --expected-runs "$RUNS" \
+      --bootstrap-samples "$BOOTSTRAP_SAMPLES"
+  done
   echo
 }
 
@@ -334,6 +380,8 @@ fi
 
 printf "iters=%s runs=%s\n" "$ITERS" "$RUNS"
 printf "warmup_runs=%s\n" "$WARMUP_RUNS"
+printf "bootstrap_samples=%s\n" "$BOOTSTRAP_SAMPLES"
+printf "bench_suites=%s\n" "$BENCH_SUITES"
 printf "local_AVX2_BACKEND=%s\n" "${AVX2_BACKEND:-core (Makefile default)}"
 printf "PIN_CPU=%s\n" "${PIN_CPU:-<unset>}"
 printf "C_COMPILER=%s\n" "$C_COMPILER"
@@ -376,13 +424,48 @@ FAIR_UPSTREAM_CFLAGS="${FAIR_UPSTREAM_CFLAGS:-$EFFECTIVE_LOCAL_OPT_CFLAGS -march
 printf "fair_upstream_cflags=%s\n" "$FAIR_UPSTREAM_CFLAGS"
 echo
 
-run_suite "kyber_upstream_avx2" "scripts/bench_compare_kyber_upstream.sh"
-run_suite "kyber_upstream_avx2_fair" "scripts/bench_compare_kyber_upstream.sh" "$FAIR_UPSTREAM_CFLAGS"
-run_suite "mlkem_native" "scripts/bench_compare_mlkem_native.sh"
-run_suite "pqclean_avx2" "scripts/bench_compare_pqclean.sh"
-run_suite "liboqs" "scripts/bench_compare_liboqs.sh"
-run_suite "boringssl" "scripts/bench_compare_boringssl.sh"
-run_suite "libcrux_rust" "scripts/bench_compare_libcrux.sh"
-run_suite "libjade_kyber768_avx2" "scripts/bench_compare_libjade.sh"
-run_suite "botan_mlkem" "scripts/bench_compare_botan_mlkem.sh"
-run_suite "openssl_mlkem" "scripts/bench_compare_openssl_mlkem.sh"
+IFS="," read -r -a selected_suites <<< "$BENCH_SUITES"
+if [ "${#selected_suites[@]}" -eq 0 ]; then
+  echo "BENCH_SUITES must select at least one comparator" >&2
+  exit 1
+fi
+
+for suite in "${selected_suites[@]}"; do
+  case "$suite" in
+    kyber_upstream_avx2)
+      run_suite "$suite" "scripts/bench_compare_kyber_upstream.sh"
+      ;;
+    kyber_upstream_avx2_fair)
+      run_suite "$suite" "scripts/bench_compare_kyber_upstream.sh" \
+        "$FAIR_UPSTREAM_CFLAGS"
+      ;;
+    mlkem_native)
+      run_suite "$suite" "scripts/bench_compare_mlkem_native.sh"
+      ;;
+    pqclean_avx2)
+      run_suite "$suite" "scripts/bench_compare_pqclean.sh"
+      ;;
+    liboqs)
+      run_suite "$suite" "scripts/bench_compare_liboqs.sh"
+      ;;
+    boringssl)
+      run_suite "$suite" "scripts/bench_compare_boringssl.sh"
+      ;;
+    libcrux_rust)
+      run_suite "$suite" "scripts/bench_compare_libcrux.sh"
+      ;;
+    libjade_kyber768_avx2)
+      run_suite "$suite" "scripts/bench_compare_libjade.sh"
+      ;;
+    botan_mlkem)
+      run_suite "$suite" "scripts/bench_compare_botan_mlkem.sh"
+      ;;
+    openssl_mlkem)
+      run_suite "$suite" "scripts/bench_compare_openssl_mlkem.sh"
+      ;;
+    *)
+      echo "unknown BENCH_SUITES entry: $suite" >&2
+      exit 1
+      ;;
+  esac
+done
