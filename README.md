@@ -157,7 +157,7 @@ comparator commit, and baby-mlkem commit must be recorded with every final run.
 | Profile | Required build and purpose |
 |---|---|
 | native | The fastest production build supported by the host, currently the AMD Ryzen Threadripper 7980X native AVX512 profile. Every comparator may use its fastest supported production path on the same host. |
-| AVX2-only | `-mavx2 -mbmi2 -mpopcnt -mno-avx512f` or an equivalent hard AVX512 exclusion. This separates core algorithm and scheduling quality from the native AVX512 advantage. |
+| AVX2-only | `-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f`, with equivalent runtime-dispatch exclusions where required. This separates core algorithm and scheduling quality from the native AVX512 advantage. |
 
 The required comparator set is upstream Kyber AVX2, upstream Kyber AVX2 with
 fair local flags, mlkem-native, PQClean AVX2, liboqs, BoringSSL, libcrux,
@@ -208,9 +208,20 @@ checkouts, 15 measured pairs, three warmups, alternating order, the production
 no-cache metric, 20,000 paired bootstrap samples, every per-operation bound,
 and the 1.05x aggregate margin. Commit `e762e18` additionally refuses Kyber
 comparator sources containing the known persistent public-key, matrix, hash, or
-precomputed-encryption caches. `verify_world_fastest.sh` remains a shorter
-aggregate diagnostic and cannot complete the Goal. An equivalent strict
-AVX2-only runner is still required.
+precomputed-encryption caches. Commit `6a6f83f` adds the equivalent
+`verify_goal_avx2_speed.sh` entry point and a shared strict runner. The AVX2
+profile fixes all C/C++ builds to x86-64-v3 plus AVX2/BMI2/POPCNT, disables
+known AVX512 build or runtime-dispatch paths in liboqs, Botan, and OpenSSL,
+fixes the Rust target CPU, and audits the local production object for AVX512
+registers and symbols. Run the two completion checks with:
+
+```bash
+PIN_CPU=0 C_COMPILER=clang ./scripts/verify_goal_native_speed.sh 100000
+PIN_CPU=0 C_COMPILER=clang ./scripts/verify_goal_avx2_speed.sh 100000
+```
+
+`verify_world_fastest.sh` remains a shorter aggregate diagnostic and cannot
+complete the Goal.
 
 ### Size Gate
 
@@ -358,14 +369,14 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status as of `e762e18` on 2026-08-06:
+Current status as of `6a6f83f` on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
 | Correctness | provisional pass | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
 | Native aggregate speed | partial | The historical cache-free Kyber AVX2 snapshot passes at 1.5651x with a 1.5571x CI lower bound. The strict current ten-comparator run remains pending. |
 | Native operation speed | partial | The numerical verifier now enforces every operation; the clean Kyber snapshot passes all four rows, but the other current comparators remain unmeasured under the completion protocol. |
-| AVX2-only speed | open | No strict AVX2-only completion runner or current all-comparator report exists yet. |
+| AVX2-only speed | partial | The strict runner and ISA-policy verifier now exist and pass local profile, fail-closed, and cache-free Kyber smoke checks. A current ten-comparator completion report remains pending. |
 | Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
 | Clean final revision | provisional pass | Comparator-cache contamination is now rejected and no core experiment remains in the production source. Final correctness and all-gate reports are still required. |
 
