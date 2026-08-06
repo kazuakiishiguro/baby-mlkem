@@ -517,9 +517,12 @@ static void stage_ntt_add_lazy_ehat_avx2(const poly256 accum,
 #endif
 
 static void derive_keygen_lane(size_t lane) {
+  uint8_t domain_seed[33];
   uint8_t ghash[64];
 
-  pq_sha3_512(ghash, stage_seed[lane], 32);
+  memcpy(domain_seed, stage_seed[lane], 32);
+  domain_seed[32] = (uint8_t)K;
+  pq_sha3_512(ghash, domain_seed, sizeof(domain_seed));
   memcpy(stage_rho[lane], ghash, 32);
   memcpy(stage_sigma[lane], ghash + 32, 32);
 
