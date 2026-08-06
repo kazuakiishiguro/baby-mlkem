@@ -6623,9 +6623,13 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_liboqs.sh 400
 ```
 
-When liboqs exposes derandomized APIs for ML-KEM, the comparator uses
-`OQS_KEM_keypair_derand` and `OQS_KEM_encaps_derand` with deterministic seeds
-to reduce RNG noise and align with deterministic local benchmarking.
+The liboqs comparator configures `OQS_MINIMAL_BUILD=KEM_ml_kem_768`, links a
+section-GC-normalized static product, and calls the algorithm-specific
+`OQS_KEM_ml_kem_768_keypair_derand`, `OQS_KEM_ml_kem_768_encaps_derand`, and
+`OQS_KEM_ml_kem_768_decaps` APIs directly. It has no randomized fallback. The
+same three-API product is used by the speed and footprint comparisons; the
+builder rejects reachable entropy calls, persistent public-key/matrix caches,
+and AVX512 code in the AVX2-only profile.
 
 Compare against upstream `pq-crystals/kyber` AVX2 (`KYBER_K=3`):
 
