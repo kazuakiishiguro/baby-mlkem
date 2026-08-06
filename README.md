@@ -510,7 +510,7 @@ remain open.
 | Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
 | Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
 | AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
-| Production size | partial pass; full rerun required | Botan normalization is complete at `8451292`/`a4d6fec`; the clean native diagnostic passes its size gate. OpenSSL normalization and the all-comparator same-revision rerun remain open. |
+| Production size | partial pass; full rerun required | Botan normalization is complete at `8451292`/`a4d6fec`; the clean native diagnostic passes its size gate. OpenSSL normalization is explicitly rejected by the `83a523f` direct-core audit because `RAND_bytes_ex`/`getentropy` remain reachable; the all-comparator same-revision rerun remains open. |
 | Maximum stack | historical only; rerun required | Existing Kyber and other partial stack measurements predate `ada0e47`; all required comparators need a same-revision rerun. |
 | Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator correctness, speed, size, and stack reports are not complete. |
 
@@ -6799,9 +6799,15 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_openssl_mlkem.sh 400
 ```
 
-The OpenSSL comparator builds OpenSSL from source with deterministic keygen
-seed (`OSSL_PKEY_PARAM_ML_KEM_SEED`) and deterministic encapsulation entropy
-(`OSSL_KEM_PARAM_IKME`) for repeatable measurements.
+The existing OpenSSL benchmark builds OpenSSL from source with deterministic keygen
+seed (`OSSL_PKEY_PARAM_ML_KEM_SEED`) and deterministic encapsulation
+entropy (`OSSL_KEM_PARAM_IKME`) for repeatable reference measurements. It is
+not a completion-qualifying normalized comparator: the EVP path retains
+reachable `RAND_bytes_ex`/`getentropy` code and persistent provider/key
+lifecycle machinery. The direct-core experiment (`83a523f`) uses OpenSSL's
+private `ossl_ml_kem_*` API, but the rebuilt static archive still retains the
+same RNG symbols, so its size and speed results remain reference-only until
+that dependency closure is eliminated.
 
 Compare against Libjade `kyber_kyber768_avx2` on the same host:
 
