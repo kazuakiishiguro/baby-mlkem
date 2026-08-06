@@ -17,6 +17,7 @@ else
   C_COMPILER="gcc"
 fi
 UPSTREAM_CFLAGS="${UPSTREAM_CFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99}"
+BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
 SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 LOCAL_PREHEAT_ITERS="${LOCAL_PREHEAT_ITERS:-64}"
@@ -124,6 +125,7 @@ echo "c_compiler=${C_COMPILER}"
 echo "update_repos=${UPDATE_REPOS}"
 echo "kyber_fallback_clone_on_update_fail=${KYBER_FALLBACK_CLONE_ON_UPDATE_FAIL}"
 echo "upstream_cflags=${UPSTREAM_CFLAGS}"
+echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
 echo "skip_local_build=${SKIP_LOCAL_BUILD}"
 echo "local_preheat_iters=${LOCAL_PREHEAT_ITERS}"
 echo "comparator_cache_audit=${comparator_cache_audit}"
@@ -147,6 +149,7 @@ cat > "$WORK_DIR/kyber_avx2_bench.c" <<'C_EOF'
 #include <time.h>
 
 #include "kem.h"
+#include "goal_size_adapter.h"
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -194,9 +197,9 @@ int main(int argc, char **argv) {
   for (size_t i = 0; i < 16; i++) {
     fill_seed(coins_kp, sizeof(coins_kp), i * 2 + 1);
     fill_seed(coins_enc, sizeof(coins_enc), i * 2 + 2);
-    crypto_kem_keypair_derand(pk, sk, coins_kp);
-    crypto_kem_enc_derand(ct, ss1, pk, coins_enc);
-    crypto_kem_dec(ss2, ct, sk);
+    goal_mlkem768_keypair_derand(pk, sk, coins_kp);
+    goal_mlkem768_encaps_derand(ct, ss1, pk, coins_enc);
+    goal_mlkem768_decaps(ss2, ct, sk);
     if (memcmp(ss1, ss2, CRYPTO_BYTES) != 0) {
       fprintf(stderr, "warmup mismatch at %zu\n", i);
       return EXIT_FAILURE;
@@ -206,18 +209,18 @@ int main(int argc, char **argv) {
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     fill_seed(coins_kp, sizeof(coins_kp), i + 100);
-    crypto_kem_keypair_derand(pk, sk, coins_kp);
+    goal_mlkem768_keypair_derand(pk, sk, coins_kp);
   }
   t1 = now_ns();
   keygen_ns = t1 - t0;
 
   fill_seed(coins_kp, sizeof(coins_kp), 42);
-  crypto_kem_keypair_derand(pk, sk, coins_kp);
+  goal_mlkem768_keypair_derand(pk, sk, coins_kp);
 
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     fill_seed(coins_enc, sizeof(coins_enc), i + 2000);
-    crypto_kem_enc_derand(ct, ss1, pk, coins_enc);
+    goal_mlkem768_encaps_derand(ct, ss1, pk, coins_enc);
   }
   t1 = now_ns();
   encaps_ns = t1 - t0;
@@ -231,7 +234,7 @@ int main(int argc, char **argv) {
 
   for (size_t i = 0; i < iters; i++) {
     fill_seed(coins_enc, sizeof(coins_enc), i + 5000);
-    crypto_kem_enc_derand(cts + i * CRYPTO_CIPHERTEXTBYTES,
+    goal_mlkem768_encaps_derand(cts + i * CRYPTO_CIPHERTEXTBYTES,
                           sss + i * CRYPTO_BYTES,
                           pk,
                           coins_enc);
@@ -239,7 +242,7 @@ int main(int argc, char **argv) {
 
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
-    crypto_kem_dec(ss2, cts + i * CRYPTO_CIPHERTEXTBYTES, sk);
+    goal_mlkem768_decaps(ss2, cts + i * CRYPTO_CIPHERTEXTBYTES, sk);
     if (memcmp(ss2, sss + i * CRYPTO_BYTES, CRYPTO_BYTES) != 0) {
       fprintf(stderr, "dec mismatch at %zu\n", i);
       return EXIT_FAILURE;
@@ -252,9 +255,9 @@ int main(int argc, char **argv) {
   for (size_t i = 0; i < iters; i++) {
     fill_seed(coins_kp, sizeof(coins_kp), i * 3 + 9001);
     fill_seed(coins_enc, sizeof(coins_enc), i * 3 + 9002);
-    crypto_kem_keypair_derand(pk, sk, coins_kp);
-    crypto_kem_enc_derand(ct, ss1, pk, coins_enc);
-    crypto_kem_dec(ss2, ct, sk);
+    goal_mlkem768_keypair_derand(pk, sk, coins_kp);
+    goal_mlkem768_encaps_derand(ct, ss1, pk, coins_enc);
+    goal_mlkem768_decaps(ss2, ct, sk);
     if (memcmp(ss1, ss2, CRYPTO_BYTES) != 0) {
       fprintf(stderr, "roundtrip mismatch at %zu\n", i);
       return EXIT_FAILURE;
@@ -275,43 +278,27 @@ int main(int argc, char **argv) {
 }
 C_EOF
 
-KYBER_RANDOMBYTES_SRC="$WORK_DIR/kyber_randombytes.c"
-awk '{
-  if ($0 == "#define _GNU_SOURCE") {
-    print "#ifndef _GNU_SOURCE";
-    print "#define _GNU_SOURCE";
-    print "#endif";
-  } else {
-    print;
-  }
-}' "$KYBER_DIR/avx2/randombytes.c" > "$KYBER_RANDOMBYTES_SRC"
+echo "[2/4] Building kyber upstream AVX2 product and benchmark"
+KYBER_PRODUCT="$WORK_DIR/kyber_product.o"
+KYBER_PRODUCT_METADATA="$WORK_DIR/kyber_product.txt"
+PROFILE="$BENCH_ISA_PROFILE" \
+OUTPUT="$KYBER_PRODUCT" \
+KYBER_DIR="$KYBER_DIR" \
+C_COMPILER="$C_COMPILER" \
+UPSTREAM_CFLAGS="$UPSTREAM_CFLAGS" \
+ALLOW_CACHED_COMPARATOR="$ALLOW_CACHED_COMPARATOR" \
+  "$ROOT_DIR/scripts/build_goal_kyber_product.sh" \
+  > "$KYBER_PRODUCT_METADATA"
+sed 's/^/kyber_product_/' "$KYBER_PRODUCT_METADATA"
 
-echo "[2/4] Building kyber upstream avx2 benchmark"
 KYBER_BIN="$WORK_DIR/kyber_avx2_bench"
-"$C_COMPILER" -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L $UPSTREAM_CFLAGS \
+read -r -a upstream_cflags_arr <<< "$UPSTREAM_CFLAGS"
+"$C_COMPILER" -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
+  "${upstream_cflags_arr[@]}" \
   -DKYBER_K=3 \
-  -I"$KYBER_DIR/avx2" -I"$KYBER_DIR/avx2/keccak4x" \
-  "$WORK_DIR/kyber_avx2_bench.c" \
-  "$KYBER_DIR/avx2/kem.c" \
-  "$KYBER_DIR/avx2/indcpa.c" \
-  "$KYBER_DIR/avx2/polyvec.c" \
-  "$KYBER_DIR/avx2/poly.c" \
-  "$KYBER_DIR/avx2/consts.c" \
-  "$KYBER_DIR/avx2/rejsample.c" \
-  "$KYBER_DIR/avx2/cbd.c" \
-  "$KYBER_DIR/avx2/verify.c" \
-  "$KYBER_DIR/avx2/fips202.c" \
-  "$KYBER_DIR/avx2/fips202x4.c" \
-  "$KYBER_DIR/avx2/symmetric-shake.c" \
-  "$KYBER_RANDOMBYTES_SRC" \
-  "$KYBER_DIR/avx2/keccak4x/KeccakP-1600-times4-SIMD256.c" \
-  "$KYBER_DIR/avx2/basemul.S" \
-  "$KYBER_DIR/avx2/fq.S" \
-  "$KYBER_DIR/avx2/invntt.S" \
-  "$KYBER_DIR/avx2/ntt.S" \
-  "$KYBER_DIR/avx2/shuffle.S" \
-  -Wl,-z,noexecstack \
-  -o "$KYBER_BIN"
+  -I"$KYBER_DIR/avx2" -I"$ROOT_DIR/scripts" \
+  "$WORK_DIR/kyber_avx2_bench.c" "$KYBER_PRODUCT" \
+  -Wl,-z,noexecstack -o "$KYBER_BIN"
 
 if [ "$SKIP_LOCAL_BUILD" = "1" ] && [ "$LOCAL_PREHEAT_ITERS" -gt 0 ]; then
   bench_pair_run "$LOCAL_BENCH_BIN" "$KYBER_BIN" "$LOCAL_PREHEAT_ITERS" \

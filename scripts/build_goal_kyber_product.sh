@@ -7,6 +7,7 @@ PROFILE="${PROFILE:-${1:-native}}"
 OUTPUT="${OUTPUT:-${2:-/tmp/baby-mlkem-kyber-${PROFILE}-product.o}}"
 KYBER_DIR="${KYBER_DIR:-/tmp/kyber}"
 C_COMPILER="${C_COMPILER:-clang}"
+ALLOW_CACHED_COMPARATOR="${ALLOW_CACHED_COMPARATOR:-0}"
 REQUIRED_SYMBOLS="goal_mlkem768_keypair_derand goal_mlkem768_encaps_derand goal_mlkem768_decaps"
 
 case "$PROFILE" in
@@ -18,6 +19,11 @@ case "$PROFILE" in
 esac
 if [[ "$OUTPUT" != /* ]]; then
   OUTPUT="$ROOT_DIR/$OUTPUT"
+fi
+if [ "$ALLOW_CACHED_COMPARATOR" != "0" ] &&
+    [ "$ALLOW_CACHED_COMPARATOR" != "1" ]; then
+  echo "ALLOW_CACHED_COMPARATOR must be 0 or 1" >&2
+  exit 2
 fi
 if ! command -v "$C_COMPILER" >/dev/null 2>&1; then
   echo "compiler not found: $C_COMPILER" >&2
@@ -95,9 +101,15 @@ if [ "$cache_scan_status" -gt 1 ]; then
   exit 2
 fi
 if [ -s "$cache_report" ]; then
-  cat "$cache_report" >&2
-  echo "persistent comparator cache detected; product build refused" >&2
-  exit 2
+  if [ "$ALLOW_CACHED_COMPARATOR" != "1" ]; then
+    cat "$cache_report" >&2
+    echo "persistent comparator cache detected; product build refused" >&2
+    exit 2
+  fi
+  echo "warning: cached Kyber product explicitly allowed; artifact cannot qualify" >&2
+  cache_audit=override
+else
+  cache_audit=pass
 fi
 
 src="$KYBER_DIR/avx2"
@@ -158,7 +170,7 @@ printf "kyber_commit=%s\n" "$(git -C "$KYBER_DIR" rev-parse HEAD)"
 printf "kyber_remote=%s\n" "$(git -C "$KYBER_DIR" remote get-url origin)"
 printf "upstream_cflags=%s\n" "$UPSTREAM_CFLAGS"
 printf "normalization_cflags=%s\n" "${section_flags[*]}"
-printf "cache_audit=pass\n"
+printf "cache_audit=%s\n" "$cache_audit"
 printf "correctness_smoke=pass\n"
 REQUIRED_SYMBOLS="$REQUIRED_SYMBOLS" \
   "$ROOT_DIR/scripts/measure_elf_footprint.sh" "$OUTPUT"
