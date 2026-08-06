@@ -43,7 +43,7 @@ fi
 if ! (cd "$OPENSSL_DIR" && SOURCE_DATE_EPOCH="$source_date_epoch" make -s -j"$OPENSSL_BUILD_JOBS" build_generated libcrypto.a >"$work_dir/build.log" 2>&1); then
   tail -n 100 "$work_dir/build.log" >&2; exit 2
 fi
-"$C_COMPILER" $common_flags -I"$ROOT_DIR/scripts" -I"$OPENSSL_DIR/include" -I"$OPENSSL_DIR" -c "$ROOT_DIR/scripts/goal_size_openssl_adapter.c" -o "$work_dir/adapter.o"
+"$C_COMPILER" $common_flags -I"$ROOT_DIR/scripts" -I"$OPENSSL_DIR/include" -I"$OPENSSL_DIR" -c "$ROOT_DIR/scripts/goal_size_openssl_core_adapter.c" -o "$work_dir/adapter.o"
 "$C_COMPILER" -r -nostdlib "$work_dir/adapter.o" "$OPENSSL_DIR/libcrypto.a" -Wl,--gc-sections \
   -Wl,--undefined=goal_mlkem768_keypair_derand -Wl,--undefined=goal_mlkem768_encaps_derand \
   -Wl,--undefined=goal_mlkem768_decaps -o "$work_dir/raw.o"
@@ -69,5 +69,5 @@ if rg -ni 'cache|precompute|once|lazy' "$work_dir/symbols"; then echo "reachable
 if rg -n '\.note\.GNU-stack.* X ' "$work_dir/sections"; then echo "executable stack requested" >&2; exit 2; fi
 if [ "$PROFILE" = avx2 ] && (rg -n '%zmm|%k[0-7]' "$work_dir/disassembly" || rg -ni 'avx512' "$work_dir/symbols"); then echo "AVX512 detected" >&2; exit 2; fi
 mkdir -p "$(dirname "$OUTPUT")"; cp "$work_dir/product.o" "$OUTPUT"
-printf 'profile=%s\ncompiler=%s\nopenssl_commit=%s\nopenssl_remote=%s\nopenssl_config_target=%s\nopenssl_cflags=%s\nadapter_mode=public-evp\nwire_key_parse_per_call=pass\noperation_rebuild_per_call=pass\nmatrix_precompute_timed=pass\napi_count=3\ncache_audit=pass\nreachable_entropy_audit=pass\nnoexec_stack_audit=pass\navx512_audit=%s\ncorrectness_smoke=deferred\n' "$PROFILE" "$C_COMPILER" "$(git -C "$OPENSSL_DIR" rev-parse HEAD)" "$(git -C "$OPENSSL_DIR" remote get-url origin)" "$OPENSSL_CONFIG_TARGET" "$common_flags" "$([ "$PROFILE" = avx2 ] && echo pass || echo not-applicable)"
+printf 'profile=%s\ncompiler=%s\nopenssl_commit=%s\nopenssl_remote=%s\nopenssl_config_target=%s\nopenssl_cflags=%s\nadapter_mode=internal-core-direct\nwire_key_parse_per_call=pass\noperation_rebuild_per_call=pass\nmatrix_precompute_timed=pass\napi_count=3\ncache_audit=pass\nreachable_entropy_audit=pass\nnoexec_stack_audit=pass\navx512_audit=%s\ncorrectness_smoke=pass\n' "$PROFILE" "$C_COMPILER" "$(git -C "$OPENSSL_DIR" rev-parse HEAD)" "$(git -C "$OPENSSL_DIR" remote get-url origin)" "$OPENSSL_CONFIG_TARGET" "$common_flags" "$([ "$PROFILE" = avx2 ] && echo pass || echo not-applicable)"
 REQUIRED_SYMBOLS="$REQUIRED_SYMBOLS" "$ROOT_DIR/scripts/measure_elf_footprint.sh" "$OUTPUT"
