@@ -31,9 +31,15 @@ case "$COMPARATOR" in
     comparator_label=PQClean
     comparator_dir="${PQCLEAN_DIR:-/tmp/PQClean}"
     ;;
+  mlkem-native)
+    comparator_key=mlkem_native
+    comparator_slug=mlkem-native
+    comparator_label=mlkem-native
+    comparator_dir="${MLKEM_NATIVE_DIR:-$ROOT_DIR/../mlkem-native}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, or pqclean" >&2
+    echo "expected kyber, kyber-fair, pqclean, or mlkem-native" >&2
     exit 2
     ;;
 esac
@@ -108,6 +114,9 @@ case "$COMPARATOR" in
     ;;
   pqclean)
     comparator_cflags="$PQCLEAN_AVX2_CFLAGS"
+    ;;
+  mlkem-native)
+    comparator_cflags="$MLKEM_NATIVE_CFLAGS"
     ;;
 esac
 
@@ -184,6 +193,14 @@ case "$COMPARATOR" in
     PQCLEAN_DIR="$comparator_dir" C_COMPILER="$C_COMPILER" \
     PQCLEAN_AVX2_CFLAGS="$comparator_cflags" \
       "$ROOT_DIR/scripts/build_goal_pqclean_product.sh" \
+      > "$comparator_build_report"
+    ;;
+  mlkem-native)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    MLKEM_NATIVE_DIR="$comparator_dir" C_COMPILER="$C_COMPILER" \
+    MLKEM_NATIVE_AUTO="$MLKEM_NATIVE_AUTO" \
+    MLKEM_NATIVE_CFLAGS="$comparator_cflags" \
+      "$ROOT_DIR/scripts/build_goal_mlkem_native_product.sh" \
       > "$comparator_build_report"
     ;;
 esac
