@@ -122,20 +122,25 @@ read -r -a pqclean_clean_cflags_arr <<< "$PQCLEAN_CLEAN_CFLAGS"
   "$PQCLEAN_DIR/common/randombytes.c" \
   -o "$CLEAN_BIN"
 
-echo "[3/4] Building PQClean avx2 benchmark"
-make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" clean >/dev/null
-make -C "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" \
-  CC="$C_COMPILER" CFLAGS="$PQCLEAN_AVX2_CFLAGS" >/dev/null
+echo "[3/4] Building normalized PQClean avx2 product and benchmark"
+PQCLEAN_PRODUCT="$WORK_DIR/pqclean_avx2_product.o"
+PQCLEAN_PRODUCT_METADATA="$WORK_DIR/pqclean_avx2_product.txt"
+PQCLEAN_PRODUCT_PROFILE="${BENCH_ISA_PROFILE:-native}"
+PROFILE="$PQCLEAN_PRODUCT_PROFILE" \
+OUTPUT="$PQCLEAN_PRODUCT" \
+PQCLEAN_DIR="$PQCLEAN_DIR" \
+C_COMPILER="$C_COMPILER" \
+PQCLEAN_AVX2_CFLAGS="$PQCLEAN_AVX2_CFLAGS" \
+  "$ROOT_DIR/scripts/build_goal_pqclean_product.sh" \
+  > "$PQCLEAN_PRODUCT_METADATA"
+sed 's/^/pqclean_product_/' "$PQCLEAN_PRODUCT_METADATA"
+
 AVX2_BIN="$WORK_DIR/pqclean_avx2_bench"
 read -r -a pqclean_harness_cflags_arr <<< "$PQCLEAN_HARNESS_CFLAGS"
 "$C_COMPILER" -D_POSIX_C_SOURCE=200809L "${pqclean_harness_cflags_arr[@]}" \
-  -DKEM_PREFIX=PQCLEAN_MLKEM768_AVX2 \
-  -I"$PQCLEAN_DIR/common" -I"$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2" \
-  "$ROOT_DIR/scripts/pqclean_bench_generic.c" \
-  "$PQCLEAN_DIR/crypto_kem/ml-kem-768/avx2/libml-kem-768_avx2.a" \
-  "$PQCLEAN_DIR/common/fips202.c" \
-  "$PQCLEAN_DIR/common/randombytes.c" \
-  -o "$AVX2_BIN"
+  -I"$ROOT_DIR/scripts" \
+  "$ROOT_DIR/scripts/goal_size_adapter_bench.c" "$PQCLEAN_PRODUCT" \
+  -Wl,-z,noexecstack -o "$AVX2_BIN"
 
 CLEAN_OUT="$("${RUNNER[@]}" "$CLEAN_BIN" "$ITERS")"
 bench_pair_capture "$LOCAL_BENCH_BIN" "$AVX2_BIN" "$ITERS" "$WORK_DIR"
