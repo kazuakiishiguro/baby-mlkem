@@ -352,6 +352,37 @@ now rejects such a source before timing. The [complete report and both raw
 outputs](benchmarks/2026-08-06-clean-kyber-product-core/README.md) preserve this
 distinction.
 
+### Native All-Comparator Speed Gate
+
+A formal 2026-08-06 run at commit `513a2d2` passes the native speed contract
+against all ten required current comparators. It used the Clang 18.1.3
+production/no-cache artifact with `-march=native`, CPU 0 on the Threadripper
+7980X, 15 paired 100,000-iteration runs after three warmups, alternating order,
+and 20,000 paired bootstrap samples. Every comparator was allowed its fastest
+supported production path on this host.
+
+Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
+95% interval. The weakest operation column reports the smallest CI lower bound
+among keygen, encaps, and decaps for that comparator.
+
+| Comparator | baby-mlkem roundtrip median (ns) | Comparator median (ns) | Roundtrip ratio | Paired 95% CI | Weakest operation CI lower bound |
+|---|---:|---:|---:|---:|---:|
+| pq-crystals Kyber AVX2 | 10,367.73 | 16,194.60 | 1.5620x | 1.5497x-1.5636x | keygen 1.2961x |
+| pq-crystals Kyber AVX2, fair flags | 10,370.31 | 16,185.14 | 1.5607x | 1.5441x-1.5637x | keygen 1.3093x |
+| mlkem-native | 10,341.07 | 22,953.64 | 2.2197x | 2.1831x-2.2184x | keygen 1.6469x |
+| PQClean AVX2 | 10,338.33 | 20,784.36 | 2.0104x | 1.9845x-2.0139x | keygen 1.6637x |
+| liboqs | 10,361.47 | 20,906.95 | 2.0178x | 1.9963x-2.0212x | keygen 1.5046x |
+| BoringSSL | 10,455.81 | 31,577.81 | 3.0201x | 3.0010x-3.0317x | encaps 1.3952x |
+| libcrux 0.0.8 | 10,356.58 | 20,742.06 | 2.0028x | 1.9889x-2.0088x | keygen 1.6019x |
+| libjade Kyber768 AVX2 | 10,364.92 | 21,430.45 | 2.0676x | 2.0485x-2.0673x | keygen 1.8579x |
+| Botan ML-KEM | 10,363.02 | 78,498.63 | 7.5749x | 7.5302x-7.6732x | encaps 1.5865x |
+| OpenSSL ML-KEM | 10,363.39 | 52,004.99 | 5.0181x | 4.9748x-5.0234x | encaps 3.5751x |
+
+All 40 per-operation rows pass. The
+[complete report, provenance, and raw outputs](benchmarks/2026-08-06-goal-native-speed/README.md)
+record the exact revisions and flags. This establishes the native speed gate
+only; it does not establish either profile's production-size gate.
+
 ### AVX2-only All-Comparator Speed Gate
 
 A formal 2026-08-06 run at production commit `245823e` passes the AVX2-only
@@ -401,13 +432,14 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status for measured production commit `245823e` on 2026-08-06:
+Current status for the production core measured at `245823e` (AVX2-only) and
+`513a2d2` (native) on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
 | Correctness | provisional pass | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
-| Native aggregate speed | partial | The historical cache-free Kyber AVX2 snapshot passes at 1.5651x with a 1.5571x CI lower bound. The strict current ten-comparator run remains pending. |
-| Native operation speed | partial | The numerical verifier now enforces every operation; the clean Kyber snapshot passes all four rows, but the other current comparators remain unmeasured under the completion protocol. |
+| Native aggregate speed | pass | The strict current ten-comparator report passes. The narrowest aggregate result is 1.5607x with CI lower bound 1.5441x. |
+| Native operation speed | pass | All 40 operation rows pass; the narrowest operation CI lower bound is Kyber keygen at 1.2961x. |
 | AVX2-only speed | pass | The strict current ten-comparator report passes all 40 operation rows. The narrowest aggregate result is 1.3505x with CI lower bound 1.3409x; the narrowest operation CI lower bound is 1.1401x. |
 | Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
 | Clean final revision | provisional pass | Comparator-cache contamination is now rejected and no core experiment remains in the production source. Final correctness and all-gate reports are still required. |

@@ -1,0 +1,111 @@
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+ar: creating libml-kem-768_avx2.a
+/usr/bin/ld: warning: shuffle.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+libunwind not found. Disabling unwind tests.
+    Updating crates.io index
+     Locking 0 packages to latest compatible versions
+note: pass `--verbose` to see 4 unchanged dependencies behind latest
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-ce3a45.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-517627.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-909628.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-a697aa.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-8256a7.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-3af7d4.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-ffa469.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-0f9442.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-109554.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-4d31d4.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-eddd67.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-eeaca6.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-027c51.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-c76a7d.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-79ed81.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-b78a01.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-1ec916.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+/usr/bin/ld: warning: /tmp/kyber_kyber768_avx2-5c9a6d.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
