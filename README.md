@@ -231,12 +231,13 @@ complete the Goal.
 source lines, benchmark executable size, or wire-format size. For each profile,
 build a production-only ML-KEM-768 artifact with the same exported KEM
 operations and required SHA-3/SHAKE code, then remove benchmark/test code,
-debug/unwind metadata, unused backend code, and unreachable sections in the
-same way for every implementation.
+debug metadata, unused backend code, unreachable sections, and unwind metadata
+that is not required at runtime, in the same way for every implementation.
 
 The primary footprint is the sum of allocatable executable and read-only
-sections, including `.text`, `.rodata`, constants, and repository-local
-assembly. `.data + .bss` and measured maximum stack usage must be reported
+sections, including `.text`, `.rodata`, constants, repository-local assembly,
+and allocatable runtime unwind and exception metadata. `.data + .bss` and
+measured maximum stack usage must be reported
 separately. The exact artifact used for the speed gate must have a primary
 footprint no larger than every comparator artifact in the same profile. A
 separate `-Os` build cannot establish the simultaneous fastest-and-smallest
@@ -266,10 +267,19 @@ the three exported KEM operations and reports:
 
 - `code_bytes`: allocatable read-only executable sections.
 - `readonly_data_bytes`: allocatable read-only non-code sections.
+- `unwind_bytes`: allocatable `.eh_frame*` bytes, included in read-only data.
+- `exception_table_bytes`: allocatable `.gcc_except_table*` bytes, included in
+  read-only data.
 - `primary_bytes`: `code_bytes + readonly_data_bytes`.
 - `writable_bytes`: initialized writable data plus zero-fill storage.
-- ELF notes, unwind sections, comments, debug metadata, test code, and benchmark
-  code are excluded from the primary total.
+- ELF notes, comments, debug metadata, test code, and benchmark code are excluded
+  from the primary total. Unwind metadata is excluded only by safely removing it
+  from the artifact; any allocatable unwind section that remains is counted.
+
+Commit `b8b1f6c` makes this rule mechanical for every comparator rather than
+special-casing C++: local, Kyber, PQClean, and libjade currently retain zero
+unwind bytes, liboqs retains 676 bytes, and Botan retains about 13 KiB because
+its reachable exception handlers require it.
 
 The current 2026-08-06 no-cache baselines use the normal compiler-specific
 speed flags at commit `ff7ca72`:
