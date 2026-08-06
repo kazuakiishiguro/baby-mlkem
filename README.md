@@ -6725,8 +6725,12 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_boringssl.sh 400
 ```
 
-The BoringSSL comparator uses internal deterministic ML-KEM hooks from
-`crypto/fipsmodule/bcm_interface.h` for repeatable benchmark inputs.
+The BoringSSL comparator builds the same normalized three-API relocatable
+artifact used by the size gate. Key generation includes marshaling the 2,400-byte
+secret key, encapsulation parses the 1,184-byte public key, and decapsulation
+parses the 2,400-byte secret key before core work. It uses BoringSSL's internal
+deterministic hooks only to provide repeatable seed and entropy inputs; no RNG or
+expanded-key cache is retained in the timed artifact.
 
 Compare against Rust `libcrux-ml-kem` ML-KEM-768 on the same host:
 
