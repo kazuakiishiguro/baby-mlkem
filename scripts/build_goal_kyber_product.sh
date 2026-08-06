@@ -82,6 +82,17 @@ section_flags=(
   -fno-unwind-tables
   -fno-asynchronous-unwind-tables
 )
+lto_final_flags=()
+if ! "$C_COMPILER" --version 2>/dev/null | head -n 1 | grep -qi clang; then
+  for token in "${upstream_cflags_arr[@]}"; do
+    if [[ "$token" == -flto* ]]; then
+      lto_final_flags+=("$token")
+    fi
+  done
+  if [ "${#lto_final_flags[@]}" -gt 0 ]; then
+    lto_final_flags+=(-fwhole-program -flinker-output=nolto-rel)
+  fi
+fi
 
 cache_pattern='(pk|public_key|matrix|at|hash)[[:alnum:]_]*cache|indcpa_enc_precomp'
 cache_report="$(mktemp /tmp/baby-mlkem-kyber-cache.XXXXXX)"
@@ -140,7 +151,16 @@ for name in basemul fq invntt ntt shuffle; do
 done
 
 mkdir -p "$(dirname "$OUTPUT")"
-"$C_COMPILER" -r -nostdlib "$work_dir"/*.o -o "$work_dir/product.o" \
+product_inputs=("$work_dir"/*.o)
+if [ "${#lto_final_flags[@]}" -gt 0 ]; then
+  "$C_COMPILER" -r -nostdlib "${product_inputs[@]}" \
+    -o "$work_dir/lto-expanded.o" "${lto_final_flags[@]}" \
+    -Wl,--undefined=goal_mlkem768_keypair_derand \
+    -Wl,--undefined=goal_mlkem768_encaps_derand \
+    -Wl,--undefined=goal_mlkem768_decaps
+  product_inputs=("$work_dir/lto-expanded.o")
+fi
+"$C_COMPILER" -r -nostdlib "${product_inputs[@]}" -o "$work_dir/product.o" \
   -Wl,--gc-sections \
   -Wl,--undefined=goal_mlkem768_keypair_derand \
   -Wl,--undefined=goal_mlkem768_encaps_derand \
@@ -170,6 +190,7 @@ printf "kyber_commit=%s\n" "$(git -C "$KYBER_DIR" rev-parse HEAD)"
 printf "kyber_remote=%s\n" "$(git -C "$KYBER_DIR" remote get-url origin)"
 printf "upstream_cflags=%s\n" "$UPSTREAM_CFLAGS"
 printf "normalization_cflags=%s\n" "${section_flags[*]}"
+printf "lto_final_cflags=%s\n" "${lto_final_flags[*]:-<none>}"
 printf "cache_audit=%s\n" "$cache_audit"
 printf "correctness_smoke=pass\n"
 REQUIRED_SYMBOLS="$REQUIRED_SYMBOLS" \
