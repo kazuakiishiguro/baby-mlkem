@@ -3135,7 +3135,13 @@ static void ntt_mont_factor(uint16_t zeta_normal, int16_t *zeta_lo,
  * ZETA[k] = 17^(bitrev7(k)) mod Q,
  ** GAMMA[k] = 17^(2*bitrev7(k)+1) mod Q.
  */
+#if defined(__GNUC__) && !defined(__clang__)
+/* Keep GCC's global loop-unrolling policy out of one-time table setup. */
+static MLKEM_NOINLINE __attribute__((cold, optimize("Os"))) void
+init_ntt_roots(void) {
+#else
 static void init_ntt_roots(void) {
+#endif
   for (int i = 0; i < 128; i++) {
     uint16_t e1 = bitrev7((uint16_t)i);
     ZETA[i] = modexp(17, e1);
