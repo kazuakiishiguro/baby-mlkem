@@ -129,6 +129,7 @@ def require_metadata(metadata, key: str) -> str:
 
 AVX2_FLAG_KEYS = (
     "local_ARCH_CFLAGS",
+    "mlkem_native_cflags",
     "mlkem_native_harness_cflags",
     "upstream_cflags",
     "fair_upstream_cflags",
