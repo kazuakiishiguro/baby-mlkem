@@ -213,7 +213,9 @@ precomputed-encryption caches. Commit `6a6f83f` adds the equivalent
 profile fixes all C/C++ builds to x86-64-v3 plus AVX2/BMI2/POPCNT, disables
 known AVX512 build or runtime-dispatch paths in liboqs, Botan, and OpenSSL,
 fixes the Rust target CPU, and audits the local production object for AVX512
-registers and symbols. Run the two completion checks with:
+registers and symbols. Commit `245823e` fixes matching C and C++ compiler
+families for every comparator and makes Botan compiler fallback fatal. Run the
+two completion checks with:
 
 ```bash
 PIN_CPU=0 C_COMPILER=clang ./scripts/verify_goal_native_speed.sh 100000
@@ -350,6 +352,36 @@ now rejects such a source before timing. The [complete report and both raw
 outputs](benchmarks/2026-08-06-clean-kyber-product-core/README.md) preserve this
 distinction.
 
+### AVX2-only All-Comparator Speed Gate
+
+A formal 2026-08-06 run at production commit `245823e` passes the AVX2-only
+speed contract against all ten required current comparators. It used the Clang
+18.1.3 production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and AVX512
+disabled, CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration runs
+after three warmups, alternating order, and 20,000 paired bootstrap samples.
+
+Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
+95% interval. The weakest operation column reports the smallest CI lower bound
+among keygen, encaps, and decaps for that comparator.
+
+| Comparator | baby-mlkem roundtrip median (ns) | Comparator median (ns) | Roundtrip ratio | Paired 95% CI | Weakest operation CI lower bound |
+|---|---:|---:|---:|---:|---:|
+| pq-crystals Kyber AVX2 | 14,998.29 | 20,255.36 | 1.3505x | 1.3409x-1.3569x | keygen 1.1401x |
+| pq-crystals Kyber AVX2, fair flags | 15,017.89 | 20,311.88 | 1.3525x | 1.3503x-1.3731x | keygen 1.1569x |
+| mlkem-native | 15,036.85 | 22,968.62 | 1.5275x | 1.5191x-1.5299x | keygen 1.1524x |
+| PQClean AVX2 | 15,007.80 | 20,965.16 | 1.3970x | 1.3924x-1.4100x | keygen 1.1750x |
+| liboqs | 15,011.17 | 24,440.64 | 1.6282x | 1.6222x-1.6325x | keygen 1.2496x |
+| BoringSSL | 15,036.65 | 36,640.12 | 2.4367x | 2.4155x-2.4404x | encaps 1.3241x |
+| libcrux 0.0.8 | 15,005.08 | 25,137.99 | 1.6753x | 1.6696x-1.6778x | keygen 1.3741x |
+| libjade Kyber768 AVX2 | 15,000.67 | 21,408.73 | 1.4272x | 1.4211x-1.4280x | keygen 1.3201x |
+| Botan ML-KEM | 14,995.50 | 81,868.87 | 5.4596x | 5.4398x-5.4630x | encaps 1.4425x |
+| OpenSSL ML-KEM | 15,012.58 | 51,975.91 | 3.4622x | 3.4493x-3.4963x | encaps 2.7481x |
+
+All 40 per-operation rows pass. The
+[complete report, provenance, and raw outputs](benchmarks/2026-08-06-goal-avx2-speed/README.md)
+record the exact revisions and flags. This establishes the AVX2-only speed gate
+only; it does not establish the native speed or either profile's size gate.
+
 ### Completion and Reopening
 
 The goal is complete only when one clean, committed revision passes the
@@ -369,14 +401,14 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status as of `6a6f83f` on 2026-08-06:
+Current status for measured production commit `245823e` on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
 | Correctness | provisional pass | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
 | Native aggregate speed | partial | The historical cache-free Kyber AVX2 snapshot passes at 1.5651x with a 1.5571x CI lower bound. The strict current ten-comparator run remains pending. |
 | Native operation speed | partial | The numerical verifier now enforces every operation; the clean Kyber snapshot passes all four rows, but the other current comparators remain unmeasured under the completion protocol. |
-| AVX2-only speed | partial | The strict runner and ISA-policy verifier now exist and pass local profile, fail-closed, and cache-free Kyber smoke checks. A current ten-comparator completion report remains pending. |
+| AVX2-only speed | pass | The strict current ten-comparator report passes all 40 operation rows. The narrowest aggregate result is 1.3505x with CI lower bound 1.3409x; the narrowest operation CI lower bound is 1.1401x. |
 | Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
 | Clean final revision | provisional pass | Comparator-cache contamination is now rejected and no core experiment remains in the production source. Final correctness and all-gate reports are still required. |
 
