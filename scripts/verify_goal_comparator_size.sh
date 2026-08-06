@@ -43,9 +43,15 @@ case "$COMPARATOR" in
     comparator_label=liboqs
     comparator_dir="${LIBOQS_DIR:-/tmp/liboqs}"
     ;;
+  boringssl)
+    comparator_key=boringssl
+    comparator_slug=boringssl
+    comparator_label=BoringSSL
+    comparator_dir="${BORINGSSL_DIR:-/tmp/boringssl}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, pqclean, mlkem-native, or liboqs" >&2
+    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, or boringssl" >&2
     exit 2
     ;;
 esac
@@ -126,6 +132,10 @@ case "$COMPARATOR" in
     ;;
   liboqs)
     comparator_cflags="$LIBOQS_CFLAGS"
+    ;;
+  boringssl)
+    comparator_cflags="$BORINGSSL_C_FLAGS"
+    comparator_cxxflags="$BORINGSSL_CXX_FLAGS"
     ;;
 esac
 
@@ -221,6 +231,14 @@ case "$COMPARATOR" in
       "$ROOT_DIR/scripts/build_goal_liboqs_product.sh" \
       > "$comparator_build_report"
     ;;
+  boringssl)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    BORINGSSL_DIR="$comparator_dir" C_COMPILER="$C_COMPILER" \
+    BORINGSSL_C_FLAGS="$comparator_cflags" \
+    BORINGSSL_CXX_FLAGS="$comparator_cxxflags" \
+      "$ROOT_DIR/scripts/build_goal_boringssl_product.sh" \
+      > "$comparator_build_report"
+    ;;
 esac
 STACK_RUNS="$STACK_RUNS" STACK_USABLE_BYTES="$STACK_USABLE_BYTES" \
 C_COMPILER="$C_COMPILER" STACK_CFLAGS="$stack_cflags" \
@@ -280,6 +298,9 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
   printf "local_extra_cflags=%s\n" "$EXTRA_CFLAGS"
   printf "local_arch_cflags=%s\n" "$ARCH_CFLAGS"
   printf "%s_cflags=%s\n" "$comparator_key" "$comparator_cflags"
+  if [ "$COMPARATOR" = boringssl ]; then
+    printf "boringssl_cxxflags=%s\n" "$comparator_cxxflags"
+  fi
   printf "stack_runs=%s\n" "$STACK_RUNS"
   printf "stack_usable_bytes=%s\n" "$STACK_USABLE_BYTES"
   printf "local_api_count=%s\n" "$local_api_count"
