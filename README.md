@@ -6741,7 +6741,7 @@ Compare against Rust `libcrux-ml-kem` ML-KEM-768 on the same host:
 Override `libcrux-ml-kem` crate version if needed:
 
 ```bash
-LIBCRUX_CRATE_VERSION=0.0.8 ./scripts/bench_compare_libcrux.sh 400
+LIBCRUX_CRATE_VERSION=0.0.10 ./scripts/bench_compare_libcrux.sh 400
 ```
 
 With CPU pinning:
@@ -6750,8 +6750,13 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_libcrux.sh 400
 ```
 
-The libcrux comparator builds a pinned release Rust harness with
-`target-cpu=native`, `lto=fat`, and `codegen-units=1`.
+The libcrux comparator builds the same normalized no-std three-API artifact
+for speed and size. It enables only ML-KEM-768 and SIMD256, uses serialized
+1,184-byte public keys, 2,400-byte secret keys, and 1,088-byte ciphertexts, and
+retains no RNG or expanded-key cache. The release profile uses fat LTO and one
+codegen unit. With `UPDATE_REPOS=1`, the build fails unless the configured exact
+crate version is the current crates.io release, then records the resolved crate
+checksum and Cargo.lock hash.
 
 Compare against OpenSSL (>= 3.5) ML-KEM-768 on the same host:
 

@@ -141,6 +141,7 @@ AVX2_FLAG_KEYS = (
     "boringssl_c_flags",
     "boringssl_cxx_flags",
     "boringssl_harness_flags",
+    "libcrux_harness_cflags",
     "libjade_harness_cflags",
     "botan_cxxflags",
     "botan_harness_cxxflags",
