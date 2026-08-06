@@ -56,9 +56,22 @@ case "$COMPARATOR" in
     comparator_dir="${LIBCRUX_BENCH_DIR:-/tmp/libcrux-mlkem-bench}"
     comparator_version="${LIBCRUX_CRATE_VERSION:-0.0.10}"
     ;;
+  libjade)
+    comparator_key=libjade
+    comparator_slug=libjade
+    comparator_label="libjade Kyber768 AVX2"
+    comparator_dir="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
+    comparator_kem_dir="${LIBJADE_KEM_DIR:-$comparator_dir/libjade/crypto_kem/kyber_kyber768_avx2}"
+    comparator_version="${LIBJADE_RELEASE_TAG:-release/2023.05-2}"
+    comparator_dist_url="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz}"
+    comparator_latest_api="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/libjade/releases/latest}"
+    comparator_assembly_sha="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-358736656400f28f75db858c1be703a3140c8f6fac17b99279abc857112cf5d1}"
+    comparator_header_sha="${LIBJADE_EXPECTED_HEADER_SHA256:-e4ee2af96ac4c4f3184764c4e8565eb52d58670d4b58ef98b9635415162f9ca7}"
+    comparator_jazz_sha="${LIBJADE_EXPECTED_JAZZ_SHA256:-ef7b8c32a0ef5d52150decbeea34161b986c3c580122c459c69fa28265a84f5f}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, boringssl, or libcrux" >&2
+    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, boringssl, libcrux, or libjade" >&2
     exit 2
     ;;
 esac
@@ -102,7 +115,7 @@ if [ "$REQUIRE_CLEAN_WORKTREE" = "1" ] &&
   echo "goal size verification requires a clean committed worktree" >&2
   exit 2
 fi
-if [ "$COMPARATOR" = libcrux ]; then
+if [ "$COMPARATOR" = libcrux ] || [ "$COMPARATOR" = libjade ]; then
   comparator_update=delegated-to-product-builder
 else
   if ! git -C "$comparator_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -150,6 +163,9 @@ case "$COMPARATOR" in
     ;;
   libcrux)
     comparator_cflags="$RUSTFLAGS_BENCH"
+    ;;
+  libjade)
+    comparator_cflags="$LIBJADE_HARNESS_CFLAGS"
     ;;
 esac
 
@@ -262,6 +278,21 @@ case "$COMPARATOR" in
       "$ROOT_DIR/scripts/build_goal_libcrux_product.sh" \
       > "$comparator_build_report"
     ;;
+  libjade)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    LIBJADE_DIST_ROOT="$comparator_dir" \
+    LIBJADE_KEM_DIR="$comparator_kem_dir" \
+    LIBJADE_RELEASE_TAG="$comparator_version" \
+    LIBJADE_DIST_URL="$comparator_dist_url" \
+    LIBJADE_LATEST_API="$comparator_latest_api" \
+    LIBJADE_EXPECTED_ASSEMBLY_SHA256="$comparator_assembly_sha" \
+    LIBJADE_EXPECTED_HEADER_SHA256="$comparator_header_sha" \
+    LIBJADE_EXPECTED_JAZZ_SHA256="$comparator_jazz_sha" \
+    LIBJADE_HARNESS_CFLAGS="$comparator_cflags" \
+    UPDATE_REPOS="$UPDATE_REPOS" C_COMPILER="$C_COMPILER" \
+      "$ROOT_DIR/scripts/build_goal_libjade_product.sh" \
+      > "$comparator_build_report"
+    ;;
 esac
 if [ "$COMPARATOR" = libcrux ]; then
   comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
@@ -272,6 +303,25 @@ if [ "$COMPARATOR" = libcrux ]; then
   if [ -z "$comparator_update" ] || [ -z "$comparator_version" ] ||
       [ -z "$comparator_checksum" ] || [ -z "$comparator_lock_sha" ]; then
     echo "failed to parse libcrux product provenance" >&2
+    exit 2
+  fi
+elif [ "$COMPARATOR" = libjade ]; then
+  comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
+  comparator_version="$(sed -n 's/^libjade_release_tag=//p' "$comparator_build_report")"
+  comparator_source="$(sed -n 's/^libjade_dist_url=//p' "$comparator_build_report")"
+  comparator_semantics="$(sed -n 's/^libjade_semantics=//p' "$comparator_build_report")"
+  comparator_assembly_sha="$(sed -n 's/^libjade_assembly_sha256=//p' "$comparator_build_report")"
+  comparator_header_sha="$(sed -n 's/^libjade_header_sha256=//p' "$comparator_build_report")"
+  comparator_jazz_sha="$(sed -n 's/^libjade_jazz_sha256=//p' "$comparator_build_report")"
+  comparator_archive_sha="$(sed -n 's/^libjade_archive_sha256=//p' "$comparator_build_report")"
+  comparator_latest_tag="$(sed -n 's/^latest_release_tag=//p' "$comparator_build_report")"
+  comparator_latest_audit="$(sed -n 's/^latest_release_audit=//p' "$comparator_build_report")"
+  if [ -z "$comparator_update" ] || [ -z "$comparator_version" ] ||
+      [ -z "$comparator_source" ] || [ -z "$comparator_semantics" ] ||
+      [ -z "$comparator_assembly_sha" ] || [ -z "$comparator_header_sha" ] ||
+      [ -z "$comparator_jazz_sha" ] || [ -z "$comparator_archive_sha" ] ||
+      [ -z "$comparator_latest_tag" ] || [ -z "$comparator_latest_audit" ]; then
+    echo "failed to parse libjade product provenance" >&2
     exit 2
   fi
 fi
@@ -325,6 +375,16 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
     printf "libcrux_crate_source=%s\n" "$comparator_source"
     printf "libcrux_crate_checksum=%s\n" "$comparator_checksum"
     printf "libcrux_lock_sha256=%s\n" "$comparator_lock_sha"
+  elif [ "$COMPARATOR" = libjade ]; then
+    printf "libjade_release_tag=%s\n" "$comparator_version"
+    printf "libjade_dist_url=%s\n" "$comparator_source"
+    printf "libjade_semantics=%s\n" "$comparator_semantics"
+    printf "libjade_assembly_sha256=%s\n" "$comparator_assembly_sha"
+    printf "libjade_header_sha256=%s\n" "$comparator_header_sha"
+    printf "libjade_jazz_sha256=%s\n" "$comparator_jazz_sha"
+    printf "libjade_archive_sha256=%s\n" "$comparator_archive_sha"
+    printf "libjade_latest_release_tag=%s\n" "$comparator_latest_tag"
+    printf "libjade_latest_release_audit=%s\n" "$comparator_latest_audit"
   else
     printf "%s_commit=%s\n" "$comparator_key" \
       "$(git -C "$comparator_dir" rev-parse HEAD)"
@@ -341,6 +401,8 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
   printf "local_arch_cflags=%s\n" "$ARCH_CFLAGS"
   if [ "$COMPARATOR" = libcrux ]; then
     printf "libcrux_rustflags=%s\n" "$comparator_cflags"
+  elif [ "$COMPARATOR" = libjade ]; then
+    printf "libjade_harness_cflags=%s\n" "$comparator_cflags"
   else
     printf "%s_cflags=%s\n" "$comparator_key" "$comparator_cflags"
   fi
