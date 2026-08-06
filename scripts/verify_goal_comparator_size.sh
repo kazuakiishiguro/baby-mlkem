@@ -37,9 +37,15 @@ case "$COMPARATOR" in
     comparator_label=mlkem-native
     comparator_dir="${MLKEM_NATIVE_DIR:-$ROOT_DIR/../mlkem-native}"
     ;;
+  liboqs)
+    comparator_key=liboqs
+    comparator_slug=liboqs
+    comparator_label=liboqs
+    comparator_dir="${LIBOQS_DIR:-/tmp/liboqs}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, pqclean, or mlkem-native" >&2
+    echo "expected kyber, kyber-fair, pqclean, mlkem-native, or liboqs" >&2
     exit 2
     ;;
 esac
@@ -117,6 +123,9 @@ case "$COMPARATOR" in
     ;;
   mlkem-native)
     comparator_cflags="$MLKEM_NATIVE_CFLAGS"
+    ;;
+  liboqs)
+    comparator_cflags="$LIBOQS_CFLAGS"
     ;;
 esac
 
@@ -201,6 +210,15 @@ case "$COMPARATOR" in
     MLKEM_NATIVE_AUTO="$MLKEM_NATIVE_AUTO" \
     MLKEM_NATIVE_CFLAGS="$comparator_cflags" \
       "$ROOT_DIR/scripts/build_goal_mlkem_native_product.sh" \
+      > "$comparator_build_report"
+    ;;
+  liboqs)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    LIBOQS_DIR="$comparator_dir" C_COMPILER="$C_COMPILER" \
+    LIBOQS_DIST_BUILD="$LIBOQS_DIST_BUILD" \
+    LIBOQS_OPT_TARGET="$LIBOQS_OPT_TARGET" \
+    LIBOQS_CFLAGS="$comparator_cflags" \
+      "$ROOT_DIR/scripts/build_goal_liboqs_product.sh" \
       > "$comparator_build_report"
     ;;
 esac
