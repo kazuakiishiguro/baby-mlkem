@@ -237,9 +237,9 @@ that is not required at runtime, in the same way for every implementation.
 The primary footprint is the sum of allocatable executable and read-only
 sections, including `.text`, `.rodata`, constants, repository-local assembly,
 and allocatable runtime unwind and exception metadata. `.data + .bss` and
-measured maximum stack usage must be reported
-separately. The exact artifact used for the speed gate must have a primary
-footprint no larger than every comparator artifact in the same profile. A
+measured maximum stack usage must be reported separately. The exact artifact used
+for the speed gate must have a primary footprint no larger than every comparator
+artifact in the same profile. A
 separate `-Os` build cannot establish the simultaneous fastest-and-smallest
 claim.
 
@@ -277,9 +277,10 @@ the three exported KEM operations and reports:
   from the artifact; any allocatable unwind section that remains is counted.
 
 Commit `b8b1f6c` makes this rule mechanical for every comparator rather than
-special-casing C++: local, Kyber, PQClean, and libjade currently retain zero
-unwind bytes, liboqs retains 676 bytes, and Botan retains about 13 KiB because
-its reachable exception handlers require it.
+special-casing C++. The exact unwind total is compiler/profile dependent and is
+recorded in every report; the clean native diagnostic at `a4d6fec` reports 0 B
+for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
+for Botan because its reachable exception handlers require it.
 
 The current 2026-08-06 no-cache baselines use the normal compiler-specific
 speed flags at commit `ff7ca72`:
@@ -509,7 +510,7 @@ remain open.
 | Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
 | Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
 | AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
-| Production size | historical only; normalization in progress | Existing normalized comparator measurements predate `ada0e47`; Botan and OpenSSL product normalization and a full same-revision rerun remain open. |
+| Production size | partial pass; full rerun required | Botan normalization is complete at `8451292`/`a4d6fec`; the clean native diagnostic passes its size gate. OpenSSL normalization and the all-comparator same-revision rerun remain open. |
 | Maximum stack | historical only; rerun required | Existing Kyber and other partial stack measurements predate `ada0e47`; all required comparators need a same-revision rerun. |
 | Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator correctness, speed, size, and stack reports are not complete. |
 
@@ -6614,7 +6615,6 @@ fresh temporary shallow clone for that run (default enabled):
 - `BORINGSSL_FALLBACK_CLONE_ON_UPDATE_FAIL=1`
 - `OPENSSL_FALLBACK_CLONE_ON_UPDATE_FAIL=1`
 - `MLKEM_NATIVE_FALLBACK_CLONE_ON_UPDATE_FAIL=1`
-- `BOTAN_FALLBACK_CLONE_ON_UPDATE_FAIL=1`
 
 The script clones PQClean into `/tmp/PQClean` by default. Override with:
 
@@ -6860,7 +6860,7 @@ Compare against Botan ML-KEM-768 on the same host:
 Override Botan checkout/build locations if needed:
 
 ```bash
-BOTAN_DIR=/path/to/botan BOTAN_BUILD_DIR=/tmp/botan-build ./scripts/bench_compare_botan_mlkem.sh 400
+BOTAN_DIR=/path/to/botan ./scripts/bench_compare_botan_mlkem.sh 400
 ```
 
 With CPU pinning:
@@ -6869,22 +6869,35 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_botan_mlkem.sh 400
 ```
 
-The Botan comparator uses Botan FFI in a minimized static build
-(`ffi,ml_kem,...` modules) and deterministic seed/RNG inputs for repeatable
-measurements. By default it prefers `BOTAN_CXX=clang++` when `C_COMPILER` is
-clang, otherwise `g++`. If the clang++ toolchain cannot build Botan on the
-host, the script automatically falls back to `g++` unless `BOTAN_CXX` or
-`BOTAN_CC_FAMILY` is explicitly pinned. The script caches this failure in
-`$BOTAN_DIR/.botan_clangpp_broken`; set `BOTAN_RESET_AUTO_FALLBACK=1` to retry
-clang++ auto-selection.
+The Botan comparator builds a minimized static, three-API product with
+`ml_kem` and the BMI2 Keccak implementation. It does not enable FFI,
+`system_rng`, or `auto_rng`. The adapter accepts the standard deterministic
+`d || z` key-generation seed, parses the wire-format public/secret key on each
+call, rebuilds the Botan KEM operation on each call, and therefore times the
+per-operation matrix precomputation rather than reusing `m_At`. Encapsulation
+uses a fixed 32-byte input RNG only; it is not an entropy source.
 
-When `UPDATE_REPOS=1` is set and the configured `MLKEM_NATIVE_DIR` cannot be
-fast-forwarded, the script keeps that checkout untouched and falls back to a
-fresh temporary shallow clone for the run.
+The C product harness is linked with the matching C++ compiler. Clang and GCC
+are tested separately, and AVX2-only builds disable Botan's Keccak AVX512
+module. The same normalized product construction is used for speed, footprint, and
+stack measurements. Botan's reachable exception handlers require `.eh_frame` and
+`.gcc_except_table`; those allocatable read-only sections are counted by the
+common footprint tool rather than silently excluded. Run the four size/stack
+checks with:
 
-Likewise for Botan, when `UPDATE_REPOS=1` is set and `BOTAN_DIR` cannot be
-fast-forwarded, the script can use a fresh temporary shallow clone for that run
-(`BOTAN_FALLBACK_CLONE_ON_UPDATE_FAIL=1`, default).
+```bash
+for cc in clang gcc; do
+  for profile in native avx2; do
+    C_COMPILER="$cc" PROFILE="$profile" \
+      ./scripts/verify_goal_botan_size.sh
+  done
+done
+```
+
+`UPDATE_REPOS=1` fast-forwards the Botan checkout and fails closed if the
+authoritative update or commit identification fails. There is no compiler or
+checkout fallback in the normalized comparison. The tested Botan 3.13.0
+checkout is recorded by commit and remote in every product report.
 
 Run repeated mean/sd comparison across upstream Kyber AVX2, `mlkem-native`,
 PQClean AVX2, liboqs, BoringSSL, libcrux, Libjade, Botan, and OpenSSL ML-KEM:
