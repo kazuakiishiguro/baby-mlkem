@@ -8,6 +8,8 @@ RUNS="${STACK_RUNS:-8}"
 USABLE_BYTES="${STACK_USABLE_BYTES:-1048576}"
 C_COMPILER="${C_COMPILER:-clang}"
 STACK_CFLAGS="${STACK_CFLAGS:--O2 -march=native -fomit-frame-pointer -fno-stack-protector}"
+STACK_LINKER="${STACK_LINKER:-$C_COMPILER}"
+STACK_LDFLAGS="${STACK_LDFLAGS:-}"
 
 if [ -z "$ARTIFACT" ] || [[ ! "$API_KIND" =~ ^(local|goal)$ ]]; then
   echo "usage: $0 ARTIFACT local|goal" >&2
@@ -29,14 +31,17 @@ if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]] ||
   echo "STACK_RUNS and STACK_USABLE_BYTES must be positive integers" >&2
   exit 2
 fi
-if ! command -v "$C_COMPILER" >/dev/null 2>&1; then
-  echo "compiler not found: $C_COMPILER" >&2
-  exit 2
-fi
+for tool in "$C_COMPILER" "$STACK_LINKER" awk sha256sum; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "required tool not found: $tool" >&2
+    exit 2
+  fi
+done
 
 work_dir="$(mktemp -d /tmp/baby-mlkem-stack.XXXXXX)"
 trap 'rm -rf "$work_dir"' EXIT
 read -r -a stack_cflags_arr <<< "$STACK_CFLAGS"
+read -r -a stack_ldflags_arr <<< "$STACK_LDFLAGS"
 defines=()
 if [ "$API_KIND" = local ]; then
   defines=(-DGOAL_LOCAL_PRODUCT -I"$ROOT_DIR")
@@ -45,13 +50,20 @@ else
 fi
 
 "$C_COMPILER" "${stack_cflags_arr[@]}" "${defines[@]}" \
-  "$ROOT_DIR/scripts/goal_stack_probe.c" \
-  "$ROOT_DIR/scripts/goal_stack_switch_x86_64.S" \
-  "$ARTIFACT" -Wl,-z,noexecstack -o "$work_dir/stack_probe"
+  -c "$ROOT_DIR/scripts/goal_stack_probe.c" \
+  -o "$work_dir/goal_stack_probe.o"
+"$C_COMPILER" -c "$ROOT_DIR/scripts/goal_stack_switch_x86_64.S" \
+  -o "$work_dir/goal_stack_switch_x86_64.o"
+"$STACK_LINKER" "${stack_cflags_arr[@]}" \
+  "$work_dir/goal_stack_probe.o" "$work_dir/goal_stack_switch_x86_64.o" \
+  "$ARTIFACT" "${stack_ldflags_arr[@]}" -Wl,-z,noexecstack \
+  -o "$work_dir/stack_probe"
 
 printf "artifact=%s\n" "$ARTIFACT"
 printf "artifact_sha256=%s\n" "$(sha256sum "$ARTIFACT" | awk '{print $1}')"
 printf "api_kind=%s\n" "$API_KIND"
 printf "compiler=%s\n" "$C_COMPILER"
 printf "stack_cflags=%s\n" "$STACK_CFLAGS"
+printf "stack_linker=%s\n" "$STACK_LINKER"
+printf "stack_ldflags=%s\n" "${STACK_LDFLAGS:-<none>}"
 "$work_dir/stack_probe" "$RUNS" "$USABLE_BYTES"
