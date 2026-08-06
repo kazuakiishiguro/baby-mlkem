@@ -1120,6 +1120,42 @@ void test_mlkem() {
   assert(memcmp(k1,k2,32)==0);
 }
 
+/* NIST ACVP ML-KEM-768 keyGen internalProjection vector. */
+static void test_mlkem_fips203_keygen(void) {
+  static const uint8_t d[32] = {
+    0xe3, 0x4a, 0x70, 0x1c, 0x4c, 0x87, 0x58, 0x2f,
+    0x42, 0x26, 0x4e, 0xe4, 0x22, 0xd3, 0xc6, 0x84,
+    0xd9, 0x76, 0x11, 0xf2, 0x52, 0x3e, 0xfe, 0x0c,
+    0x99, 0x8a, 0xf0, 0x50, 0x56, 0xd6, 0x93, 0xdc,
+  };
+  static const uint8_t z[32] = {
+    0xa8, 0x57, 0x68, 0xf3, 0x48, 0x6b, 0xd3, 0x2a,
+    0x01, 0xbf, 0x9a, 0x8f, 0x21, 0xea, 0x93, 0x8e,
+    0x64, 0x8e, 0xae, 0x4e, 0x54, 0x48, 0xc3, 0x4c,
+    0x3e, 0xb8, 0x88, 0x20, 0xb1, 0x59, 0xee, 0xdd,
+  };
+  static const uint8_t expected_ek_digest[16] = {
+    0x4d, 0x7f, 0x73, 0x25, 0x50, 0x3c, 0x06, 0xf0,
+    0xcb, 0xfa, 0xc8, 0xcd, 0x87, 0x44, 0x89, 0x4f,
+  };
+  uint8_t coins[64];
+  uint8_t ek[K * 384 + 32];
+  uint8_t dk[768 * K + 96];
+  uint8_t ek_digest[16];
+  uint8_t h[32];
+
+  memcpy(coins, d, sizeof(d));
+  memcpy(coins + sizeof(d), z, sizeof(z));
+  mlkem_keygen_derand(coins, ek, dk);
+  shake256(ek, sizeof(ek), ek_digest, sizeof(ek_digest));
+  assert(memcmp(ek_digest, expected_ek_digest, sizeof(ek_digest)) == 0);
+
+  assert(memcmp(dk + K * 384, ek, sizeof(ek)) == 0);
+  pq_sha3_256(h, ek, sizeof(ek));
+  assert(memcmp(dk + K * 384 + sizeof(ek), h, sizeof(h)) == 0);
+  assert(memcmp(dk + sizeof(dk) - sizeof(z), z, sizeof(z)) == 0);
+}
+
 #if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
 static void test_keccakf8_sparse_32(void) {
   const uint64_t final_pad = UINT64_C(0x80) << 56;
@@ -1361,6 +1397,7 @@ int main(void) {
   test_byte_encode();
   test_kpke();
   test_mlkem();
+  test_mlkem_fips203_keygen();
   test_init_ntt_roots();
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     !defined(__clang__)

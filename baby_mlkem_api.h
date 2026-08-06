@@ -14,6 +14,7 @@ extern "C" {
 #define BABY_MLKEM768_KEYPAIR_COINS_BYTES 64
 #define BABY_MLKEM768_ENCAPS_COINS_BYTES 32
 
+/* coins is the FIPS 203 seed encoding d || z. */
 void baby_mlkem768_keypair_derand(
     uint8_t ek[BABY_MLKEM768_PUBLIC_KEY_BYTES],
     uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES],

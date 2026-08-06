@@ -7656,9 +7656,12 @@ static uint8_t mlkem_no_cache_bss_pad[80] __attribute__((used, retain));
 
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   ensure_ntt_roots();
-  /* ghash = sha3_512(seed) => (rho||sigma) */
+  /* FIPS 203 K-PKE.KeyGen: (rho || sigma) = G(d || k). */
+  uint8_t domain_seed[33];
   uint8_t ghash[64];
-  pq_sha3_512(ghash, seed, 32);
+  memcpy(domain_seed, seed, 32);
+  domain_seed[32] = (uint8_t)K;
+  pq_sha3_512(ghash, domain_seed, sizeof(domain_seed));
   const uint8_t *rho = ghash;
   const uint8_t *sigma = ghash + 32;
 
@@ -8385,54 +8388,54 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
  * 7) ML-KEM top-level
  * =============================================================================
  */
-static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
+static void mlkem_keygen(const uint8_t *d_seed, const uint8_t *z_seed,
                          uint8_t *ek, uint8_t *dk) {
 #if defined(USE_PQCLEAN_AVX2_BACKEND)
   uint8_t coins[64];
-  if (!seed1) {
+  if (!d_seed) {
     randombytes(coins, 32);
   } else {
-    memcpy(coins, seed1, 32);
+    memcpy(coins, d_seed, 32);
   }
-  if (!seed2) {
+  if (!z_seed) {
     randombytes(coins + 32, 32);
   } else {
-    memcpy(coins + 32, seed2, 32);
+    memcpy(coins + 32, z_seed, 32);
   }
   (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_keypair_derand(ek, dk, coins);
   return;
 #elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   uint8_t coins[64];
-  if (!seed1) {
+  if (!d_seed) {
     randombytes(coins, 32);
   } else {
-    memcpy(coins, seed1, 32);
+    memcpy(coins, d_seed, 32);
   }
-  if (!seed2) {
+  if (!z_seed) {
     randombytes(coins + 32, 32);
   } else {
-    memcpy(coins + 32, seed2, 32);
+    memcpy(coins + 32, z_seed, 32);
   }
   (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins);
   return;
 #endif
 
+  uint8_t d_buf[32];
+  const uint8_t *d = d_seed;
+  if (!d) {
+    randombytes(d_buf, 32);
+    d = d_buf;
+  }
   uint8_t z_buf[32];
-  const uint8_t *z = seed1;
+  const uint8_t *z = z_seed;
   if (!z) {
     randombytes(z_buf, 32);
     z = z_buf;
   }
-  uint8_t seed_for_kpke_buf[32];
-  const uint8_t *seed_for_kpke = seed2;
-  if (!seed_for_kpke) {
-    randombytes(seed_for_kpke_buf, 32);
-    seed_for_kpke = seed_for_kpke_buf;
-  }
 
   uint8_t *ek_pke = ek;
   uint8_t *dk_pke = dk;
-  kpke_keygen(seed_for_kpke, ek_pke, dk_pke);
+  kpke_keygen(d, ek_pke, dk_pke);
 
   /* ek = ek_pke,
      dk = dk_pke || ek_pke || H(ek_pke) || z
