@@ -205,6 +205,7 @@ expect_marker_once() {
 }
 
 expect_marker_once $'\t.text'
+expect_marker_once $'\t.data'
 expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_enc:'
 expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_enc_derand:'
 expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_keypair:'
@@ -218,6 +219,34 @@ if [ "$random_call_count" -ne 2 ]; then
   echo "expected exactly two libjade random-wrapper calls, found $random_call_count" >&2
   exit 2
 fi
+constant_reference_count="$(awk '
+  BEGIN {
+    allowed["leaq"] = 1
+    allowed["movq"] = 1
+    allowed["vbroadcasti128"] = 1
+    allowed["vmovdqu"] = 1
+    allowed["vpbroadcastb"] = 1
+    allowed["vpbroadcastd"] = 1
+    allowed["vpbroadcastq"] = 1
+    allowed["vpbroadcastw"] = 1
+  }
+  /^[[:space:]]*\.data[[:space:]]*$/ { in_data = 1 }
+  !in_data && /glob_data/ {
+    line = $0
+    sub(/^[[:space:]]+/, "", line)
+    split(line, fields, /[[:space:]]+/)
+    if (!(fields[1] in allowed) ||
+        $0 ~ /,[[:space:]]*glob_data/ || $0 !~ /,/) {
+      print "possible write to libjade constant pool: " NR ":" $0 > "/dev/stderr"
+      bad = 1
+    }
+    count++
+  }
+  END {
+    if (bad || count != 474) exit 2
+    print count
+  }
+' "$assembly")"
 
 split_assembly="$work_dir/kyber_kyber768_avx2.split.s"
 awk '
@@ -240,14 +269,22 @@ awk '
   $0 == "L__crypto_kem_enc_derand_jazz$1:" {
     print "\t.section\t.text.libjade_core,\"ax\",@progbits"
   }
+  /^[[:space:]]*\.data[[:space:]]*$/ {
+    print "\t.section\t.rodata.libjade,\"a\",@progbits"
+    next
+  }
   { print }
   END { print "\t.section\t.note.GNU-stack,\"\",@progbits" }
 ' "$assembly" > "$split_assembly"
 
-awk '!/^[[:space:]]*\.text[[:space:]]*$/' "$assembly" \
+awk '
+  !/^[[:space:]]*\.text[[:space:]]*$/ &&
+  !/^[[:space:]]*\.data[[:space:]]*$/
+' "$assembly" \
   > "$work_dir/original-nonsection.txt"
 awk '
   !/^[[:space:]]*\.section[[:space:]]+\.text\.libjade_/ &&
+  !/^[[:space:]]*\.section[[:space:]]+\.rodata\.libjade/ &&
   !/^[[:space:]]*\.section[[:space:]]+\.note\.GNU-stack/
 ' "$split_assembly" > "$work_dir/split-nonsection.txt"
 if ! cmp -s "$work_dir/original-nonsection.txt" \
@@ -328,6 +365,16 @@ if readelf -SW "$work_dir/product.o" |
   echo "libjade product requests an executable stack" >&2
   exit 2
 fi
+if ! readelf -SW "$work_dir/product.o" |
+    rg -n '\.rodata\.libjade.* A ' >/dev/null; then
+  echo "libjade constant pool is not allocated read-only data" >&2
+  exit 2
+fi
+if readelf -SW "$work_dir/product.o" |
+    rg -n '\.rodata\.libjade.* W'; then
+  echo "libjade constant pool remained writable" >&2
+  exit 2
+fi
 
 objdump -d "$work_dir/product.o" > "$work_dir/disassembly.txt"
 if rg -n '%zmm|%k[0-7]' "$work_dir/disassembly.txt" >/dev/null; then
@@ -370,7 +417,10 @@ printf "latest_release_audit=%s\n" "$latest_release_audit"
 printf "libjade_adapter_cflags=%s\n" "$LIBJADE_HARNESS_CFLAGS"
 printf "normalization_cflags=%s\n" "$normalization_cflags"
 printf "assembly_random_call_count=%s\n" "$random_call_count"
+printf "assembly_constant_reference_count=%s\n" "$constant_reference_count"
 printf "assembly_nonsection_identity_audit=pass\n"
+printf "constant_direct_store_audit=pass\n"
+printf "constant_rodata_audit=pass\n"
 printf "random_wrapper_gc_audit=pass\n"
 printf "api_count=%s\n" "$api_count"
 printf "undefined_symbol_count=%s\n" "$undefined_symbol_count"
