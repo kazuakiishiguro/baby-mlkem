@@ -49,9 +49,16 @@ case "$COMPARATOR" in
     comparator_label=BoringSSL
     comparator_dir="${BORINGSSL_DIR:-/tmp/boringssl}"
     ;;
+  libcrux)
+    comparator_key=libcrux
+    comparator_slug=libcrux
+    comparator_label=libcrux
+    comparator_dir="${LIBCRUX_BENCH_DIR:-/tmp/libcrux-mlkem-bench}"
+    comparator_version="${LIBCRUX_CRATE_VERSION:-0.0.10}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, or boringssl" >&2
+    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, boringssl, or libcrux" >&2
     exit 2
     ;;
 esac
@@ -95,24 +102,28 @@ if [ "$REQUIRE_CLEAN_WORKTREE" = "1" ] &&
   echo "goal size verification requires a clean committed worktree" >&2
   exit 2
 fi
-if ! git -C "$comparator_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "missing $comparator_label git checkout: $comparator_dir" >&2
-  exit 2
-fi
-if [ -n "$(git -C "$comparator_dir" status --porcelain --untracked-files=normal)" ]; then
-  echo "$comparator_label checkout must be clean: $comparator_dir" >&2
-  exit 2
-fi
-
-if [ "$UPDATE_REPOS" = "1" ]; then
-  git -C "$comparator_dir" pull --ff-only
-  comparator_update=pass
+if [ "$COMPARATOR" = libcrux ]; then
+  comparator_update=delegated-to-product-builder
 else
-  comparator_update=skipped
-fi
-if [ -n "$(git -C "$comparator_dir" status --porcelain --untracked-files=normal)" ]; then
-  echo "$comparator_label checkout became dirty after update" >&2
-  exit 2
+  if ! git -C "$comparator_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "missing $comparator_label git checkout: $comparator_dir" >&2
+    exit 2
+  fi
+  if [ -n "$(git -C "$comparator_dir" status --porcelain --untracked-files=normal)" ]; then
+    echo "$comparator_label checkout must be clean: $comparator_dir" >&2
+    exit 2
+  fi
+
+  if [ "$UPDATE_REPOS" = "1" ]; then
+    git -C "$comparator_dir" pull --ff-only
+    comparator_update=pass
+  else
+    comparator_update=skipped
+  fi
+  if [ -n "$(git -C "$comparator_dir" status --porcelain --untracked-files=normal)" ]; then
+    echo "$comparator_label checkout became dirty after update" >&2
+    exit 2
+  fi
 fi
 
 goal_speed_configure_profile "$PROFILE" "$C_COMPILER"
@@ -136,6 +147,9 @@ case "$COMPARATOR" in
   boringssl)
     comparator_cflags="$BORINGSSL_C_FLAGS"
     comparator_cxxflags="$BORINGSSL_CXX_FLAGS"
+    ;;
+  libcrux)
+    comparator_cflags="$RUSTFLAGS_BENCH"
     ;;
 esac
 
@@ -239,7 +253,28 @@ case "$COMPARATOR" in
       "$ROOT_DIR/scripts/build_goal_boringssl_product.sh" \
       > "$comparator_build_report"
     ;;
+  libcrux)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    LIBCRUX_BENCH_DIR="$comparator_dir" C_COMPILER="$C_COMPILER" \
+    LIBCRUX_CRATE_VERSION="$comparator_version" \
+    LIBCRUX_ENABLE_SIMD256=1 UPDATE_REPOS="$UPDATE_REPOS" \
+    RUSTFLAGS_BENCH="$comparator_cflags" \
+      "$ROOT_DIR/scripts/build_goal_libcrux_product.sh" \
+      > "$comparator_build_report"
+    ;;
 esac
+if [ "$COMPARATOR" = libcrux ]; then
+  comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
+  comparator_version="$(sed -n 's/^libcrux_crate_version=//p' "$comparator_build_report")"
+  comparator_source="$(sed -n 's/^libcrux_crate_source=//p' "$comparator_build_report")"
+  comparator_checksum="$(sed -n 's/^libcrux_crate_checksum=//p' "$comparator_build_report")"
+  comparator_lock_sha="$(sed -n 's/^libcrux_lock_sha256=//p' "$comparator_build_report")"
+  if [ -z "$comparator_update" ] || [ -z "$comparator_version" ] ||
+      [ -z "$comparator_checksum" ] || [ -z "$comparator_lock_sha" ]; then
+    echo "failed to parse libcrux product provenance" >&2
+    exit 2
+  fi
+fi
 STACK_RUNS="$STACK_RUNS" STACK_USABLE_BYTES="$STACK_USABLE_BYTES" \
 C_COMPILER="$C_COMPILER" STACK_CFLAGS="$stack_cflags" \
   "$ROOT_DIR/scripts/measure_stack_highwater.sh" \
@@ -285,10 +320,17 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
   printf "goal_report_utc=%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf "baby_mlkem_commit=%s\n" "$(git -C "$ROOT_DIR" rev-parse HEAD)"
   printf "baby_mlkem_remote=%s\n" "$(git -C "$ROOT_DIR" remote get-url origin)"
-  printf "%s_commit=%s\n" "$comparator_key" \
-    "$(git -C "$comparator_dir" rev-parse HEAD)"
-  printf "%s_remote=%s\n" "$comparator_key" \
-    "$(git -C "$comparator_dir" remote get-url origin)"
+  if [ "$COMPARATOR" = libcrux ]; then
+    printf "libcrux_crate_version=%s\n" "$comparator_version"
+    printf "libcrux_crate_source=%s\n" "$comparator_source"
+    printf "libcrux_crate_checksum=%s\n" "$comparator_checksum"
+    printf "libcrux_lock_sha256=%s\n" "$comparator_lock_sha"
+  else
+    printf "%s_commit=%s\n" "$comparator_key" \
+      "$(git -C "$comparator_dir" rev-parse HEAD)"
+    printf "%s_remote=%s\n" "$comparator_key" \
+      "$(git -C "$comparator_dir" remote get-url origin)"
+  fi
   printf "comparator_update=%s\n" "$comparator_update"
   printf "host_kernel=%s\n" "$(uname -sr)"
   printf "host_cpu=%s\n" "$host_cpu"
@@ -297,7 +339,11 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
   printf "local_opt_cflags=%s\n" "$OPT_CFLAGS"
   printf "local_extra_cflags=%s\n" "$EXTRA_CFLAGS"
   printf "local_arch_cflags=%s\n" "$ARCH_CFLAGS"
-  printf "%s_cflags=%s\n" "$comparator_key" "$comparator_cflags"
+  if [ "$COMPARATOR" = libcrux ]; then
+    printf "libcrux_rustflags=%s\n" "$comparator_cflags"
+  else
+    printf "%s_cflags=%s\n" "$comparator_key" "$comparator_cflags"
+  fi
   if [ "$COMPARATOR" = boringssl ]; then
     printf "boringssl_cxxflags=%s\n" "$comparator_cxxflags"
   fi
