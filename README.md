@@ -255,6 +255,11 @@ regression bound; it is counted in writable storage. GCC LTO builds use
 `-flinker-output=nolto-rel` so the artifact contains final machine code rather
 than LTO metadata.
 
+Commit `ff7ca72` keeps GCC's global `-funroll-loops` out of the one-time NTT
+root initializer by compiling only that cold function for size. Clang is
+excluded from the attribute and produces byte-identical native and AVX2-only
+artifacts.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -267,16 +272,16 @@ the three exported KEM operations and reports:
   code are excluded from the primary total.
 
 The current 2026-08-06 no-cache baselines use the normal compiler-specific
-speed flags at commit `442f81b`:
+speed flags at commit `ff7ca72`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 99,381 | 5,305 | 104,686 | 0 | 31,954 | 31,954 |
-| native AVX512 | GCC 13.3.0 LTO | 60,234 | 2,337 | 62,571 | 0 | 33,728 | 33,728 |
+| native AVX512 | GCC 13.3.0 LTO | 55,814 | 2,337 | 58,151 | 0 | 33,728 | 33,728 |
 | AVX2-only | Clang 18.1.3 | 67,515 | 5,501 | 73,016 | 0 | 34,850 | 34,850 |
-| AVX2-only | GCC 13.3.0 LTO | 55,073 | 2,353 | 57,426 | 8 | 34,912 | 34,920 |
+| AVX2-only | GCC 13.3.0 LTO | 49,043 | 2,353 | 51,396 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 62,540 | 1,025 | 63,565 | 0 | 19,457 | 19,457 |
-| scalar | GCC 13.3.0 LTO | 22,193 | 417 | 22,610 | 0 | 19,488 | 19,488 |
+| scalar | GCC 13.3.0 LTO | 21,370 | 417 | 21,787 | 0 | 19,488 | 19,488 |
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
@@ -312,21 +317,28 @@ for cold/warm keygen, encapsulation, and valid/invalid decapsulation. Commit
 
 ### GCC Kyber Size and Stack Milestone
 
-The clean commit `442f81b` was measured against Kyber commit
+The clean commit `ff7ca72` was measured against Kyber commit
 `3edd5af5991927164edd4aacebfcbee00b8064e7` with GCC speed flags:
 
 | Profile | Local primary | Kyber primary | Local max stack | Kyber max stack | Kyber-only gate |
 |---|---:|---:|---:|---:|---|
-| native | 62,571 B | 59,901 B | 11,072 B | 17,376 B | FAIL by 2,670 B |
-| AVX2-only | 57,426 B | 70,063 B | 5,728 B | 18,400 B | PASS by 12,637 B |
+| native | 58,151 B | 59,901 B | 11,072 B | 17,376 B | PASS by 1,750 B |
+| AVX2-only | 51,396 B | 70,063 B | 5,728 B | 18,400 B | PASS by 18,667 B |
 
-The [complete size and stack report](benchmarks/2026-08-06-goal-kyber-size/README.md)
+The [current complete size, stack, and internal A/B report](benchmarks/2026-08-06-goal-kyber-size-cold-roots/README.md)
 contains both raw verifier outputs, operation-level stack values, artifact
-hashes, flags, and scope limitations. Comparator update was intentionally
-skipped for these files because they reuse the clean checkout from the strict
-speed run; the commit is recorded. Native remains 4.46% too large, and the
-other nine required comparator artifacts remain unmeasured. Therefore this is
-not the full smallest or overall Goal milestone.
+hashes, flags, and the 15-pair regression checks. Commit `ff7ca72` prevents
+GCC's global loop-unrolling policy from expanding the one-time NTT root setup;
+relative to its parent, primary size falls by 4,420 bytes native and 6,030 bytes
+AVX2-only without exceeding the 0.5% operation-regression bound. Clang native
+and AVX2-only products are byte-identical to the parent.
+
+The [superseded pre-optimization report](benchmarks/2026-08-06-goal-kyber-size/README.md)
+is retained as history. Comparator update was intentionally skipped in both
+sets because they reuse the same clean official checkout from the strict speed
+run; the exact commit and remote are recorded. Both GCC Kyber size gates are now
+closed, but the other nine required comparator artifacts remain unmeasured.
+Therefore this is not the full smallest or overall Goal milestone.
 
 ### Production Artifact Speed Baseline
 
@@ -465,17 +477,18 @@ reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
 Current status combines historical strict speed evidence at `513a2d2` (native)
-and `245823e` (AVX2-only) with size evidence at `442f81b` on 2026-08-06:
+and `245823e` (AVX2-only) with same-revision correctness and Kyber size evidence
+at `ff7ca72` on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass | The intrinsically no-cache product passes GCC and Clang native, AVX2-only, and scalar smoke tests. Final same-revision KAT, complete stage oracle, cross-path corpus, and UBSan remain required. |
+| Correctness | provisional pass | At `ff7ca72`, GCC and Clang native, AVX2-only, and scalar KEM/KAT plus product smoke tests pass. GCC native UBSan and Clang native ASan+UBSan pass the complete stage validator. The final cross-path corpus and remaining stage matrix are still required. |
 | Native aggregate speed | historical pass; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but the measured product artifact predates `962ea19`. |
 | Native operation speed | historical pass; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but same-revision verification is open. |
 | AVX2-only speed | historical pass; rerun required | The prior 40 rows passed; the narrowest aggregate ratio/CI lower bound was 1.3505x/1.3409x and operation lower bound was 1.1401x. The product artifact has since changed. |
-| Production size | partial; native Kyber FAIL | GCC AVX2-only is 12,637 B smaller than normalized Kyber, while GCC native is 2,670 B larger. The other nine comparator artifacts remain unmeasured. |
-| Maximum stack | partial pass | Guarded high-water is smaller than Kyber in both GCC profiles; the other nine comparators remain unmeasured. |
-| Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision correctness, speed, and all-comparator size reports are not complete. |
+| Production size | partial; Kyber PASS | GCC native is 1,750 B and AVX2-only is 18,667 B smaller than normalized Kyber. The other nine comparator artifacts remain unmeasured. |
+| Maximum stack | partial pass | Guarded high-water is smaller than Kyber in both GCC profiles and unchanged by `ff7ca72`; the other nine comparators remain unmeasured. |
+| Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator speed and size reports are not complete. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
