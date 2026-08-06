@@ -476,19 +476,32 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status combines historical strict speed evidence at `513a2d2` (native)
-and `245823e` (AVX2-only) with same-revision correctness and Kyber size evidence
-at `ff7ca72` on 2026-08-06:
+Commit `ada0e47` corrected a FIPS 203 key-generation defect found while
+normalizing Botan. The independent core had computed `G(d)` instead of
+`G(d || k)` and interpreted the 64-byte deterministic input as `z || d`, while
+the comparator backends used the standard `d || z` order. The correction adds
+the ML-KEM-768 domain byte `0x03`, fixes the seed order, and locks the behavior
+to a NIST ACVP key-generation digest. Every speed, size, and stack report before
+`ada0e47` therefore describes different key-generation semantics and is
+historical evidence only; none can satisfy the final same-revision gates.
+
+At `ada0e47`, GCC and Clang native, AVX2-only, and scalar KAT/product smoke
+builds pass. The explicit PQClean and upstream AVX2 backends pass the same ACVP
+check, Clang native ASan+UBSan and GCC native UBSan KATs pass, and a diagnostic
+comparison with Botan 3.13.0 matches the complete public key, expanded private
+key, ciphertext, valid shared secret, and implicit-rejection shared secret byte
+for byte. The reusable final cross-path corpus and complete stage-oracle rerun
+remain open.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass | At `ff7ca72`, GCC and Clang native, AVX2-only, and scalar KEM/KAT plus product smoke tests pass. GCC native UBSan and Clang native ASan+UBSan pass the complete stage validator. The final cross-path corpus and remaining stage matrix are still required. |
-| Native aggregate speed | historical pass; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but the measured product artifact predates `962ea19`. |
-| Native operation speed | historical pass; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but same-revision verification is open. |
-| AVX2-only speed | historical pass; rerun required | The prior 40 rows passed; the narrowest aggregate ratio/CI lower bound was 1.3505x/1.3409x and operation lower bound was 1.1401x. The product artifact has since changed. |
-| Production size | partial; Kyber PASS | GCC native is 1,750 B and AVX2-only is 18,667 B smaller than normalized Kyber. The other nine comparator artifacts remain unmeasured. |
-| Maximum stack | partial pass | Guarded high-water is smaller than Kyber in both GCC profiles and unchanged by `ff7ca72`; the other nine comparators remain unmeasured. |
-| Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator speed and size reports are not complete. |
+| Correctness | partial pass | `ada0e47` passes the ACVP key-generation check, six compiler/ISA KAT and product-smoke builds, two explicit AVX2 backend checks, sanitizer KATs, and diagnostic Botan interoperability. The reusable final corpus and complete stage-oracle matrix are still required. |
+| Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
+| Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
+| AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
+| Production size | historical only; normalization in progress | Existing normalized comparator measurements predate `ada0e47`; Botan and OpenSSL product normalization and a full same-revision rerun remain open. |
+| Maximum stack | historical only; rerun required | Existing Kyber and other partial stack measurements predate `ada0e47`; all required comparators need a same-revision rerun. |
+| Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator correctness, speed, size, and stack reports are not complete. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
