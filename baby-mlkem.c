@@ -7499,21 +7499,32 @@ static uint8_t mlkem_ek_hash_cache_output[32];
 static int mlkem_ek_hash_cache_valid = 0;
 static uint64_t mlkem_ek_hash_cache_generation = 0;
 static uint64_t mlkem_cache_generation_counter = 1;
+#if defined(BABY_MLKEM_DISABLE_INTERNAL_CACHES)
+#define MLKEM_INTERNAL_CACHES_ENABLED 0
+#else
 static int mlkem_internal_caches_enabled = 1;
+#define MLKEM_INTERNAL_CACHES_ENABLED mlkem_internal_caches_enabled
+#endif
 
 static void mlkem_clear_internal_caches(void) {
+#if !defined(BABY_MLKEM_DISABLE_INTERNAL_CACHES)
   kpke_public_cache_valid = 0;
   kpke_public_cache_generation = 0;
   kpke_secret_cache_valid = 0;
   mlkem_ek_hash_cache_valid = 0;
   mlkem_ek_hash_cache_generation = 0;
+#endif
 }
 
 static void mlkem_set_internal_caches_enabled(int enabled) {
+#if defined(BABY_MLKEM_DISABLE_INTERNAL_CACHES)
+  (void)enabled;
+#else
   mlkem_internal_caches_enabled = enabled != 0;
-  if (!mlkem_internal_caches_enabled) {
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) {
     mlkem_clear_internal_caches();
   }
+#endif
 }
 
 static uint64_t mlkem_next_cache_generation(void) {
@@ -7528,7 +7539,7 @@ static void kpke_public_cache_store(const uint8_t *ek_pke,
                                     const poly256 that[K],
                                     const poly256 ahat[K][K],
                                     uint64_t ek_generation) {
-  if (!mlkem_internal_caches_enabled) return;
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) return;
   memcpy(kpke_public_cache_that, that, sizeof(kpke_public_cache_that));
   memcpy(kpke_public_cache_ahat, ahat, sizeof(kpke_public_cache_ahat));
   memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
@@ -7538,7 +7549,7 @@ static void kpke_public_cache_store(const uint8_t *ek_pke,
 
 static void kpke_public_cache_finish_generated(const uint8_t *ek_pke,
                                                uint64_t ek_generation) {
-  if (!mlkem_internal_caches_enabled) return;
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) return;
   memcpy(kpke_public_cache_ek, ek_pke, sizeof(kpke_public_cache_ek));
   kpke_public_cache_valid = 1;
   kpke_public_cache_generation = ek_generation;
@@ -7546,7 +7557,7 @@ static void kpke_public_cache_finish_generated(const uint8_t *ek_pke,
 
 static void mlkem_ek_hash_cache_store(const uint8_t *ek,
                                       const uint8_t h[32]) {
-  if (!mlkem_internal_caches_enabled) return;
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) return;
   memcpy(mlkem_ek_hash_cache_input, ek, sizeof(mlkem_ek_hash_cache_input));
   memcpy(mlkem_ek_hash_cache_output, h, sizeof(mlkem_ek_hash_cache_output));
   mlkem_ek_hash_cache_valid = 1;
@@ -8136,7 +8147,7 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          const uint8_t *r, size_t rlen, uint8_t *out_c,
                          size_t *out_clen, int ek_cache_verified) {
   /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
-  int public_cache_hit = mlkem_internal_caches_enabled &&
+  int public_cache_hit = MLKEM_INTERNAL_CACHES_ENABLED &&
                          kpke_public_cache_valid && ek_cache_verified &&
                          kpke_public_cache_generation != 0 &&
                          kpke_public_cache_generation ==
@@ -8314,13 +8325,13 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   }
 
   /* parse dk_pke => s-hat[K] (cached for repeated use with same key) */
-  if (!mlkem_internal_caches_enabled || !kpke_secret_cache_valid ||
+  if (!MLKEM_INTERNAL_CACHES_ENABLED || !kpke_secret_cache_valid ||
       memcmp(kpke_secret_cache_dk, dk_pke,
              sizeof(kpke_secret_cache_dk)) != 0) {
     for (int i = 0; i < K; i++) {
       byte_decode(12, dk_pke + i * 384, kpke_secret_cache_shat[i]);
     }
-    if (mlkem_internal_caches_enabled) {
+    if (MLKEM_INTERNAL_CACHES_ENABLED) {
       memcpy(kpke_secret_cache_dk, dk_pke, sizeof(kpke_secret_cache_dk));
       kpke_secret_cache_valid = 1;
     }
@@ -8423,7 +8434,7 @@ static void mlkem_keygen(const uint8_t *seed1, const uint8_t *seed2,
   uint8_t *h = dk + (K * 384) + (K * 384 + 32);
   sha3_256_copy_1184(dk + (K * 384), ek_pke, h);
   memcpy(h + 32, z, 32);
-  if (mlkem_internal_caches_enabled) {
+  if (MLKEM_INTERNAL_CACHES_ENABLED) {
     mlkem_ek_hash_cache_store(ek, h);
     kpke_public_cache_generation = mlkem_ek_hash_cache_generation;
   }
@@ -8477,7 +8488,7 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   uint8_t h_local[32];
   const uint8_t *h = mlkem_ek_hash_cache_output;
   int public_prepared = 0;
-  if (!mlkem_internal_caches_enabled) {
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) {
     kpke_prepare_public_no_cache(ek, h_local);
     h = h_local;
     public_prepared = 1;
@@ -8586,7 +8597,7 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   static poly256 prepared_e2;
   int noise_prepared = 0;
 #endif
-  if (!mlkem_internal_caches_enabled) {
+  if (!MLKEM_INTERNAL_CACHES_ENABLED) {
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
     const uint8_t *rho = ek_pke + K * 384;
