@@ -244,17 +244,20 @@ claim.
 
 ### Production Artifact and Local Size Baseline
 
-Commit `634da7d` adds a deterministic ML-KEM-768 product API and a normalized
-relocatable artifact. `make product` compiles the independent core with
-`-ffunction-sections -fdata-sections`, roots only the three KEM operations and
-the two benchmark cache controls, links the required repository-local assembly,
-and applies section garbage collection. GCC LTO builds use
-`-flinker-output=nolto-rel` so the measured artifact contains final machine
-code rather than LTO metadata.
+Commit `634da7d` introduced the deterministic ML-KEM-768 product API and
+normalized relocatable artifact. Commit `962ea19` supersedes its runtime cache
+controls: `make product` now compiles the independent core with
+`BABY_MLKEM_DISABLE_INTERNAL_CACHES`, roots only deterministic keygen,
+encapsulation, and decapsulation, and removes persistent cache metadata before
+section GC. Commit `44cbf7e` retains an 80-byte Clang-native BSS color pad that
+keeps the smaller no-cache scratch layout within the operation-level speed
+regression bound; it is counted in writable storage. GCC LTO builds use
+`-flinker-output=nolto-rel` so the artifact contains final machine code rather
+than LTO metadata.
 
-`make test-product` links that exact artifact and checks a deterministic
-keygen/encaps/decaps roundtrip plus implicit rejection with internal caches
-disabled. `make product-size` verifies the five exported symbols and reports:
+`make test-product` links that exact intrinsically no-cache artifact and checks
+a deterministic roundtrip plus implicit rejection. `make product-size` verifies
+the three exported KEM operations and reports:
 
 - `code_bytes`: allocatable read-only executable sections.
 - `readonly_data_bytes`: allocatable read-only non-code sections.
@@ -263,14 +266,17 @@ disabled. `make product-size` verifies the five exported symbols and reports:
 - ELF notes, unwind sections, comments, debug metadata, test code, and benchmark
   code are excluded from the primary total.
 
-The 2026-08-06 local baselines use the normal compiler-specific speed flags:
+The current 2026-08-06 no-cache baselines use the normal compiler-specific
+speed flags at commit `442f81b`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 105,710 | 5,573 | 111,283 | 12 | 35,446 | 35,458 |
-| native AVX512 | GCC 13.3.0 LTO | 67,274 | 2,337 | 69,611 | 12 | 37,376 | 37,388 |
-| AVX2-only | Clang 18.1.3 | 68,243 | 5,743 | 73,986 | 12 | 42,005 | 42,017 |
-| AVX2-only | GCC 13.3.0 LTO | 57,221 | 2,353 | 59,574 | 20 | 42,144 | 42,164 |
+| native AVX512 | Clang 18.1.3 | 99,381 | 5,305 | 104,686 | 0 | 31,954 | 31,954 |
+| native AVX512 | GCC 13.3.0 LTO | 60,234 | 2,337 | 62,571 | 0 | 33,728 | 33,728 |
+| AVX2-only | Clang 18.1.3 | 67,515 | 5,501 | 73,016 | 0 | 34,850 | 34,850 |
+| AVX2-only | GCC 13.3.0 LTO | 55,073 | 2,353 | 57,426 | 8 | 34,912 | 34,920 |
+| scalar | Clang 18.1.3 | 62,540 | 1,025 | 63,565 | 0 | 19,457 | 19,457 |
+| scalar | GCC 13.3.0 LTO | 22,193 | 417 | 22,610 | 0 | 19,488 | 19,488 |
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
@@ -283,18 +289,44 @@ make test-product product-size CC=gcc
 
 make clean
 make test-product product-size CC=clang \
-  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+  ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f"
 
 make clean
 make test-product product-size CC=gcc \
-  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+  ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+
+make clean
+make test-product product-size CC=clang \
+  ARCH_CFLAGS="-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2"
+
+make clean
+make test-product product-size CC=gcc \
+  ARCH_CFLAGS="-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2"
 ```
 
-GCC and Clang product smoke tests and the existing KAT passed in native,
-AVX2-only, and scalar builds. These numbers establish only the local
-baby-mlkem baseline. Maximum stack remains unmeasured and external comparators
-do not yet emit artifacts under the same rules, so the completion-contract size
-gate remains open.
+GCC and Clang product smoke tests pass in native, AVX2-only, and scalar
+builds. Commit `df07d66` adds a guarded alternate-stack touched-high-water probe
+for cold/warm keygen, encapsulation, and valid/invalid decapsulation. Commit
+`442f81b` combines that measurement with normalized local and Kyber artifacts in
+`verify_goal_kyber_size.sh`.
+
+### GCC Kyber Size and Stack Milestone
+
+The clean commit `442f81b` was measured against Kyber commit
+`3edd5af5991927164edd4aacebfcbee00b8064e7` with GCC speed flags:
+
+| Profile | Local primary | Kyber primary | Local max stack | Kyber max stack | Kyber-only gate |
+|---|---:|---:|---:|---:|---|
+| native | 62,571 B | 59,901 B | 11,072 B | 17,376 B | FAIL by 2,670 B |
+| AVX2-only | 57,426 B | 70,063 B | 5,728 B | 18,400 B | PASS by 12,637 B |
+
+The [complete size and stack report](benchmarks/2026-08-06-goal-kyber-size/README.md)
+contains both raw verifier outputs, operation-level stack values, artifact
+hashes, flags, and scope limitations. Comparator update was intentionally
+skipped for these files because they reuse the clean checkout from the strict
+speed run; the commit is recorded. Native remains 4.46% too large, and the
+other nine required comparator artifacts remain unmeasured. Therefore this is
+not the full smallest or overall Goal milestone.
 
 ### Production Artifact Speed Baseline
 
@@ -432,17 +464,18 @@ measurement no longer meets a required margin. A dated speed milestone may be
 reported before full completion, but it must name its CPU, ISA, compiler,
 metric, comparator set, and remaining failed or unmeasured gates.
 
-Current status for the production core measured at `245823e` (AVX2-only) and
-`513a2d2` (native) on 2026-08-06:
+Current status combines historical strict speed evidence at `513a2d2` (native)
+and `245823e` (AVX2-only) with size evidence at `442f81b` on 2026-08-06:
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | provisional pass | Native, AVX2-only, and scalar product smoke tests plus the existing KAT passed GCC and Clang; the final stage-oracle and UBSan corpus was not rerun because the cryptographic core is unchanged. |
-| Native aggregate speed | pass | The strict current ten-comparator report passes. The narrowest aggregate result is 1.5607x with CI lower bound 1.5441x. |
-| Native operation speed | pass | All 40 operation rows pass; the narrowest operation CI lower bound is Kyber keygen at 1.2961x. |
-| AVX2-only speed | pass | The strict current ten-comparator report passes all 40 operation rows. The narrowest aggregate result is 1.3505x with CI lower bound 1.3409x; the narrowest operation CI lower bound is 1.1401x. |
-| Production size | partial | A normalized local artifact and four compiler/ISA baselines now exist; comparator artifacts and maximum-stack measurements remain open. |
-| Clean final revision | provisional pass | Comparator-cache contamination is now rejected and no core experiment remains in the production source. Final correctness and all-gate reports are still required. |
+| Correctness | provisional pass | The intrinsically no-cache product passes GCC and Clang native, AVX2-only, and scalar smoke tests. Final same-revision KAT, complete stage oracle, cross-path corpus, and UBSan remain required. |
+| Native aggregate speed | historical pass; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but the measured product artifact predates `962ea19`. |
+| Native operation speed | historical pass; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but same-revision verification is open. |
+| AVX2-only speed | historical pass; rerun required | The prior 40 rows passed; the narrowest aggregate ratio/CI lower bound was 1.3505x/1.3409x and operation lower bound was 1.1401x. The product artifact has since changed. |
+| Production size | partial; native Kyber FAIL | GCC AVX2-only is 12,637 B smaller than normalized Kyber, while GCC native is 2,670 B larger. The other nine comparator artifacts remain unmeasured. |
+| Maximum stack | partial pass | Guarded high-water is smaller than Kyber in both GCC profiles; the other nine comparators remain unmeasured. |
+| Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision correctness, speed, and all-comparator size reports are not complete. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
@@ -462,7 +495,7 @@ Regenerate this table with:
 
 ```bash
 RUNS=9 STAGE_ITERS=30000 PIN_CPU=0 C_COMPILER=clang \
-  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f" ./scripts/bench_core_frontier.sh
+  ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f" ./scripts/bench_core_frontier.sh
 ```
 
 | Metric | Avg ns/op | Median ns/op | Readout |
@@ -4216,7 +4249,7 @@ iterations:
 
 ```bash
 RUNS=7 WARMUP_RUNS=2 SUITES=stage STAGE_ITERS=30000 RUN_ORDER=alternating \
-  C_COMPILER=clang ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
+  C_COMPILER=clang ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
   PIN_CPU=0 ./scripts/bench_core_ab.sh 7b22f02
 ```
 
@@ -4443,7 +4476,7 @@ The production A/B used alternating order on CPU 0:
 
 ```bash
 MAKEFLAGS=-e C_COMPILER=clang \
-  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
+  ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
   PIN_CPU=0 RUNS=7 WARMUP_RUNS=1 RUN_ORDER=alternating \
   SUITES=kem,stage,ntt KEM_ITERS=4000 STAGE_ITERS=20000 NTT_ITERS=200000 \
   ./scripts/bench_core_ab.sh 93159c5
@@ -4508,7 +4541,7 @@ to `5.09%` self time, while `sample_ntt4()` is again first:
 ```bash
 MAKEFLAGS=-e PIN_CPU=0 C_COMPILER=clang AVX2_BACKEND=core \
   KEEP_PROFILE_ARTIFACTS=1 PROFILE_BENCH_ITERS=500000 \
-  ARCH_CFLAGS="-mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
+  ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f" \
   ./scripts/profile_kyber_gprof.sh 500000
 ```
 
