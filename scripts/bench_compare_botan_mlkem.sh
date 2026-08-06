@@ -44,6 +44,11 @@ BOTAN_MODULES="${BOTAN_MODULES:-ffi,ml_kem,system_rng,auto_rng,sha3,shake,asn1,b
 BOTAN_CXXFLAGS="${BOTAN_CXXFLAGS:--O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition}"
 BOTAN_DISABLED_MODULES="${BOTAN_DISABLED_MODULES:-}"
 BOTAN_HARNESS_CXXFLAGS="${BOTAN_HARNESS_CXXFLAGS:--O3}"
+BOTAN_ALLOW_COMPILER_FALLBACK="${BOTAN_ALLOW_COMPILER_FALLBACK:-1}"
+if ! [[ "$BOTAN_ALLOW_COMPILER_FALLBACK" =~ ^(0|1)$ ]]; then
+  echo "invalid BOTAN_ALLOW_COMPILER_FALLBACK: $BOTAN_ALLOW_COMPILER_FALLBACK" >&2
+  exit 1
+fi
 BOTAN_CC_FAMILY="${BOTAN_CC_FAMILY:-}"
 BOTAN_CC_FAMILY_EXPLICIT=0
 if [ -n "$BOTAN_CC_FAMILY" ]; then
@@ -102,6 +107,21 @@ fi
 if ! command -v "$BOTAN_CXX" >/dev/null 2>&1; then
   echo "compiler not found: BOTAN_CXX='$BOTAN_CXX'" >&2
   exit 1
+fi
+if "$BOTAN_CXX" --version 2>/dev/null | head -n 1 | grep -qi clang; then
+  GCC_INSTALL_DIR="${GCC_INSTALL_DIR:-}"
+  if [ -z "$GCC_INSTALL_DIR" ] && command -v g++ >/dev/null 2>&1; then
+    GCC_INSTALL_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so)")"
+  fi
+  if [ -n "$GCC_INSTALL_DIR" ]; then
+    clang_gcc_flag="--gcc-install-dir=$GCC_INSTALL_DIR"
+    if [[ " $BOTAN_CXXFLAGS " != *" $clang_gcc_flag "* ]]; then
+      BOTAN_CXXFLAGS="${BOTAN_CXXFLAGS:+$BOTAN_CXXFLAGS }$clang_gcc_flag"
+    fi
+    if [[ " $BOTAN_HARNESS_CXXFLAGS " != *" $clang_gcc_flag "* ]]; then
+      BOTAN_HARNESS_CXXFLAGS="${BOTAN_HARNESS_CXXFLAGS:+$BOTAN_HARNESS_CXXFLAGS }$clang_gcc_flag"
+    fi
+  fi
 fi
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 not found" >&2
@@ -165,6 +185,7 @@ echo "botan_build_dir=${BOTAN_BUILD_DIR}"
 echo "botan_fallback_clone_on_update_fail=${BOTAN_FALLBACK_CLONE_ON_UPDATE_FAIL}"
 echo "botan_cxx=${BOTAN_CXX}"
 echo "botan_cc_family=${BOTAN_CC_FAMILY}"
+echo "botan_allow_compiler_fallback=${BOTAN_ALLOW_COMPILER_FALLBACK}"
 echo "botan_modules=${BOTAN_MODULES}"
 echo "bench_isa_profile=${BENCH_ISA_PROFILE}"
 echo "botan_cxxflags=${BOTAN_CXXFLAGS}"
@@ -225,7 +246,9 @@ build_botan_once() {
 
 if ! build_botan_once; then
   can_fallback=0
-  if [ "$BOTAN_CXX_EXPLICIT" = "0" ] && [ "$BOTAN_CC_FAMILY_EXPLICIT" = "0" ]; then
+  if [ "$BOTAN_ALLOW_COMPILER_FALLBACK" = "1" ] &&
+      [ "$BOTAN_CXX_EXPLICIT" = "0" ] &&
+      [ "$BOTAN_CC_FAMILY_EXPLICIT" = "0" ]; then
     if "$BOTAN_CXX" --version 2>/dev/null | head -n 1 | grep -qi clang; then
       if command -v g++ >/dev/null 2>&1; then
         can_fallback=1
@@ -252,9 +275,11 @@ if ! build_botan_once; then
       fi
       exit 1
     fi
-  elif [ -n "${BOTAN_AUTO_CLANGPP_BROKEN_STAMP:-}" ] && "$BOTAN_CXX" --version 2>/dev/null | head -n 1 | grep -qi clang; then
-    printf "compiler=%s\n" "$BOTAN_CXX" > "$BOTAN_AUTO_CLANGPP_BROKEN_STAMP" || true
   else
+    if [ -n "${BOTAN_AUTO_CLANGPP_BROKEN_STAMP:-}" ] &&
+        "$BOTAN_CXX" --version 2>/dev/null | head -n 1 | grep -qi clang; then
+      printf "compiler=%s\n" "$BOTAN_CXX" > "$BOTAN_AUTO_CLANGPP_BROKEN_STAMP" || true
+    fi
     echo "failed to build Botan with BOTAN_CXX='$BOTAN_CXX'" >&2
     if [ -n "$BOTAN_LAST_BUILD_LOG" ] && [ -f "$BOTAN_LAST_BUILD_LOG" ]; then
       echo "--- Botan build log tail ---" >&2
@@ -262,6 +287,11 @@ if ! build_botan_once; then
     fi
     exit 1
   fi
+fi
+
+if [ ! -f "$BOTAN_BUILD_DIR/libbotan-3.a" ]; then
+  echo "Botan static archive missing after build: $BOTAN_BUILD_DIR/libbotan-3.a" >&2
+  exit 1
 fi
 
 cat > "$WORK_DIR/botan_mlkem_bench.cpp" <<'CPP_EOF'

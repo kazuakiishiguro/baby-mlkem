@@ -158,6 +158,33 @@ def validate_goal_profile(metadata, profile: str, failures: list[str]) -> None:
     if require_metadata(metadata, "bench_profile_tag") != expected_tag:
         failures.append(f"bench_profile_tag is not {expected_tag}")
 
+    c_compiler = Path(require_metadata(metadata, "C_COMPILER")).name
+    cxx_compiler = Path(require_metadata(metadata, "CXX_COMPILER")).name
+    botan_cxx = Path(require_metadata(metadata, "botan_cxx")).name
+    if not require_metadata(metadata, "compiler_version").strip():
+        failures.append("compiler_version is empty")
+    if not require_metadata(metadata, "cxx_compiler_version").strip():
+        failures.append("cxx_compiler_version is empty")
+    if "clang" in c_compiler:
+        expected_cxx_family = "clang++"
+        expected_botan_family = "clang"
+    elif "gcc" in c_compiler:
+        expected_cxx_family = "g++"
+        expected_botan_family = "gcc"
+    else:
+        failures.append(f"unsupported C compiler family: {c_compiler}")
+        expected_cxx_family = ""
+        expected_botan_family = ""
+    if expected_cxx_family:
+        if not cxx_compiler.startswith(expected_cxx_family):
+            failures.append("CXX_COMPILER does not match C_COMPILER")
+        if not botan_cxx.startswith(expected_cxx_family):
+            failures.append("botan_cxx does not match C_COMPILER")
+        if require_metadata(metadata, "botan_cc_family") != expected_botan_family:
+            failures.append("botan_cc_family does not match C_COMPILER")
+    if require_metadata(metadata, "botan_allow_compiler_fallback") != "0":
+        failures.append("Botan compiler fallback is not disabled")
+
     if profile == "native":
         if require_metadata(metadata, "local_ARCH_CFLAGS") != "-march=native":
             failures.append("native local_ARCH_CFLAGS is not -march=native")

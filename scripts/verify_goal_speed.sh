@@ -156,7 +156,7 @@ if [ "$bench_status" -ne 0 ]; then
 fi
 update_failure_pattern="warning: failed to update|warning: fallback clone failed|"
 update_failure_pattern+="warning: cargo update failed|UPDATE_REPOS=1 was set but|"
-update_failure_pattern+="using fallback fresh clone"
+update_failure_pattern+="using fallback fresh clone|warning: Botan build .*retrying"
 if rg -n "$update_failure_pattern" "$stderr_report"; then
   cat "$stderr_report" >&2
   echo "comparator update was not fail-closed" >&2
@@ -215,6 +215,7 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
   seen = 1
 }')"
 compiler_version="$("$C_COMPILER" --version | sed -n '1p')"
+cxx_compiler_version="$("$CXX_COMPILER" --version | sed -n '1p')"
 
 {
   printf "goal_profile=%s\n" "$PROFILE"
@@ -223,6 +224,7 @@ compiler_version="$("$C_COMPILER" --version | sed -n '1p')"
   printf "host_kernel=%s\n" "$(uname -sr)"
   printf "host_cpu=%s\n" "$host_cpu"
   printf "compiler_version=%s\n" "$compiler_version"
+  printf "cxx_compiler_version=%s\n" "$cxx_compiler_version"
   cat "$revision_report"
   cat "$raw_report"
 } > "$REPORT_FILE"
