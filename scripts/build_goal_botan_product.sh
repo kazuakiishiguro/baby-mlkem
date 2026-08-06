@@ -39,7 +39,7 @@ if [ "$(uname -m)" != "x86_64" ]; then
   exit 2
 fi
 for tool in "$C_COMPILER" ar awk cmp git make nm objcopy objdump python3 \
-    readelf rg sha256sum sort; do
+    readelf rg sha256sum sort tail; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "required tool not found: $tool" >&2
     exit 2
@@ -243,15 +243,22 @@ configure_cmd=(
 if [ -n "$BOTAN_DISABLED_MODULES" ]; then
   configure_cmd+=("--disable-modules=$BOTAN_DISABLED_MODULES")
 fi
-(
+if ! (
   cd "$BOTAN_DIR"
   LC_ALL=C SOURCE_DATE_EPOCH="$source_date_epoch" \
     "${configure_cmd[@]}"
-) > "$work_dir/configure.log"
-LC_ALL=C SOURCE_DATE_EPOCH="$source_date_epoch" \
-  make -C "$BOTAN_DIR" -f "$build_dir/Makefile" \
-    -j"$BOTAN_BUILD_JOBS" libs > "$work_dir/build.log"
-
+) > "$work_dir/configure.log" 2>&1; then
+  echo "failed to configure normalized Botan product" >&2
+  tail -n 100 "$work_dir/configure.log" >&2
+  exit 2
+fi
+if ! LC_ALL=C SOURCE_DATE_EPOCH="$source_date_epoch" \
+    make -C "$BOTAN_DIR" -f "$build_dir/Makefile" \
+      -j"$BOTAN_BUILD_JOBS" libs > "$work_dir/build.log" 2>&1; then
+  echo "failed to build normalized Botan product" >&2
+  tail -n 100 "$work_dir/build.log" >&2
+  exit 2
+fi
 archive="$build_dir/libbotan-3.a"
 build_config="$build_dir/build/build_config.json"
 build_header="$build_dir/build/build.h"
@@ -307,7 +314,7 @@ if [ "$PROFILE" = "avx2" ] &&
 fi
 
 read -r -a effective_cxxflags_arr <<< "$effective_cxxflags"
-"$CXX_COMPILER" "${effective_cxxflags_arr[@]}" -fno-rtti -std=c++20 \
+"$CXX_COMPILER" "${effective_cxxflags_arr[@]}" -fno-rtti -DBOTAN_NO_DEPRECATED_WARNINGS -std=c++20 \
   -I"$ROOT_DIR/scripts" \
   -I"$build_dir/build/include/public" \
   -I"$build_dir/build/include/internal" \
