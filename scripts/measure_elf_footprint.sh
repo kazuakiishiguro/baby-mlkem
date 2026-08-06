@@ -63,8 +63,10 @@ function account() {
   if (section == "" || flags !~ /ALLOC/) return
   bytes = hex_to_dec(hex_size)
   if (flags ~ /READONLY/) {
-    if (section ~ /^\.note/ || section ~ /^\.eh_frame/ ||
-        section ~ /^\.comment/ || section ~ /^\.debug/) return
+    if (section ~ /^\.note/ || section ~ /^\.comment/ ||
+        section ~ /^\.debug/) return
+    if (section ~ /^\.eh_frame/) unwind += bytes
+    if (section ~ /^\.gcc_except_table/) exception_table += bytes
     if (flags ~ /CODE/) code += bytes
     else readonly += bytes
   } else {
@@ -84,6 +86,8 @@ END {
   account()
   printf "code_bytes=%d\n", code
   printf "readonly_data_bytes=%d\n", readonly
+  printf "unwind_bytes=%d\n", unwind
+  printf "exception_table_bytes=%d\n", exception_table
   printf "primary_bytes=%d\n", code + readonly
   printf "initialized_writable_bytes=%d\n", initialized
   printf "zero_fill_bytes=%d\n", zero_fill
