@@ -21,8 +21,6 @@ int main(void) {
     encaps_coins[i] = (uint8_t)(5 * i + 7);
   }
 
-  baby_mlkem768_set_internal_caches_enabled(0);
-  baby_mlkem768_clear_internal_caches();
   baby_mlkem768_keypair_derand(ek, dk, keypair_coins);
   baby_mlkem768_encaps_derand(ct, valid_ss, ek, encaps_coins);
   baby_mlkem768_decaps(decaps_ss, ct, dk);
@@ -33,7 +31,6 @@ int main(void) {
   }
 
   ct[17] ^= 0x80;
-  baby_mlkem768_clear_internal_caches();
   baby_mlkem768_decaps(invalid_ss, ct, dk);
   if (memcmp(valid_ss, invalid_ss, sizeof(valid_ss)) == 0) {
     fprintf(stderr, "product API implicit rejection mismatch\n");

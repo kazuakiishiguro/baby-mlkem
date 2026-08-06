@@ -30,9 +30,6 @@ void baby_mlkem768_decaps(
     const uint8_t ct[BABY_MLKEM768_CIPHERTEXT_BYTES],
     const uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES]);
 
-void baby_mlkem768_set_internal_caches_enabled(int enabled);
-void baby_mlkem768_clear_internal_caches(void);
-
 #ifdef __cplusplus
 }
 #endif

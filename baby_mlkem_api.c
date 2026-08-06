@@ -23,11 +23,3 @@ void baby_mlkem768_decaps(
     const uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES]) {
   mlkem_decaps_ct(ct, dk, ss);
 }
-
-void baby_mlkem768_set_internal_caches_enabled(int enabled) {
-  mlkem_set_internal_caches_enabled(enabled);
-}
-
-void baby_mlkem768_clear_internal_caches(void) {
-  mlkem_clear_internal_caches();
-}

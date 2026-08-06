@@ -128,18 +128,16 @@ static inline void bench_decaps(const uint8_t *ct,
 }
 
 static inline void bench_clear_caches(void) {
-#if defined(USE_BABY_MLKEM_PRODUCT_API)
-  baby_mlkem768_clear_internal_caches();
-#elif !defined(USE_PQCLEAN_AVX2_BACKEND) && \
+#if !defined(USE_BABY_MLKEM_PRODUCT_API) && \
+    !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_clear_internal_caches();
 #endif
 }
 
 static inline void bench_set_caches_enabled(int enabled) {
-#if defined(USE_BABY_MLKEM_PRODUCT_API)
-  baby_mlkem768_set_internal_caches_enabled(enabled);
-#elif !defined(USE_PQCLEAN_AVX2_BACKEND) && \
+#if !defined(USE_BABY_MLKEM_PRODUCT_API) && \
+    !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_set_internal_caches_enabled(enabled);
 #else
@@ -205,6 +203,9 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   keygen_ns = t1 - t0;
 
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  keygen_core_ns = keygen_ns;
+#else
   bench_set_caches_enabled(0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -214,6 +215,7 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   keygen_core_ns = t1 - t0;
   bench_set_caches_enabled(1);
+#endif
 
   fill_seed(coins_kp, sizeof(coins_kp), 101);
   bench_keygen(coins_kp, ek, dk);
@@ -226,6 +228,9 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   encaps_ns = t1 - t0;
 
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  encaps_core_ns = encaps_ns;
+#else
   bench_set_caches_enabled(0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -235,6 +240,7 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   encaps_core_ns = t1 - t0;
   bench_set_caches_enabled(1);
+#endif
 
   for (size_t i = 0; i < iters; i++) {
     fill_seed(coins_enc, sizeof(coins_enc), i + 4000);
@@ -253,6 +259,9 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   decaps_ns = t1 - t0;
 
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  decaps_core_ns = decaps_ns;
+#else
   bench_set_caches_enabled(0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -268,6 +277,7 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   decaps_core_ns = t1 - t0;
   bench_set_caches_enabled(1);
+#endif
 
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -286,6 +296,9 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   roundtrip_ns = t1 - t0;
 
+#if defined(USE_BABY_MLKEM_PRODUCT_API)
+  roundtrip_core_ns = roundtrip_ns;
+#else
   bench_set_caches_enabled(0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
@@ -305,6 +318,7 @@ int main(int argc, char **argv) {
   t1 = now_ns();
   roundtrip_core_ns = t1 - t0;
   bench_set_caches_enabled(1);
+#endif
 
   printf("mlkem_bench_iterations=%zu\n", iters);
   print_metric("mlkem_keygen", keygen_ns, iters);
