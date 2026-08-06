@@ -6798,9 +6798,35 @@ With CPU pinning:
 PIN_CPU=0 ./scripts/bench_compare_libjade.sh 400
 ```
 
-The Libjade comparator uses the official release distribution
-`libjade-dist-src-amd64` (prebuilt assembly) and deterministic
-`*_derand` KEM entrypoints for repeatable inputs.
+The Libjade comparator is explicitly the pre-FIPS `Kyber768` construction, not
+FIPS 203 ML-KEM-768. It has the same 1,184/2,400/1,088-byte wire dimensions and
+remains a required historical performance comparator, but this comparison does
+not claim byte-level interoperability with ML-KEM.
+
+Speed and size both use the same normalized three-API relocatable artifact from
+the official `release/2023.05-2` `libjade-dist-src-amd64` assembly. With
+`UPDATE_REPOS=1`, the builder fails unless that exact release is GitHub Latest,
+redownloads the official asset, and verifies pinned SHA-256 values for the
+assembly, header, and Jasmin source. The upstream assembly places randomized
+and deterministic wrappers in one text section; normalization adds section
+directives only, verifies every non-section source line is unchanged, and
+linker-GCs the two randomized wrappers and both entropy relocations. The final
+artifact exports only deterministic keygen, encapsulation, and decapsulation.
+
+Libjade's 7,199-byte generated global pool contains twiddle factors, Keccak
+constants, and shuffle masks. The builder audits all 474 references against a
+load/address-only opcode set, rejects direct stores, maps the pool read-only,
+and runs roundtrip plus implicit-rejection smoke tests under that mapping. Run
+all four normalized size/stack checks with:
+
+```bash
+for cc in clang gcc; do
+  for profile in native avx2; do
+    COMPARATOR=libjade PROFILE="$profile" C_COMPILER="$cc" \
+      ./scripts/verify_goal_comparator_size.sh
+  done
+done
+```
 
 Compare against Botan ML-KEM-768 on the same host:
 
