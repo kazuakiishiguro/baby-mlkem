@@ -69,9 +69,17 @@ case "$COMPARATOR" in
     comparator_header_sha="${LIBJADE_EXPECTED_HEADER_SHA256:-e4ee2af96ac4c4f3184764c4e8565eb52d58670d4b58ef98b9635415162f9ca7}"
     comparator_jazz_sha="${LIBJADE_EXPECTED_JAZZ_SHA256:-ef7b8c32a0ef5d52150decbeea34161b986c3c580122c459c69fa28265a84f5f}"
     ;;
+  botan)
+    comparator_key=botan
+    comparator_slug=botan
+    comparator_label="Botan ML-KEM-768"
+    comparator_dir="${BOTAN_DIR:-/tmp/botan-mlkem}"
+    comparator_modules="${BOTAN_MODULES:-ml_kem,keccak_perm_bmi2}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
-    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs, boringssl, libcrux, or libjade" >&2
+    echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs," >&2
+    echo "boringssl, libcrux, libjade, or botan" >&2
     exit 2
     ;;
 esac
@@ -115,7 +123,8 @@ if [ "$REQUIRE_CLEAN_WORKTREE" = "1" ] &&
   echo "goal size verification requires a clean committed worktree" >&2
   exit 2
 fi
-if [ "$COMPARATOR" = libcrux ] || [ "$COMPARATOR" = libjade ]; then
+if [ "$COMPARATOR" = libcrux ] || [ "$COMPARATOR" = libjade ] ||
+    [ "$COMPARATOR" = botan ]; then
   comparator_update=delegated-to-product-builder
 else
   if ! git -C "$comparator_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -167,7 +176,18 @@ case "$COMPARATOR" in
   libjade)
     comparator_cflags="$LIBJADE_HARNESS_CFLAGS"
     ;;
+  botan)
+    comparator_cflags="$BOTAN_CXXFLAGS"
+    comparator_cxx="$BOTAN_CXX"
+    comparator_disabled_modules="$BOTAN_DISABLED_MODULES"
+    comparator_cxx_stdlib_flags="$GOAL_CXX_STDLIB_FLAGS"
+    ;;
 esac
+if [ "$COMPARATOR" = botan ] &&
+    ! command -v "$comparator_cxx" >/dev/null 2>&1; then
+  echo "matching Botan C++ compiler not found: $comparator_cxx" >&2
+  exit 2
+fi
 
 work_dir="$(mktemp -d /tmp/baby-mlkem-goal-size.XXXXXX)"
 local_artifact="$work_dir/baby_mlkem768_product.o"
@@ -293,6 +313,15 @@ case "$COMPARATOR" in
       "$ROOT_DIR/scripts/build_goal_libjade_product.sh" \
       > "$comparator_build_report"
     ;;
+  botan)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    BOTAN_DIR="$comparator_dir" BOTAN_MODULES="$comparator_modules" \
+    BOTAN_CXXFLAGS="$comparator_cflags" \
+    BOTAN_DISABLED_MODULES="$comparator_disabled_modules" \
+    UPDATE_REPOS="$UPDATE_REPOS" C_COMPILER="$C_COMPILER" \
+      "$ROOT_DIR/scripts/build_goal_botan_product.sh" \
+      > "$comparator_build_report"
+    ;;
 esac
 if [ "$COMPARATOR" = libcrux ]; then
   comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
@@ -324,9 +353,50 @@ elif [ "$COMPARATOR" = libjade ]; then
     echo "failed to parse libjade product provenance" >&2
     exit 2
   fi
+elif [ "$COMPARATOR" = botan ]; then
+  comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
+  comparator_version="$(sed -n 's/^botan_version=//p' "$comparator_build_report")"
+  comparator_commit="$(sed -n 's/^botan_commit=//p' "$comparator_build_report")"
+  comparator_source="$(sed -n 's/^botan_remote=//p' "$comparator_build_report")"
+  comparator_modules_resolved="$(sed -n 's/^botan_modules_resolved=//p' "$comparator_build_report")"
+  botan_adapter_mode="$(sed -n 's/^adapter_mode=//p' "$comparator_build_report")"
+  botan_wire_parse="$(sed -n 's/^wire_key_parse_per_call=//p' "$comparator_build_report")"
+  botan_operation_rebuild="$(sed -n 's/^operation_rebuild_per_call=//p' "$comparator_build_report")"
+  botan_matrix_timed="$(sed -n 's/^matrix_precompute_timed=//p' "$comparator_build_report")"
+  botan_unwind_retained="$(sed -n \
+    's/^functional_exception_unwind_retained=//p' \
+    "$comparator_build_report")"
+  botan_correctness="$(sed -n 's/^correctness_smoke=//p' "$comparator_build_report")"
+  if [ -z "$comparator_version" ] || [ -z "$comparator_commit" ] ||
+      [ -z "$comparator_source" ] || [ -z "$comparator_modules_resolved" ] ||
+      [ "$botan_adapter_mode" != internal-core-direct ] ||
+      [ "$botan_wire_parse" != pass ] ||
+      [ "$botan_operation_rebuild" != pass ] ||
+      [ "$botan_matrix_timed" != pass ] ||
+      [ "$botan_unwind_retained" != pass ] ||
+      [ "$botan_correctness" != pass ]; then
+    echo "failed to validate Botan product provenance or no-cache contract" >&2
+    exit 2
+  fi
+  if { [ "$UPDATE_REPOS" = "1" ] && [ "$comparator_update" != pass ]; } ||
+      { [ "$UPDATE_REPOS" = "0" ] && [ "$comparator_update" != skipped ]; }; then
+    echo "Botan comparator update status does not match UPDATE_REPOS" >&2
+    exit 2
+  fi
+fi
+comparator_stack_linker="$C_COMPILER"
+comparator_stack_ldflags=""
+if [ "$COMPARATOR" = botan ]; then
+  comparator_stack_linker="$comparator_cxx"
+  comparator_stack_ldflags="-no-pie -pthread -ldl -lm"
+  if [ -n "$comparator_cxx_stdlib_flags" ]; then
+    comparator_stack_ldflags="$comparator_cxx_stdlib_flags $comparator_stack_ldflags"
+  fi
 fi
 STACK_RUNS="$STACK_RUNS" STACK_USABLE_BYTES="$STACK_USABLE_BYTES" \
 C_COMPILER="$C_COMPILER" STACK_CFLAGS="$stack_cflags" \
+STACK_LINKER="$comparator_stack_linker" \
+STACK_LDFLAGS="$comparator_stack_ldflags" \
   "$ROOT_DIR/scripts/measure_stack_highwater.sh" \
   "$comparator_artifact" goal > "$comparator_stack_report"
 comparator_max_stack="$(sed -n 's/^max_stack_bytes=//p' \
@@ -385,6 +455,14 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
     printf "libjade_archive_sha256=%s\n" "$comparator_archive_sha"
     printf "libjade_latest_release_tag=%s\n" "$comparator_latest_tag"
     printf "libjade_latest_release_audit=%s\n" "$comparator_latest_audit"
+  elif [ "$COMPARATOR" = botan ]; then
+    printf "botan_version=%s\n" "$comparator_version"
+    printf "botan_commit=%s\n" "$comparator_commit"
+    printf "botan_remote=%s\n" "$comparator_source"
+    printf "botan_modules_requested=%s\n" "$comparator_modules"
+    printf "botan_modules_resolved=%s\n" "$comparator_modules_resolved"
+    printf "botan_adapter_mode=%s\n" "$botan_adapter_mode"
+    printf "botan_no_cache_contract=pass\n"
   else
     printf "%s_commit=%s\n" "$comparator_key" \
       "$(git -C "$comparator_dir" rev-parse HEAD)"
@@ -403,6 +481,13 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
     printf "libcrux_rustflags=%s\n" "$comparator_cflags"
   elif [ "$COMPARATOR" = libjade ]; then
     printf "libjade_harness_cflags=%s\n" "$comparator_cflags"
+  elif [ "$COMPARATOR" = botan ]; then
+    printf "botan_cxx=%s\n" "$comparator_cxx"
+    printf "botan_cxx_version=%s\n" \
+      "$("$comparator_cxx" --version | sed -n '1p')"
+    printf "botan_cxxflags=%s\n" "$comparator_cflags"
+    printf "botan_disabled_modules=%s\n" \
+      "${comparator_disabled_modules:-<none>}"
   else
     printf "%s_cflags=%s\n" "$comparator_key" "$comparator_cflags"
   fi
