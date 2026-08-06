@@ -7642,6 +7642,12 @@ static void kpke_prepare_public_ghash_no_cache(const uint8_t *ek_pke,
 #endif
 }
 
+#if defined(BABY_MLKEM_DISABLE_INTERNAL_CACHES) && defined(__clang__) && \
+    defined(__AVX512F__)
+/* Preserve the fast L1 set coloring after cache-only BSS is removed. */
+static uint8_t mlkem_no_cache_bss_pad[80] __attribute__((used, retain));
+#endif
+
 static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   ensure_ntt_roots();
   /* ghash = sha3_512(seed) => (rho||sigma) */
