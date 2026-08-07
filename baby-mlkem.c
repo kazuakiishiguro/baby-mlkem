@@ -2541,13 +2541,30 @@ static inline void ntt_inv_sub_recover_from_inplace_avx512(
 }
 
 #if defined(__clang__)
+/* Preserve the two-byte first root; otherwise Clang rematerializes a ZMM
+ * splat in read-only data before emitting the same vpbroadcastw. */
+static MLKEM_ALWAYS_INLINE int16_t
+ntt_head_mont_load_factor_clang(const volatile int16_t *factor) {
+  return *factor;
+}
+
 static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
   int k = 0;
   for (int log2len = 7; log2len > 4; log2len--) {
     int length = 1 << log2len;
     for (int start = 0; start < N; start += 2 * length) {
-      __m512i zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[k];
-      __m512i zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[k++];
+      int zeta_index = k++;
+      __m512i zeta_lo;
+      __m512i zeta_hi;
+      if (zeta_index == 0) {
+        zeta_lo = _mm512_set1_epi16(ntt_head_mont_load_factor_clang(
+            ZETA_NTT_HEAD_MONT_LO_AVX512_SCALAR));
+        zeta_hi = _mm512_set1_epi16(ntt_head_mont_load_factor_clang(
+            ZETA_NTT_HEAD_MONT_HI_AVX512_SCALAR));
+      } else {
+        zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE[zeta_index - 1];
+        zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE[zeta_index - 1];
+      }
       for (int j = 0; j < length; j += 32) {
         __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
         __m512i b =
@@ -2563,10 +2580,13 @@ static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
   }
 
   for (int start = 0; start < N; start += 32) {
+    int dense_index = k++ - 1;
     __m256i zeta_lo =
-        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_LO_AVX512[k]);
+        _mm512_castsi512_si256(
+            ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE[dense_index]);
     __m256i zeta_hi =
-        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_HI_AVX512[k++]);
+        _mm512_castsi512_si256(
+            ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE[dense_index]);
     __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
     __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
     __m256i t =

@@ -358,13 +358,15 @@ static const __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI =
 #endif
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-static const __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15] = {
-    {
-      (long long)UINT64_C(0x7b0a7b0a7b0a7b0a), (long long)UINT64_C(0x7b0a7b0a7b0a7b0a),
-      (long long)UINT64_C(0x7b0a7b0a7b0a7b0a), (long long)UINT64_C(0x7b0a7b0a7b0a7b0a),
-      (long long)UINT64_C(0x7b0a7b0a7b0a7b0a), (long long)UINT64_C(0x7b0a7b0a7b0a7b0a),
-      (long long)UINT64_C(0x7b0a7b0a7b0a7b0a), (long long)UINT64_C(0x7b0a7b0a7b0a7b0a)
-    },
+static const int16_t ZETA_NTT_HEAD_MONT_LO_AVX512_SCALAR[1] = {
+     31498
+};
+
+static const int16_t ZETA_NTT_HEAD_MONT_HI_AVX512_SCALAR[1] = {
+      -758
+};
+
+static const __m512i ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE[14] = {
     {
       (long long)UINT64_C(0x3999399939993999), (long long)UINT64_C(0x3999399939993999),
       (long long)UINT64_C(0x3999399939993999), (long long)UINT64_C(0x3999399939993999),
@@ -451,13 +453,7 @@ static const __m512i ZETA_NTT_HEAD_MONT_LO_AVX512[15] = {
     }
 };
 
-static const __m512i ZETA_NTT_HEAD_MONT_HI_AVX512[15] = {
-    {
-      (long long)UINT64_C(0xfd0afd0afd0afd0a), (long long)UINT64_C(0xfd0afd0afd0afd0a),
-      (long long)UINT64_C(0xfd0afd0afd0afd0a), (long long)UINT64_C(0xfd0afd0afd0afd0a),
-      (long long)UINT64_C(0xfd0afd0afd0afd0a), (long long)UINT64_C(0xfd0afd0afd0afd0a),
-      (long long)UINT64_C(0xfd0afd0afd0afd0a), (long long)UINT64_C(0xfd0afd0afd0afd0a)
-    },
+static const __m512i ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE[14] = {
     {
       (long long)UINT64_C(0xfe99fe99fe99fe99), (long long)UINT64_C(0xfe99fe99fe99fe99),
       (long long)UINT64_C(0xfe99fe99fe99fe99), (long long)UINT64_C(0xfe99fe99fe99fe99),
