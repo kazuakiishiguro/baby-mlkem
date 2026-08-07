@@ -1,0 +1,50 @@
+candidate_ref=1cf6605259682402d9733d452ee1ae5d39875d4a
+baseline_ref=d059bf9a780eb5fe2658ece2e82f044c211db7a6
+[clang-native]
+compiler=clang
+arch_cflags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=9f5f6d3178424b616d71950eae05b02f50f0effddc1698fa6ad0089dee1d2438
+primary_bytes=90937
+[clang-avx2]
+compiler=clang
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=e61bc5ad1fb8906d8f4f55c273846d8eec37a8d3c9244ff0ef163f42fb43029b
+primary_bytes=63892
+[clang-scalar]
+compiler=clang
+arch_cflags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=39d4ed10e66f4f0914fe79d14cadf9a56943fabd3bd710844ddcaa2cb630626c
+primary_bytes=63006
+[gcc-native]
+compiler=gcc
+arch_cflags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+primary_bytes=59571
+[gcc-avx2]
+compiler=gcc
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=b73dcab0e87e6bf0938c4ea3c864d5734ab0e433c823ede01e10c860c8a25c5a
+primary_bytes=55238
+[gcc-scalar]
+compiler=gcc
+arch_cflags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+primary_bytes=23267

@@ -1,0 +1,24 @@
+candidate_ref=1cf6605259682402d9733d452ee1ae5d39875d4a
+baseline_ref=d059bf9a780eb5fe2658ece2e82f044c211db7a6
+[native]
+remove=.text.sha3_512 bytes=-1379
+add=.text.sha3_512_mlkem_fixed bytes=129
+change=.text.baby_mlkem768_encaps_derand baseline_bytes=278 candidate_bytes=197 delta_bytes=-81
+unchanged_size=.text.baby_mlkem768_keypair_derand bytes=11259
+unchanged_size=.text.baby_mlkem768_decaps bytes=12867
+net_code_delta_bytes=-1331
+readonly_delta_bytes=0
+writable_delta_bytes=0
+section_count_baseline=74
+section_count_candidate=74
+[avx2]
+remove=.text.sha3_512 bytes=-1123
+add=.text.sha3_512_mlkem_fixed bytes=151
+change=.text.baby_mlkem768_encaps_derand baseline_bytes=344 candidate_bytes=253 delta_bytes=-91
+change=.text.baby_mlkem768_decaps baseline_bytes=5573 candidate_bytes=5509 delta_bytes=-64
+unchanged_size=.text.baby_mlkem768_keypair_derand bytes=3197
+net_code_delta_bytes=-1127
+readonly_delta_bytes=0
+writable_delta_bytes=0
+section_count_baseline=80
+section_count_candidate=80

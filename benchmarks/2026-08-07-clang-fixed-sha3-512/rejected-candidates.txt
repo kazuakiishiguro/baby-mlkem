@@ -1,0 +1,24 @@
+baseline_ref=d059bf9a780eb5fe2658ece2e82f044c211db7a6
+[all-compiler-routing]
+status=rejected
+clang_native_primary_bytes=90943
+clang_avx2_primary_bytes=63898
+clang_scalar_primary_bytes=63012
+gcc_native_primary_bytes=59563
+gcc_native_delta_bytes=-8
+gcc_avx2_primary_bytes=55292
+gcc_avx2_delta_bytes=54
+gcc_scalar_primary_bytes=23015
+gcc_scalar_delta_bytes=-252
+reason=GCC AVX2 grew and GCC native was effectively neutral; keep all GCC products byte-identical and scope the production split to Clang.
+[three-length-production-helper]
+status=superseded
+native_primary_bytes=90943
+native_delta_bytes=-1325
+helper_bytes=135
+reason=The emitted 64-byte path tested 33 before 64. Restricting the production helper contract to the actual ML-KEM lengths 33 and 64 restored one-comparison dispatch and removed another 6 bytes.
+[final]
+status=accepted
+native_primary_bytes=90937
+avx2_primary_bytes=63892
+helper_native_bytes=129
