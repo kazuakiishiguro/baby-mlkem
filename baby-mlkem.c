@@ -1806,18 +1806,32 @@ static int NTT_ROOTS_READY = 0;
   ZETA_NTT_INV_MONT_LO[MLKEM_INV_MONT_INDEX(level, index)]
 #define MLKEM_INV_MONT_HI(level, index) \
   ZETA_NTT_INV_MONT_HI[MLKEM_INV_MONT_INDEX(level, index)]
-#define MLKEM_INV_MONT_LO_AVX512(level, index) \
-  ZETA_NTT_INV_MONT_LO_AVX512[MLKEM_INV_MONT_INDEX(level, index)]
-#define MLKEM_INV_MONT_HI_AVX512(level, index) \
-  ZETA_NTT_INV_MONT_HI_AVX512[MLKEM_INV_MONT_INDEX(level, index)]
+/* Levels 4..5 need only six splats; keep their factors scalar in
+ * read-only data. */
+#define MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index) \
+  (MLKEM_INV_MONT_INDEX(level, index) - 32)
+#define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)]
+#define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_HI_AVX512_DENSE[8 * (level) + (index)]
+#define MLKEM_INV_MONT_SCALAR_LO_AVX512(level, index) \
+  _mm512_set1_epi16(ZETA_NTT_INV_MONT_LO_AVX512_SCALAR[ \
+      MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])
+#define MLKEM_INV_MONT_SCALAR_HI_AVX512(level, index) \
+  _mm512_set1_epi16(ZETA_NTT_INV_MONT_HI_AVX512_SCALAR[ \
+      MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])
 #else
 #define MLKEM_INV_MONT_LO(level, index) \
   ZETA_NTT_INV_MONT_LO[level][index]
 #define MLKEM_INV_MONT_HI(level, index) \
   ZETA_NTT_INV_MONT_HI[level][index]
-#define MLKEM_INV_MONT_LO_AVX512(level, index) \
+#define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
   ZETA_NTT_INV_MONT_LO_AVX512[level][index]
-#define MLKEM_INV_MONT_HI_AVX512(level, index) \
+#define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_HI_AVX512[level][index]
+#define MLKEM_INV_MONT_SCALAR_LO_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_LO_AVX512[level][index]
+#define MLKEM_INV_MONT_SCALAR_HI_AVX512(level, index) \
   ZETA_NTT_INV_MONT_HI_AVX512[level][index]
 #endif
 #endif
@@ -2055,26 +2069,26 @@ static void ntt_inv_mont_before_final_avx512(poly256 f) {
     __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
     __m512i partner = _mm512_rol_epi64(x, 32);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, MLKEM_INV_MONT_LO_AVX512(0, block),
-        MLKEM_INV_MONT_HI_AVX512(0, block),
+        x, partner, MLKEM_INV_MONT_DENSE_LO_AVX512(0, block),
+        MLKEM_INV_MONT_DENSE_HI_AVX512(0, block),
         (__mmask32)0xccccccccu);
 
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, MLKEM_INV_MONT_LO_AVX512(1, block),
-        MLKEM_INV_MONT_HI_AVX512(1, block),
+        x, partner, MLKEM_INV_MONT_DENSE_LO_AVX512(1, block),
+        MLKEM_INV_MONT_DENSE_HI_AVX512(1, block),
         (__mmask32)0xf0f0f0f0u);
 
     partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, MLKEM_INV_MONT_LO_AVX512(2, block),
-        MLKEM_INV_MONT_HI_AVX512(2, block),
+        x, partner, MLKEM_INV_MONT_DENSE_LO_AVX512(2, block),
+        MLKEM_INV_MONT_DENSE_HI_AVX512(2, block),
         (__mmask32)0xff00ff00u);
 
     partner = _mm512_permutexvar_epi64(swap_halves, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, MLKEM_INV_MONT_LO_AVX512(3, block),
-        MLKEM_INV_MONT_HI_AVX512(3, block),
+        x, partner, MLKEM_INV_MONT_DENSE_LO_AVX512(3, block),
+        MLKEM_INV_MONT_DENSE_HI_AVX512(3, block),
         (__mmask32)0xffff0000u);
     _mm512_storeu_si512((void *)(f + 32 * block), x);
   }
@@ -2082,8 +2096,8 @@ static void ntt_inv_mont_before_final_avx512(poly256 f) {
   for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
-      __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(level, i);
-      __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(level, i);
+      __m512i zeta_lo = MLKEM_INV_MONT_SCALAR_LO_AVX512(level, i);
+      __m512i zeta_hi = MLKEM_INV_MONT_SCALAR_HI_AVX512(level, i);
       for (int j = 0; j < length; j += 32) {
         __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
         __m512i b =
@@ -2156,6 +2170,42 @@ static void ntt_inv_add_mont_final_avx512(
   }
 }
 
+#if defined(__clang__)
+static MLKEM_ALWAYS_INLINE void
+ntt_inv_mont_before_final4_tail_level_clang_avx512(
+    poly256 f0, poly256 f1, poly256 f2, poly256 f3,
+    int length, int root_offset, int reduce_sum) {
+  int16_t *out[4] = {f0, f1, f2, f3};
+  /* Full unrolling duplicates this four-output tail and erases the size win. */
+#pragma clang loop unroll(disable)
+  for (int start = 0, i = 0; start < N; start += 2 * length, i++) {
+    __m512i zeta_lo = _mm512_set1_epi16(
+        ZETA_NTT_INV_MONT_LO_AVX512_SCALAR[root_offset + i]);
+    __m512i zeta_hi = _mm512_set1_epi16(
+        ZETA_NTT_INV_MONT_HI_AVX512_SCALAR[root_offset + i]);
+    for (int j = 0; j < length; j += 32) {
+      for (int lane = 0; lane < 4; lane++) {
+        __m512i a = _mm512_loadu_si512(
+            (const void *)(out[lane] + start + j));
+        __m512i b = _mm512_loadu_si512(
+            (const void *)(out[lane] + start + length + j));
+        __m512i sum, product;
+        if (reduce_sum) {
+          ntt_inv_mont_pair_i16x32_avx512(
+              a, b, zeta_lo, zeta_hi, &sum, &product);
+        } else {
+          ntt_inv_mont_pair_lazy_i16x32_avx512(
+              a, b, zeta_lo, zeta_hi, &sum, &product);
+        }
+        _mm512_storeu_si512((void *)(out[lane] + start + j), sum);
+        _mm512_storeu_si512(
+            (void *)(out[lane] + start + length + j), product);
+      }
+    }
+  }
+}
+#endif
+
 /* Reuse each inverse-twiddle load across the three u outputs and v. */
 static void ntt_inv_mont_before_final4_shared_avx512(
     poly256 f0, poly256 f1, poly256 f2, poly256 f3) {
@@ -2184,8 +2234,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     __m512i x1 = _mm512_loadu_si512((const void *)(f1 + 32 * block));
     __m512i x2 = _mm512_loadu_si512((const void *)(f2 + 32 * block));
     __m512i x3 = _mm512_loadu_si512((const void *)(f3 + 32 * block));
-    __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(0, block);
-    __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(0, block);
+    __m512i zeta_lo = MLKEM_INV_MONT_DENSE_LO_AVX512(0, block);
+    __m512i zeta_hi = MLKEM_INV_MONT_DENSE_HI_AVX512(0, block);
     __m512i partner = _mm512_rol_epi64(x0, 32);
     x0 = MLKEM_INV_SHARED_LEVEL0(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
@@ -2199,8 +2249,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL0(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
 
-    zeta_lo = MLKEM_INV_MONT_LO_AVX512(1, block);
-    zeta_hi = MLKEM_INV_MONT_HI_AVX512(1, block);
+    zeta_lo = MLKEM_INV_MONT_DENSE_LO_AVX512(1, block);
+    zeta_hi = MLKEM_INV_MONT_DENSE_HI_AVX512(1, block);
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x0);
     x0 = MLKEM_INV_SHARED_LEVEL1(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
@@ -2214,8 +2264,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL1(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
 
-    zeta_lo = MLKEM_INV_MONT_LO_AVX512(2, block);
-    zeta_hi = MLKEM_INV_MONT_HI_AVX512(2, block);
+    zeta_lo = MLKEM_INV_MONT_DENSE_LO_AVX512(2, block);
+    zeta_hi = MLKEM_INV_MONT_DENSE_HI_AVX512(2, block);
     partner = _mm512_permutexvar_epi64(swap_qword_quads, x0);
     x0 = MLKEM_INV_SHARED_LEVEL2(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xff00ff00u);
@@ -2229,8 +2279,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL2(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xff00ff00u);
 
-    zeta_lo = MLKEM_INV_MONT_LO_AVX512(3, block);
-    zeta_hi = MLKEM_INV_MONT_HI_AVX512(3, block);
+    zeta_lo = MLKEM_INV_MONT_DENSE_LO_AVX512(3, block);
+    zeta_hi = MLKEM_INV_MONT_DENSE_HI_AVX512(3, block);
     partner = _mm512_permutexvar_epi64(swap_halves, x0);
     x0 = MLKEM_INV_SHARED_LEVEL3(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
@@ -2250,11 +2300,17 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     _mm512_storeu_si512((void *)(f3 + 32 * block), x3);
   }
 
+#if defined(__clang__)
+  ntt_inv_mont_before_final4_tail_level_clang_avx512(
+      f0, f1, f2, f3, 32, 0, 1);
+  ntt_inv_mont_before_final4_tail_level_clang_avx512(
+      f0, f1, f2, f3, 64, 4, 0);
+#else
   for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
-      __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(level, i);
-      __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(level, i);
+      __m512i zeta_lo = MLKEM_INV_MONT_SCALAR_LO_AVX512(level, i);
+      __m512i zeta_hi = MLKEM_INV_MONT_SCALAR_HI_AVX512(level, i);
       for (int j = 0; j < length; j += 32) {
         int16_t *out[4] = {f0, f1, f2, f3};
         for (int lane = 0; lane < 4; lane++) {
@@ -2287,6 +2343,7 @@ static void ntt_inv_mont_before_final4_shared_avx512(
       }
     }
   }
+#endif
 #undef MLKEM_INV_SHARED_LEVEL3
 #undef MLKEM_INV_SHARED_LEVEL2
 #undef MLKEM_INV_SHARED_LEVEL1
