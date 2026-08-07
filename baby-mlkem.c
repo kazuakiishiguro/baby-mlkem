@@ -708,6 +708,12 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
   keccakf4_mem_parity(st, parity);
 }
 
+#if !defined(__clang__) || !defined(__ELF__) || !defined(__AVX2__) || \
+    defined(__AVX512F__)
+#define mlkem_keygen_keccakf4_mem_parity_avx2 keccakf4_mem_parity
+#define mlkem_keygen_keccakf4_mem_shared_avx2 keccakf4_mem
+#endif
+
 #if defined(__AVX512F__)
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
 /* The assembly emits all three rates, but returns only capacity words
@@ -9341,6 +9347,28 @@ static MLKEM_NOINLINE void mlkem_encrypt_keccakf4_mem_parity_avx2(
   keccakf4_mem_parity(st, parity);
 }
 
+#if defined(__clang__) && defined(__ELF__)
+extern void mlkem_keygen_keccakf4_mem_parity_avx2(
+    __m256i st[25], __m256i parity[5]);
+/* Keep the keygen edge opaque to Clang's optimizer so the decapsulation helper
+ * retains its established hot-section placement. */
+__asm__(".local mlkem_keygen_keccakf4_mem_parity_avx2\n"
+        ".set mlkem_keygen_keccakf4_mem_parity_avx2, "
+        "mlkem_encrypt_keccakf4_mem_parity_avx2");
+static MLKEM_ALWAYS_INLINE void
+mlkem_keygen_keccakf4_mem_shared_avx2(__m256i st[25]) {
+  __m256i parity[5];
+  for (int column = 0; column < 5; column++) {
+    parity[column] = _mm256_xor_si256(
+        _mm256_xor_si256(
+            _mm256_xor_si256(st[column], st[column + 5]),
+            _mm256_xor_si256(st[column + 10], st[column + 15])),
+        st[column + 20]);
+  }
+  mlkem_keygen_keccakf4_mem_parity_avx2(st, parity);
+}
+#endif
+
 /* Complete the uncached matrix/noise schedule at its nine-x4 lower bound. */
 static MLKEM_NOINLINE void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     const uint8_t seed[32], const uint8_t rho[32], poly256 tail,
@@ -9473,7 +9501,7 @@ static void mlkem_keygen_prf_cbd_eta2_32_sample_tail21_avx2(
                              (long long)(0x80ULL << 56));
   st[20] = _mm256_set_epi64x(0, (long long)(0x80ULL << 56), 0, 0);
 
-  keccakf4_mem(st);
+  mlkem_keygen_keccakf4_mem_shared_avx2(st);
 
   for (int lane = 0; lane < 16; lane++) {
     sample_poly_cbd_eta2_store2_avx2(_mm256_castsi256_si128(st[lane]),
@@ -9562,7 +9590,7 @@ static MLKEM_NOINLINE void mlkem_keygen_noise2_sample_matrix2_avx2(
     int nonce = 2 * block;
     mlkem_keygen_noise2_matrix2_set_noise_avx2(
         st, parity, sigma, (uint8_t)nonce);
-    keccakf4_mem_parity(st, parity);
+    mlkem_keygen_keccakf4_mem_parity_avx2(st, parity);
     for (int word = 0; word < 16; word++) {
       sample_poly_cbd_eta2_store2_avx2(
           _mm256_castsi256_si128(st[word]),
@@ -9619,7 +9647,7 @@ static MLKEM_NOINLINE void mlkem_sample_ntt3_row2_mem_parity_avx2(
   parity[4] = st[4];
 
   for (int block = 0; block < 3; block++) {
-    keccakf4_mem_parity(st, parity);
+    mlkem_keygen_keccakf4_mem_parity_avx2(st, parity);
     hash_matrix_x3_store_block(stream, block, st);
   }
 
