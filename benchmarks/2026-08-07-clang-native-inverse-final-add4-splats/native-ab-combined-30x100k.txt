@@ -1,0 +1,21 @@
+baseline_ref=01c14d4a87286985fc7efde84ded9c1225370bf4
+candidate_ref=626da41d4fbfa165e17e11aad86d2dcc87ebbdf9
+compiler=clang
+arch=-march=native
+iterations_per_process=100000
+warmups_per_batch=3
+batch1_pairs=15 odd_pair_order=baseline-first
+batch2_pairs=15 odd_pair_order=candidate-first
+combined_pairs=30
+metric batch1_gmean batch2_gmean combined_gmean batch1_median batch2_median wins floor_pass
+mlkem_decaps 1.0007x 1.0017x 1.0012x 1.0012x 0.9999x 16/30 PASS
+mlkem_decaps_core 1.0025x 1.0059x 1.0042x 1.0004x 1.0025x 19/30 PASS
+mlkem_encaps 1.0001x 1.0001x 1.0001x 0.9992x 0.9994x 12/30 PASS
+mlkem_encaps_core 0.9994x 0.9952x 0.9973x 0.9997x 0.9956x 11/30 PASS
+mlkem_keygen 0.9977x 0.9976x 0.9976x 0.9988x 0.9999x 12/30 PASS
+mlkem_keygen_core 0.9985x 0.9973x 0.9979x 0.9985x 0.9982x 11/30 PASS
+mlkem_roundtrip 0.9982x 0.9989x 0.9985x 1.0002x 0.9988x 16/30 PASS
+mlkem_roundtrip_core 0.9999x 0.9978x 0.9988x 1.0009x 0.9950x 13/30 PASS
+combined_gmean_note=geometric_mean_of_two_equal_15-pair_batch_gmeans_reported_to_four_decimals
+operation_floor=0.995x
+all_operation_gmeans=PASS
