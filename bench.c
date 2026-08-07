@@ -35,6 +35,12 @@ int pqcrystals_kyber768_avx2_dec(uint8_t *ss, const uint8_t *ct,
 #define K 3
 #define DU 10
 #define DV 4
+#elif defined(USE_GOAL_SIZE_ADAPTER_API)
+#include "goal_size_adapter.h"
+#define N 256
+#define K 3
+#define DU 10
+#define DV 4
 #else
 #include "baby-mlkem.c"
 #endif
@@ -105,6 +111,11 @@ static inline void bench_keygen(const uint8_t coins_kp[64],
   (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins_kp);
 #elif defined(USE_BABY_MLKEM_PRODUCT_API)
   baby_mlkem768_keypair_derand(ek, dk, coins_kp);
+#elif defined(USE_GOAL_SIZE_ADAPTER_API)
+  if (goal_mlkem768_keypair_derand(ek, dk, coins_kp) != 0) {
+    fprintf(stderr, "goal adapter key generation failed\n");
+    exit(EXIT_FAILURE);
+  }
 #else
   mlkem_keygen_derand(coins_kp, ek, dk);
 #endif
@@ -120,6 +131,11 @@ static inline void bench_encaps(const uint8_t *ek,
   (void)pqcrystals_kyber768_avx2_enc_derand(ct, ss, ek, coins_enc);
 #elif defined(USE_BABY_MLKEM_PRODUCT_API)
   baby_mlkem768_encaps_derand(ct, ss, ek, coins_enc);
+#elif defined(USE_GOAL_SIZE_ADAPTER_API)
+  if (goal_mlkem768_encaps_derand(ct, ss, ek, coins_enc) != 0) {
+    fprintf(stderr, "goal adapter encapsulation failed\n");
+    exit(EXIT_FAILURE);
+  }
 #else
   mlkem_encaps_derand(ek, coins_enc, ss, ct, NULL);
 #endif
@@ -134,6 +150,11 @@ static inline void bench_decaps(const uint8_t *ct,
   (void)pqcrystals_kyber768_avx2_dec(ss, ct, dk);
 #elif defined(USE_BABY_MLKEM_PRODUCT_API)
   baby_mlkem768_decaps(ss, ct, dk);
+#elif defined(USE_GOAL_SIZE_ADAPTER_API)
+  if (goal_mlkem768_decaps(ss, ct, dk) != 0) {
+    fprintf(stderr, "goal adapter decapsulation failed\n");
+    exit(EXIT_FAILURE);
+  }
 #else
   mlkem_decaps_ct(ct, dk, ss);
 #endif
@@ -141,6 +162,7 @@ static inline void bench_decaps(const uint8_t *ct,
 
 static inline void bench_clear_caches(void) {
 #if !defined(USE_BABY_MLKEM_PRODUCT_API) && \
+    !defined(USE_GOAL_SIZE_ADAPTER_API) && \
     !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_clear_internal_caches();
@@ -149,6 +171,7 @@ static inline void bench_clear_caches(void) {
 
 static inline void bench_set_caches_enabled(int enabled) {
 #if !defined(USE_BABY_MLKEM_PRODUCT_API) && \
+    !defined(USE_GOAL_SIZE_ADAPTER_API) && \
     !defined(USE_PQCLEAN_AVX2_BACKEND) && \
     !defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
   mlkem_set_internal_caches_enabled(enabled);
