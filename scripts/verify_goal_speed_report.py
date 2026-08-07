@@ -309,6 +309,10 @@ def main() -> int:
         validate_goal_profile(metadata, args.expected_profile, failures)
     if args.require_updated_repos and require_metadata(metadata, "UPDATE_REPOS") != "1":
         failures.append("UPDATE_REPOS is not 1")
+    if args.require_updated_repos and require_metadata(
+        metadata, "git_repos_preupdated"
+    ) != "1":
+        failures.append("git_repos_preupdated is not 1")
 
     if set(blocks) != set(expected_suites):
         failures.append(

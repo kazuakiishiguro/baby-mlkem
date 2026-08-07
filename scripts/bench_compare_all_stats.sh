@@ -12,6 +12,7 @@ GLOBAL_SKIP_LOCAL_BUILD="${SKIP_LOCAL_BUILD:-0}"
 GLOBAL_LOCAL_BENCH_BIN="${LOCAL_BENCH_BIN:-$ROOT_DIR/bench_productc}"
 LOCAL_ROUNDTRIP_METRIC="${LOCAL_ROUNDTRIP_METRIC:-mlkem_roundtrip_core_ns_per_op}"
 BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-20000}"
+GIT_REPOS_PREUPDATED="${GIT_REPOS_PREUPDATED:-0}"
 OPERATIONS=(keygen encaps decaps roundtrip)
 DEFAULT_BENCH_SUITES="kyber_upstream_avx2,kyber_upstream_avx2_fair,"
 DEFAULT_BENCH_SUITES+="mlkem_native,pqclean_avx2,liboqs,boringssl,"
@@ -57,6 +58,10 @@ if ! [[ "$LOCAL_BENCH_REUSE" =~ ^(0|1)$ ]]; then
 fi
 if ! [[ "$GLOBAL_SKIP_LOCAL_BUILD" =~ ^(0|1)$ ]]; then
   echo "invalid SKIP_LOCAL_BUILD: $GLOBAL_SKIP_LOCAL_BUILD (expected 0|1)" >&2
+  exit 1
+fi
+if ! [[ "$GIT_REPOS_PREUPDATED" =~ ^(0|1)$ ]]; then
+  echo "invalid GIT_REPOS_PREUPDATED: $GIT_REPOS_PREUPDATED (expected 0|1)" >&2
   exit 1
 fi
 case "$STATS_MODE" in
@@ -272,6 +277,13 @@ run_suite() {
   local comp_vals="$raw_dir/roundtrip_competitor.txt"
   local operation
 
+  if [ "$GIT_REPOS_PREUPDATED" = "1" ]; then
+    case "$label" in
+      libcrux_rust|libjade_kyber768_avx2) ;;
+      *) update_repos_once=0 ;;
+    esac
+  fi
+
   mkdir -p "$raw_dir"
   for operation in "${OPERATIONS[@]}"; do
     : > "$raw_dir/${operation}_local.txt"
@@ -388,6 +400,7 @@ printf "C_COMPILER=%s\n" "$C_COMPILER"
 printf "CXX_COMPILER=%s\n" "${CXX_COMPILER:-<auto>}"
 printf "gcc_install_dir=%s\n" "${GCC_INSTALL_DIR:-<auto>}"
 printf "UPDATE_REPOS=%s\n" "${UPDATE_REPOS:-0}"
+printf "git_repos_preupdated=%s\n" "$GIT_REPOS_PREUPDATED"
 printf "allow_cached_comparator=%s\n" "${ALLOW_CACHED_COMPARATOR:-0}"
 printf "stats_mode=%s\n" "$STATS_MODE"
 printf "trim_count=%s\n" "$TRIM_COUNT"
