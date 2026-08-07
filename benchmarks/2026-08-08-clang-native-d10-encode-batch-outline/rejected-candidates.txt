@@ -1,0 +1,6 @@
+baseline_ref=21a68fdd77d3e2257fbfac4b418f777c524f6983
+candidate primary_bytes delta_vs_baseline decisive_result
+single_d10_noinline 74638 -3037 two_batch_minimum_combined_gmean=0.99758; 1590_bytes_larger_than_accepted
+normal_opt_d10x3 74624 -3051 formal_80_pair_minimum=0.997178; 1576_bytes_larger_than_accepted
+minsize_d10x3_accepted 73048 -4627 formal_80_pair_minimum=0.995898
+selection=The compact x3 boundary is strictly smaller and clears the same 0.995 operation floor; the larger forms were removed.

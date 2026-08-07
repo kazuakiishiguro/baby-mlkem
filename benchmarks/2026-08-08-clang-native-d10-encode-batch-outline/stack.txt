@@ -1,0 +1,10 @@
+baseline_ref=21a68fdd77d3e2257fbfac4b418f777c524f6983
+candidate_ref=411ce5c2821f796c68cbc9cbbf68a403a68a108e
+runs=8
+operation baseline candidate delta
+keygen 6648 6648 +0
+encaps 6776 6776 +0
+decaps_valid 8056 8056 +0
+decaps_invalid 8056 8056 +0
+maximum 8056 8056 +0
+correctness_smoke=pass

@@ -1,0 +1,13 @@
+baseline_ref=21a68fdd77d3e2257fbfac4b418f777c524f6983
+candidate_ref=411ce5c2821f796c68cbc9cbbf68a403a68a108e
+compiler=clang
+flags=-march=native -mno-avx512vnni
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=da0692721f7161d51b254dc1c3d635c74de1fd1e0cbce72dce3c829c3c6df086
+protocol=9 paired runs, 2 warmup pairs, alternating order, 30000 iterations
+metric gmean median wins
+mlkem_core_stage_kpke_encrypt_cached 0.9963x 1.0027x 7/9
+mlkem_core_stage_kpke_encrypt_uncached 1.0049x 0.9996x 4/9
+non_vnni_target_validation=PASS

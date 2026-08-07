@@ -1,0 +1,14 @@
+artifact=/tmp/d10-encode-products/clang-native.o
+artifact_sha256=7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e
+artifact_file_bytes=102848
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=53409
+readonly_data_bytes=19639
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=73048
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
