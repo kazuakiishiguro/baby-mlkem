@@ -6241,6 +6241,24 @@ static void sample_ntt8_store_block(uint8_t stream[8][504], size_t off,
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
 /* The third rate already contains words 0..20. On a rare rejection refill,
  * continue only deficient lanes with the existing single-state permutation. */
+#if defined(__clang__)
+static MLKEM_NOINLINE int sample_ntt8_refill_lane_clang(
+    const uint8_t lane_stream[504], const uint64_t capacity[4][8],
+    int lane, int16_t out[N], int count) {
+  uint64_t lane_st[25];
+  memcpy(lane_st, lane_stream + 2 * 168, 21 * sizeof(uint64_t));
+  for (int word = 0; word < 4; word++) {
+    lane_st[21 + word] = capacity[word][lane];
+  }
+  do {
+    keccakf(lane_st);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)(const void *)lane_st, 168, out, count);
+  } while (count < N);
+  return count;
+}
+#endif
+
 static MLKEM_NOINLINE void sample_ntt8_refill_lanes(
     const uint8_t stream[8][504], const __m512i st[25],
     int16_t *const outs[8], int count[8]) {
@@ -6249,8 +6267,17 @@ static MLKEM_NOINLINE void sample_ntt8_refill_lanes(
     _mm512_storeu_si512((void *)capacity[word], st[21 + word]);
   }
 
+#if defined(__clang__)
+  /* Keep the eight cheap common-path tests fixed while sharing only the
+   * continuation that runs for a deficient lane. */
+#pragma clang loop unroll(full)
+#endif
   for (int lane = 0; lane < 8; lane++) {
     if (count[lane] < N) {
+#if defined(__clang__)
+      count[lane] = sample_ntt8_refill_lane_clang(
+          stream[lane], capacity, lane, outs[lane], count[lane]);
+#else
       uint64_t lane_st[25];
       memcpy(lane_st, stream[lane] + 2 * 168, 21 * sizeof(uint64_t));
       for (int word = 0; word < 4; word++) {
@@ -6262,6 +6289,7 @@ static MLKEM_NOINLINE void sample_ntt8_refill_lanes(
             (const uint8_t *)(const void *)lane_st, 168,
             outs[lane], count[lane]);
       } while (count[lane] < N);
+#endif
     }
   }
 }
