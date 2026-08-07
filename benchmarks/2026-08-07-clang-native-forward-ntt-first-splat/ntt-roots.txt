@@ -1,0 +1,11 @@
+clang_check_ntt_roots=PASS
+gcc_check_ntt_roots=PASS
+generated_header_sha256=e908ba24e1aade248f99a793050b0380c952dfe7b19a4345db8ecf0356fde6e7
+generator_clang_asan_ubsan=PASS
+generator_output_identity=PASS
+head_dense_low_vectors=14
+head_dense_high_vectors=14
+shared_scalar_low_values=7
+shared_scalar_high_values=7
+inverse_scalar_values_per_side=6
+forward_scalar_values_per_side=1

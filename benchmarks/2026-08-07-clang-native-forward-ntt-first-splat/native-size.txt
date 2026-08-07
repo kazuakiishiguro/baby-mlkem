@@ -1,0 +1,17 @@
+profile=clang-native
+compiler=clang-18.1.3
+arch_cflags=-march=native
+base_ref=d36b685e55f3da84a61a1c8baaadc8a80525f6cf
+candidate_ref=2420c08aa35c1f44bed8b70a110e6fe7c2a180bf
+metric base candidate delta
+code_bytes 74366 74366 0
+readonly_data_bytes 19597 19473 -124
+primary_bytes 93963 93839 -124
+initialized_writable_bytes 0 0 0
+zero_fill_bytes 18001 18001 0
+writable_bytes 18001 18001 0
+artifact_file_bytes 130296 130144 -152
+section_headers 73 73 0
+head_low_high_factor_bytes 1920 1796 -124
+base_artifact_sha256=d65195d40e7640c67dbe6850efc1e4a318e49472318db6d5f08e6795c97cae2b
+candidate_artifact_sha256=664040834ecc2c0def235f256c9b4d0f240fa47a928820f3bf7c6823320c8f04

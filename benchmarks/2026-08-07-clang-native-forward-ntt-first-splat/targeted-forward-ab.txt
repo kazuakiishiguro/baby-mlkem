@@ -1,0 +1,31 @@
+base_ref=d36b685e55f3da84a61a1c8baaadc8a80525f6cf
+candidate_ref=2420c08aa35c1f44bed8b70a110e6fe7c2a180bf
+compiler=clang
+arch_cflags=-march=native
+pin_cpu=0
+warmups_per_batch=3
+base_binary_sha256=97ccc9a322950eb6b78890cca63d33c0f142691d0d210c2375c61cf35cb0a96c
+candidate_binary_sha256=380b370a8ffad809a4a5c7ffed0012563470ad86d0b3a15a387eca60a331f2a2
+
+[batch1]
+pairs=15 iterations=1000000 order=alternating-reversed
+metric base_avg cand_avg gmean median wins min max
+head_ring6 90.69 91.12 0.995269223x 0.990684083x 5/15 0.971923646x 1.020196737x
+head_copy6 100.17 100.38 0.998117793x 1.003410750x 14/15 0.926158091x 1.004994795x
+full_copy6 319.51 320.31 0.997555021x 1.000319434x 10/15 0.956721101x 1.002065960x
+
+[batch2]
+pairs=15 iterations=2000000 order=alternating
+metric base_avg cand_avg gmean median wins min max
+head_ring6 90.74 90.19 1.006179415x 1.006061947x 11/15 0.990668381x 1.021739130x
+head_copy6 100.48 99.87 1.006072998x 1.003867619x 15/15 1.001721825x 1.016056332x
+full_copy6 320.70 319.99 1.002202504x 1.000513558x 11/15 0.978942105x 1.040488114x
+
+[combined]
+pairs=30
+metric base_avg cand_avg gmean median wins min max
+head_ring6 90.72 90.66 1.000709450x 1.001073382x 16/30 0.971923646x 1.021739130x
+head_copy6 100.33 100.13 1.002087501x 1.003755006x 29/30 0.926158091x 1.016056332x
+full_copy6 320.11 320.15 0.999876062x 1.000483656x 21/30 0.956721101x 1.040488114x
+
+base_candidate_sink_match=pass
