@@ -7774,6 +7774,18 @@ static void compress_encode_poly_d10_avx2(const poly256 x, uint8_t *out) {
   }
 }
 
+#if defined(__clang__) && defined(__AVX512F__) && defined(__AVX512BW__)
+/* Keep Clang from expanding the same fixed d10 encoder three times. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+compress_encode_poly_d10x3_shared_clang_avx512(const poly256 x[K],
+                                                uint8_t *out) {
+#pragma clang loop unroll(disable)
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(x[i], out + i * ((N * DU) / 8));
+  }
+}
+#endif
+
 static void compress_encode_poly_d4_avx2(const poly256 x, uint8_t *out) {
   const __m256i shift2 = _mm256_set1_epi16((16 << 8) + 1);
   const __m256i permdidx = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
@@ -8701,10 +8713,15 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   /* c1 => compress(u[i], DU), c2 => compress(v, DV) => encode bits. */
   uint8_t *p = out_c;
 #if defined(__AVX2__)
+#if defined(__clang__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  compress_encode_poly_d10x3_shared_clang_avx512(u, p);
+  p += K * ((N * DU) / 8);
+#else
   for (int i = 0; i < K; i++) {
     compress_encode_poly_d10_avx2(u[i], p);
     p += (N * DU) / 8;
   }
+#endif
   compress_encode_poly_d4_avx2(v, p);
   p += (N * DV) / 8;
 #else
