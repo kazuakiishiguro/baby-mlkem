@@ -1749,7 +1749,11 @@ static void shake256_32_suffix1(const uint8_t *in, uint8_t suffix,
 #define SAMPLE_NTT_STREAM_CHUNK 504
 #endif
 
-/* ZETA, GAMMA arrays: We'll compute them at init. */
+#if defined(__clang__)
+/* Clang is smaller and faster with immutable, generated root tables. */
+#include "ntt_roots_generated.h"
+#else
+/* GCC LTO keeps the one-time expansion smaller than pre-expanded constants. */
 static uint16_t ZETA[128];
 static uint16_t GAMMA[128];
 #if defined(__AVX2__)
@@ -1787,17 +1791,36 @@ static __m512i ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512;
 static __m512i ZETA_NTT_INV_TAIL_AVX512[15];
 static __m512i ZETA_NTT_TAIL_L3X2[8];
 static __m512i ZETA_NTT_TAIL_L2X2[8];
-#if defined(__clang__)
-/* Montgomery gamma factors for Clang's encryption and keygen accumulators. */
-static int16_t GAMMA_MONT_LO_CLANG_AVX512[128];
-static int16_t GAMMA_MONT_HI_CLANG_AVX512[128];
-#else
-/* GCC keeps encryption canonical but uses centered Montgomery keygen factors. */
+/* GCC reconstructs low factors from this centered Montgomery-high table. */
 static int16_t GAMMA_MONT_HI_GCC_AVX512[128];
 #endif
 #endif
-#endif
 static int NTT_ROOTS_READY = 0;
+#endif
+
+#if defined(__AVX2__)
+#if defined(__clang__)
+#define MLKEM_INV_MONT_INDEX(level, index) \
+  ((level) < 4 ? 8 * (level) + (index) : 4 * (level) + 16 + (index))
+#define MLKEM_INV_MONT_LO(level, index) \
+  ZETA_NTT_INV_MONT_LO[MLKEM_INV_MONT_INDEX(level, index)]
+#define MLKEM_INV_MONT_HI(level, index) \
+  ZETA_NTT_INV_MONT_HI[MLKEM_INV_MONT_INDEX(level, index)]
+#define MLKEM_INV_MONT_LO_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_LO_AVX512[MLKEM_INV_MONT_INDEX(level, index)]
+#define MLKEM_INV_MONT_HI_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_HI_AVX512[MLKEM_INV_MONT_INDEX(level, index)]
+#else
+#define MLKEM_INV_MONT_LO(level, index) \
+  ZETA_NTT_INV_MONT_LO[level][index]
+#define MLKEM_INV_MONT_HI(level, index) \
+  ZETA_NTT_INV_MONT_HI[level][index]
+#define MLKEM_INV_MONT_LO_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_LO_AVX512[level][index]
+#define MLKEM_INV_MONT_HI_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_HI_AVX512[level][index]
+#endif
+#endif
 
 typedef int16_t poly256[N];
 
@@ -1932,10 +1955,12 @@ static inline __m512i ntt_mont_mul_precomp_i16x32_avx512(
   return _mm512_sub_epi16(hi, _mm512_mulhi_epi16(lo, q));
 }
 
+#if !defined(__clang__)
 static inline __m512i ntt_dup_mont_factor_i16x16_avx512(__m256i factor) {
   __m512i expanded = _mm512_cvtepu16_epi32(factor);
   return _mm512_or_si512(expanded, _mm512_slli_epi32(expanded, 16));
 }
+#endif
 
 static void ntt_canonicalize_signed_avx512(poly256 f) {
   const __m512i q = _mm512_set1_epi16(Q);
@@ -2030,26 +2055,26 @@ static void ntt_inv_mont_before_final_avx512(poly256 f) {
     __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
     __m512i partner = _mm512_rol_epi64(x, 32);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[0][block],
-        ZETA_NTT_INV_MONT_HI_AVX512[0][block],
+        x, partner, MLKEM_INV_MONT_LO_AVX512(0, block),
+        MLKEM_INV_MONT_HI_AVX512(0, block),
         (__mmask32)0xccccccccu);
 
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[1][block],
-        ZETA_NTT_INV_MONT_HI_AVX512[1][block],
+        x, partner, MLKEM_INV_MONT_LO_AVX512(1, block),
+        MLKEM_INV_MONT_HI_AVX512(1, block),
         (__mmask32)0xf0f0f0f0u);
 
     partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[2][block],
-        ZETA_NTT_INV_MONT_HI_AVX512[2][block],
+        x, partner, MLKEM_INV_MONT_LO_AVX512(2, block),
+        MLKEM_INV_MONT_HI_AVX512(2, block),
         (__mmask32)0xff00ff00u);
 
     partner = _mm512_permutexvar_epi64(swap_halves, x);
     x = ntt_inv_mont_level_i16x32_avx512(
-        x, partner, ZETA_NTT_INV_MONT_LO_AVX512[3][block],
-        ZETA_NTT_INV_MONT_HI_AVX512[3][block],
+        x, partner, MLKEM_INV_MONT_LO_AVX512(3, block),
+        MLKEM_INV_MONT_HI_AVX512(3, block),
         (__mmask32)0xffff0000u);
     _mm512_storeu_si512((void *)(f + 32 * block), x);
   }
@@ -2057,8 +2082,8 @@ static void ntt_inv_mont_before_final_avx512(poly256 f) {
   for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
-      __m512i zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[level][i];
-      __m512i zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[level][i];
+      __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(level, i);
+      __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(level, i);
       for (int j = 0; j < length; j += 32) {
         __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
         __m512i b =
@@ -2159,8 +2184,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     __m512i x1 = _mm512_loadu_si512((const void *)(f1 + 32 * block));
     __m512i x2 = _mm512_loadu_si512((const void *)(f2 + 32 * block));
     __m512i x3 = _mm512_loadu_si512((const void *)(f3 + 32 * block));
-    __m512i zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[0][block];
-    __m512i zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[0][block];
+    __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(0, block);
+    __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(0, block);
     __m512i partner = _mm512_rol_epi64(x0, 32);
     x0 = MLKEM_INV_SHARED_LEVEL0(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
@@ -2174,8 +2199,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL0(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xccccccccu);
 
-    zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[1][block];
-    zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[1][block];
+    zeta_lo = MLKEM_INV_MONT_LO_AVX512(1, block);
+    zeta_hi = MLKEM_INV_MONT_HI_AVX512(1, block);
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x0);
     x0 = MLKEM_INV_SHARED_LEVEL1(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
@@ -2189,8 +2214,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL1(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xf0f0f0f0u);
 
-    zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[2][block];
-    zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[2][block];
+    zeta_lo = MLKEM_INV_MONT_LO_AVX512(2, block);
+    zeta_hi = MLKEM_INV_MONT_HI_AVX512(2, block);
     partner = _mm512_permutexvar_epi64(swap_qword_quads, x0);
     x0 = MLKEM_INV_SHARED_LEVEL2(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xff00ff00u);
@@ -2204,8 +2229,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
     x3 = MLKEM_INV_SHARED_LEVEL2(
         x3, partner, zeta_lo, zeta_hi, (__mmask32)0xff00ff00u);
 
-    zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[3][block];
-    zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[3][block];
+    zeta_lo = MLKEM_INV_MONT_LO_AVX512(3, block);
+    zeta_hi = MLKEM_INV_MONT_HI_AVX512(3, block);
     partner = _mm512_permutexvar_epi64(swap_halves, x0);
     x0 = MLKEM_INV_SHARED_LEVEL3(
         x0, partner, zeta_lo, zeta_hi, (__mmask32)0xffff0000u);
@@ -2228,8 +2253,8 @@ static void ntt_inv_mont_before_final4_shared_avx512(
   for (int level = 4, length = 32; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
-      __m512i zeta_lo = ZETA_NTT_INV_MONT_LO_AVX512[level][i];
-      __m512i zeta_hi = ZETA_NTT_INV_MONT_HI_AVX512[level][i];
+      __m512i zeta_lo = MLKEM_INV_MONT_LO_AVX512(level, i);
+      __m512i zeta_hi = MLKEM_INV_MONT_HI_AVX512(level, i);
       for (int j = 0; j < length; j += 32) {
         int16_t *out[4] = {f0, f1, f2, f3};
         for (int lane = 0; lane < 4; lane++) {
@@ -3086,6 +3111,11 @@ static void ntt_inv_head_avx2(poly256 f) {
 }
 #endif
 
+#if defined(__clang__)
+/* Generated constants remove both startup work and the readiness branch. */
+static inline void ensure_ntt_roots(void) {
+}
+#else
 /**
  * bitrev7 helper
  * This function performs a bit reversal operation
@@ -3337,6 +3367,7 @@ static inline void ensure_ntt_roots(void) {
     init_ntt_roots();
   }
 }
+#endif
 
 /**
  * Adds two polynomials of type poly256 and
@@ -3582,7 +3613,7 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
         f + start + 18, f + start + 22, f + start + 26, f + start + 30);
     __m256i sum, product;
     ntt_inv_mont_pair_i16x16(
-        a, b, ZETA_NTT_INV_MONT_LO[0][i], ZETA_NTT_INV_MONT_HI[0][i],
+        a, b, MLKEM_INV_MONT_LO(0, i), MLKEM_INV_MONT_HI(0, i),
         &sum, &product);
     store_i16x2_oct_avx2(
         f + start, f + start + 4, f + start + 8, f + start + 12,
@@ -3601,7 +3632,7 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
                                      f + start + 20, f + start + 28);
     __m256i sum, product;
     ntt_inv_mont_pair_i16x16(
-        a, b, ZETA_NTT_INV_MONT_LO[1][i], ZETA_NTT_INV_MONT_HI[1][i],
+        a, b, MLKEM_INV_MONT_LO(1, i), MLKEM_INV_MONT_HI(1, i),
         &sum, &product);
     store_i16x4_quad_avx2(f + start, f + start + 8, f + start + 16,
                           f + start + 24, sum);
@@ -3614,7 +3645,7 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
     __m256i b = load_i16x8_pair(f + start + 8, f + start + 24);
     __m256i sum, product;
     ntt_inv_mont_pair_i16x16(
-        a, b, ZETA_NTT_INV_MONT_LO[2][i], ZETA_NTT_INV_MONT_HI[2][i],
+        a, b, MLKEM_INV_MONT_LO(2, i), MLKEM_INV_MONT_HI(2, i),
         &sum, &product);
     store_i16x8_pair(f + start, f + start + 16, sum);
     store_i16x8_pair(f + start + 8, f + start + 24, product);
@@ -3624,8 +3655,8 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
   for (int level = 3, length = 16; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
-      __m256i zeta_lo = ZETA_NTT_INV_MONT_LO[level][i];
-      __m256i zeta_hi = ZETA_NTT_INV_MONT_HI[level][i];
+      __m256i zeta_lo = MLKEM_INV_MONT_LO(level, i);
+      __m256i zeta_hi = MLKEM_INV_MONT_HI(level, i);
       for (int j = 0; j < length; j += 16) {
         __m256i a = _mm256_loadu_si256(
             (const __m256i *)(const void *)(f + start + j));

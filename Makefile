@@ -80,6 +80,9 @@ BENCH_KECCAK_VENDOR_TARGET = bench_keccak_vendorc
 BENCH_STAGES_TARGET = bench_core_stagesc
 PRODUCT_TARGET = baby_mlkem768_product.o
 PRODUCT_TEST_TARGET = product_testc
+NTT_ROOTS_HEADER = ntt_roots_generated.h
+NTT_ROOTS_GENERATOR = scripts/generate_ntt_constants.c
+HOSTCC ?= cc
 PRODUCT_ROOT_SYMBOLS = \
 	baby_mlkem768_keypair_derand \
 	baby_mlkem768_encaps_derand \
@@ -167,7 +170,7 @@ BENCH_STAGES_OBJS += $(CORE_ASM_OBJS)
 OBJS := $(sort $(TEST_OBJS) $(BENCH_OBJS) $(BENCH_NTT_OBJS) $(BENCH_KECCAK_OBJS) $(BENCH_KECCAK_VENDOR_OBJS) $(BENCH_STAGES_OBJS) $(PRODUCT_OBJS) test_product.o $(PRODUCT_TARGET) $(BENCH_PRODUCT_OBJ))
 TARGETS := $(TARGET) $(BENCH_TARGET) $(BENCH_NTT_TARGET) $(BENCH_KECCAK_TARGET) $(BENCH_KECCAK_VENDOR_TARGET) $(BENCH_STAGES_TARGET) $(PRODUCT_TEST_TARGET) $(BENCH_PRODUCT_TARGET)
 
-.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run product product-size test-product bench-product bench-product-run
+.PHONY: all clean test bench bench-run bench-ntt bench-ntt-run bench-keccak bench-keccak-run bench-keccak-vendor bench-keccak-vendor-run bench-stages bench-stages-run product product-size test-product bench-product bench-product-run generate-ntt-roots check-ntt-roots
 
 all: $(TARGET)
 $(PQ_FIPS_DIR)/fips202.o: CFLAGS += \
@@ -215,17 +218,17 @@ bench.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += $(AVX2_BACKEND_DEF)
 test.o: CFLAGS += -Wno-unused-function
 test.o bench.o bench_ntt.o bench_keccak.o bench_keccak_vendor.o bench_core_stages.o: CFLAGS += $(CORE_ASM_DEF)
-test.o: baby-mlkem.c keccakf1600_avx2.h
-bench.o: baby-mlkem.c keccakf1600_avx2.h
-bench_ntt.o: baby-mlkem.c keccakf1600_avx2.h
-bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h
-bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h
-bench_core_stages.o: baby-mlkem.c keccakf1600_avx2.h
+test.o: baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
+bench.o: baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
+bench_ntt.o: baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
+bench_keccak.o: baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
+bench_keccak_vendor.o: bench_keccak.c baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
+bench_core_stages.o: baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
 
 bench_product.o: bench.c baby_mlkem_api.h
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS)
 
-baby_mlkem_api.product.o: baby_mlkem_api.c baby_mlkem_api.h baby-mlkem.c keccakf1600_avx2.h
+baby_mlkem_api.product.o: baby_mlkem_api.c baby_mlkem_api.h baby-mlkem.c keccakf1600_avx2.h $(NTT_ROOTS_HEADER)
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(PRODUCT_SECTION_FLAGS) $(PRODUCT_CORE_DEF) $(CORE_ASM_DEF) -Wno-unused-function
 %.product.o: %.S
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(ASFLAGS) $(PRODUCT_SECTION_FLAGS)
@@ -266,6 +269,28 @@ $(BENCH_STAGES_TARGET): $(BENCH_STAGES_OBJS)
 
 %.o: %.S
 	$(CC) -c $< -o $@ $(CFLAGS) $(ARCH_CFLAGS) $(ASFLAGS)
+
+generate-ntt-roots:
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	$(HOSTCC) -O2 -std=c99 -Wall -Wextra -Werror \
+		$(NTT_ROOTS_GENERATOR) -o "$$tmp_dir/generate_ntt_constants"; \
+	"$$tmp_dir/generate_ntt_constants" > "$$tmp_dir/$(NTT_ROOTS_HEADER)"; \
+	mv "$$tmp_dir/$(NTT_ROOTS_HEADER)" $(NTT_ROOTS_HEADER)
+
+$(NTT_ROOTS_HEADER): $(NTT_ROOTS_GENERATOR)
+	@$(MAKE) --no-print-directory generate-ntt-roots
+
+check-ntt-roots:
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	$(HOSTCC) -O2 -std=c99 -Wall -Wextra -Werror \
+		$(NTT_ROOTS_GENERATOR) -o "$$tmp_dir/generate_ntt_constants"; \
+	"$$tmp_dir/generate_ntt_constants" > "$$tmp_dir/$(NTT_ROOTS_HEADER)"; \
+	if ! cmp -s $(NTT_ROOTS_HEADER) "$$tmp_dir/$(NTT_ROOTS_HEADER)"; then \
+		diff -u $(NTT_ROOTS_HEADER) "$$tmp_dir/$(NTT_ROOTS_HEADER)"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -f $(OBJS) $(CORE_ASM_CLEAN_OBJS) $(TARGETS)

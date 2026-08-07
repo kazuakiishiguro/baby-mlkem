@@ -328,26 +328,34 @@ void test_shake256() {
   run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);
 }
 
-void test_bitrev7() {
-  assert(bitrev7(0) == 0);
-  assert(bitrev7(1) == 64);
-  assert(bitrev7(2) == 32);
-  assert(bitrev7(4) == 16);
-  assert(bitrev7(127) == 127);  // edge case: full 7-bit
+static uint16_t test_bitrev7_value(uint16_t value) {
+  uint16_t reversed = 0;
+  for (int bit = 0; bit < 7; bit++) {
+    reversed = (uint16_t)((reversed << 1) | ((value >> bit) & 1u));
+  }
+  return reversed;
 }
 
-void test_modexp() {
-  assert(modexp(17, 0) == 1);
-  assert(modexp(17, 1) == 17);
-  assert(modexp(17, 2) == (17 * 17) % Q);
-  assert(modexp(17, 3) == ((17 * 17) % Q * 17) % Q);
-  assert(modexp(2, 4) == 16 % Q);
+static uint16_t test_modexp_value(uint16_t base, uint16_t exponent) {
+  uint32_t result = 1;
+  uint32_t current = base;
+  while (exponent != 0) {
+    if ((exponent & 1u) != 0) {
+      result = (result * current) % Q;
+    }
+    current = (current * current) % Q;
+    exponent >>= 1;
+  }
+  return (uint16_t)result;
 }
 
-void test_init_ntt_roots() {
-  init_ntt_roots();
-  assert(ZETA[0] == modexp(17, bitrev7(0)));
-  assert(GAMMA[0] == modexp(17, 2 * bitrev7(0) + 1));
+void test_ntt_roots() {
+  ensure_ntt_roots();
+  for (uint16_t i = 0; i < 128; i++) {
+    uint16_t exponent = test_bitrev7_value(i);
+    assert(ZETA[i] == test_modexp_value(17, exponent));
+    assert(GAMMA[i] == test_modexp_value(17, (uint16_t)(2 * exponent + 1)));
+  }
 }
 
 void test_poly256_add() {
@@ -1370,8 +1378,7 @@ int main(void) {
   test_sha3_512();
   test_shake128();
   test_shake256();
-  test_bitrev7();
-  test_modexp();
+  test_ntt_roots();
   test_poly256_add();
   test_sample_ntt();
 #if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
@@ -1398,7 +1405,6 @@ int main(void) {
   test_kpke();
   test_mlkem();
   test_mlkem_fips203_keygen();
-  test_init_ntt_roots();
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     !defined(__clang__)
   test_gcc_avx512_ntt_head_fusion();

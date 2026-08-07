@@ -9,6 +9,22 @@
 
 #define STAGE_BENCH_LANES 4
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static void stage_ntt_mont_factor(uint16_t normal, int16_t *low,
+                                  int16_t *high) {
+  const uint32_t montgomery_r = 65536u % Q;
+  const uint16_t q_inverse = (uint16_t)-3327;
+  int32_t centered = (int32_t)(((uint32_t)normal * montgomery_r) % Q);
+  if (centered > Q / 2) centered -= Q;
+  uint16_t low_bits =
+      (uint16_t)((uint32_t)(uint16_t)centered * (uint32_t)q_inverse);
+  *low = low_bits <= INT16_MAX
+             ? (int16_t)low_bits
+             : (int16_t)((int32_t)low_bits - 65536);
+  *high = (int16_t)centered;
+}
+#endif
+
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static __m256i stage_zeta_ntt_inv_tail_vec8[15];
 
@@ -2826,7 +2842,7 @@ static void validate_ntt_acc4_gamma_mont_range_avx512(void) {
   for (int pair = 0; pair < 128; pair += 16) {
     for (int lane = 0; lane < 16; lane++) {
       int16_t lo, hi;
-      ntt_mont_factor(GAMMA[pair + lane], &lo, &hi);
+      stage_ntt_mont_factor(GAMMA[pair + lane], &lo, &hi);
       factor_lo[2 * lane] = 0;
       factor_lo[2 * lane + 1] = lo;
       factor_hi[2 * lane] = 0;
@@ -3590,7 +3606,7 @@ static void validate_ntt_inv_periodic_reduce_range_avx512(void) {
     int zeta_count = 64 >> level;
     for (int zeta = 0; zeta < zeta_count; zeta++) {
       int16_t zeta_lo, zeta_hi;
-      ntt_mont_factor(ZETA[zeta_base - zeta], &zeta_lo, &zeta_hi);
+      stage_ntt_mont_factor(ZETA[zeta_base - zeta], &zeta_lo, &zeta_hi);
       __m512i zeta_lo_vec = _mm512_set1_epi16(zeta_lo);
       __m512i zeta_hi_vec = _mm512_set1_epi16(zeta_hi);
       for (int base = difference_min; base <= difference_max; base += 32) {
