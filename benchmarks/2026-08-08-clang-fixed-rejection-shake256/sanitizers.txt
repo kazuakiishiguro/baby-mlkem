@@ -1,0 +1,15 @@
+candidate_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+compiler=clang
+sanitizers=address,undefined
+leak_detection=disabled-ptrace-incompatible
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+clang_native_asan_ubsan=PASS
+
+compiler=gcc
+sanitizers=undefined
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+gcc_native_ubsan=PASS

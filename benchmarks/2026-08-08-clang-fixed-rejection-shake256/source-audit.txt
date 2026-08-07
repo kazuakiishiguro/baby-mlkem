@@ -1,0 +1,11 @@
+candidate_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+baseline_ref=f56750f97f262abfa8a9ca43d2890f1461474fae
+e7094b8 perf: specialize clang implicit rejection shake256
+ baby-mlkem.c | 79 +++++++++++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 60 insertions(+), 19 deletions(-)
+
+gcc_undefined_symbol_identity=PASS
+clang_avx2_new_external_dependency=none
+wire_format_change=none
+public_api_change=none
+cache_change=none

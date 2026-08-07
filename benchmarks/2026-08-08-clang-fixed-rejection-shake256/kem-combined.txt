@@ -1,0 +1,26 @@
+candidate_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+baseline_ref=f56750f97f262abfa8a9ca43d2890f1461474fae
+method=equal-weight geometric mean of two independent 16-pair reported gmeans
+input_precision=four decimal places as emitted by scripts/bench_core_ab.sh
+[native]
+mlkem_decaps_combined_gmean=0.999948x batch1=0.9980x batch2=1.0019x
+mlkem_decaps_core_combined_gmean=0.998325x batch1=0.9913x batch2=1.0054x
+mlkem_encaps_combined_gmean=0.995900x batch1=0.9962x batch2=0.9956x
+mlkem_encaps_core_combined_gmean=1.000348x batch1=0.9983x batch2=1.0024x
+mlkem_keygen_combined_gmean=0.995679x batch1=0.9892x batch2=1.0022x
+mlkem_keygen_core_combined_gmean=0.996376x batch1=0.9895x batch2=1.0033x
+mlkem_roundtrip_combined_gmean=0.996941x batch1=0.9927x batch2=1.0012x
+mlkem_roundtrip_core_combined_gmean=0.998888x batch1=0.9941x batch2=1.0037x
+[avx2]
+mlkem_decaps_combined_gmean=0.997545x batch1=0.9943x batch2=1.0008x
+mlkem_decaps_core_combined_gmean=1.000672x batch1=0.9932x batch2=1.0082x
+mlkem_encaps_combined_gmean=0.996200x batch1=0.9971x batch2=0.9953x
+mlkem_encaps_core_combined_gmean=0.999350x batch1=1.0003x batch2=0.9984x
+mlkem_keygen_combined_gmean=1.001700x batch1=1.0015x batch2=1.0019x
+mlkem_keygen_core_combined_gmean=0.998950x batch1=0.9988x batch2=0.9991x
+mlkem_roundtrip_combined_gmean=0.999750x batch1=0.9990x batch2=1.0005x
+mlkem_roundtrip_core_combined_gmean=1.000548x batch1=0.9986x batch2=1.0025x
+operation_floor=0.995x
+native_minimum=0.995679x mlkem_keygen
+avx2_minimum=0.996200x mlkem_encaps
+kem_regression_gate=PASS

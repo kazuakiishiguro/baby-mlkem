@@ -349,17 +349,17 @@ recorded in every report; the clean native diagnostic at `a4d6fec` reports 0 B
 for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
-The current 2026-08-07 no-cache baselines use the normal compiler-specific
-speed flags. All three Clang rows are measured at `588c9d4`; the GCC rows are
+The current 2026-08-08 no-cache baselines use the normal compiler-specific
+speed flags. All three Clang rows are measured at `e7094b8`; the GCC rows are
 byte-identical to `13b3ea1`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 70,829 | 19,287 | 90,116 | 0 | 18,001 | 18,001 |
+| native AVX512 | Clang 18.1.3 | 70,574 | 19,287 | 89,861 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 56,006 | 3,565 | 59,571 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 50,955 | 12,341 | 63,296 | 0 | 26,593 | 26,593 |
+| AVX2-only | Clang 18.1.3 | 50,689 | 12,341 | 63,030 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 51,429 | 3,809 | 55,238 | 8 | 34,912 | 34,920 |
-| scalar | Clang 18.1.3 | 60,543 | 2,033 | 62,576 | 0 | 18,944 | 18,944 |
+| scalar | Clang 18.1.3 | 60,160 | 2,033 | 62,193 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,530 | 1,737 | 23,267 | 0 | 19,488 | 19,488 |
 
 The [static NTT-root report](benchmarks/2026-08-07-clang-static-ntt-roots/README.md)
@@ -454,13 +454,26 @@ stack falls by 256/224 bytes to 9,144/5,632 bytes. All GCC production artifacts
 are byte-identical. The targeted native and AVX2 gaps are now 38,930 and 18,247
 bytes and still fail.
 
+The [Clang fixed implicit-rejection SHAKE256 report](benchmarks/2026-08-08-clang-fixed-rejection-shake256/README.md)
+records the next cross-profile core step at `e7094b8`. ML-KEM-768's fixed
+`z[32] || c[1088]` rejection hash absorbs the two inputs directly instead of
+building a 1,120-byte concatenation buffer and entering the arbitrary-length
+sponge. Native, AVX2-only, and scalar primary sizes fall by 255, 266, and 383
+bytes to 89,861, 63,030, and 62,193 bytes. Decapsulation stack falls by
+1,088/1,120 bytes native/AVX2, reducing maximum stack to 8,760/4,832 bytes.
+Two 16-pair KEM batches per profile keep every combined operation gmean above
+`0.995x`, with minima of `0.995679x` and `0.996200x`; normal KEM movement is
+not credited as a gain. Focused invalid decapsulation improves `1.013610x`
+native and `1.012231x` AVX2-only. All GCC artifacts remain byte-identical. The
+targeted native and AVX2 gaps are now 38,675 and 17,981 bytes and still fail.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
 native deficit in that complete matrix was 52,299 bytes against mlkem-native;
 the limiting AVX2-only deficit was 19,970 bytes against OpenSSL. The later
-targeted diagnostics at `588c9d4` reduce the mlkem-native native deficit to
-38,930 bytes and the OpenSSL AVX2-only deficit to 18,247 bytes. A complete
+targeted diagnostics at `e7094b8` reduce the mlkem-native native deficit to
+38,675 bytes and the OpenSSL AVX2-only deficit to 17,981 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
@@ -686,18 +699,18 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `588c9d4` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
+| Correctness | current candidate pass | `e7094b8` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the later `588c9d4` artifacts are still 38,930 bytes larger than mlkem-native natively and 18,247 bytes larger than OpenSSL in AVX2-only mode. |
-| Maximum stack | current measurements reported | The current maxima at `588c9d4` are 9,144 bytes native and 5,632 bytes AVX2-only. Stack is reported separately and does not satisfy the failed primary-size gate. |
+| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the later `e7094b8` artifacts are still 38,675 bytes larger than mlkem-native natively and 17,981 bytes larger than OpenSSL in AVX2-only mode. |
+| Maximum stack | current measurements reported | The current maxima at `e7094b8` are 8,760 bytes native and 4,832 bytes AVX2-only. Stack is reported separately and does not satisfy the failed primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
 
-## Current Core Optimization Frontier (2026-08-07)
+## Current Core Optimization Frontier (2026-08-08)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -801,6 +814,7 @@ Near-term target selection:
 | Clang AVX512 shared public preparation | Accepted as a native size optimization; GCC and narrower ISAs byte-identical | Encapsulation and decapsulation now call one private helper for the common three-polynomial public d12 decode, eight-way matrix setup, and existing hash/matrix-tail handoff. Clang native code and primary size shrink by 1,385 bytes to 72,981 and 92,268 bytes; read-only data, writable storage, and maximum stack remain 19,287, 18,001, and 9,400 bytes. Two balanced 16-pair KEM batches keep every combined operation geometric mean above `0.995x`, with a `0.996445x` minimum, so no speed gain is credited. Sharing all public and secret d12 decode copies reduced primary size further but put `encaps_core`/`decaps_core` near `0.993x` and was removed. No cache, external object, runtime library, API, table, or wire-format dependency is added. |
 | Clang fixed-length SHA3-512 production split | Accepted as a native/AVX2/scalar size optimization; GCC byte-identical | ML-KEM's 33-byte key-generation hash and 64-byte encapsulation hashes call one 33/64-only helper, allowing production section GC to remove Clang's arbitrary-length absorb/finalize/squeeze body while retaining the generic SHA3 API and long-input tests. Native/AVX2/scalar primary size shrinks by 1,331/1,127/1,256 bytes to 90,937/63,892/63,006 bytes. Sixteen-pair native and AVX2 KEM gates keep every operation above `0.995x`, with minima of `0.9996x` and `0.9989x`; no speed gain is credited. Maximum stack is unchanged and encapsulation stack falls by 128/192 bytes. No cache, external object, runtime library, API, table, or wire-format dependency is added. |
 | Clang generic SHAKE256 outline | Accepted as a native/AVX2/scalar size and stack optimization; GCC byte-identical | The variable-length SHAKE256 sponge used by implicit rejection is kept behind one Clang-only `noinline,minsize` boundary instead of being cloned into decapsulation. Native/AVX2/scalar primary size shrinks by 821/596/430 bytes to 90,116/63,296/62,576 bytes; native/AVX2 maximum stack falls by 256/224 bytes to 9,144/5,632 bytes. Sixteen-pair KEM gates keep every operation above `0.995x`, with minima of `0.9959x` and `0.9969x`; no speed gain is credited. The focused AVX2 invalid-path diagnostic retains its noisy `0.992819x` 32-pair 100k result alongside a `1.000443x` eight-pair 500k confirmation. No cache, external object, runtime library, API, table, algorithm, or wire-format dependency is added. |
+| Clang fixed implicit-rejection SHAKE256 | Accepted as a native/AVX2/scalar size optimization and invalid-path speedup; GCC byte-identical | ML-KEM-768's fixed `z[32] || c[1088]` hash absorbs both inputs directly, removing the production concatenation buffer and arbitrary-length sponge. Native/AVX2/scalar primary size shrinks by 255/266/383 bytes to 89,861/63,030/62,193 bytes. Native/AVX2 decapsulation stack falls by 1,088/1,120 bytes and maximum stack becomes 8,760/4,832 bytes. Two 16-pair valid-KEM batches per profile have combined minima of `0.995679x`/`0.996200x`; no valid-KEM gain is credited. Focused invalid decapsulation improves `1.013610x`/`1.012231x`. A 32-byte alignment on the existing fixed SHA3-512 helper prevents the LTO layout regression found in the rejected unaligned form. No cache, external object, runtime library, API, table, algorithm, or wire-format dependency is added. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.30 ns median, and matrix-level seed word reuse regressed in earlier checks versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed as a standalone tactic; superseded by the full representation | Head `l2+l3`, tail `l4+l5`/`l5+l6`, and `l6/final` fusion attempts were slower in the old 32-bit representation. The accepted full 16-bit inverse succeeds by changing butterfly arithmetic and range handling across all seven levels, not by reviving those local schedules. |

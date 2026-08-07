@@ -1,0 +1,8 @@
+artifact=/tmp/fixed-rejection-align32-clang-avx2.o
+artifact_sha256=c66b73aabb8cc8bd3afadb5a7e7fe5ff889171d4a6f1ec7ba4f64e2a76cab4e1
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+zmm_or_opmask_matches=0
+avx512_audit=PASS
+exported_api_count=3
+exported_api=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+new_external_dependency=none

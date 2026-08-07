@@ -1,0 +1,19 @@
+profile=native-cold runs=9 warmup_runs=3 iterations=100000 pin_cpu=0 run_order=alternating
+run order base_ns cand_ns speedup
+1 base-first 1044.18 1048.42 0.995956x
+2 candidate-first 1046.80 1047.98 0.998874x
+3 base-first 1049.61 1053.69 0.996128x
+4 candidate-first 1054.28 1061.89 0.992834x
+5 base-first 1052.57 1057.39 0.995442x
+6 candidate-first 1051.80 1055.94 0.996079x
+7 base-first 1052.06 1057.45 0.994903x
+8 candidate-first 1051.99 1056.30 0.995920x
+9 base-first 1050.02 1052.51 0.997634x
+base_avg_ns=1050.37
+candidate_avg_ns=1054.62
+average_speedup=0.995970x
+paired_gmean=0.995973x
+paired_median=0.995956x
+wins=0/9
+base_first_median=0.995956x
+candidate_first_median=0.996000x
