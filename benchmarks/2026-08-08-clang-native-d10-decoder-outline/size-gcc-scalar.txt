@@ -1,0 +1,14 @@
+artifact=/tmp/d10-current-gcc-scalar.o
+artifact_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+artifact_file_bytes=29696
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=21530
+readonly_data_bytes=1737
+unwind_bytes=1320
+exception_table_bytes=0
+primary_bytes=23267
+initialized_writable_bytes=0
+zero_fill_bytes=19488
+writable_bytes=19488
+max_stack_bytes=unmeasured

@@ -1,0 +1,15 @@
+candidate_ref=f8019f88969f3a321c05fe7ae15775bb3db8c423
+baseline_ref=1989ac5b37cf03a0ce833883ee9aff74d95ff3c4
+stack_probe_runs=8
+stack_usable_bytes=1048576
+baseline_keygen_stack_bytes=6712
+candidate_keygen_stack_bytes=6712
+baseline_encaps_stack_bytes=6776
+candidate_encaps_stack_bytes=6776
+baseline_decaps_valid_stack_bytes=8056
+candidate_decaps_valid_stack_bytes=8056
+baseline_decaps_invalid_stack_bytes=8056
+candidate_decaps_invalid_stack_bytes=8056
+baseline_max_stack_bytes=8056
+candidate_max_stack_bytes=8056
+stack_identity=PASS

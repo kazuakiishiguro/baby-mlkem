@@ -1,0 +1,46 @@
+baseline_ref=1989ac5b37cf03a0ce833883ee9aff74d95ff3c4
+baseline_primary_bytes=87514
+
+[accepted-normal-noinline]
+artifact_sha256=46d22deee6f7452b6397d2e0a224b1b0db4e03764f64817d29677ebf6c32df0f
+helper_bytes=928
+code_bytes=66370
+readonly_bytes=19319
+primary_bytes=85689
+primary_delta=-1825
+short_screen_minimum=0.9969x
+formal_48_pair_minimum=0.997590000x
+status=accepted
+
+[rejected-d10-noinline-minsize]
+artifact_sha256=52a0dbad4806c109e93aa67d6d7f7530be25097c734291e54859c7cf2876c7cd
+helper_bytes=191
+code_bytes=65633
+readonly_bytes=19287
+primary_bytes=84920
+primary_delta=-2594
+delta_vs_accepted=-769
+short_screen_keygen_core=0.9944x
+acceptance_floor=0.9950x
+status=rejected_and_removed
+reason=keygen_core below internal regression floor
+
+[rejected-whole-kpke-decrypt-noinline]
+artifact_sha256=357f875b0fc65703ea305d2b2f7dff45292a961090227555d68c49a50c876485
+helper_bytes=11396
+code_bytes=68235
+readonly_bytes=19319
+primary_bytes=87554
+primary_delta=+40
+status=rejected_and_removed
+reason=primary size increased
+
+[rejected-whole-kpke-decrypt-noinline-minsize]
+artifact_sha256=71aef28b17cda6b80878aabb1814683b5a9be7b0e22fcc4b106cba63ad6a7cdb
+helper_bytes=5539
+code_bytes=70156
+readonly_bytes=18759
+primary_bytes=88915
+primary_delta=+1401
+status=rejected_and_removed
+reason=primary size increased because decode helpers remained separately reachable
