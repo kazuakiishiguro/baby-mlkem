@@ -4667,6 +4667,18 @@ ntt_full_mont_lazy_raw_avx512(poly256 f) {
   ntt_tail_mont_lazy_raw_avx512(f);
 }
 
+#if defined(__clang__)
+static MLKEM_NOINLINE void
+ntt3_full_mont_lazy_raw_shared_clang_avx512(poly256 f[K]) {
+  /* Share one tail body while amortizing the boundary over three transforms. */
+#pragma clang loop unroll(disable)
+  for (int i = 0; i < K; i++) {
+    ntt_head_mont_lazy_raw_avx512(f[i]);
+    ntt_tail_mont_lazy_raw_avx512(f[i]);
+  }
+}
+#endif
+
 /* The proved full-lazy range reduces to [0,Q]; only Q needs correction. */
 static MLKEM_ALWAYS_INLINE __m512i ntt_canonicalize_lazy_block32_avx512(
     const poly256 f, int offset) {
@@ -4996,9 +5008,13 @@ static MLKEM_ALWAYS_INLINE void
 ntt3_mul_acc4_fused_final_lazy512_avx512(
     const poly256 ahat[K][K], const poly256 that[K], poly256 b[K],
     poly256 out[K], poly256 outv) {
+#if defined(__clang__)
+  ntt3_full_mont_lazy_raw_shared_clang_avx512(b);
+#else
   ntt_full_mont_lazy_raw_avx512(b[0]);
   ntt_full_mont_lazy_raw_avx512(b[1]);
   ntt_full_mont_lazy_raw_avx512(b[2]);
+#endif
 
   for (int offset = 0, pair = 0; offset < N;
        offset += 32, pair += 16) {
