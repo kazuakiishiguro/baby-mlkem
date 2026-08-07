@@ -1,0 +1,14 @@
+candidate_ref=149b3d59f2a6043e8a21f4a411b4400a9bfbfdbc
+public_api_count=3
+public_api=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+baseline_undefined_symbols=bcmp exit memcpy perror syscall
+candidate_undefined_symbols=bcmp exit memcpy perror syscall
+undefined_symbol_identity=PASS
+new_global_default_visibility_symbols=none
+new_external_dependency=none
+persistent_cache_change=none
+public_api_change=none
+wire_format_change=none
+algorithm_change=none
+new_table=none
+new_runtime_dispatch=none

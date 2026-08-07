@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-outline-products/clang-native.o
+artifact_sha256=c9120218ea041db43fe4b776f1e1a1d43a0bdef546d44d2e5f077c9bf78c7737
+artifact_file_bytes=123376
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=68195
+readonly_data_bytes=19319
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=87514
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

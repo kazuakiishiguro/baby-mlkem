@@ -1,0 +1,24 @@
+baseline_ref=ae12e77be733f9adc59bb94262d5c770782cd3e6
+accepted_candidate_ref=149b3d59f2a6043e8a21f4a411b4400a9bfbfdbc
+
+[shared sparse x7 and mixed keygen helper]
+result=rejected
+primary_reduction_vs_baseline_bytes=2759
+reason=sharing changed Clang's hot x7 constant propagation and register schedule
+focused_x7_initial_regression=about 31 percent before fixed-nonce specialization
+focused_x7_best_followup=about 0.8 to 1.0 percent slower
+formal_kem_decaps_gmean=0.9862x
+formal_kem_encaps_gmean=0.9908x
+regression_floor=0.995x
+patch=rejected-shared-eta2.patch
+production_code_remaining=none
+
+[shared helper branch and nonce variants]
+result=rejected
+reason=branch order and fixed nonce construction reduced the direct loss but did not preserve the existing x7 schedule or pass the formal KEM floor
+production_code_remaining=none
+
+[assembly two-entry sparse permutation]
+result=deferred
+reason=would require maintaining a large compiler-derived AVX512 schedule and still lacked evidence that the hot x7 entry would remain regression-free
+production_code_remaining=none

@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-outline-products/gcc-avx2.o
+artifact_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+artifact_file_bytes=68888
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=49829
+readonly_data_bytes=3785
+unwind_bytes=1464
+exception_table_bytes=0
+primary_bytes=53614
+initialized_writable_bytes=8
+zero_fill_bytes=34912
+writable_bytes=34920
+max_stack_bytes=unmeasured
