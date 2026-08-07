@@ -1749,8 +1749,14 @@ static void shake128(const uint8_t *in, size_t inlen, uint8_t *out,
   keccak_squeeze(&ctx, out, outlen);
 }
 
+// Keep Clang from cloning the generic sponge into decapsulation.
+#if defined(__clang__)
+static MLKEM_NOINLINE __attribute__((minsize)) void
+shake256(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
+#else
 static void shake256(const uint8_t *in, size_t inlen, uint8_t *out,
                      size_t outlen) {
+#endif
   // Shake256 => rate=136 bytes, domain=0x1F
   keccak_ctx ctx;
   keccak_init(&ctx, 136);
