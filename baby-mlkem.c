@@ -6727,7 +6727,12 @@ mlkem_encrypt_prf_cbd_eta2_32_sample_tail_clang_avx512(
 }
 #endif
 
-static void mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
+#if defined(__clang__)
+static MLKEM_NOINLINE __attribute__((minsize)) void
+#else
+static void
+#endif
+mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
     const uint8_t sigma[32], const uint8_t rho[32], poly256 tail,
     poly256 s0, poly256 s1, poly256 s2,
     poly256 e0, poly256 e1, poly256 e2) {
