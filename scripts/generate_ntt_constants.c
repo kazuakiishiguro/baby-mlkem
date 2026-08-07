@@ -260,6 +260,7 @@ int main(void) {
   vec512 inv_mont_hi_avx512_dense[32];
   int16_t mont_lo_avx512_scalar[7];
   int16_t mont_hi_avx512_scalar[7];
+  int16_t inv_mont_final_avx512_scalar[3];
   vec512 inv_tail_avx512[15];
   vec512 tail_l3x2[8];
   vec512 tail_l2x2[8];
@@ -403,6 +404,13 @@ int main(void) {
   uint16_t zeta_scale = (uint16_t)(((uint32_t)zeta[1] * 3303u) % MLKEM_Q);
   mont_factor(3303, &scale_low, &scale_high);
   mont_factor(zeta_scale, &zeta_scale_low, &zeta_scale_high);
+  if (scale_low != scale_high) {
+    fprintf(stderr, "inverse Montgomery scale factors differ\n");
+    return 1;
+  }
+  inv_mont_final_avx512_scalar[0] = scale_low;
+  inv_mont_final_avx512_scalar[1] = zeta_scale_low;
+  inv_mont_final_avx512_scalar[2] = zeta_scale_high;
   vec256 inv_scale_lo = vec256_splat_i16(scale_low);
   vec256 inv_scale_hi = vec256_splat_i16(scale_high);
   vec256 inv_zeta_scale_lo = vec256_splat_i16(zeta_scale_low);
@@ -463,6 +471,8 @@ int main(void) {
                      &inv_zeta_scale_lo_avx512);
   print_vec512_value("ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512",
                      &inv_zeta_scale_hi_avx512);
+  print_i16_array("ZETA_NTT_INV_MONT_FINAL_AVX512_SCALAR",
+                  inv_mont_final_avx512_scalar, 3);
   print_vec512_array("ZETA_NTT_INV_TAIL_AVX512", inv_tail_avx512, 15);
   print_vec512_array("ZETA_NTT_TAIL_L3X2", tail_l3x2, 8);
   print_vec512_array("ZETA_NTT_TAIL_L2X2", tail_l2x2, 8);

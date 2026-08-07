@@ -1268,6 +1268,10 @@ static const __m512i ZETA_NTT_INV_MONT_ZETA_SCALE_HI_AVX512 =
       (long long)UINT64_C(0xfef6fef6fef6fef6), (long long)UINT64_C(0xfef6fef6fef6fef6)
     };
 
+static const int16_t ZETA_NTT_INV_MONT_FINAL_AVX512_SCALAR[3] = {
+       512, -32522,   -266
+};
+
 static const __m512i ZETA_NTT_INV_TAIL_AVX512[15] = {
     {
       (long long)UINT64_C(0x000006d2000006d2), (long long)UINT64_C(0x000006d2000006d2),
