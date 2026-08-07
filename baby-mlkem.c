@@ -7803,7 +7803,12 @@ static inline __m256i decompress_d10_vec_avx2(__m256i v) {
   return _mm256_add_epi16(q3, _mm256_mulhrs_epi16(v, mul));
 }
 
-static void decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
+#if defined(__clang__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static MLKEM_NOINLINE void
+#else
+static void
+#endif
+decompress_decode_poly_d10_avx2(const uint8_t *in, poly256 out) {
   const __m256i shuf = _mm256_setr_epi8(
       0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9,
       0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9);
