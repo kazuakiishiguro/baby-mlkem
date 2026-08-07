@@ -1,0 +1,17 @@
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=6e2e0d031e3af16a8b90c6cf1b33b250ab1f0cf3e654487b062e0e767b157fd4
+api_kind=local
+compiler=clang
+stack_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=8760
+encaps_stack_bytes=6904
+decaps_valid_stack_bytes=9400
+decaps_invalid_stack_bytes=9400
+max_stack_bytes=9400
+correctness_smoke=pass

@@ -298,6 +298,11 @@ one emitted copy. GCC and non-AVX512 products retain byte-identical artifacts.
 This adds no cache, external object, runtime library, table, API, or wire-format
 dependency.
 
+Commit `e57be37` keeps Clang native's eight fixed matrix-refill deficiency
+tests unrolled but shares the rare single-lane continuation instead of emitting
+it eight times. GCC and non-AVX512 products remain byte-identical. This adds no
+cache, external object, runtime library, table, API, or wire-format dependency.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -320,12 +325,12 @@ for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
 The current 2026-08-07 no-cache baselines use the normal compiler-specific
-speed flags. Clang native is measured at `3dccb27`; the remaining rows are
+speed flags. Clang native is measured at `e57be37`; the remaining rows are
 unchanged from `a03a486`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 75,516 | 20,341 | 95,857 | 0 | 18,001 | 18,001 |
+| native AVX512 | Clang 18.1.3 | 74,366 | 20,341 | 94,707 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 56,006 | 3,565 | 59,571 | 0 | 33,728 | 33,728 |
 | AVX2-only | Clang 18.1.3 | 52,678 | 12,341 | 65,019 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 51,429 | 3,809 | 55,238 | 8 | 34,912 | 34,920 |
@@ -355,13 +360,21 @@ A/B runs keep every operation geometric mean above the `0.995x` regression
 floor. The targeted mlkem-native primary gap falls to 44,671 bytes but remains
 a failed gate.
 
+The [shared Clang native matrix-refill report](benchmarks/2026-08-07-clang-native-shared-matrix-refill/README.md)
+records the next step at `e57be37`. Sharing only the rare continuation reduces
+primary size by another 1,150 bytes to 94,707 bytes. The combined 30-pair
+operation geometric means remain above `0.995x`, while a focused 15-pair x8
+sampler diagnostic is `1.0067x`. Maximum stack rises 64 bytes to 9,400 bytes
+and remains separate from primary size. The targeted mlkem-native primary gap
+is now 43,521 bytes and still fails.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
 native deficit in that complete matrix was 52,299 bytes against mlkem-native;
 the limiting AVX2-only deficit is 19,970 bytes against OpenSSL. The later
-targeted native diagnostic at `3dccb27` reduces the mlkem-native deficit to
-44,671 bytes. A complete same-revision ten-comparator size matrix has not yet
+targeted native diagnostic at `e57be37` reduces the mlkem-native deficit to
+43,521 bytes. A complete same-revision ten-comparator size matrix has not yet
 been rerun. Stack is reported separately from primary size.
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
@@ -586,12 +599,12 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `3dccb27` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
+| Correctness | current candidate pass | `e57be37` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. The later `3dccb27` native artifact is 95,857 bytes, still 44,671 bytes larger than the targeted mlkem-native artifact; AVX2-only remains 19,970 bytes larger than OpenSSL. |
-| Maximum stack | current measurements reported | The current native maximum is 9,336 bytes at `3dccb27`; AVX2-only remains 5,856 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
+| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. The later `e57be37` native artifact is 94,707 bytes, still 43,521 bytes larger than the targeted mlkem-native artifact; AVX2-only remains 19,970 bytes larger than OpenSSL. |
+| Maximum stack | current measurements reported | The current native maximum is 9,400 bytes at `e57be37`; AVX2-only remains 5,856 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has

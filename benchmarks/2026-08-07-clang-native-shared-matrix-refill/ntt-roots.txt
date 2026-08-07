@@ -1,0 +1,4 @@
+== Clang generated NTT roots ==
+clang_ntt_roots=PASS
+== GCC generated NTT roots ==
+gcc_ntt_roots=PASS
