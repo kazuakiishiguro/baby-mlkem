@@ -1,0 +1,15 @@
+candidate_ref=588c9d40137f1ffa5f2722bc6f492c318c1505a9
+[clang-cold-minsize]
+attribute=noinline,cold,minsize
+native_primary_bytes=90116
+avx2_primary_bytes=63296
+scalar_primary_bytes=62576
+primary_delta_vs_accepted_native=0
+primary_delta_vs_accepted_avx2=0
+primary_delta_vs_accepted_scalar=0
+native_elf_bytes=125624
+avx2_elf_bytes=93272
+scalar_elf_bytes=81112
+elf_delta_vs_accepted_bytes=8,8,8
+decision=reject
+reason=no primary-size benefit and larger ELF files

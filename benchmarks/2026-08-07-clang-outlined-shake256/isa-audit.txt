@@ -1,0 +1,9 @@
+candidate_ref=588c9d40137f1ffa5f2722bc6f492c318c1505a9
+artifact=/tmp/shake256-minsize-postcommit-clang-avx2.o
+artifact_sha256=e34636dd5934a1c6f04fa1a8571fc17cc20050eddf34edc76ada39d51ece401a
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+zmm_or_opmask_matches=0
+avx512_audit=PASS
+exported_api_count=3
+exported_api=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+new_external_dependency=none
