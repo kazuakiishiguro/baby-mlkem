@@ -1,0 +1,25 @@
+candidate_ref=d6eada53621ffc1dc907e4a5ae7a83b922df1042
+baseline_ref=b0f4d0f3b5c824ad1fe3ead76e62267e6c9af8d5
+implementation_files=baby-mlkem.c
+implementation_files_count=1
+source_change=route Clang fused encryption's three complete forward NTTs through one non-unrolled noinline K=3 batch
+guard=defined(__clang__) inside the AVX512F+AVX512BW implementation scope
+transform_order=b[0], b[1], b[2], unchanged
+head_implementation=existing ntt_head_mont_lazy_raw_avx512
+tail_implementation=existing ntt_tail_mont_lazy_raw_avx512
+butterfly_change=none
+twiddle_change=none
+montgomery_change=none
+range_contract_change=none
+accumulator_change=none
+caller_scratch_change=none
+algorithm_change=none
+wire_format_change=none
+new_cache=none
+new_external_source=none
+new_external_object=none
+new_runtime_library=none
+new_source_table=none
+new_dispatch=none
+new_api=none
+source_audit=PASS
