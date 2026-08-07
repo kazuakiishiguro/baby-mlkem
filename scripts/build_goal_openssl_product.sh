@@ -37,15 +37,16 @@ git -C "$OPENSSL_DIR" diff --quiet && git -C "$OPENSSL_DIR" diff --cached --quie
 
 goal_speed_configure_profile "$PROFILE" "$C_COMPILER"
 case "$PROFILE" in
-  native) OPENSSL_ARCH_CFLAGS="-O3 -march=native -mavx2 -mbmi2 -mpopcnt"; OPENSSL_CONFIG_OPTS=() ;;
-  avx2) OPENSSL_ARCH_CFLAGS="-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f"; OPENSSL_CONFIG_OPTS=("-DOPENSSL_NO_AVX512") ;;
+  native) OPENSSL_CONFIG_OPTS=() ;;
+  avx2) OPENSSL_CONFIG_OPTS=("-DOPENSSL_NO_AVX512") ;;
 esac
+OPENSSL_PRODUCT_CFLAGS="${OPENSSL_PRODUCT_CFLAGS:-$OPENSSL_CFLAGS}"
 work_dir="$(mktemp -d /tmp/baby-mlkem-openssl-product.XXXXXX)"
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 build_dir="$work_dir/build"
 source_date_epoch="$(git -C "$OPENSSL_DIR" show -s --format=%ct HEAD)"
-common_flags="$OPENSSL_ARCH_CFLAGS -ffunction-sections -fdata-sections -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-pic -fno-PIE -ffile-prefix-map=$OPENSSL_DIR=/openssl -ffile-prefix-map=$ROOT_DIR=/baby-mlkem"
+common_flags="$OPENSSL_PRODUCT_CFLAGS -ffunction-sections -fdata-sections -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-pic -fno-PIE -ffile-prefix-map=$OPENSSL_DIR=/openssl -ffile-prefix-map=$ROOT_DIR=/baby-mlkem"
 config=("$OPENSSL_CONFIG_TARGET" no-shared no-tests no-apps no-legacy no-module)
 config+=(no-cached-fetch no-autoload-config)
 config+=("${OPENSSL_CONFIG_OPTS[@]}")
