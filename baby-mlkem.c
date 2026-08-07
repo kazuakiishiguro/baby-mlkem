@@ -1662,11 +1662,11 @@ static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
 }
 
 /* ML-KEM only hashes 33 or 64 bytes with SHA3-512. Keep this fixed-rate path
- * separate so production section GC can discard the generic sponge. */
+ * separate so production section GC can discard the generic sponge. The
+ * alignment stabilizes its hot LTO layout when rejection-only code changes. */
 #if defined(__clang__)
-static MLKEM_NOINLINE void sha3_512_mlkem_fixed(const uint8_t *in,
-                                                size_t inlen,
-                                                uint8_t *out64) {
+static MLKEM_NOINLINE __attribute__((aligned(32))) void
+sha3_512_mlkem_fixed(const uint8_t *in, size_t inlen, uint8_t *out64) {
   uint64_t st[25] = {0};
   st[0] = load64_le(in + 0);
   st[1] = load64_le(in + 8);
@@ -9117,6 +9117,40 @@ static void mlkem_encaps_derand(const uint8_t *ek,
   }
 }
 
+#if defined(__clang__)
+/* ML-KEM-768 implicit rejection hashes z[32] || c[1088]. Absorb the two
+ * inputs directly so the fixed production API needs no concatenation buffer. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+shake256_mlkem768_rejection(const uint8_t z[32], const uint8_t c[1088],
+                            uint8_t out[32]) {
+  uint64_t st[25] = {0};
+  for (int lane = 0; lane < 4; lane++) {
+    st[lane] = load64_le(z + 8 * lane);
+  }
+  for (int lane = 4; lane < 17; lane++) {
+    st[lane] = load64_le(c + 8 * (lane - 4));
+  }
+  keccakf(st);
+
+  const uint8_t *block = c + 104;
+  for (int round = 1; round < 8; round++, block += 136) {
+#pragma clang loop vectorize(disable) interleave(disable) unroll(disable)
+    for (int lane = 0; lane < 17; lane++) {
+      st[lane] ^= load64_le(block + 8 * lane);
+    }
+    keccakf(st);
+  }
+
+  for (int lane = 0; lane < 4; lane++) {
+    st[lane] ^= load64_le(block + 8 * lane);
+  }
+  st[4] ^= 0x1Fu;
+  st[16] ^= 0x8000000000000000ULL;
+  keccakf(st);
+  memcpy(out, st, 32);
+}
+#endif
+
 static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
                          uint8_t *k_out) {
 #if defined(USE_PQCLEAN_AVX2_BACKEND)
@@ -9259,21 +9293,28 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   }
   if (cdash_len != clen || memcmp(c, cdash, clen) != 0) {
     /* kbar = shake256(z||c) => 32 */
-    uint8_t stack_tmp[32 + CT_BYTES];
-    size_t tmp_len = 32 + clen;
-    uint8_t *tmp = stack_tmp;
-    if (clen > CT_BYTES) {
-      tmp = (uint8_t *)malloc(tmp_len);
-    }
-    if (!tmp) {
-      memset(k_out, 0, 32);
-      return;
-    }
-    memcpy(tmp, z, 32);
-    memcpy(tmp + 32, c, clen);
-    pq_shake256(k_out, 32, tmp, tmp_len);
-    if (tmp != stack_tmp) {
-      free(tmp);
+#if defined(__clang__)
+    if (clen == CT_BYTES) {
+      shake256_mlkem768_rejection(z, c, k_out);
+    } else
+#endif
+    {
+      uint8_t stack_tmp[32 + CT_BYTES];
+      size_t tmp_len = 32 + clen;
+      uint8_t *tmp = stack_tmp;
+      if (clen > CT_BYTES) {
+        tmp = (uint8_t *)malloc(tmp_len);
+      }
+      if (!tmp) {
+        memset(k_out, 0, 32);
+        return;
+      }
+      memcpy(tmp, z, 32);
+      memcpy(tmp + 32, c, clen);
+      pq_shake256(k_out, 32, tmp, tmp_len);
+      if (tmp != stack_tmp) {
+        free(tmp);
+      }
     }
   } else {
     memcpy(k_out, kdash, 32);
