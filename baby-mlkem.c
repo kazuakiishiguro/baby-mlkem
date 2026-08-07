@@ -4677,6 +4677,22 @@ ntt3_full_mont_lazy_raw_shared_clang_avx512(poly256 f[K]) {
     ntt_tail_mont_lazy_raw_avx512(f[i]);
   }
 }
+
+static MLKEM_NOINLINE void
+keygen_ntt6_mixed_shared_clang_avx512(poly256 shat[K], poly256 ehat[K]) {
+  /* Keep keygen order while sharing one tail body across all six transforms. */
+#pragma clang loop unroll(disable)
+  for (int n = 0; n < 2 * K; n++) {
+    int canonical = n & 1;
+    int row = n >> 1;
+    int16_t *f = canonical ? ehat[row] : shat[row];
+    ntt_head_mont_lazy_raw_avx512(f);
+    ntt_tail_mont_lazy_raw_avx512(f);
+    if (canonical) {
+      ntt_canonicalize_signed_avx512(f);
+    }
+  }
+}
 #endif
 
 /* The proved full-lazy range reduces to [0,Q]; only Q needs correction. */
@@ -8233,6 +8249,9 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   mlkem_keygen_prf_cbd_eta2_32_sample_tail_avx512(
       sigma, rho, kpke_public_cache_ahat[2][2],
       shat[0], shat[1], shat[2], ehat[0], ehat[1], ehat[2]);
+#if defined(__GNUC__) && defined(__AVX512BW__) && defined(__clang__)
+  keygen_ntt6_mixed_shared_clang_avx512(shat, ehat);
+#else
   for (int i = 0; i < K; i++) {
 #if defined(__GNUC__) && defined(__AVX512BW__)
     ntt_full_mont_lazy_raw_avx512(shat[i]);
@@ -8242,6 +8261,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 #endif
     ntt(ehat[i], ehat[i]);
   }
+#endif
 #elif defined(__AVX2__)
   mlkem_keygen_matrix_noise_avx2(sigma, rho, kpke_public_cache_ahat,
                                  shat, ehat);
