@@ -43,7 +43,19 @@ int pqcrystals_kyber768_avx2_dec(uint8_t *ss, const uint8_t *ct,
 #define BENCH_CT_STRIDE 1088
 #endif
 
-enum { CT_MAX_BYTES = K * ((N * DU) / 8) + (N * DV) / 8 };
+enum {
+  CT_MAX_BYTES = K * ((N * DU) / 8) + (N * DV) / 8,
+  CORPUS_FIXTURES = 64,
+  CORPUS_EK_BYTES = K * 384 + 32,
+  CORPUS_DK_BYTES = 768 * K + 96,
+  CORPUS_SS_BYTES = 32,
+  CORPUS_KP_COINS_BYTES = 64,
+  CORPUS_ENC_COINS_BYTES = 32,
+  CORPUS_RECORD_BYTES =
+      4 + CORPUS_KP_COINS_BYTES + CORPUS_ENC_COINS_BYTES +
+      CORPUS_EK_BYTES + CORPUS_DK_BYTES + CT_MAX_BYTES +
+      CORPUS_SS_BYTES + CORPUS_SS_BYTES + CT_MAX_BYTES + CORPUS_SS_BYTES
+};
 
 static uint64_t now_ns(void) {
   struct timespec ts;
@@ -145,6 +157,99 @@ static inline void bench_set_caches_enabled(int enabled) {
 #endif
 }
 
+static int corpus_write_bytes(const void *data, size_t len) {
+  return fwrite(data, 1, len, stdout) == len;
+}
+
+static int corpus_write_u32(uint32_t value) {
+  uint8_t encoded[4] = {(uint8_t)value, (uint8_t)(value >> 8),
+                        (uint8_t)(value >> 16), (uint8_t)(value >> 24)};
+  return corpus_write_bytes(encoded, sizeof(encoded));
+}
+
+/* The fixed-width header and records make corpus files independently parsable. */
+static int emit_cross_path_corpus(void) {
+  static const uint8_t magic[8] = {'B', 'M', 'L', 'K', '7', '6', '8', 'C'};
+  uint8_t coins_kp[CORPUS_KP_COINS_BYTES];
+  uint8_t coins_enc[CORPUS_ENC_COINS_BYTES];
+  uint8_t ek[CORPUS_EK_BYTES];
+  uint8_t dk[CORPUS_DK_BYTES];
+  uint8_t ct[CT_MAX_BYTES];
+  uint8_t invalid_ct[CT_MAX_BYTES];
+  uint8_t encaps_ss[CORPUS_SS_BYTES];
+  uint8_t decaps_ss[CORPUS_SS_BYTES];
+  uint8_t invalid_ss[CORPUS_SS_BYTES];
+  int status = EXIT_FAILURE;
+
+  bench_set_caches_enabled(0);
+  bench_clear_caches();
+
+  if (!corpus_write_bytes(magic, sizeof(magic)) || !corpus_write_u32(1) ||
+      !corpus_write_u32(CORPUS_FIXTURES) ||
+      !corpus_write_u32(CORPUS_RECORD_BYTES) ||
+      !corpus_write_u32(CORPUS_KP_COINS_BYTES) ||
+      !corpus_write_u32(CORPUS_ENC_COINS_BYTES) ||
+      !corpus_write_u32(CORPUS_EK_BYTES) ||
+      !corpus_write_u32(CORPUS_DK_BYTES) ||
+      !corpus_write_u32(CT_MAX_BYTES) ||
+      !corpus_write_u32(CORPUS_SS_BYTES)) {
+    fprintf(stderr, "failed to write corpus header\n");
+    goto out;
+  }
+
+  for (uint32_t fixture = 0; fixture < CORPUS_FIXTURES; fixture++) {
+    uint64_t counter = 0x434f525055530000ULL + (uint64_t)fixture * 2;
+    size_t mutation = ((size_t)fixture * 109 + 17) % CT_MAX_BYTES;
+    uint8_t mutation_mask = (uint8_t)(1u << (fixture & 7));
+
+    fill_seed(coins_kp, sizeof(coins_kp), counter);
+    fill_seed(coins_enc, sizeof(coins_enc), counter + 1);
+    bench_clear_caches();
+    bench_keygen(coins_kp, ek, dk);
+    bench_encaps(ek, coins_enc, encaps_ss, ct);
+    bench_decaps(ct, dk, decaps_ss);
+    if (memcmp(encaps_ss, decaps_ss, sizeof(encaps_ss)) != 0) {
+      fprintf(stderr, "valid corpus decapsulation mismatch at fixture %u\n",
+              fixture);
+      goto out;
+    }
+
+    memcpy(invalid_ct, ct, sizeof(invalid_ct));
+    invalid_ct[mutation] ^= mutation_mask;
+    bench_decaps(invalid_ct, dk, invalid_ss);
+    if (memcmp(encaps_ss, invalid_ss, sizeof(encaps_ss)) == 0) {
+      fprintf(stderr, "invalid corpus decapsulation accepted at fixture %u\n",
+              fixture);
+      goto out;
+    }
+
+    if (!corpus_write_u32(fixture) ||
+        !corpus_write_bytes(coins_kp, sizeof(coins_kp)) ||
+        !corpus_write_bytes(coins_enc, sizeof(coins_enc)) ||
+        !corpus_write_bytes(ek, sizeof(ek)) ||
+        !corpus_write_bytes(dk, sizeof(dk)) ||
+        !corpus_write_bytes(ct, sizeof(ct)) ||
+        !corpus_write_bytes(encaps_ss, sizeof(encaps_ss)) ||
+        !corpus_write_bytes(decaps_ss, sizeof(decaps_ss)) ||
+        !corpus_write_bytes(invalid_ct, sizeof(invalid_ct)) ||
+        !corpus_write_bytes(invalid_ss, sizeof(invalid_ss))) {
+      fprintf(stderr, "failed to write corpus fixture %u\n", fixture);
+      goto out;
+    }
+  }
+
+  if (fflush(stdout) != 0 || ferror(stdout)) {
+    fprintf(stderr, "failed to flush corpus output\n");
+    goto out;
+  }
+  status = EXIT_SUCCESS;
+
+out:
+  bench_clear_caches();
+  bench_set_caches_enabled(1);
+  return status;
+}
+
 int main(int argc, char **argv) {
   size_t iters = 200;
   const size_t ct_bytes = (size_t)CT_MAX_BYTES;
@@ -164,8 +269,11 @@ int main(int argc, char **argv) {
   uint64_t keygen_core_ns, encaps_core_ns, decaps_core_ns;
   uint64_t roundtrip_core_ns;
 
+  if (argc == 2 && strcmp(argv[1], "--emit-corpus") == 0) {
+    return emit_cross_path_corpus();
+  }
   if (argc > 2) {
-    fprintf(stderr, "usage: %s [iterations]\n", argv[0]);
+    fprintf(stderr, "usage: %s [iterations|--emit-corpus]\n", argv[0]);
     return EXIT_FAILURE;
   }
   if (argc == 2) {
