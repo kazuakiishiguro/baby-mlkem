@@ -1,0 +1,35 @@
+[derive-low-from-high]
+description=remove the complete Montgomery-low AVX512 table and reconstruct each low vector with vpmullw(high,QINV)
+code_bytes=74558
+readonly_data_bytes=18037
+primary_bytes=92595
+primary_delta_bytes=-2112
+inv_add4_eta2_i8_gmean=0.995444337x
+inv_add4_eta2_i8_median=0.989529044x
+decrypt_inv_sub_gmean=1.006652717x
+decrypt_inv_sub_median=0.995867311x
+decision=REJECT
+reason=the extra multiply regresses the direct shared inverse median
+
+[scalar-levels-3-through-5]
+description=keep levels 0..2 dense and broadcast levels 3..5 from scalar factors
+code_bytes=74369
+readonly_data_bytes=18605
+primary_bytes=92974
+primary_delta_bytes=-1733
+shared_inverse_code_bytes=4624
+inv_add4_eta2_i8_gmean=0.991005723x
+inv_add4_eta2_i8_median=0.998415442x
+decrypt_inv_sub_gmean=0.993775811x
+decrypt_inv_sub_median=0.991496284x
+decision=REJECT
+reason=the decrypt inverse/subtract path fails the 0.995x regression floor
+
+[accepted-scalar-levels-4-and-5]
+description=keep levels 0..3 dense and broadcast only levels 4..5 from scalar factors
+code_bytes=74366
+readonly_data_bytes=19597
+primary_bytes=93963
+primary_delta_bytes=-744
+shared_inverse_code_bytes=4621
+decision=ACCEPT

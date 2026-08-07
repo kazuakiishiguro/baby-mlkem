@@ -1,0 +1,29 @@
+base_ref=ea4cc07e9f6d4a7eb9abd619ba309bb3dca13464
+candidate_ref=8173a06770dbfccfd4ac12d4ebc17164bb2cf048
+compiler=clang
+arch_cflags=-march=native
+pin_cpu=0
+warmups_per_batch=3
+base_binary_sha256=636e15ec3fafc14a81a8bf0ccdc173a435cff243949482206d53bcbb2af43576
+candidate_binary_sha256=22bf1e0c218e3b4c8c035e844ead66d36546a14c856237b0bc45dc5a14749293
+
+[batch1]
+pairs=15 iterations=200000 order=alternating
+metric gmean median wins min max
+inv_add4_eta2_i8 0.987073118x 0.996455242x 3/15 0.862030950x 1.001897983x
+decrypt_inv_sub 0.997119753x 0.995662403x 4/15 0.975292819x 1.020420199x
+
+[batch2]
+pairs=15 iterations=500000 order=alternating-reversed
+metric gmean median wins min max
+inv_add4_eta2_i8 1.036959950x 1.003018298x 10/15 0.983984030x 1.188119747x
+decrypt_inv_sub 1.011918226x 1.000770840x 10/15 0.970681149x 1.077162414x
+
+[combined]
+pairs=30
+metric gmean median wins min max
+inv_add4_eta2_i8 1.011709094x 0.999148240x 13/30 0.862030950x 1.188119747x
+decrypt_inv_sub 1.004491738x 0.999359692x 14/30 0.970681149x 1.077162414x
+
+base_candidate_sink_match=pass
+diagnostic_note=large scheduling outliers affected opposite binaries; use paired medians as the local readout and the complete KEM gate as primary evidence

@@ -1,0 +1,15 @@
+combined_pairs=45 batches=3 runs_per_batch=15 warmups_per_batch=3 iterations=100000 pin_cpu=0 order=alternating
+metric batch1_gmean batch2_gmean batch3_gmean combined_gmean gate
+mlkem_decaps 0.9990x 1.0006x 0.9955x 0.9984x PASS
+mlkem_decaps_core 0.9977x 1.0016x 0.9994x 0.9996x PASS
+mlkem_encaps 0.9994x 0.9923x 0.9974x 0.9964x PASS
+mlkem_encaps_core 0.9950x 1.0023x 0.9971x 0.9981x PASS
+mlkem_keygen 0.9984x 1.0022x 1.0001x 1.0002x PASS
+mlkem_keygen_core 1.0009x 1.0032x 1.0008x 1.0016x PASS
+mlkem_roundtrip 0.9970x 0.9994x 0.9968x 0.9977x PASS
+mlkem_roundtrip_core 0.9946x 1.0011x 0.9984x 0.9980x PASS
+minimum_metric=mlkem_encaps
+minimum_combined_gmean=0.9964x
+regression_floor=0.995000x
+margin_over_floor=0.0014x
+precision_note=combined values are computed from the four-decimal batch geometric means emitted by bench_core_ab.sh
