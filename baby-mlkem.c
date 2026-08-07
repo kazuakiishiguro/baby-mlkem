@@ -4170,6 +4170,29 @@ static void ntt_mul_add(const poly256 a, const poly256 b, poly256 accum) {
   }
 }
 
+static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
+                         const poly256 a1, const poly256 b1,
+                         const poly256 a2, const poly256 b2,
+                         poly256 out) {
+  for (int i = 0; i < 128; i++) {
+    int idx0 = 2 * i, idx1 = idx0 + 1;
+    uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
+    uint32_t y00 = (uint16_t)b0[idx0], y01 = (uint16_t)b0[idx1];
+    uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
+    uint32_t y10 = (uint16_t)b1[idx0], y11 = (uint16_t)b1[idx1];
+    uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
+    uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
+    uint32_t g = GAMMA[i];
+    uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
+    uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
+    uint32_t c0 = c0_lo + (c0_hi % Q) * g;
+    uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
+                  x20 * y21 + x21 * y20;
+    out[idx0] = (int16_t)(c0 % Q);
+    out[idx1] = (int16_t)(c1 % Q);
+  }
+}
+
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void ntt_mul_acc3_avx2(
     const poly256 a0, const poly256 b0, const poly256 a1, const poly256 b1,
@@ -4244,29 +4267,6 @@ static void stage_ntt_head_avx2(poly256 f);
 static void stage_ntt_inv_head_l1_avx2(poly256 f);
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
 static void stage_ntt_inv_head_l1_block_avx2(poly256 f);
-static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
-                         const poly256 a1, const poly256 b1,
-                         const poly256 a2, const poly256 b2,
-                         poly256 out) {
-  for (int i = 0; i < 128; i++) {
-    int idx0 = 2 * i, idx1 = idx0 + 1;
-    uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
-    uint32_t y00 = (uint16_t)b0[idx0], y01 = (uint16_t)b0[idx1];
-    uint32_t x10 = (uint16_t)a1[idx0], x11 = (uint16_t)a1[idx1];
-    uint32_t y10 = (uint16_t)b1[idx0], y11 = (uint16_t)b1[idx1];
-    uint32_t x20 = (uint16_t)a2[idx0], x21 = (uint16_t)a2[idx1];
-    uint32_t y20 = (uint16_t)b2[idx0], y21 = (uint16_t)b2[idx1];
-    uint32_t g = GAMMA[i];
-    uint32_t c0_lo = x00 * y00 + x10 * y10 + x20 * y20;
-    uint32_t c0_hi = x01 * y01 + x11 * y11 + x21 * y21;
-    uint32_t c0 = c0_lo + (c0_hi % Q) * g;
-    uint32_t c1 = x00 * y01 + x01 * y00 + x10 * y11 + x11 * y10 +
-                  x20 * y21 + x21 * y20;
-    out[idx0] = (int16_t)(c0 % Q);
-    out[idx1] = (int16_t)(c1 % Q);
-  }
-}
-
 #endif
 #if defined(__AVX2__) && \
     !(defined(__AVX512F__) && defined(__AVX512BW__))
