@@ -24,7 +24,7 @@ for tool in "$C_COMPILER" ar cmp git make nm objcopy objdump readelf rg sha256su
   command -v "$tool" >/dev/null 2>&1 || { echo "required tool not found: $tool" >&2; exit 2; }
 done
 [ -f "$OPENSSL_DIR/Configure" ] || { echo "OpenSSL checkout is incomplete: $OPENSSL_DIR" >&2; exit 2; }
-git -C "$OPENSSL_DIR" diff --quiet && git -C "$OPENSSL_DIR" diff --cached --quiet || { echo "OpenSSL checkout is dirty" >&2; exit 2; }
+[ -z "$(git -C "$OPENSSL_DIR" status --porcelain --untracked-files=normal)" ] || { echo "OpenSSL checkout is dirty" >&2; exit 2; }
 openssl_remote="$(git -C "$OPENSSL_DIR" remote get-url origin)"
 [ "$openssl_remote" = "$OPENSSL_REPO_URL" ] || { echo "unexpected OpenSSL remote: $openssl_remote" >&2; exit 2; }
 if [ "$UPDATE_REPOS" = 1 ]; then
@@ -33,7 +33,7 @@ if [ "$UPDATE_REPOS" = 1 ]; then
 else
   comparator_update=skipped
 fi
-git -C "$OPENSSL_DIR" diff --quiet && git -C "$OPENSSL_DIR" diff --cached --quiet || { echo "OpenSSL checkout became dirty" >&2; exit 2; }
+[ -z "$(git -C "$OPENSSL_DIR" status --porcelain --untracked-files=normal)" ] || { echo "OpenSSL checkout became dirty" >&2; exit 2; }
 
 goal_speed_configure_profile "$PROFILE" "$C_COMPILER"
 case "$PROFILE" in
