@@ -341,8 +341,8 @@ now 19,970 bytes; it remains a failed gate.
 
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
-`e43c9ab`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
-native deficit is 52,285 bytes against mlkem-native; the limiting AVX2-only
+`9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
+native deficit is 52,299 bytes against mlkem-native; the limiting AVX2-only
 deficit is 19,970 bytes against OpenSSL. Stack is lower than 8/10 native and
 9/10 AVX2-only comparators, but is reported separately from primary size.
 
@@ -566,7 +566,7 @@ in-tree core, product, upstream, and PQClean paths described above.
 | Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
 | Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
 | AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
-| Production size | fail | The current Clang matrix at `e43c9ab` updates all comparators and passes 5/10 gates in each profile. Native is 52,285 bytes larger than the limiting mlkem-native artifact; AVX2-only is 19,970 bytes larger than OpenSSL. |
+| Production size | fail | The current Clang matrix at `9952e84` updates all comparators and passes 5/10 gates in each profile. Native is 52,299 bytes larger than the limiting mlkem-native artifact; AVX2-only is 19,970 bytes larger than OpenSSL. |
 | Maximum stack | current matrix reported | Local maxima are 10,040 bytes native and 5,856 bytes AVX2-only. Local stack is lower than 8/10 native and 9/10 AVX2-only comparators; Botan is lower in both profiles and OpenSSL is also lower native. |
 | Clean final revision | open | Current correctness and size/stack evidence is clean, but same-revision formal speed is open and primary size fails both profiles. |
 
