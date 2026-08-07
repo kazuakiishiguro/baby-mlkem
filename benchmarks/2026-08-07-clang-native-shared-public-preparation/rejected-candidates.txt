@@ -1,0 +1,33 @@
+baseline_ref=626da41d4fbfa165e17e11aad86d2dcc87ebbdf9
+accepted_ref=13b3ea1227ce2892e8ac89dd967d888628affa40
+ratios=baseline_time/candidate_time
+
+[shared-d12-decode-only]
+artifact_sha256=e67746efe70923dbfce73fc370efc8342b94b003238805d3a21ca75398b027c4
+strategy=share all three emitted K=3 d12 decode copies behind one noinline helper
+code_bytes=71613
+readonly_data_bytes=19211
+primary_bytes=90824
+primary_delta_bytes=-2829
+benchmark=runs:16 warmups:4 iterations:100000 order:alternating-balanced cpu:0
+mlkem_decaps_gmean=1.0032x
+mlkem_decaps_core_gmean=0.9929x
+mlkem_encaps_gmean=0.9998x
+mlkem_encaps_core_gmean=0.9928x
+mlkem_keygen_gmean=1.0046x
+mlkem_keygen_core_gmean=1.0012x
+mlkem_roundtrip_gmean=1.0014x
+mlkem_roundtrip_core_gmean=0.9980x
+decision=REJECT
+reason=decaps_core and encaps_core fall below the 0.995x operation floor
+followup=share complete public decode/matrix/hash preparation while keeping secret decode inline
+
+[clang-fmerge-all-constants]
+artifact_sha256=ff79eeb08c505f6fd28895045f83ccf225f41e7360c395c52dc20447250f2fae
+strategy=add -fmerge-all-constants without source changes
+code_bytes=74359
+readonly_data_bytes=19343
+primary_bytes=93702
+primary_delta_bytes=+49
+decision=REJECT
+reason=primary production footprint increases before performance testing

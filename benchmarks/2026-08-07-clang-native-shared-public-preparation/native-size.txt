@@ -1,0 +1,18 @@
+candidate_ref=13b3ea1227ce2892e8ac89dd967d888628affa40
+15153b7e9d0c6c0d440637029c5156260a790ee4605fd3824cd1d258c8d2165b  baby_mlkem768_product.o
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=15153b7e9d0c6c0d440637029c5156260a790ee4605fd3824cd1d258c8d2165b
+artifact_file_bytes=127632
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=72981
+readonly_data_bytes=19287
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=92268
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
+product_smoke=PASS
+precommit_artifact_identity=PASS
