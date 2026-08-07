@@ -1,0 +1,17 @@
+candidate_ref=6ba81de0903437ae09d6f0ce000617997fe1f712
+baseline_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+profile=avx2
+combination=geometric_mean_of_two_equal_16_pair_batches
+source_precision=four_decimal_batch_gmeans
+mlkem_decaps_combined_gmean=1.000338243x batch1=1.0052x batch2=0.9955x
+mlkem_decaps_core_combined_gmean=1.003548105x batch1=1.0055x batch2=1.0016x
+mlkem_encaps_combined_gmean=1.000248469x batch1=1.0020x batch2=0.9985x
+mlkem_encaps_core_combined_gmean=1.000946492x batch1=1.0036x batch2=0.9983x
+mlkem_keygen_combined_gmean=1.003896095x batch1=1.0067x batch2=1.0011x
+mlkem_keygen_core_combined_gmean=1.002246756x batch1=1.0048x batch2=0.9997x
+mlkem_roundtrip_combined_gmean=1.005392819x batch1=1.0092x batch2=1.0016x
+mlkem_roundtrip_core_combined_gmean=1.004099397x batch1=1.0052x batch2=1.0030x
+minimum_combined_gmean=1.000248469x
+operation_regression_floor=0.995x
+gate=PASS
+speed_gain_claim=none

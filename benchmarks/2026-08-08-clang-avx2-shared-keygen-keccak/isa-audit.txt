@@ -1,0 +1,22 @@
+artifact=/tmp/keygen-keccak-share-clang-avx2.o
+artifact_sha256=296fcb5623a7073e740609fef7c216b9ab209a972be8e53c0aea59372cdb7344
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+zmm_or_opmask_matches=0
+avx512_audit=PASS
+exported_api_count=3
+exported_api=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+undefined_symbols=bcmp exit memcpy memset perror syscall
+undefined_symbol_identity_vs_parent=PASS
+persistent_cache_metadata=none
+new_external_dependency=none
+wire_format_change=none
+public_api_change=none
+cache_change=none
+decaps_section_bytes_identity=PASS
+encrypt_tail_section_bytes_identity=PASS
+encrypt_keccak_helper_section_bytes_identity=PASS
+helper_section_index=40
+helper_alias_binding=LOCAL
+helper_alias_size=1457
+0000000000000000 1457 FUNC LOCAL DEFAULT 40 mlkem_keygen_keccakf4_mem_parity_avx2
+0000000000000000 1457 FUNC LOCAL DEFAULT 40 mlkem_encrypt_keccakf4_mem_parity_avx2

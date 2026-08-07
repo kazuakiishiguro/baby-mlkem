@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-keccak-size-reports-6ba81de/clang-avx2.o
+artifact_sha256=296fcb5623a7073e740609fef7c216b9ab209a972be8e53c0aea59372cdb7344
+artifact_file_bytes=90792
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=48783
+readonly_data_bytes=12213
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=60996
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured
