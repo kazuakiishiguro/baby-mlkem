@@ -131,6 +131,9 @@ read -r -a openssl_cfg_opts_arr <<< "$OPENSSL_CONFIG_OPTS"
 read -r -a openssl_cflags_arr <<< "$OPENSSL_CFLAGS"
 (
   cd "$OPENSSL_DIR"
+  if [ -f Makefile ]; then
+    make -s clean >/dev/null
+  fi
   CC="$C_COMPILER" ./Configure "$OPENSSL_CONFIG_TARGET" "${openssl_cfg_opts_arr[@]}" "${openssl_cflags_arr[@]}" >/dev/null
   make -s -j"$OPENSSL_BUILD_JOBS" build_generated >/dev/null
   make -s -j"$OPENSSL_BUILD_JOBS" libcrypto.a >/dev/null
