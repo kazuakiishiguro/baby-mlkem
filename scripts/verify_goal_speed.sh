@@ -93,6 +93,37 @@ LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$DEFAULT_LIBJADE_KEM_DIR}"
 BOTAN_DIR="${BOTAN_DIR:-/tmp/botan-mlkem}"
 OPENSSL_DIR="${OPENSSL_DIR:-/tmp/openssl-mlkem-$BUILD_TAG}"
 
+preflight_git_comparator() {
+  local name="$1"
+  local directory="$2"
+
+  if ! git -C "$directory" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "missing git checkout for $name: $directory" >&2
+    return 1
+  fi
+  if [ -n "$(git -C "$directory" status --porcelain --untracked-files=normal)" ]; then
+    echo "comparator checkout is dirty before update: $name ($directory)" >&2
+    return 1
+  fi
+  if ! git -C "$directory" pull --ff-only; then
+    echo "failed to fast-forward comparator before benchmark: $name" >&2
+    return 1
+  fi
+  if [ -n "$(git -C "$directory" status --porcelain --untracked-files=normal)" ]; then
+    echo "comparator checkout became dirty after update: $name ($directory)" >&2
+    return 1
+  fi
+}
+
+# Fail before the hour-long suite rather than accepting an inner fallback clone.
+preflight_git_comparator kyber "$KYBER_DIR"
+preflight_git_comparator pqclean "$PQCLEAN_DIR"
+preflight_git_comparator mlkem_native "$MLKEM_NATIVE_DIR"
+preflight_git_comparator liboqs "$LIBOQS_DIR"
+preflight_git_comparator boringssl "$BORINGSSL_DIR"
+preflight_git_comparator botan "$BOTAN_DIR"
+preflight_git_comparator openssl "$OPENSSL_DIR"
+
 work_dir="$(mktemp -d /tmp/baby-mlkem-goal-speed.XXXXXX)"
 raw_report="$work_dir/raw-report.txt"
 stderr_report="$work_dir/stderr.txt"
