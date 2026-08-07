@@ -1661,8 +1661,57 @@ static void sha3_256_copy_1184(uint8_t *dst, const uint8_t *src,
 #endif
 }
 
+/* ML-KEM only hashes 33 or 64 bytes with SHA3-512. Keep this fixed-rate path
+ * separate so production section GC can discard the generic sponge. */
+#if defined(__clang__)
+static MLKEM_NOINLINE void sha3_512_mlkem_fixed(const uint8_t *in,
+                                                size_t inlen,
+                                                uint8_t *out64) {
+  uint64_t st[25] = {0};
+  st[0] = load64_le(in + 0);
+  st[1] = load64_le(in + 8);
+  st[2] = load64_le(in + 16);
+  st[3] = load64_le(in + 24);
+  if (inlen == 64) {
+    st[4] = load64_le(in + 32);
+    st[5] = load64_le(in + 40);
+    st[6] = load64_le(in + 48);
+    st[7] = load64_le(in + 56);
+  } else {
+    ((uint8_t *)st)[32] = in[32];
+  }
+  ((uint8_t *)st)[inlen] = 0x06;
+  ((uint8_t *)st)[71] = 0x80;
+  keccakf(st);
+  memcpy(out64, st, 64);
+}
+#define pq_sha3_512_mlkem(output, input, inlen) \
+  sha3_512_mlkem_fixed((input), (inlen), (output))
+#else
+#define pq_sha3_512_mlkem(output, input, inlen) \
+  pq_sha3_512((output), (input), (inlen))
+#endif
+
 static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
   // SHA3-512 => rate=576 bits => 72 bytes, domain=0x06
+#if defined(__clang__)
+  if (inlen == 33 || inlen == 64) {
+    sha3_512_mlkem_fixed(in, inlen, out64);
+    return;
+  }
+  if (inlen == 32) {
+    uint64_t st[25] = {0};
+    st[0] = load64_le(in + 0);
+    st[1] = load64_le(in + 8);
+    st[2] = load64_le(in + 16);
+    st[3] = load64_le(in + 24);
+    st[4] = 0x06u;
+    st[8] = 0x8000000000000000ULL;
+    keccakf(st);
+    memcpy(out64, st, 64);
+    return;
+  }
+#else
   if (inlen == 32 || inlen == 64) {
     uint64_t st[25] = {0};
     st[0] = load64_le(in + 0);
@@ -1681,6 +1730,7 @@ static void sha3_512(const uint8_t *in, size_t inlen, uint8_t *out64) {
     memcpy(out64, st, 64);
     return;
   }
+#endif
 
   keccak_ctx ctx;
   keccak_init(&ctx, 72);
@@ -8096,7 +8146,7 @@ static void kpke_prepare_public_ghash_no_cache(
   uint8_t inbuf[64];
   memcpy(inbuf, in0, 32);
   memcpy(inbuf + 32, in1, 32);
-  pq_sha3_512(ghash, inbuf, 64);
+  pq_sha3_512_mlkem(ghash, inbuf, 64);
   sample_matrix(rho, kpke_public_cache_ahat);
 #endif
 }
@@ -8115,7 +8165,7 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
   uint8_t ghash[64];
   memcpy(domain_seed, seed, 32);
   domain_seed[32] = (uint8_t)K;
-  pq_sha3_512(ghash, domain_seed, sizeof(domain_seed));
+  pq_sha3_512_mlkem(ghash, domain_seed, sizeof(domain_seed));
   const uint8_t *rho = ghash;
   const uint8_t *sigma = ghash + 32;
 
@@ -9022,7 +9072,7 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
   memcpy(inbuf, m, 32);
   memcpy(inbuf + 32, h, 32);
   uint8_t ghash[64];
-  pq_sha3_512(ghash, inbuf, 64);
+  pq_sha3_512_mlkem(ghash, inbuf, 64);
   uint8_t *k_out = ghash;
   uint8_t *r_out = ghash + 32;
   memcpy(k, k_out, 32);
@@ -9139,7 +9189,7 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
     uint8_t inbuf[64];
     memcpy(inbuf, mdash, 32);
     memcpy(inbuf + 32, h, 32);
-    pq_sha3_512(ghash, inbuf, 64);
+    pq_sha3_512_mlkem(ghash, inbuf, 64);
 
     const uint8_t *rho = ek_pke + K * 384;
     for (int i = 0; i < K; i++) {
@@ -9171,7 +9221,7 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
     uint8_t inbuf[64];
     memcpy(inbuf, mdash, 32);
     memcpy(inbuf + 32, h, 32);
-    pq_sha3_512(ghash, inbuf, 64);
+    pq_sha3_512_mlkem(ghash, inbuf, 64);
   }
   uint8_t *kdash = ghash;
   uint8_t *rdash = ghash + 32;
