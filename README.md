@@ -278,6 +278,13 @@ root initializer by compiling only that cold function for size. Clang is
 excluded from the attribute and produces byte-identical native and AVX2-only
 artifacts.
 
+Commit `cfd2b09` replaces that runtime initialization only for Clang with
+generated immutable root and Montgomery-factor tables. The inverse tables store
+38 live vectors rather than 48 padded slots. GCC retains the cold initializer
+and produces byte-identical native and AVX2-only product and benchmark
+artifacts relative to the parent. Regenerate or verify the checked-in constants
+with `make generate-ntt-roots` or `make check-ntt-roots`.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -299,17 +306,25 @@ recorded in every report; the clean native diagnostic at `a4d6fec` reports 0 B
 for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
-The current 2026-08-06 no-cache baselines use the normal compiler-specific
-speed flags at commit `ff7ca72`:
+The current 2026-08-07 no-cache baselines use the normal compiler-specific
+speed flags at commit `cfd2b09`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 99,381 | 5,305 | 104,686 | 0 | 31,954 | 31,954 |
-| native AVX512 | GCC 13.3.0 LTO | 55,814 | 2,337 | 58,151 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 67,515 | 5,501 | 73,016 | 0 | 34,850 | 34,850 |
-| AVX2-only | GCC 13.3.0 LTO | 49,043 | 2,353 | 51,396 | 8 | 34,912 | 34,920 |
-| scalar | Clang 18.1.3 | 62,540 | 1,025 | 63,565 | 0 | 19,457 | 19,457 |
-| scalar | GCC 13.3.0 LTO | 21,370 | 417 | 21,787 | 0 | 19,488 | 19,488 |
+| native AVX512 | Clang 18.1.3 | 83,112 | 20,373 | 103,485 | 0 | 18,001 | 18,001 |
+| native AVX512 | GCC 13.3.0 LTO | 56,006 | 3,565 | 59,571 | 0 | 33,728 | 33,728 |
+| AVX2-only | Clang 18.1.3 | 56,031 | 12,743 | 68,774 | 0 | 28,641 | 28,641 |
+| AVX2-only | GCC 13.3.0 LTO | 51,429 | 3,809 | 55,238 | 8 | 34,912 | 34,920 |
+| scalar | Clang 18.1.3 | 62,229 | 2,033 | 64,262 | 0 | 18,944 | 18,944 |
+| scalar | GCC 13.3.0 LTO | 21,530 | 1,737 | 23,267 | 0 | 19,488 | 19,488 |
+
+The [static NTT-root report](benchmarks/2026-08-07-clang-static-ntt-roots/README.md)
+records product and benchmark hashes, complete 15-pair A/B statistics, stack
+high-water values, generator reproducibility, the 16-path corpus result, and
+the OpenSSL-only residual. Relative to parent `ce4707c`, Clang primary size
+falls by 2,450 bytes native and 4,869 bytes AVX2-only. Native now passes the
+OpenSSL-only primary-size gate by 67 bytes; AVX2-only remains 23,725 bytes
+larger, so this is not the full smallest or overall Goal milestone.
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 

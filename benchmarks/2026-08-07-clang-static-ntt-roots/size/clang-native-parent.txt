@@ -1,0 +1,14 @@
+artifact=/tmp/baby-roots-baseline-native-product.o
+artifact_sha256=a0dca1b194f82022263a956ea2e7df302b6f0b9aa6a55ffc0a476d2e1918b8e1
+artifact_file_bytes=147040
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=100630
+readonly_data_bytes=5305
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=105935
+initialized_writable_bytes=0
+zero_fill_bytes=31954
+writable_bytes=31954
+max_stack_bytes=unmeasured

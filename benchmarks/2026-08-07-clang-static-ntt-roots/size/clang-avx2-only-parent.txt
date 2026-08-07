@@ -1,0 +1,14 @@
+artifact=/tmp/baby-roots-baseline-avx2-product.o
+artifact_sha256=63251ade0bb1798d88b3c2244cf0cba60235a72e7369162c9bdbb8e13ac83a30
+artifact_file_bytes=110848
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=68130
+readonly_data_bytes=5513
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=73643
+initialized_writable_bytes=0
+zero_fill_bytes=34850
+writable_bytes=34850
+max_stack_bytes=unmeasured
