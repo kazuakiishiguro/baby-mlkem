@@ -1,0 +1,19 @@
+== Clang AVX2-only formal profile ==
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+current_sha256=444e4b7e99fcef956dfe7655ff66de308f3e32a134848868e810ab90d4d82584
+baseline_sha256=444e4b7e99fcef956dfe7655ff66de308f3e32a134848868e810ab90d4d82584
+artifact_identity=PASS
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=444e4b7e99fcef956dfe7655ff66de308f3e32a134848868e810ab90d4d82584
+artifact_file_bytes=94896
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=52678
+readonly_data_bytes=12341
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=65019
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured
