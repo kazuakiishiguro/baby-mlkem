@@ -180,6 +180,10 @@ OPENSSL_DIR="$OPENSSL_DIR" \
 bench_status=$?
 set -e
 
+# Preserve expensive measurements even when a later fail-closed audit rejects them.
+cp "$raw_report" "${REPORT_FILE}.raw"
+cp "$stderr_report" "${REPORT_FILE}.stderr"
+
 if [ "$bench_status" -ne 0 ]; then
   cat "$stderr_report" >&2
   echo "external benchmark suite failed with status $bench_status" >&2
@@ -259,7 +263,6 @@ cxx_compiler_version="$("$CXX_COMPILER" --version | sed -n '1p')"
   cat "$revision_report"
   cat "$raw_report"
 } > "$REPORT_FILE"
-cp "$stderr_report" "${REPORT_FILE}.stderr"
 
 cat "$REPORT_FILE"
 "$ROOT_DIR/scripts/verify_goal_speed_report.py" "$REPORT_FILE" \
@@ -272,4 +275,5 @@ cat "$REPORT_FILE"
   --min-operation-speedup 1.0 \
   --require-updated-repos
 printf "goal_speed_report=%s\n" "$REPORT_FILE"
+printf "goal_speed_raw=%s\n" "${REPORT_FILE}.raw"
 printf "goal_speed_stderr=%s\n" "${REPORT_FILE}.stderr"
