@@ -252,16 +252,14 @@ int main(void) {
   vec256 inv_mont_hi[6][8] = {{{{0}}}};
   vec256 inv_mont_lo_compact[38];
   vec256 inv_mont_hi_compact[38];
-  int16_t head_mont_lo_avx512_scalar[1];
-  int16_t head_mont_hi_avx512_scalar[1];
   vec512 head_mont_lo_avx512_dense[14];
   vec512 head_mont_hi_avx512_dense[14];
   vec512 tail_mont_lo_avx512[3][8];
   vec512 tail_mont_hi_avx512[3][8];
   vec512 inv_mont_lo_avx512_dense[32];
   vec512 inv_mont_hi_avx512_dense[32];
-  int16_t inv_mont_lo_avx512_scalar[6];
-  int16_t inv_mont_hi_avx512_scalar[6];
+  int16_t mont_lo_avx512_scalar[7];
+  int16_t mont_hi_avx512_scalar[7];
   vec512 inv_tail_avx512[15];
   vec512 tail_l3x2[8];
   vec512 tail_l2x2[8];
@@ -282,8 +280,8 @@ int main(void) {
     head_mont_lo[i] = vec256_splat_i16(low);
     head_mont_hi[i] = vec256_splat_i16(high);
     if (i == 0) {
-      head_mont_lo_avx512_scalar[0] = low;
-      head_mont_hi_avx512_scalar[0] = high;
+      mont_lo_avx512_scalar[6] = low;
+      mont_hi_avx512_scalar[6] = high;
     } else {
       head_mont_lo_avx512_dense[i - 1] = vec512_splat_i16(low);
       head_mont_hi_avx512_dense[i - 1] = vec512_splat_i16(high);
@@ -361,8 +359,8 @@ int main(void) {
       int16_t low;
       int16_t high;
       mont_factor(zeta[base - i], &low, &high);
-      inv_mont_lo_avx512_scalar[scalar_index] = low;
-      inv_mont_hi_avx512_scalar[scalar_index] = high;
+      mont_lo_avx512_scalar[scalar_index] = low;
+      mont_hi_avx512_scalar[scalar_index] = high;
     }
   }
 
@@ -441,10 +439,6 @@ int main(void) {
   print_vec256_value("ZETA_NTT_INV_MONT_ZETA_SCALE_HI", &inv_zeta_scale_hi);
   printf("#endif\n\n");
   printf("#if defined(__AVX512F__) && defined(__AVX512BW__)\n");
-  print_i16_array("ZETA_NTT_HEAD_MONT_LO_AVX512_SCALAR",
-                  head_mont_lo_avx512_scalar, 1);
-  print_i16_array("ZETA_NTT_HEAD_MONT_HI_AVX512_SCALAR",
-                  head_mont_hi_avx512_scalar, 1);
   print_vec512_array("ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE",
                      head_mont_lo_avx512_dense, 14);
   print_vec512_array("ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE",
@@ -457,10 +451,10 @@ int main(void) {
                      inv_mont_lo_avx512_dense, 32);
   print_vec512_array("ZETA_NTT_INV_MONT_HI_AVX512_DENSE",
                      inv_mont_hi_avx512_dense, 32);
-  print_i16_array("ZETA_NTT_INV_MONT_LO_AVX512_SCALAR",
-                  inv_mont_lo_avx512_scalar, 6);
-  print_i16_array("ZETA_NTT_INV_MONT_HI_AVX512_SCALAR",
-                  inv_mont_hi_avx512_scalar, 6);
+  print_i16_array("ZETA_MONT_LO_AVX512_SCALAR",
+                  mont_lo_avx512_scalar, 7);
+  print_i16_array("ZETA_MONT_HI_AVX512_SCALAR",
+                  mont_hi_avx512_scalar, 7);
   print_vec512_value("ZETA_NTT_INV_MONT_SCALE_LO_AVX512",
                      &inv_scale_lo_avx512);
   print_vec512_value("ZETA_NTT_INV_MONT_SCALE_HI_AVX512",

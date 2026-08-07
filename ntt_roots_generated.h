@@ -358,14 +358,6 @@ static const __m256i ZETA_NTT_INV_MONT_ZETA_SCALE_HI =
 #endif
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-static const int16_t ZETA_NTT_HEAD_MONT_LO_AVX512_SCALAR[1] = {
-     31498
-};
-
-static const int16_t ZETA_NTT_HEAD_MONT_HI_AVX512_SCALAR[1] = {
-      -758
-};
-
 static const __m512i ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE[14] = {
     {
       (long long)UINT64_C(0x3999399939993999), (long long)UINT64_C(0x3999399939993999),
@@ -1236,12 +1228,12 @@ static const __m512i ZETA_NTT_INV_MONT_HI_AVX512_DENSE[32] = {
     }
 };
 
-static const int16_t ZETA_NTT_INV_MONT_LO_AVX512_SCALAR[6] = {
-    -16694,  28191, -12402,  13525,    787,  14745
+static const int16_t ZETA_MONT_LO_AVX512_SCALAR[7] = {
+    -16694,  28191, -12402,  13525,    787,  14745,  31498
 };
 
-static const int16_t ZETA_NTT_INV_MONT_HI_AVX512_SCALAR[6] = {
-       202,    287,   1422,   1493,  -1517,   -359
+static const int16_t ZETA_MONT_HI_AVX512_SCALAR[7] = {
+       202,    287,   1422,   1493,  -1517,   -359,   -758
 };
 
 static const __m512i ZETA_NTT_INV_MONT_SCALE_LO_AVX512 =

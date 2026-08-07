@@ -1810,15 +1810,16 @@ static int NTT_ROOTS_READY = 0;
  * read-only data. */
 #define MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index) \
   (MLKEM_INV_MONT_INDEX(level, index) - 32)
+#define MLKEM_HEAD_MONT_AVX512_SCALAR_INDEX 6
 #define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
   ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)]
 #define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
   ZETA_NTT_INV_MONT_HI_AVX512_DENSE[8 * (level) + (index)]
 #define MLKEM_INV_MONT_SCALAR_LO_AVX512(level, index) \
-  _mm512_set1_epi16(ZETA_NTT_INV_MONT_LO_AVX512_SCALAR[ \
+  _mm512_set1_epi16(ZETA_MONT_LO_AVX512_SCALAR[ \
       MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])
 #define MLKEM_INV_MONT_SCALAR_HI_AVX512(level, index) \
-  _mm512_set1_epi16(ZETA_NTT_INV_MONT_HI_AVX512_SCALAR[ \
+  _mm512_set1_epi16(ZETA_MONT_HI_AVX512_SCALAR[ \
       MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])
 #else
 #define MLKEM_INV_MONT_LO(level, index) \
@@ -2179,10 +2180,10 @@ ntt_inv_mont_before_final4_tail_level_clang_avx512(
   /* Full unrolling duplicates this four-output tail and erases the size win. */
 #pragma clang loop unroll(disable)
   for (int start = 0, i = 0; start < N; start += 2 * length, i++) {
-    __m512i zeta_lo = _mm512_set1_epi16(
-        ZETA_NTT_INV_MONT_LO_AVX512_SCALAR[root_offset + i]);
-    __m512i zeta_hi = _mm512_set1_epi16(
-        ZETA_NTT_INV_MONT_HI_AVX512_SCALAR[root_offset + i]);
+    __m512i zeta_lo =
+        _mm512_set1_epi16(ZETA_MONT_LO_AVX512_SCALAR[root_offset + i]);
+    __m512i zeta_hi =
+        _mm512_set1_epi16(ZETA_MONT_HI_AVX512_SCALAR[root_offset + i]);
     for (int j = 0; j < length; j += 32) {
       for (int lane = 0; lane < 4; lane++) {
         __m512i a = _mm512_loadu_si512(
@@ -2558,9 +2559,11 @@ static void ntt_head_mont_lazy_raw_avx512(poly256 f) {
       __m512i zeta_hi;
       if (zeta_index == 0) {
         zeta_lo = _mm512_set1_epi16(ntt_head_mont_load_factor_clang(
-            ZETA_NTT_HEAD_MONT_LO_AVX512_SCALAR));
+            &ZETA_MONT_LO_AVX512_SCALAR[
+                MLKEM_HEAD_MONT_AVX512_SCALAR_INDEX]));
         zeta_hi = _mm512_set1_epi16(ntt_head_mont_load_factor_clang(
-            ZETA_NTT_HEAD_MONT_HI_AVX512_SCALAR));
+            &ZETA_MONT_HI_AVX512_SCALAR[
+                MLKEM_HEAD_MONT_AVX512_SCALAR_INDEX]));
       } else {
         zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512_DENSE[zeta_index - 1];
         zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE[zeta_index - 1];
