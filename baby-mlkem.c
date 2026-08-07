@@ -8045,6 +8045,40 @@ static int8_t e2_i8[N];
 static int eta2_i8_prepared;
 #endif
 
+#if defined(__AVX2__) && !defined(__AVX512F__) && defined(__clang__)
+/* Clang otherwise duplicates this finish path in encapsulation and decapsulation. */
+static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
+    const uint8_t *restrict m, size_t mlen, uint8_t *restrict out_c,
+    size_t *restrict out_clen, int16_t (*restrict rhat_arg)[N],
+    int16_t (*restrict e1_arg)[N], int16_t *restrict e2_arg) {
+  static poly256 u[K];
+  static poly256 v;
+
+  for (int i = 0; i < K; i++) {
+    ntt_lazy_mul_input_avx2(rhat_arg[i], rhat_arg[i]);
+  }
+  ntt_mul_acc4_madd_avx2(kpke_public_cache_ahat, kpke_public_cache_that,
+                          rhat_arg, u, v);
+  for (int i = 0; i < K; i++) {
+    ntt_inv_add_inplace(e1_arg[i], u[i]);
+  }
+
+  if (mlen == 32) {
+    mlkem_add_message_to_poly(m, e2_arg);
+  }
+  ntt_inv_add_v_inplace(e2_arg, v);
+
+  uint8_t *p = out_c;
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(u[i], p);
+    p += (N * DU) / 8;
+  }
+  compress_encode_poly_d4_avx2(v, p);
+  p += (N * DV) / 8;
+  *out_clen = (size_t)(p - out_c);
+}
+#endif
+
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
 static inline void kpke_encrypt_prepared_public_impl(
@@ -8121,6 +8155,9 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
       sample_poly_cbd(ETA2, prfout, e2);
     }
   }
+#if defined(__AVX2__) && !defined(__AVX512F__) && defined(__clang__)
+  kpke_encrypt_finish_avx2(m, mlen, out_c, out_clen, rhat, e1, e2);
+#else
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
   static poly256 u[K];
   /* v = invntt( sum_i(that[i]*rhat[i]) ) + e2 + mu */
@@ -8219,6 +8256,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   }
 #endif
   *out_clen = (size_t)(p - out_c);
+#endif
 }
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
@@ -8234,24 +8272,28 @@ static inline void kpke_encrypt_prepared_public(
 #if defined(__AVX2__) && !defined(__AVX512F__)
 static inline void kpke_encrypt_prepared_public_with_noise_avx2(
     const uint8_t *m, size_t mlen, uint8_t *out_c, size_t *out_clen,
-    poly256 rhat[K], poly256 e1[K], poly256 e2) {
+    poly256 rhat_in[K], poly256 e1_in[K], poly256 e2_in) {
   ensure_ntt_roots();
+#if defined(__clang__)
+  kpke_encrypt_finish_avx2(
+      m, mlen, out_c, out_clen, rhat_in, e1_in, e2_in);
+#else
   static poly256 u[K];
   static poly256 v;
 
   for (int i = 0; i < K; i++) {
-    ntt_lazy_mul_input_avx2(rhat[i], rhat[i]);
+    ntt_lazy_mul_input_avx2(rhat_in[i], rhat_in[i]);
   }
   ntt_mul_acc4_madd_avx2(kpke_public_cache_ahat, kpke_public_cache_that,
-                          rhat, u, v);
+                          rhat_in, u, v);
   for (int i = 0; i < K; i++) {
-    ntt_inv_add_inplace(e1[i], u[i]);
+    ntt_inv_add_inplace(e1_in[i], u[i]);
   }
 
   if (mlen == 32) {
-    mlkem_add_message_to_poly(m, e2);
+    mlkem_add_message_to_poly(m, e2_in);
   }
-  ntt_inv_add_v_inplace(e2, v);
+  ntt_inv_add_v_inplace(e2_in, v);
 
   uint8_t *p = out_c;
   for (int i = 0; i < K; i++) {
@@ -8261,6 +8303,7 @@ static inline void kpke_encrypt_prepared_public_with_noise_avx2(
   compress_encode_poly_d4_avx2(v, p);
   p += (N * DV) / 8;
   *out_clen = (size_t)(p - out_c);
+#endif
 }
 #endif
 
