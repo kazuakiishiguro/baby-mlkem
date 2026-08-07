@@ -461,12 +461,13 @@ distinction.
 
 ### Native All-Comparator Speed Gate
 
-A formal 2026-08-06 run at commit `513a2d2` passes the native speed contract
-against all ten required current comparators. It used the Clang 18.1.3
-production/no-cache artifact with `-march=native`, CPU 0 on the Threadripper
-7980X, 15 paired 100,000-iteration runs after three warmups, alternating order,
-and 20,000 paired bootstrap samples. Every comparator was allowed its fastest
-supported production path on this host.
+A formal 2026-08-07 run measured commit `f711965` after the FIPS 203 correction
+and passes the native numerical speed contract against all ten required
+comparators. It used the Clang 18.1.3 production/no-cache artifact with
+`-march=native`, CPU 0 on the Threadripper 7980X, 15 paired
+100,000-iteration runs after three warmups, alternating order, and 20,000
+paired bootstrap samples. Each Git comparator was updated once before timing
+and then pinned for the complete run.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -474,29 +475,33 @@ among keygen, encaps, and decaps for that comparator.
 
 | Comparator | baby-mlkem roundtrip median (ns) | Comparator median (ns) | Roundtrip ratio | Paired 95% CI | Weakest operation CI lower bound |
 |---|---:|---:|---:|---:|---:|
-| pq-crystals Kyber AVX2 | 10,367.73 | 16,194.60 | 1.5620x | 1.5497x-1.5636x | keygen 1.2961x |
-| pq-crystals Kyber AVX2, fair flags | 10,370.31 | 16,185.14 | 1.5607x | 1.5441x-1.5637x | keygen 1.3093x |
-| mlkem-native | 10,341.07 | 22,953.64 | 2.2197x | 2.1831x-2.2184x | keygen 1.6469x |
-| PQClean AVX2 | 10,338.33 | 20,784.36 | 2.0104x | 1.9845x-2.0139x | keygen 1.6637x |
-| liboqs | 10,361.47 | 20,906.95 | 2.0178x | 1.9963x-2.0212x | keygen 1.5046x |
-| BoringSSL | 10,455.81 | 31,577.81 | 3.0201x | 3.0010x-3.0317x | encaps 1.3952x |
-| libcrux 0.0.8 | 10,356.58 | 20,742.06 | 2.0028x | 1.9889x-2.0088x | keygen 1.6019x |
-| libjade Kyber768 AVX2 | 10,364.92 | 21,430.45 | 2.0676x | 2.0485x-2.0673x | keygen 1.8579x |
-| Botan ML-KEM | 10,363.02 | 78,498.63 | 7.5749x | 7.5302x-7.6732x | encaps 1.5865x |
-| OpenSSL ML-KEM | 10,363.39 | 52,004.99 | 5.0181x | 4.9748x-5.0234x | encaps 3.5751x |
+| pq-crystals Kyber AVX2 | 10,451.90 | 16,442.51 | 1.5732x | 1.5528x-1.5758x | keygen 1.3132x |
+| pq-crystals Kyber AVX2, fair flags | 10,438.91 | 16,425.28 | 1.5735x | 1.5628x-1.5751x | keygen 1.3254x |
+| mlkem-native | 10,460.40 | 21,809.28 | 2.0849x | 2.0756x-2.0921x | keygen 1.5803x |
+| PQClean AVX2 | 10,448.97 | 22,005.76 | 2.1060x | 2.0751x-2.1165x | keygen 1.7405x |
+| liboqs | 10,516.35 | 21,040.77 | 2.0008x | 1.9856x-2.0043x | keygen 1.5093x |
+| BoringSSL | 10,487.45 | 38,123.83 | 3.6352x | 3.5934x-3.6377x | encaps 2.9880x |
+| libcrux 0.0.10 | 10,467.12 | 21,117.78 | 2.0175x | 2.0086x-2.0210x | keygen 1.6169x |
+| libjade Kyber768 AVX2 | 10,478.94 | 21,467.58 | 2.0486x | 2.0408x-2.0509x | keygen 1.5699x |
+| Botan ML-KEM | 10,541.93 | 85,489.61 | 8.1095x | 8.0506x-8.1631x | encaps 6.6221x |
+| OpenSSL ML-KEM | 10,571.56 | 49,125.12 | 4.6469x | 4.6233x-4.6575x | encaps 3.1239x |
 
 All 40 per-operation rows pass. The
-[complete report, provenance, and raw outputs](benchmarks/2026-08-06-goal-native-speed/README.md)
-record the exact revisions and flags. This establishes the native speed gate
-only; it does not establish either profile's production-size gate.
+[complete report, provenance, raw output, and verifier result](benchmarks/2026-08-07-goal-native-speed/README.md)
+record the exact revisions and flags. The initial assembled report omitted one
+already enforced Botan fallback-policy metadata line; the evidence directory
+preserves both the original and one-line-completed reports. This supersedes the
+pre-FIPS 2026-08-06 speed milestone. It does not establish either profile's
+production-size gate or the final same-revision Goal.
 
 ### AVX2-only All-Comparator Speed Gate
 
-A formal 2026-08-06 run at production commit `245823e` passes the AVX2-only
-speed contract against all ten required current comparators. It used the Clang
-18.1.3 production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and AVX512
+A formal 2026-08-07 run at commit `0c0f16c` passes the AVX2-only numerical
+speed contract against all ten required comparators. It used the Clang 18.1.3
+production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and AVX512
 disabled, CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration runs
 after three warmups, alternating order, and 20,000 paired bootstrap samples.
+The local production object passed AVX512 register and symbol audits.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -504,21 +509,22 @@ among keygen, encaps, and decaps for that comparator.
 
 | Comparator | baby-mlkem roundtrip median (ns) | Comparator median (ns) | Roundtrip ratio | Paired 95% CI | Weakest operation CI lower bound |
 |---|---:|---:|---:|---:|---:|
-| pq-crystals Kyber AVX2 | 14,998.29 | 20,255.36 | 1.3505x | 1.3409x-1.3569x | keygen 1.1401x |
-| pq-crystals Kyber AVX2, fair flags | 15,017.89 | 20,311.88 | 1.3525x | 1.3503x-1.3731x | keygen 1.1569x |
-| mlkem-native | 15,036.85 | 22,968.62 | 1.5275x | 1.5191x-1.5299x | keygen 1.1524x |
-| PQClean AVX2 | 15,007.80 | 20,965.16 | 1.3970x | 1.3924x-1.4100x | keygen 1.1750x |
-| liboqs | 15,011.17 | 24,440.64 | 1.6282x | 1.6222x-1.6325x | keygen 1.2496x |
-| BoringSSL | 15,036.65 | 36,640.12 | 2.4367x | 2.4155x-2.4404x | encaps 1.3241x |
-| libcrux 0.0.8 | 15,005.08 | 25,137.99 | 1.6753x | 1.6696x-1.6778x | keygen 1.3741x |
-| libjade Kyber768 AVX2 | 15,000.67 | 21,408.73 | 1.4272x | 1.4211x-1.4280x | keygen 1.3201x |
-| Botan ML-KEM | 14,995.50 | 81,868.87 | 5.4596x | 5.4398x-5.4630x | encaps 1.4425x |
-| OpenSSL ML-KEM | 15,012.58 | 51,975.91 | 3.4622x | 3.4493x-3.4963x | encaps 2.7481x |
+| pq-crystals Kyber AVX2 | 15,270.07 | 20,706.55 | 1.3560x | 1.3398x-1.3619x | keygen 1.1451x |
+| pq-crystals Kyber AVX2, fair flags | 15,283.59 | 20,713.13 | 1.3553x | 1.3431x-1.3630x | keygen 1.1505x |
+| mlkem-native | 15,315.73 | 22,072.68 | 1.4412x | 1.4322x-1.4429x | keygen 1.0935x |
+| PQClean AVX2 | 15,278.81 | 21,366.57 | 1.3984x | 1.3792x-1.3992x | keygen 1.1698x |
+| liboqs | 15,285.86 | 24,790.90 | 1.6218x | 1.6096x-1.6213x | keygen 1.2523x |
+| BoringSSL | 15,281.75 | 44,674.90 | 2.9234x | 2.9060x-2.9271x | keygen 2.4318x |
+| libcrux 0.0.10 | 15,308.69 | 25,941.35 | 1.6946x | 1.6888x-1.6963x | keygen 1.3918x |
+| libjade Kyber768 AVX2 | 15,287.65 | 21,524.76 | 1.4080x | 1.3971x-1.4073x | keygen 1.0887x |
+| Botan ML-KEM | 15,325.91 | 89,553.50 | 5.8433x | 5.7919x-5.8496x | encaps 5.2476x |
+| OpenSSL ML-KEM | 15,382.30 | 53,246.09 | 3.4615x | 3.4306x-3.4673x | encaps 2.7724x |
 
 All 40 per-operation rows pass. The
-[complete report, provenance, and raw outputs](benchmarks/2026-08-06-goal-avx2-speed/README.md)
-record the exact revisions and flags. This establishes the AVX2-only speed gate
-only; it does not establish the native speed or either profile's size gate.
+[complete report, provenance, raw output, and verifier result](benchmarks/2026-08-07-goal-avx2-speed/README.md)
+record the exact revisions and flags. This supersedes the pre-FIPS 2026-08-06
+speed milestone. It does not establish either profile's production-size gate
+or the final same-revision Goal.
 
 ### Completion and Reopening
 
@@ -563,12 +569,12 @@ in-tree core, product, upstream, and PQClean paths described above.
 | Gate | Status | Evidence or gap |
 |---|---|---|
 | Correctness | current candidate pass | `a03a486` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2/native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
-| Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
-| Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
-| AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
+| Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
+| Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
+| AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
 | Production size | fail | The current Clang matrix at `9952e84` updates all comparators and passes 5/10 gates in each profile. Native is 52,299 bytes larger than the limiting mlkem-native artifact; AVX2-only is 19,970 bytes larger than OpenSSL. |
 | Maximum stack | current matrix reported | Local maxima are 10,040 bytes native and 5,856 bytes AVX2-only. Local stack is lower than 8/10 native and 9/10 AVX2-only comparators; Botan is lower in both profiles and OpenSSL is also lower native. |
-| Clean final revision | open | Current correctness and size/stack evidence is clean, but same-revision formal speed is open and primary size fails both profiles. |
+| Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
