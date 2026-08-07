@@ -179,6 +179,23 @@ pass all of the following:
 - Byte-identical public keys, ciphertexts, and shared secrets across eligible
   implementation paths for the deterministic test corpus.
 
+Commit `93f6757` adds the reusable in-tree cross-path corpus verifier. Run it
+from a clean checkout with:
+
+```bash
+JOBS="$(nproc)" ./scripts/verify_cross_path_corpus.sh
+```
+
+The verifier builds Clang and GCC core and no-cache product artifacts for
+native, AVX2-only, and scalar profiles, plus both compilers' upstream Kyber and
+PQClean AVX2 backends. All 16 executables emit the same 64-fixture binary
+corpus. Each record contains the fixture index, deterministic key-generation
+and encapsulation inputs, complete public and private keys, valid ciphertext,
+encapsulation and valid-decapsulation secrets, a deterministically corrupted
+ciphertext, and its implicit-rejection secret. The format is fixed-width and
+self-describing; the current 381,228-byte corpus has SHA-256
+`e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`.
+
 ### Speed Gate
 
 The timed interface is deterministic ML-KEM-768 core work. It measures fresh
@@ -501,12 +518,16 @@ builds pass. The explicit PQClean and upstream AVX2 backends pass the same ACVP
 check, Clang native ASan+UBSan and GCC native UBSan KATs pass, and a diagnostic
 comparison with Botan 3.13.0 matches the complete public key, expanded private
 key, ciphertext, valid shared secret, and implicit-rejection shared secret byte
-for byte. The reusable final cross-path corpus and complete stage-oracle rerun
-remain open.
+for byte. Commit `559c4a2` restores the scalar `ntt_mul_acc3()` helper to common
+scope after an AVX2 guard regression. Its complete stage-oracle rerun passes
+under GCC and Clang native, AVX2-only, and scalar builds; Clang native
+ASan+UBSan and GCC native UBSan also pass the complete stage harness. Commit
+`93f6757` then verifies byte-identical deterministic outputs across all 16
+in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | partial pass | `ada0e47` passes the ACVP key-generation check, six compiler/ISA KAT and product-smoke builds, two explicit AVX2 backend checks, sanitizer KATs, and diagnostic Botan interoperability. The reusable final corpus and complete stage-oracle matrix are still required. |
+| Correctness | current candidate pass; final-revision rerun required | `ada0e47` supplies the FIPS 203/ACVP correction; `559c4a2` passes the complete six-build and sanitizer stage-oracle matrix; `93f6757` verifies one byte-identical 64-fixture corpus across 16 core, product, upstream, and PQClean paths. Any later candidate must rerun these checks before completion. |
 | Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
 | Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
 | AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
