@@ -1,0 +1,19 @@
+candidate: Clang keygen forward-NTT mixed batch outline
+baseline: c6d5696
+protocol: 5 independent batches x 16 paired runs x 100000 iterations
+acceptance floor: candidate/baseline >= 0.995
+combination: geometric mean of the five equal-size rounded batch gmeans
+
+metric                 batch1     batch2     batch3     batch4     batch5     combined decision
+decaps                 1.0011     0.9958     1.0019     1.0058     1.0028     1.001475 PASS
+decaps_core            0.9974     1.0006     0.9943     0.9971     0.9942     0.996717 PASS
+encaps                 0.9939     0.9970     0.9975     0.9997     0.9971     0.997038 PASS
+encaps_core            1.0044     1.0012     1.0029     1.0027     0.9962     1.001476 PASS
+keygen                 1.0080     1.0000     1.0011     0.9972     0.9952     1.000290 PASS
+keygen_core            1.0045     1.0012     0.9998     0.9961     0.9950     0.999314 PASS
+roundtrip              1.0051     1.0016     1.0012     1.0000     1.0002     1.001618 PASS
+roundtrip_core         1.0039     1.0011     0.9981     0.9989     0.9966     0.999717 PASS
+
+minimum_combined_ratio=decaps_core 0.996717
+overall=PASS
+speed_gain_credited=none

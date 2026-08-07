@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-ntt6-products/clang-native.o
+artifact_sha256=70dd2c05485d7f5dd4c1986129f93f6e820025c3b7111fa542a33f0dcade62a5
+artifact_file_bytes=108264
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=57940
+readonly_data_bytes=19735
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=77675
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

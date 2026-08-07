@@ -1,0 +1,10 @@
+baseline_ref=c6d56968a33c253eb06469fd82867aa4a79e4ad2
+candidate_ref=7bf31373408c6dd8a9b9006678f6a58e040c1c7d
+protocol=9 pairs, 2 warmup pairs, alternating order, 30000 iterations, CPU 0
+ratios=baseline time / candidate time
+
+metric            paired_gmean paired_median wins
+kpke_keygen_full  1.0004       0.9986        4/9
+
+diagnostic_gate=PASS
+formal_decision_source=native-ab-combined.txt

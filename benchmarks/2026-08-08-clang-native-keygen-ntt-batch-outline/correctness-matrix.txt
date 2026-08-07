@@ -1,0 +1,72 @@
+candidate_ref=7bf31373408c6dd8a9b9006678f6a58e040c1c7d
+baseline_ref=c6d56968a33c253eb06469fd82867aa4a79e4ad2
+candidate_source_sha256=b253e61cbe9c3c721bf7d27fd41d4caa1c94f4b3f8972c6ff1efa2e6d5b79cfb
+
+[clang-native]
+flags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=70dd2c05485d7f5dd4c1986129f93f6e820025c3b7111fa542a33f0dcade62a5
+code_bytes=57940
+readonly_bytes=19735
+primary_bytes=77675
+writable_bytes=18001
+
+[clang-avx2]
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=1fbd2356a5c10467ff896e31b7b5dcb46a8c12f131975cffd9c23051246c704a
+code_bytes=47242
+readonly_bytes=12065
+primary_bytes=59307
+writable_bytes=26593
+
+[clang-scalar]
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c
+code_bytes=60160
+readonly_bytes=2033
+primary_bytes=62193
+writable_bytes=18944
+
+[gcc-native]
+flags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+code_bytes=56006
+readonly_bytes=3565
+primary_bytes=59571
+writable_bytes=33728
+
+[gcc-avx2]
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+code_bytes=49829
+readonly_bytes=3785
+primary_bytes=53614
+writable_bytes=34920
+
+[gcc-scalar]
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+code_bytes=21530
+readonly_bytes=1737
+primary_bytes=23267
+writable_bytes=19488
+
+non_target_products_byte_identical=clang-avx2 clang-scalar gcc-native gcc-avx2 gcc-scalar
+correctness_matrix=PASS

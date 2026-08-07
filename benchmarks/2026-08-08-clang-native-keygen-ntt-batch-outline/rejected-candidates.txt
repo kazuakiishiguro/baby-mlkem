@@ -1,0 +1,38 @@
+baseline_ref=c6d56968a33c253eb06469fd82867aa4a79e4ad2
+accepted_ref=7bf31373408c6dd8a9b9006678f6a58e040c1c7d
+
+[reuse-shat-batch-only]
+shape=existing K=3 lazy helper for shat, existing canonical NTT loop for ehat
+primary_bytes=77249
+delta_vs_baseline=-2112
+stage_kpke_keygen_full_gmean=0.9687
+stage_kpke_keygen_full_median=0.9947
+decision=reject-stage-regression
+
+[reuse-both-batches]
+shape=existing K=3 lazy helper for shat and ehat, then canonicalize all ehat
+primary_bytes=73728
+delta_vs_baseline=-5633
+stage_kpke_keygen_full_gmean=1.0009
+formal_batches=5
+formal_pairs=80
+formal_decaps_core=0.994419
+decision=reject-80-pair-floor-failure
+
+[pair-wrapper]
+shape=noinline wrapper around both existing K=3 batches and ehat canonicalization
+primary_bytes=73988
+delta_vs_baseline=-5373
+stage_kpke_keygen_full_gmean=0.9845
+stage_kpke_keygen_full_median=0.9887
+decision=reject-stage-regression
+
+[accepted-mixed-six-batch]
+shape=one non-unrolled helper preserving shat[i],ehat[i] transform order and canonicalizing only ehat
+primary_bytes=77675
+delta_vs_baseline=-1686
+stage_kpke_keygen_full_gmean=1.0004
+formal_batches=5
+formal_pairs=80
+minimum_combined=decaps_core 0.996717
+decision=accept

@@ -1,0 +1,356 @@
+base_ref=7bf3137^
+candidate_root=/home/kishiguro/fun/baby-mlkem
+compiler=clang avx2_backend=core suites=stage runs=9 warmup_runs=2 pin_cpu=0 run_order=alternating
+arch_cflags=-march=native -mno-avx512vnni
+iters: kem=3000 stage=30000 ntt=200000 keccak=200000
+
+[stage]
+metric base_avg cand_avg avg_speedup base_median cand_median median_speedup
+mlkem_core_stage_ciphertext_compress_encode 50.45 50.69 0.9952x 50.26 50.32 0.9988x
+mlkem_core_stage_ciphertext_compress_encode_d10 46.29 46.54 0.9946x 46.20 46.18 1.0004x
+mlkem_core_stage_ciphertext_compress_encode_d10_compress_only 23.96 24.00 0.9984x 23.74 23.78 0.9983x
+mlkem_core_stage_ciphertext_compress_encode_d10_pack_only 20.17 20.35 0.9913x 19.97 19.99 0.9990x
+mlkem_core_stage_ciphertext_compress_encode_d4 1.00 1.03 0.9687x 0.98 1.00 0.9800x
+mlkem_core_stage_ciphertext_decode_decompress 221.27 221.51 0.9989x 221.34 221.65 0.9986x
+mlkem_core_stage_ciphertext_decode_decompress_d10 24.05 24.74 0.9719x 24.12 24.16 0.9983x
+mlkem_core_stage_ciphertext_decode_decompress_d4 6.77 6.86 0.9866x 6.77 6.82 0.9927x
+mlkem_core_stage_decrypt_accum_inv 332.74 333.35 0.9981x 331.74 332.04 0.9991x
+mlkem_core_stage_decrypt_accum_only 243.46 241.10 1.0098x 240.79 240.99 0.9992x
+mlkem_core_stage_decrypt_inv_butterflies 346.77 342.31 1.0130x 342.72 342.11 1.0018x
+mlkem_core_stage_decrypt_inv_copy_only 199.92 196.01 1.0200x 198.63 196.32 1.0118x
+mlkem_core_stage_decrypt_inv_head 272.25 269.83 1.0089x 269.17 268.91 1.0010x
+mlkem_core_stage_decrypt_inv_scale_sub_from 206.84 204.53 1.0113x 205.68 204.60 1.0053x
+mlkem_core_stage_decrypt_inv_sub_from 278.31 274.85 1.0126x 275.29 273.91 1.0050x
+mlkem_core_stage_decrypt_inv_tail 256.55 254.92 1.0064x 253.32 253.47 0.9994x
+mlkem_core_stage_decrypt_ntt_accum_only 466.31 461.25 1.0110x 460.89 460.78 1.0002x
+mlkem_core_stage_decrypt_ntt_accum_recover 373.27 373.25 1.0001x 369.16 373.38 0.9887x
+mlkem_core_stage_decrypt_recover_message 2.04 2.03 1.0022x 2.01 2.01 1.0000x
+mlkem_core_stage_decrypt_u_ntt 340.01 340.48 0.9986x 340.10 340.26 0.9995x
+mlkem_core_stage_decrypt_u_ntt_head 438.70 434.72 1.0092x 434.31 434.47 0.9996x
+mlkem_core_stage_decrypt_u_ntt_tail 475.84 470.59 1.0112x 472.61 471.12 1.0032x
+mlkem_core_stage_encrypt_accum4_combined_only 682.66 685.56 0.9958x 682.78 682.50 1.0004x
+mlkem_core_stage_encrypt_accum4_separate_only 621.15 623.55 0.9961x 619.71 623.19 0.9944x
+mlkem_core_stage_encrypt_accum_inv 812.69 801.32 1.0142x 804.58 799.87 1.0059x
+mlkem_core_stage_encrypt_accum_inv_u 644.48 634.75 1.0153x 633.37 635.56 0.9966x
+mlkem_core_stage_encrypt_accum_inv_v 330.81 333.29 0.9926x 329.17 332.74 0.9893x
+mlkem_core_stage_encrypt_accum_u_only 375.20 375.67 0.9988x 374.25 375.04 0.9979x
+mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512 214.11 212.65 1.0068x 213.46 211.99 1.0069x
+mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512 247.97 247.19 1.0032x 247.84 246.77 1.0043x
+mlkem_core_stage_encrypt_inv_add4_split_raw_avx512 364.07 353.27 1.0306x 352.05 352.04 1.0000x
+mlkem_core_stage_encrypt_inv_add_u_checksum_only 182.67 182.67 1.0000x 182.31 182.16 1.0008x
+mlkem_core_stage_encrypt_inv_add_u_copy_only 211.19 212.50 0.9938x 209.63 210.35 0.9966x
+mlkem_core_stage_encrypt_inv_add_u_copy_raw 10.03 10.56 0.9499x 9.93 10.09 0.9841x
+mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only 217.08 216.55 1.0025x 216.02 215.30 1.0033x
+mlkem_core_stage_encrypt_inv_add_u_final_only 281.26 281.54 0.9990x 280.05 280.89 0.9970x
+mlkem_core_stage_encrypt_inv_add_u_final_raw 106.55 108.62 0.9809x 106.60 107.44 0.9922x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only 226.51 226.10 1.0018x 226.30 226.24 1.0003x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only 228.29 228.51 0.9991x 228.04 228.67 0.9972x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_only 252.38 252.49 0.9996x 251.97 251.76 1.0008x
+mlkem_core_stage_encrypt_inv_add_u_head_l1 306.54 307.63 0.9965x 305.96 306.47 0.9983x
+mlkem_core_stage_encrypt_inv_add_u_head_l1_raw 122.51 122.07 1.0036x 122.58 121.98 1.0049x
+mlkem_core_stage_encrypt_inv_add_u_head_l2 274.60 274.22 1.0014x 274.34 274.22 1.0004x
+mlkem_core_stage_encrypt_inv_add_u_head_l2_raw 85.45 86.22 0.9910x 85.54 85.44 1.0012x
+mlkem_core_stage_encrypt_inv_add_u_head_l3 260.11 259.00 1.0043x 259.38 258.44 1.0036x
+mlkem_core_stage_encrypt_inv_add_u_head_l3_raw 71.70 71.42 1.0040x 71.41 71.20 1.0029x
+mlkem_core_stage_encrypt_inv_add_u_head_only 458.42 458.18 1.0005x 457.69 458.10 0.9991x
+mlkem_core_stage_encrypt_inv_add_u_head_raw 273.47 272.87 1.0022x 273.05 272.83 1.0008x
+mlkem_core_stage_encrypt_inv_add_u_only 455.89 447.32 1.0191x 444.61 445.27 0.9985x
+mlkem_core_stage_encrypt_inv_add_u_raw 274.94 264.42 1.0398x 263.84 263.40 1.0017x
+mlkem_core_stage_encrypt_inv_add_u_tail_final_only 460.83 461.15 0.9993x 460.35 460.70 0.9992x
+mlkem_core_stage_encrypt_inv_add_u_tail_final_raw 288.27 288.44 0.9994x 287.90 287.74 1.0006x
+mlkem_core_stage_encrypt_inv_add_u_tail_l4 236.92 237.75 0.9965x 236.51 236.82 0.9987x
+mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw 54.21 54.10 1.0021x 54.22 54.08 1.0026x
+mlkem_core_stage_encrypt_inv_add_u_tail_l5 233.15 233.64 0.9979x 233.21 233.01 1.0009x
+mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw 53.10 53.20 0.9980x 52.94 53.03 0.9983x
+mlkem_core_stage_encrypt_inv_add_u_tail_l6 233.02 232.94 1.0003x 232.95 232.95 1.0000x
+mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw 52.83 53.51 0.9873x 52.80 53.55 0.9860x
+mlkem_core_stage_encrypt_noise 665.55 671.14 0.9917x 664.43 663.90 1.0008x
+mlkem_core_stage_encrypt_noise_ntt 342.32 342.58 0.9992x 341.90 341.54 1.0011x
+mlkem_core_stage_encrypt_noise_prf_cbd 869.60 873.58 0.9954x 869.69 868.00 1.0019x
+mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512 311.79 312.69 0.9971x 311.20 312.15 0.9970x
+mlkem_core_stage_encrypt_noise_prf_cbd_raw 327.44 331.91 0.9865x 326.49 325.78 1.0022x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched 788.23 786.30 1.0025x 785.90 785.62 1.0004x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3 798.66 786.09 1.0160x 796.62 785.40 1.0143x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_mixed_x8_i8 732.34 730.41 1.0026x 729.99 727.32 1.0037x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate 883.26 887.85 0.9948x 881.25 884.82 0.9960x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_x8_i8 869.39 877.50 0.9908x 868.69 874.94 0.9929x
+mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw 201.14 201.34 0.9990x 200.53 199.98 1.0028x
+mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw 188.76 189.46 0.9963x 188.70 188.68 1.0001x
+mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512 733.38 736.14 0.9963x 731.23 731.89 0.9991x
+mlkem_core_stage_encrypt_rhat_acc4_fused_lazy512_avx512 643.10 643.57 0.9993x 642.58 642.57 1.0000x
+mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512 885.43 895.94 0.9883x 884.23 888.32 0.9954x
+mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512 968.24 980.25 0.9877x 967.36 968.90 0.9984x
+mlkem_core_stage_encrypt_rhat_acc4_fused_scalar_avx512 869.99 879.05 0.9897x 868.84 869.45 0.9993x
+mlkem_core_stage_keygen_accum_add_only 411.46 411.12 1.0008x 410.43 410.17 1.0006x
+mlkem_core_stage_keygen_accum_asym_madd512_avx512 303.32 303.90 0.9981x 303.49 303.42 1.0002x
+mlkem_core_stage_keygen_accum_encode 433.66 433.04 1.0014x 431.37 432.25 0.9980x
+mlkem_core_stage_keygen_accum_only 372.20 372.71 0.9986x 371.67 371.81 0.9996x
+mlkem_core_stage_keygen_add_only 203.27 203.91 0.9969x 203.36 203.56 0.9990x
+mlkem_core_stage_keygen_error_ntt_only 337.64 338.79 0.9966x 337.33 337.80 0.9986x
+mlkem_core_stage_keygen_noise_ntt 859.24 860.85 0.9981x 859.03 857.89 1.0013x
+mlkem_core_stage_keygen_noise_ntt_encode 722.74 720.65 1.0029x 722.05 719.06 1.0042x
+mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch 1506.26 1488.89 1.0117x 1489.52 1488.91 1.0004x
+mlkem_core_stage_keygen_noise_ntt_head_only 875.35 873.25 1.0024x 874.36 874.24 1.0001x
+mlkem_core_stage_keygen_noise_ntt_headtail_batch 1478.35 1464.52 1.0094x 1465.65 1465.30 1.0002x
+mlkem_core_stage_keygen_noise_ntt_only 670.95 671.42 0.9993x 669.99 670.83 0.9987x
+mlkem_core_stage_keygen_noise_ntt_shat_headtail_encode 1483.46 1481.41 1.0014x 1473.58 1476.28 0.9982x
+mlkem_core_stage_keygen_noise_ntt_tail_only 934.79 933.35 1.0015x 934.85 932.14 1.0029x
+mlkem_core_stage_keygen_noise_prf_cbd 698.87 699.77 0.9987x 699.18 699.25 0.9999x
+mlkem_core_stage_keygen_public_decode_only 9.80 11.08 0.8851x 9.78 9.84 0.9939x
+mlkem_core_stage_keygen_public_encode_only 36.64 36.64 0.9998x 36.63 36.55 1.0022x
+mlkem_core_stage_keygen_secret_decode_only 9.68 10.85 0.8915x 9.66 9.77 0.9887x
+mlkem_core_stage_keygen_secret_encode_only 36.79 36.72 1.0021x 36.77 36.71 1.0016x
+mlkem_core_stage_keygen_secret_ntt_encode_only 382.82 383.49 0.9983x 382.14 382.55 0.9989x
+mlkem_core_stage_keygen_secret_ntt_only 338.26 339.38 0.9967x 337.47 338.19 0.9979x
+mlkem_core_stage_keygen_shat_ntt_accum_add_encode_fused_avx512 544.56 547.15 0.9953x 544.19 547.73 0.9935x
+mlkem_core_stage_keygen_shat_ntt_accum_add_encode_split_avx512 542.86 544.96 0.9961x 542.42 545.07 0.9951x
+mlkem_core_stage_keygen_shat_ntt_accum_encode_fused_final_avx512 670.28 673.31 0.9955x 668.20 673.46 0.9922x
+mlkem_core_stage_keygen_shat_ntt_accum_encode_split_avx512 689.06 688.42 1.0009x 689.35 685.39 1.0058x
+mlkem_core_stage_kpke_decrypt_cached 420.23 415.29 1.0119x 418.57 415.02 1.0086x
+mlkem_core_stage_kpke_decrypt_uncached 418.69 419.31 0.9985x 417.45 417.33 1.0003x
+mlkem_core_stage_kpke_encrypt_cached 846.19 846.64 0.9995x 843.23 846.09 0.9966x
+mlkem_core_stage_kpke_encrypt_uncached 2283.64 2277.58 1.0027x 2263.70 2256.43 1.0032x
+mlkem_core_stage_kpke_keygen_full 2434.27 2442.03 0.9968x 2427.33 2440.74 0.9945x
+mlkem_core_stage_kpke_prepare_public_no_cache 2567.02 2580.81 0.9947x 2561.82 2571.13 0.9964x
+mlkem_core_stage_ntt_mul_acc3_canonical_avx2 330.86 333.96 0.9907x 330.75 331.07 0.9990x
+mlkem_core_stage_ntt_mul_acc3_canonical_scalar 244.16 243.32 1.0035x 242.55 242.42 1.0005x
+mlkem_core_stage_public_key_decode_d12 10.05 11.33 0.8870x 9.91 9.91 1.0000x
+mlkem_core_stage_sample_matrix 1731.00 1744.71 0.9921x 1726.95 1734.89 0.9954x
+mlkem_core_stage_sample_matrix_scalar_refill 1857.47 1856.57 1.0005x 1854.38 1849.67 1.0025x
+mlkem_core_stage_sample_matrix_sparse_first_x8 1784.97 1789.37 0.9975x 1778.21 1779.40 0.9993x
+mlkem_core_stage_sample_matrix_tail 751.88 758.38 0.9914x 752.39 755.20 0.9963x
+mlkem_core_stage_sample_matrix_tail_scalar 738.73 740.09 0.9982x 736.63 739.78 0.9957x
+mlkem_core_stage_sample_matrix_tail_scalar_raw 553.13 555.19 0.9963x 552.15 553.87 0.9969x
+mlkem_core_stage_sample_matrix_x4_batch0 735.06 733.12 1.0026x 735.73 730.90 1.0066x
+mlkem_core_stage_sample_matrix_x4_batch1 737.42 732.30 1.0070x 734.95 728.33 1.0091x
+mlkem_core_stage_sample_ntt4_asm16_full_raw 874.11 879.38 0.9940x 871.73 872.13 0.9995x
+mlkem_core_stage_sample_ntt4_asm16_keccak3_only 796.21 796.08 1.0002x 795.92 795.87 1.0001x
+mlkem_core_stage_sample_ntt4_asm16_keccak_store3 810.72 806.47 1.0053x 806.86 806.96 0.9999x
+mlkem_core_stage_sample_ntt4_block_parse_full_raw 634.95 627.87 1.0113x 629.05 626.16 1.0046x
+mlkem_core_stage_sample_ntt4_common3_step 558.37 554.70 1.0066x 554.44 554.31 1.0002x
+mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw 557.45 559.49 0.9964x 555.60 557.55 0.9965x
+mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3 507.77 507.91 0.9997x 507.34 507.50 0.9997x
+mlkem_core_stage_sample_ntt4_full_raw 546.06 546.54 0.9991x 546.74 544.78 1.0036x
+mlkem_core_stage_sample_ntt4_full_raw_batch1 552.92 545.87 1.0129x 550.98 541.03 1.0184x
+mlkem_core_stage_sample_ntt4_init_only 5.80 5.77 1.0046x 5.77 5.77 1.0000x
+mlkem_core_stage_sample_ntt4_inplace_lane01_full_raw 527.41 526.94 1.0009x 530.53 521.98 1.0164x
+mlkem_core_stage_sample_ntt4_inplace_lane01_keccak3_only 448.34 448.31 1.0001x 448.45 448.29 1.0004x
+mlkem_core_stage_sample_ntt4_inplace_lane01_keccak_store3 463.09 460.85 1.0049x 461.10 460.21 1.0019x
+mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw 600.47 600.45 1.0000x 599.65 598.70 1.0016x
+mlkem_core_stage_sample_ntt4_keccak3_only 480.30 480.60 0.9994x 479.91 480.51 0.9988x
+mlkem_core_stage_sample_ntt4_keccak_store3 491.90 493.72 0.9963x 491.84 493.30 0.9970x
+mlkem_core_stage_sample_ntt4_lane03_carry_full_raw 544.69 541.61 1.0057x 544.83 540.10 1.0088x
+mlkem_core_stage_sample_ntt4_lane03_carry_keccak3_only 476.71 476.54 1.0004x 476.82 476.48 1.0007x
+mlkem_core_stage_sample_ntt4_lane03_carry_keccak_store3 489.39 489.67 0.9994x 487.72 488.51 0.9984x
+mlkem_core_stage_sample_ntt4_lane0_carry_full_raw 564.98 564.51 1.0008x 560.75 561.26 0.9991x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak1_only 160.79 161.03 0.9985x 160.84 161.02 0.9989x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only 476.19 476.44 0.9995x 475.74 475.76 1.0000x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3 493.03 489.92 1.0064x 491.13 489.15 1.0040x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_full_raw 555.86 559.89 0.9928x 557.43 556.50 1.0017x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak3_only 479.86 479.81 1.0001x 479.90 479.72 1.0004x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak_store3 493.26 493.17 1.0002x 491.37 491.50 0.9997x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_full_raw 533.82 530.97 1.0054x 534.26 530.24 1.0076x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak1_only 146.00 145.31 1.0048x 145.67 145.38 1.0020x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak3_only 462.53 462.14 1.0008x 462.54 462.07 1.0010x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak_store3 483.23 482.24 1.0020x 481.51 482.09 0.9988x
+mlkem_core_stage_sample_ntt4_lane_store_full_raw 590.84 585.28 1.0095x 587.18 585.92 1.0022x
+mlkem_core_stage_sample_ntt4_lane_store_keccak_store3 525.49 524.97 1.0010x 524.60 525.12 0.9990x
+mlkem_core_stage_sample_ntt4_lane_store_rate 16.67 16.43 1.0143x 16.36 16.28 1.0049x
+mlkem_core_stage_sample_ntt4_one_full_raw 563.91 567.26 0.9941x 563.83 564.72 0.9984x
+mlkem_core_stage_sample_ntt4_one_keccak_store3 506.57 505.12 1.0029x 505.45 505.35 1.0002x
+mlkem_core_stage_sample_ntt4_one_parse_504 13.46 14.56 0.9248x 13.36 13.56 0.9853x
+mlkem_core_stage_sample_ntt4_parse_504 64.99 58.51 1.1107x 57.71 58.21 0.9914x
+mlkem_core_stage_sample_ntt4_parse_504_interleaved 118.00 114.37 1.0317x 113.05 112.02 1.0092x
+mlkem_core_stage_sample_ntt4_persistent_parity_full_raw 536.05 536.03 1.0000x 537.96 533.86 1.0077x
+mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only 467.60 467.40 1.0004x 467.38 467.06 1.0007x
+mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3 479.64 478.31 1.0028x 478.35 478.46 0.9998x
+mlkem_core_stage_sample_ntt4_refill_keccak_store1 177.18 176.96 1.0012x 176.87 176.91 0.9998x
+mlkem_core_stage_sample_ntt4_refill_step_once 184.05 184.24 0.9990x 183.87 183.84 1.0002x
+mlkem_core_stage_sample_ntt4_scalar4_raw 2074.96 2077.90 0.9986x 2069.31 2068.32 1.0005x
+mlkem_core_stage_sample_ntt4_scalar_refill_full_raw 565.13 559.45 1.0101x 558.35 558.72 0.9993x
+mlkem_core_stage_sample_ntt4_state_mask3 936.81 913.19 1.0259x 935.91 913.92 1.0241x
+mlkem_core_stage_sample_ntt4_state_parse_full_raw 1151.11 1139.04 1.0106x 1123.46 1124.54 0.9990x
+mlkem_core_stage_sample_ntt4_store_rate 1.67 1.71 0.9785x 1.67 1.67 1.0000x
+mlkem_core_stage_sample_ntt8_full_raw 989.08 998.18 0.9909x 982.40 990.66 0.9917x
+mlkem_core_stage_sample_ntt8_keccak1_only 303.06 302.32 1.0024x 301.09 301.20 0.9996x
+mlkem_core_stage_sample_ntt8_keccak3_only 885.82 887.71 0.9979x 884.92 887.37 0.9972x
+mlkem_core_stage_sample_ntt8_keccak_store3 925.21 933.80 0.9908x 925.80 926.11 0.9997x
+mlkem_core_stage_sample_ntt8_sparse_first_full_raw 1048.00 1045.97 1.0019x 1041.56 1038.40 1.0030x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak1_only 297.10 297.71 0.9980x 296.52 296.55 0.9999x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak3_only 890.05 889.43 1.0007x 887.80 888.54 0.9992x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak_store3 907.54 915.03 0.9918x 907.99 906.48 1.0017x
+
+paired_metric gmean median wins base_first_median cand_first_median
+mlkem_core_stage_ciphertext_compress_encode 0.9953x 0.9990x 4/9 0.9990x 1.0005x
+mlkem_core_stage_ciphertext_compress_encode_d10 0.9949x 1.0019x 6/9 0.9959x 1.0058x
+mlkem_core_stage_ciphertext_compress_encode_d10_compress_only 0.9984x 1.0013x 5/9 0.9929x 1.0019x
+mlkem_core_stage_ciphertext_compress_encode_d10_pack_only 0.9916x 1.0020x 5/9 1.0035x 1.0005x
+mlkem_core_stage_ciphertext_compress_encode_d4 0.9692x 0.9800x 1/9 0.9899x 0.9294x
+mlkem_core_stage_ciphertext_decode_decompress 0.9989x 0.9991x 4/9 1.0008x 0.9986x
+mlkem_core_stage_ciphertext_decode_decompress_d10 0.9730x 0.9933x 3/9 0.9901x 0.9948x
+mlkem_core_stage_ciphertext_decode_decompress_d4 0.9870x 0.9985x 3/9 0.9927x 0.9993x
+mlkem_core_stage_decrypt_accum_inv 0.9981x 0.9985x 3/9 0.9959x 0.9986x
+mlkem_core_stage_decrypt_accum_only 1.0093x 0.9995x 3/9 0.9997x 0.9980x
+mlkem_core_stage_decrypt_inv_butterflies 1.0126x 1.0032x 7/9 1.0032x 1.0026x
+mlkem_core_stage_decrypt_inv_copy_only 1.0198x 1.0166x 6/9 1.0166x 1.0113x
+mlkem_core_stage_decrypt_inv_head 1.0085x 1.0019x 6/9 1.0033x 1.0016x
+mlkem_core_stage_decrypt_inv_scale_sub_from 1.0112x 1.0037x 6/9 1.0196x 1.0007x
+mlkem_core_stage_decrypt_inv_sub_from 1.0122x 1.0050x 7/9 1.0050x 1.0046x
+mlkem_core_stage_decrypt_inv_tail 1.0060x 0.9992x 4/9 1.0038x 0.9986x
+mlkem_core_stage_decrypt_ntt_accum_only 1.0106x 1.0005x 5/9 1.0034x 0.9991x
+mlkem_core_stage_decrypt_ntt_accum_recover 0.9997x 0.9900x 3/9 0.9993x 0.9855x
+mlkem_core_stage_decrypt_recover_message 1.0020x 1.0050x 5/9 1.0000x 1.0050x
+mlkem_core_stage_decrypt_u_ntt 0.9986x 0.9995x 4/9 0.9993x 1.0009x
+mlkem_core_stage_decrypt_u_ntt_head 1.0088x 1.0006x 5/9 1.0032x 1.0002x
+mlkem_core_stage_decrypt_u_ntt_tail 1.0108x 1.0078x 5/9 1.0082x 0.9883x
+mlkem_core_stage_encrypt_accum4_combined_only 0.9958x 0.9990x 4/9 0.9934x 1.0026x
+mlkem_core_stage_encrypt_accum4_separate_only 0.9962x 0.9951x 3/9 1.0015x 0.9907x
+mlkem_core_stage_encrypt_accum_inv 1.0140x 1.0020x 6/9 1.0014x 1.0386x
+mlkem_core_stage_encrypt_accum_inv_u 1.0150x 1.0010x 5/9 0.9997x 1.0489x
+mlkem_core_stage_encrypt_accum_inv_v 0.9926x 0.9891x 2/9 0.9991x 0.9837x
+mlkem_core_stage_encrypt_accum_u_only 0.9988x 1.0004x 5/9 1.0004x 0.9989x
+mlkem_core_stage_encrypt_inv_add4_eta2_i8_raw_avx512 1.0068x 1.0004x 5/9 0.9982x 1.0211x
+mlkem_core_stage_encrypt_inv_add4_shared_raw_avx512 1.0032x 0.9994x 4/9 0.9981x 1.0115x
+mlkem_core_stage_encrypt_inv_add4_split_raw_avx512 1.0294x 1.0032x 5/9 0.9980x 1.0947x
+mlkem_core_stage_encrypt_inv_add_u_checksum_only 1.0000x 0.9998x 4/9 0.9991x 1.0019x
+mlkem_core_stage_encrypt_inv_add_u_copy_only 0.9939x 0.9966x 4/9 1.0032x 0.9797x
+mlkem_core_stage_encrypt_inv_add_u_copy_raw 0.9518x 0.9802x 3/9 1.0030x 0.9122x
+mlkem_core_stage_encrypt_inv_add_u_final_noise_add_only 1.0024x 1.0014x 6/9 1.0005x 1.0066x
+mlkem_core_stage_encrypt_inv_add_u_final_only 0.9990x 0.9982x 3/9 0.9982x 0.9979x
+mlkem_core_stage_encrypt_inv_add_u_final_raw 0.9812x 0.9731x 4/9 1.0105x 0.9606x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_high_only 1.0018x 1.0005x 5/9 0.9969x 1.0035x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_low_only 0.9991x 0.9997x 4/9 0.9997x 0.9980x
+mlkem_core_stage_encrypt_inv_add_u_final_scale_only 0.9996x 0.9988x 4/9 1.0007x 0.9987x
+mlkem_core_stage_encrypt_inv_add_u_head_l1 0.9965x 0.9960x 2/9 0.9985x 0.9950x
+mlkem_core_stage_encrypt_inv_add_u_head_l1_raw 1.0036x 1.0036x 7/9 1.0026x 1.0047x
+mlkem_core_stage_encrypt_inv_add_u_head_l2 1.0014x 1.0004x 5/9 0.9995x 1.0012x
+mlkem_core_stage_encrypt_inv_add_u_head_l2_raw 0.9912x 1.0001x 5/9 1.0001x 0.9995x
+mlkem_core_stage_encrypt_inv_add_u_head_l3 1.0042x 1.0012x 6/9 1.0012x 1.0006x
+mlkem_core_stage_encrypt_inv_add_u_head_l3_raw 1.0039x 1.0008x 6/9 1.0069x 1.0006x
+mlkem_core_stage_encrypt_inv_add_u_head_only 1.0005x 1.0005x 5/9 0.9973x 1.0025x
+mlkem_core_stage_encrypt_inv_add_u_head_raw 1.0022x 1.0004x 6/9 1.0004x 1.0023x
+mlkem_core_stage_encrypt_inv_add_u_only 1.0186x 1.0035x 6/9 0.9974x 1.0524x
+mlkem_core_stage_encrypt_inv_add_u_raw 1.0380x 1.0041x 6/9 0.9997x 1.1175x
+mlkem_core_stage_encrypt_inv_add_u_tail_final_only 0.9993x 0.9987x 4/9 1.0030x 0.9959x
+mlkem_core_stage_encrypt_inv_add_u_tail_final_raw 0.9994x 1.0001x 5/9 1.0001x 0.9977x
+mlkem_core_stage_encrypt_inv_add_u_tail_l4 0.9965x 0.9984x 3/9 0.9951x 0.9996x
+mlkem_core_stage_encrypt_inv_add_u_tail_l4_raw 1.0021x 1.0000x 4/9 1.0059x 0.9992x
+mlkem_core_stage_encrypt_inv_add_u_tail_l5 0.9979x 1.0008x 6/9 1.0009x 1.0008x
+mlkem_core_stage_encrypt_inv_add_u_tail_l5_raw 0.9980x 0.9943x 3/9 0.9918x 0.9958x
+mlkem_core_stage_encrypt_inv_add_u_tail_l6 1.0003x 1.0003x 5/9 1.0005x 1.0001x
+mlkem_core_stage_encrypt_inv_add_u_tail_l6_raw 0.9873x 0.9800x 3/9 0.9779x 0.9907x
+mlkem_core_stage_encrypt_noise 0.9919x 1.0013x 5/9 1.0013x 1.0005x
+mlkem_core_stage_encrypt_noise_ntt 0.9992x 0.9990x 4/9 1.0002x 0.9969x
+mlkem_core_stage_encrypt_noise_prf_cbd 0.9955x 1.0005x 5/9 1.0005x 0.9996x
+mlkem_core_stage_encrypt_noise_prf_cbd_i8_raw_avx512 0.9971x 0.9980x 2/9 0.9980x 0.9987x
+mlkem_core_stage_encrypt_noise_prf_cbd_raw 0.9873x 1.0021x 6/9 1.0009x 1.0073x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched 1.0025x 1.0013x 6/9 1.0001x 1.0025x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_cosched_accum3 1.0160x 1.0166x 9/9 1.0166x 1.0160x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_mixed_x8_i8 1.0026x 1.0025x 6/9 1.0042x 0.9965x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate 0.9949x 0.9967x 4/9 0.9967x 0.9983x
+mlkem_core_stage_encrypt_noise_prf_cbd_tail_separate_x8_i8 0.9908x 0.9927x 0/9 0.9884x 0.9935x
+mlkem_core_stage_encrypt_noise_prf_cbd_x3_raw 0.9991x 1.0021x 6/9 1.0020x 1.0087x
+mlkem_core_stage_encrypt_noise_prf_cbd_x4_raw 0.9964x 0.9992x 3/9 0.9995x 0.9953x
+mlkem_core_stage_encrypt_rhat_acc4_fused_asym_madd512_avx512 0.9964x 0.9998x 4/9 0.9998x 1.0026x
+mlkem_core_stage_encrypt_rhat_acc4_fused_lazy512_avx512 0.9993x 1.0000x 5/9 1.0002x 0.9996x
+mlkem_core_stage_encrypt_rhat_acc4_fused_madd512_avx512 0.9887x 0.9978x 4/9 1.0004x 0.9954x
+mlkem_core_stage_encrypt_rhat_acc4_fused_madd_avx512 0.9882x 0.9984x 2/9 0.9984x 0.9976x
+mlkem_core_stage_encrypt_rhat_acc4_fused_scalar_avx512 0.9902x 0.9999x 4/9 1.0014x 0.9970x
+mlkem_core_stage_keygen_accum_add_only 1.0008x 1.0009x 5/9 1.0058x 0.9940x
+mlkem_core_stage_keygen_accum_asym_madd512_avx512 0.9981x 0.9992x 3/9 0.9992x 0.9985x
+mlkem_core_stage_keygen_accum_encode 1.0014x 0.9980x 3/9 0.9980x 0.9982x
+mlkem_core_stage_keygen_accum_only 0.9987x 0.9995x 4/9 0.9995x 0.9971x
+mlkem_core_stage_keygen_add_only 0.9969x 0.9989x 4/9 0.9989x 1.0005x
+mlkem_core_stage_keygen_error_ntt_only 0.9966x 0.9977x 1/9 0.9993x 0.9934x
+mlkem_core_stage_keygen_noise_ntt 0.9981x 0.9993x 2/9 0.9984x 0.9996x
+mlkem_core_stage_keygen_noise_ntt_encode 1.0029x 1.0011x 5/9 1.0076x 0.9982x
+mlkem_core_stage_keygen_noise_ntt_encode_headtail_batch 1.0113x 1.0006x 7/9 1.0060x 0.9984x
+mlkem_core_stage_keygen_noise_ntt_head_only 1.0024x 1.0008x 7/9 1.0000x 1.0021x
+mlkem_core_stage_keygen_noise_ntt_headtail_batch 1.0092x 1.0002x 5/9 1.0045x 0.9989x
+mlkem_core_stage_keygen_noise_ntt_only 0.9993x 0.9989x 2/9 0.9989x 0.9981x
+mlkem_core_stage_keygen_noise_ntt_shat_headtail_encode 1.0014x 1.0018x 5/9 1.0063x 0.9972x
+mlkem_core_stage_keygen_noise_ntt_tail_only 1.0015x 1.0029x 6/9 1.0034x 0.9965x
+mlkem_core_stage_keygen_noise_prf_cbd 0.9987x 0.9971x 3/9 1.0048x 0.9921x
+mlkem_core_stage_keygen_public_decode_only 0.9010x 0.9837x 3/9 1.0062x 0.8032x
+mlkem_core_stage_keygen_public_encode_only 0.9999x 1.0008x 6/9 1.0003x 1.0019x
+mlkem_core_stage_keygen_secret_decode_only 0.9179x 0.9907x 1/9 0.9897x 0.9913x
+mlkem_core_stage_keygen_secret_encode_only 1.0021x 1.0003x 5/9 1.0003x 0.9999x
+mlkem_core_stage_keygen_secret_ntt_encode_only 0.9983x 0.9982x 4/9 0.9982x 0.9998x
+mlkem_core_stage_keygen_secret_ntt_only 0.9967x 0.9975x 2/9 0.9975x 0.9926x
+mlkem_core_stage_keygen_shat_ntt_accum_add_encode_fused_avx512 0.9953x 0.9973x 2/9 0.9973x 0.9978x
+mlkem_core_stage_keygen_shat_ntt_accum_add_encode_split_avx512 0.9961x 0.9948x 2/9 0.9963x 0.9943x
+mlkem_core_stage_keygen_shat_ntt_accum_encode_fused_final_avx512 0.9955x 0.9978x 2/9 0.9984x 0.9943x
+mlkem_core_stage_keygen_shat_ntt_accum_encode_split_avx512 1.0010x 1.0043x 6/9 1.0060x 1.0010x
+mlkem_core_stage_kpke_decrypt_cached 1.0119x 1.0083x 9/9 1.0083x 1.0140x
+mlkem_core_stage_kpke_decrypt_uncached 0.9985x 0.9993x 4/9 1.0003x 0.9992x
+mlkem_core_stage_kpke_encrypt_cached 0.9994x 0.9985x 3/9 0.9985x 0.9966x
+mlkem_core_stage_kpke_encrypt_uncached 1.0027x 1.0046x 6/9 1.0083x 0.9987x
+mlkem_core_stage_kpke_keygen_full 0.9968x 0.9966x 1/9 0.9941x 0.9983x
+mlkem_core_stage_kpke_prepare_public_no_cache 0.9948x 0.9975x 4/9 1.0013x 0.9933x
+mlkem_core_stage_ntt_mul_acc3_canonical_avx2 0.9908x 0.9987x 3/9 0.9987x 0.9931x
+mlkem_core_stage_ntt_mul_acc3_canonical_scalar 1.0034x 1.0022x 6/9 1.0036x 1.0014x
+mlkem_core_stage_public_key_decode_d12 0.9050x 0.9960x 2/9 1.0000x 0.8189x
+mlkem_core_stage_sample_matrix 0.9923x 0.9981x 3/9 1.0014x 0.9813x
+mlkem_core_stage_sample_matrix_scalar_refill 1.0005x 1.0034x 6/9 1.0031x 1.0064x
+mlkem_core_stage_sample_matrix_sparse_first_x8 0.9976x 0.9959x 3/9 0.9966x 0.9920x
+mlkem_core_stage_sample_matrix_tail 0.9915x 0.9934x 2/9 0.9929x 0.9963x
+mlkem_core_stage_sample_matrix_tail_scalar 0.9982x 0.9966x 3/9 1.0012x 0.9954x
+mlkem_core_stage_sample_matrix_tail_scalar_raw 0.9963x 0.9972x 3/9 0.9972x 0.9962x
+mlkem_core_stage_sample_matrix_x4_batch0 1.0026x 1.0024x 6/9 1.0072x 0.9973x
+mlkem_core_stage_sample_matrix_x4_batch1 1.0070x 1.0054x 7/9 1.0054x 1.0115x
+mlkem_core_stage_sample_ntt4_asm16_full_raw 0.9941x 0.9938x 3/9 0.9905x 0.9983x
+mlkem_core_stage_sample_ntt4_asm16_keccak3_only 1.0002x 1.0004x 5/9 0.9997x 1.0014x
+mlkem_core_stage_sample_ntt4_asm16_keccak_store3 1.0052x 1.0000x 5/9 0.9982x 1.0003x
+mlkem_core_stage_sample_ntt4_block_parse_full_raw 1.0113x 1.0042x 7/9 1.0042x 1.0031x
+mlkem_core_stage_sample_ntt4_common3_step 1.0064x 0.9978x 4/9 1.0090x 0.9974x
+mlkem_core_stage_sample_ntt4_final_store_fused_split_full_raw 0.9965x 0.9942x 4/9 0.9942x 0.9973x
+mlkem_core_stage_sample_ntt4_final_store_fused_split_keccak_store3 0.9997x 1.0006x 5/9 0.9997x 1.0011x
+mlkem_core_stage_sample_ntt4_full_raw 0.9992x 1.0040x 5/9 1.0098x 0.9963x
+mlkem_core_stage_sample_ntt4_full_raw_batch1 1.0128x 1.0133x 7/9 1.0133x 1.0157x
+mlkem_core_stage_sample_ntt4_init_only 1.0046x 1.0017x 5/9 1.0017x 1.0026x
+mlkem_core_stage_sample_ntt4_inplace_lane01_full_raw 1.0010x 1.0015x 6/9 1.0027x 1.0004x
+mlkem_core_stage_sample_ntt4_inplace_lane01_keccak3_only 1.0001x 1.0004x 6/9 1.0001x 1.0004x
+mlkem_core_stage_sample_ntt4_inplace_lane01_keccak_store3 1.0048x 1.0020x 6/9 1.0020x 0.9990x
+mlkem_core_stage_sample_ntt4_interleaved_parse_full_raw 1.0000x 0.9999x 4/9 1.0012x 0.9933x
+mlkem_core_stage_sample_ntt4_keccak3_only 0.9994x 0.9983x 2/9 0.9979x 0.9992x
+mlkem_core_stage_sample_ntt4_keccak_store3 0.9963x 0.9982x 1/9 0.9982x 0.9978x
+mlkem_core_stage_sample_ntt4_lane03_carry_full_raw 1.0057x 1.0063x 7/9 1.0076x 1.0021x
+mlkem_core_stage_sample_ntt4_lane03_carry_keccak3_only 1.0004x 1.0005x 6/9 0.9995x 1.0006x
+mlkem_core_stage_sample_ntt4_lane03_carry_keccak_store3 0.9994x 0.9994x 4/9 0.9994x 0.9983x
+mlkem_core_stage_sample_ntt4_lane0_carry_full_raw 1.0008x 0.9990x 4/9 1.0040x 0.9943x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak1_only 0.9985x 0.9986x 3/9 0.9980x 1.0008x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak3_only 0.9995x 1.0003x 5/9 1.0003x 1.0008x
+mlkem_core_stage_sample_ntt4_lane0_carry_keccak_store3 1.0063x 1.0040x 6/9 1.0038x 1.0048x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_full_raw 0.9930x 0.9981x 3/9 0.9911x 0.9985x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak3_only 1.0001x 0.9995x 4/9 0.9995x 1.0001x
+mlkem_core_stage_sample_ntt4_lane0_pairwise_keccak_store3 1.0002x 1.0006x 5/9 0.9982x 1.0018x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_full_raw 1.0054x 1.0016x 7/9 1.0055x 0.9982x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak1_only 1.0047x 1.0024x 6/9 0.9994x 1.0094x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak3_only 1.0008x 1.0000x 4/9 1.0007x 0.9997x
+mlkem_core_stage_sample_ntt4_lane0_sparse_first_keccak_store3 1.0020x 0.9982x 3/9 0.9979x 0.9996x
+mlkem_core_stage_sample_ntt4_lane_store_full_raw 1.0093x 1.0017x 5/9 1.0017x 1.0025x
+mlkem_core_stage_sample_ntt4_lane_store_keccak_store3 1.0010x 1.0010x 6/9 0.9993x 1.0024x
+mlkem_core_stage_sample_ntt4_lane_store_rate 1.0138x 1.0093x 7/9 1.0012x 1.0473x
+mlkem_core_stage_sample_ntt4_one_full_raw 0.9941x 0.9984x 4/9 1.0023x 0.9956x
+mlkem_core_stage_sample_ntt4_one_keccak_store3 1.0028x 1.0002x 7/9 1.0002x 1.0010x
+mlkem_core_stage_sample_ntt4_one_parse_504 0.9378x 0.9917x 1/9 0.9917x 0.9915x
+mlkem_core_stage_sample_ntt4_parse_504 1.0922x 1.0016x 5/9 1.1212x 0.9832x
+mlkem_core_stage_sample_ntt4_parse_504_interleaved 1.0248x 0.9987x 3/9 0.9987x 0.9812x
+mlkem_core_stage_sample_ntt4_persistent_parity_full_raw 1.0001x 1.0043x 6/9 1.0043x 0.9984x
+mlkem_core_stage_sample_ntt4_persistent_parity_keccak3_only 1.0004x 1.0003x 6/9 1.0003x 1.0005x
+mlkem_core_stage_sample_ntt4_persistent_parity_keccak_store3 1.0027x 1.0000x 4/9 1.0000x 1.0009x
+mlkem_core_stage_sample_ntt4_refill_keccak_store1 1.0012x 1.0009x 5/9 0.9998x 1.0016x
+mlkem_core_stage_sample_ntt4_refill_step_once 0.9990x 0.9996x 4/9 0.9996x 0.9998x
+mlkem_core_stage_sample_ntt4_scalar4_raw 0.9986x 1.0002x 5/9 1.0016x 0.9963x
+mlkem_core_stage_sample_ntt4_scalar_refill_full_raw 1.0099x 1.0026x 5/9 1.0114x 0.9996x
+mlkem_core_stage_sample_ntt4_state_mask3 1.0259x 1.0276x 9/9 1.0333x 1.0155x
+mlkem_core_stage_sample_ntt4_state_parse_full_raw 1.0102x 0.9990x 4/9 1.0016x 0.9960x
+mlkem_core_stage_sample_ntt4_store_rate 0.9794x 1.0000x 2/9 1.0000x 1.0000x
+mlkem_core_stage_sample_ntt8_full_raw 0.9913x 0.9917x 4/9 1.0073x 0.9734x
+mlkem_core_stage_sample_ntt8_keccak1_only 1.0024x 1.0014x 5/9 1.0023x 1.0005x
+mlkem_core_stage_sample_ntt8_keccak3_only 0.9979x 0.9980x 3/9 0.9980x 0.9979x
+mlkem_core_stage_sample_ntt8_keccak_store3 0.9911x 0.9998x 4/9 0.9998x 0.9982x
+mlkem_core_stage_sample_ntt8_sparse_first_full_raw 1.0020x 0.9984x 4/9 1.0115x 0.9932x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak1_only 0.9980x 1.0005x 5/9 1.0005x 0.9944x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak3_only 1.0007x 1.0010x 6/9 1.0002x 1.0026x
+mlkem_core_stage_sample_ntt8_sparse_first_keccak_store3 0.9921x 1.0000x 4/9 1.0032x 0.9989x
