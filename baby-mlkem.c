@@ -7982,7 +7982,39 @@ static void mlkem_ek_hash_cache_store(const uint8_t *ek,
   mlkem_ek_hash_cache_generation = mlkem_next_cache_generation();
 }
 
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+/* Share uncached public-key decode and matrix setup across encaps/decaps. */
+static MLKEM_NOINLINE void
+kpke_prepare_public_hash_no_cache_shared_clang_avx512(
+    const uint8_t *ek_pke, const uint8_t *in0, const uint8_t *in1,
+    uint8_t *hash, int public_key_hash) {
+  const uint8_t *rho = ek_pke + K * 384;
+  for (int i = 0; i < K; i++) {
+    byte_decode_d12_avx2(ek_pke + i * 384, kpke_public_cache_that[i]);
+  }
+  sample_ntt8_matrix(rho, kpke_public_cache_ahat[0][0],
+                     kpke_public_cache_ahat[0][1],
+                     kpke_public_cache_ahat[0][2],
+                     kpke_public_cache_ahat[1][0],
+                     kpke_public_cache_ahat[1][1],
+                     kpke_public_cache_ahat[1][2],
+                     kpke_public_cache_ahat[2][0],
+                     kpke_public_cache_ahat[2][1]);
+  sha3_sample_ntt_tail_shared_clang_avx512(
+      in0, in1, rho, kpke_public_cache_ahat[2][2], hash, public_key_hash);
+}
+#endif
+
 /* Keep cold public-key preparation out of cache-hit encapsulation. */
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+static MLKEM_ALWAYS_INLINE void kpke_prepare_public_no_cache(
+    const uint8_t *ek_pke, uint8_t h[32]) {
+  kpke_prepare_public_hash_no_cache_shared_clang_avx512(
+      ek_pke, ek_pke, NULL, h, 1);
+}
+#else
 static MLKEM_NOINLINE void kpke_prepare_public_no_cache(
     const uint8_t *ek_pke, uint8_t h[32]) {
   const uint8_t *rho = ek_pke + K * 384;
@@ -8011,6 +8043,7 @@ static MLKEM_NOINLINE void kpke_prepare_public_no_cache(
   sample_matrix(rho, kpke_public_cache_ahat);
 #endif
 }
+#endif
 
 #if defined(__AVX2__)
 static void mlkem_keygen_matrix_noise_avx2(
@@ -8018,10 +8051,18 @@ static void mlkem_keygen_matrix_noise_avx2(
     poly256 ahat[K][K], poly256 shat[K], poly256 ehat[K]);
 #endif
 
-static void kpke_prepare_public_ghash_no_cache(const uint8_t *ek_pke,
-                                               const uint8_t *in0,
-                                               const uint8_t *in1,
-                                               uint8_t ghash[64]) {
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+static MLKEM_ALWAYS_INLINE void kpke_prepare_public_ghash_no_cache(
+    const uint8_t *ek_pke, const uint8_t *in0, const uint8_t *in1,
+    uint8_t ghash[64]) {
+  kpke_prepare_public_hash_no_cache_shared_clang_avx512(
+      ek_pke, in0, in1, ghash, 0);
+}
+#else
+static void kpke_prepare_public_ghash_no_cache(
+    const uint8_t *ek_pke, const uint8_t *in0, const uint8_t *in1,
+    uint8_t ghash[64]) {
   const uint8_t *rho = ek_pke + K * 384;
   for (int i = 0; i < K; i++) {
     byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
@@ -8059,6 +8100,7 @@ static void kpke_prepare_public_ghash_no_cache(const uint8_t *ek_pke,
   sample_matrix(rho, kpke_public_cache_ahat);
 #endif
 }
+#endif
 
 #if defined(BABY_MLKEM_DISABLE_INTERNAL_CACHES) && defined(__clang__) && \
     defined(__AVX512F__)
