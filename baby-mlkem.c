@@ -5507,6 +5507,16 @@ static inline void sample_poly_cbd_eta2_store2_i8_avx2(
 static void sample_poly_cbd_eta2x4_state_avx2(const __m256i st[25],
                                               poly256 out0, poly256 out1,
                                               poly256 out2, poly256 out3) {
+  /* A null fourth output turns the x4 permutation into an x3 decoder. */
+  if (out3 == NULL) {
+    for (int i = 0; i < 16; i++) {
+      sample_poly_cbd_eta2_store2_avx2(
+          _mm256_castsi256_si128(st[i]), out0 + 16 * i, out1 + 16 * i);
+      sample_poly_cbd_eta2_store1_avx2(
+          _mm256_extracti128_si256(st[i], 1), out2 + 16 * i);
+    }
+    return;
+  }
   for (int i = 0; i < 16; i++) {
     __m128i lo = _mm256_castsi256_si128(st[i]);
     __m128i hi = _mm256_extracti128_si256(st[i], 1);
@@ -5920,7 +5930,7 @@ static void mlkem_encrypt_prf_cbd_eta2_32(const uint8_t seed[32],
   const uint8_t n0[4] = {0, 1, 2, 3};
   const uint8_t n1[4] = {4, 5, 6, 0};
   mlkem_prf_cbd_eta2x4_32(seed, n0, r0, r1, r2, e10);
-  mlkem_prf_cbd_eta2x3_32(seed, n1, e11, e12, e2);
+  mlkem_prf_cbd_eta2x4_32(seed, n1, e11, e12, e2, NULL);
 #endif
 }
 
