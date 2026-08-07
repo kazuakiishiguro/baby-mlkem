@@ -49,9 +49,21 @@ if ! git -C "$MLKEM_NATIVE_DIR" diff --quiet ||
 fi
 
 if [ -f "$MLKEM_NATIVE_DIR/mlkem/mlkem_native.h" ]; then
-  api_mode=modern
+  if rg -q 'MLK_API_NAMESPACE\(keypair_derand\)' \
+      "$MLKEM_NATIVE_DIR/mlkem/mlkem_native.h"; then
+    api_mode=modern-namespaced
+    modern_api_define=-DGOAL_MLKEM_NATIVE_NAMESPACED_API
+  elif rg -q '\bcrypto_kem_keypair_derand\b' \
+      "$MLKEM_NATIVE_DIR/mlkem/mlkem_native.h"; then
+    api_mode=modern-crypto-kem
+    modern_api_define=-DGOAL_MLKEM_NATIVE_CRYPTO_KEM_API
+  else
+    echo "unsupported modern mlkem-native API: $MLKEM_NATIVE_DIR" >&2
+    exit 2
+  fi
   adapter_defines=(
     -DGOAL_MLKEM_NATIVE_MODERN_API
+    "$modern_api_define"
     -DMLK_CONFIG_PARAMETER_SET=768
     -DMLK_CONFIG_NO_RANDOMIZED_API
   )
