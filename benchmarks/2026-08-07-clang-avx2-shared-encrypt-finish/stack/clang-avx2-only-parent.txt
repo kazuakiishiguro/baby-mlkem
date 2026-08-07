@@ -1,0 +1,17 @@
+artifact=/tmp/baby-roots-compact-avx2-product.o
+artifact_sha256=444d0a9afb6b949c17e384b41aab401fad229412c9d8d0a21b1eb1b95eb7ffca
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4832
+encaps_stack_bytes=4512
+decaps_valid_stack_bytes=5856
+decaps_invalid_stack_bytes=5856
+max_stack_bytes=5856
+correctness_smoke=pass

@@ -285,6 +285,12 @@ and produces byte-identical native and AVX2-only product and benchmark
 artifacts relative to the parent. Regenerate or verify the checked-in constants
 with `make generate-ntt-roots` or `make check-ntt-roots`.
 
+Commit `a03a486` shares Clang's AVX2-only encryption finish between
+encapsulation and decapsulation instead of emitting the same NTT, inverse-add,
+and compression body twice. It also shares one `u`/`v` scratch allocation. GCC,
+native AVX512, and scalar products retain their previous code. This adds no
+cache, external object, runtime library, table, API, or wire-format dependency.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -307,13 +313,13 @@ for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
 The current 2026-08-07 no-cache baselines use the normal compiler-specific
-speed flags at commit `cfd2b09`:
+speed flags at commit `a03a486`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 83,112 | 20,373 | 103,485 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 56,006 | 3,565 | 59,571 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 56,031 | 12,743 | 68,774 | 0 | 28,641 | 28,641 |
+| AVX2-only | Clang 18.1.3 | 52,678 | 12,341 | 65,019 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 51,429 | 3,809 | 55,238 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 62,229 | 2,033 | 64,262 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,530 | 1,737 | 23,267 | 0 | 19,488 | 19,488 |
@@ -325,6 +331,13 @@ the OpenSSL-only residual. Relative to parent `ce4707c`, Clang primary size
 falls by 2,450 bytes native and 4,869 bytes AVX2-only. Native now passes the
 OpenSSL-only primary-size gate by 67 bytes; AVX2-only remains 23,725 bytes
 larger, so this is not the full smallest or overall Goal milestone.
+
+The [shared Clang AVX2 encryption-finish report](benchmarks/2026-08-07-clang-avx2-shared-encrypt-finish/README.md)
+records the next size-only step. Relative to `f4bc404`, Clang AVX2-only primary
+size falls by 3,755 bytes and writable storage falls by 2,048 bytes, while all
+four 15-pair operation geometric means remain above the `0.995x` regression
+floor. Maximum stack remains 5,856 bytes. The OpenSSL-only AVX2 primary gap is
+now 19,970 bytes; it remains a failed gate.
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
@@ -542,18 +555,18 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass; final-revision rerun required | `ada0e47` supplies the FIPS 203/ACVP correction; `559c4a2` passes the complete six-build and sanitizer stage-oracle matrix; `93f6757` verifies one byte-identical 64-fixture corpus across 16 core, product, upstream, and PQClean paths. Any later candidate must rerun these checks before completion. |
+| Correctness | current candidate pass | `a03a486` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2/native ASan+UBSan and GCC native UBSan pass; all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`. |
 | Native aggregate speed | historical only; rerun required | The prior ten-comparator report passed with a narrowest 1.5607x ratio and 1.5441x CI lower bound, but it predates the FIPS 203 correction. |
 | Native operation speed | historical only; rerun required | The prior 40 rows passed with a narrowest 1.2961x CI lower bound, but they predate the FIPS 203 correction and same-revision verification is open. |
 | AVX2-only speed | historical only; rerun required | The prior 40 rows passed with a narrowest aggregate ratio/CI lower bound of 1.3505x/1.3409x and operation lower bound of 1.1401x, but they predate the FIPS 203 correction. |
-| Production size | partial pass; full rerun required | Botan normalization is complete at `8451292`/`a4d6fec`; the clean native diagnostic passes its size gate. OpenSSL normalization is explicitly rejected by the `83a523f` direct-core audit because `RAND_bytes_ex`/`getentropy` remain reachable; the all-comparator same-revision rerun remains open. |
-| Maximum stack | historical only; rerun required | Existing Kyber and other partial stack measurements predate `ada0e47`; all required comparators need a same-revision rerun. |
+| Production size | partial pass; full rerun required | At `a03a486`, the normalized OpenSSL internal-core diagnostic passes native by 67 bytes but fails AVX2-only by 19,970 bytes. The all-comparator same-revision rerun remains open. |
+| Maximum stack | local current; comparator rerun required | Current local maxima are 10,040 bytes native and 5,856 bytes AVX2-only. All required comparators still need a same-revision aggregate. |
 | Clean final revision | open | Cache-contaminated comparators are rejected, but same-revision all-comparator correctness, speed, size, and stack reports are not complete. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
 
-## Current Core Optimization Frontier (2026-07-17)
+## Current Core Optimization Frontier (2026-08-07)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -697,6 +710,7 @@ Near-term target selection:
 | Native GCC mixed-x8 keygen scalar continuation | Accepted for GCC AVX512; Clang/narrower ISA byte-identical | After the mixed x8 first permutation consumes six SHAKE256 streams, only the lane-6 SHAKE128 matrix tail remains live. Keygen now extracts that canonical state once and finishes it with the existing single-state AVX512VL Keccak core instead of carrying three empty lanes through `keccakf4()`. The old/new boundary improves `1.0380x` directly; keygen-full improves `1.0072x` paired median, and 100k KEM keygen/keygen-core improve `1.0090x`/`1.0078x` with 13/14 and 14/14 wins. Encryption keeps its prior x4 continuation after broader forms regressed `encaps_core`. No new external object, cache, table, or wire-format dependency is added. |
 | Native Clang mixed-x8 keygen single-state continuation | Accepted for Clang native AVX512 keygen; GCC/narrower ISA text byte-identical | After the mixed x8 first permutation completes six SHAKE256 noise streams, the lone SHAKE128 matrix-tail state now continues through the existing single-state AVX512VL core instead of carrying three empty lanes through `keccakf4()`. Complete keygen improves `1.0159x` geometric mean and `1.0130x` median; three 15-pair 100k KEM gates keep keygen/keygen-core geometric means in `1.0058x..1.0099x`/`1.0034x..1.0104x`. A 64-byte function-alignment diagnostic gives `1.0131x`/`1.0079x` with 13/15 wins each and neutralizes most unchanged-path layout movement. Clang `benchc` text shrinks 4,096 bytes; no cache, external object, table, API, or wire-format change is added. |
 | Clang AVX512 matrix capacity-only handoff | Accepted for Clang native AVX512; GCC/narrower ISA unchanged | The x8 SHAKE128 matrix producer already writes all three 168-byte rates, so its final handoff now retains only capacity words 21..24 instead of redundantly storing all 25 state vectors. A rare rejection refill rebuilds only each deficient scalar lane from the third rate plus its four capacity words. The complete x8 sampler and matrix paired medians improve `1.0400x`/`1.0316x`; final 100k keygen/keygen-core improve `1.0046x`/`1.0052x` with 13/15 and 14/15 wins. Cached encapsulation is not credited: its `0.9981x` product median accompanies an unchanged source hot path and a 4 KiB BSS-layout shift. Clang `benchc` text shrinks 4,253 bytes. The handoff/refill design is repository-local, reuses the already attributed XKCP-derived x8 round mapping, and adds no cache, external object, table, API, or wire-format dependency. |
+| Clang AVX2 shared encryption finish | Accepted as an AVX2-only size optimization; GCC/native/scalar unchanged | Encapsulation and decapsulation now call one private noinline NTT, inverse-add, message-fold, and compression finish instead of retaining two Clang-generated copies. Clang AVX2-only primary/BSS shrink by 3,755/2,048 bytes to 65,019/26,593 bytes. Fifteen-pair 100k keygen/encaps/decaps/roundtrip geometric means are `1.0000x`/`1.0007x`/`0.9986x`/`0.9995x`, all above the `0.995x` regression floor, so no speed gain is credited. Maximum stack remains 5,856 bytes. No cache, external object, runtime library, table, API, or wire-format change is added. |
 | Native GCC one-output decrypt SIMD accumulation | Closed; scalar fused-final remains production | Reusing the proved K=3 `vpmaddwd` kernel made direct decrypt NTT+accum `3.0171x` faster with ZMM and `2.6688x` with YMM, but complete KEM decaps paired medians regressed to `0.9836x` and `0.9531x`. GCC-only noinline boundaries did not recover either form. A corrected lazy-final ZMM variant reached only `0.9971x` decaps with 2/9 wins. Direct stage speed alone is not an acceptance signal at this boundary. |
 | Local scalar K=3 accumulation rewrites | Closed for scalar paths; superseded in AVX2 encryption | Karatsuba, reciprocal, wide-c0, Montgomery, restrict, unroll, noinline, isolated product vectorization, and scalar multi-output coalescing failed direct or integrated gates. The accepted AVX2 path succeeds by changing the pair representation and sharing inputs across all four encryption outputs, not by retuning the scalar loop. |
 | Local accumulation -> inverse-head boundary fusion | Closed on AVX2 and AVX512 | The old AVX2 scalar-pair forms reached only 0.18-0.19x. The current GCC ZMM all-output and v-only forms reached 0.9374x and 0.9744x; neither spilled ZMM registers, but static instruction lines grew from 696 to 902 and 767. Hot-L1 materialization is cheaper than coupling the compact inverse loop to accumulation. |

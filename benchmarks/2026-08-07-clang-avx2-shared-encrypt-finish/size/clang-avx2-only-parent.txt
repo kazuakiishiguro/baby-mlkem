@@ -1,0 +1,14 @@
+artifact=/tmp/baby-roots-compact-avx2-product.o
+artifact_sha256=444d0a9afb6b949c17e384b41aab401fad229412c9d8d0a21b1eb1b95eb7ffca
+artifact_file_bytes=102608
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=56031
+readonly_data_bytes=12743
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=68774
+initialized_writable_bytes=0
+zero_fill_bytes=28641
+writable_bytes=28641
+max_stack_bytes=unmeasured
