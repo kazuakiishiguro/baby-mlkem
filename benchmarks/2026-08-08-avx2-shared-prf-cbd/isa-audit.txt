@@ -1,0 +1,24 @@
+candidate_ref=58858b8a5224d4e9c3f928f71cd3ea8defa9e440
+[clang-avx2]
+artifact_sha256=1fbd2356a5c10467ff896e31b7b5dcb46a8c12f131975cffd9c23051246c704a
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+zmm_or_opmask_matches=0
+avx512_audit=PASS
+exported_api_count=3
+exported_api=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+undefined_symbols=bcmp exit memcpy memset perror syscall
+undefined_symbol_identity_vs_parent=PASS
+[gcc-avx2]
+artifact_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+zmm_or_opmask_matches=0
+avx512_audit=PASS
+exported_api_count=3
+exported_api=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+undefined_symbols=exit memcmp memcpy perror syscall
+undefined_symbol_identity_vs_parent=PASS
+persistent_cache_metadata=none
+new_external_dependency=none
+wire_format_change=none
+public_api_change=none
+cache_change=none
