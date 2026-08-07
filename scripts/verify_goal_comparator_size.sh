@@ -76,10 +76,17 @@ case "$COMPARATOR" in
     comparator_dir="${BOTAN_DIR:-/tmp/botan-mlkem}"
     comparator_modules="${BOTAN_MODULES:-ml_kem,keccak_perm_bmi2}"
     ;;
+  openssl)
+    comparator_key=openssl
+    comparator_slug=openssl
+    comparator_label="OpenSSL ML-KEM-768"
+    comparator_dir="${OPENSSL_DIR:-/tmp/openssl-mlkem-$PROFILE}"
+    comparator_repo_url="${OPENSSL_REPO_URL:-https://github.com/openssl/openssl.git}"
+    ;;
   *)
     echo "unsupported size comparator: ${COMPARATOR:-<unset>}" >&2
     echo "expected kyber, kyber-fair, pqclean, mlkem-native, liboqs," >&2
-    echo "boringssl, libcrux, libjade, or botan" >&2
+    echo "boringssl, libcrux, libjade, botan, or openssl" >&2
     exit 2
     ;;
 esac
@@ -124,7 +131,7 @@ if [ "$REQUIRE_CLEAN_WORKTREE" = "1" ] &&
   exit 2
 fi
 if [ "$COMPARATOR" = libcrux ] || [ "$COMPARATOR" = libjade ] ||
-    [ "$COMPARATOR" = botan ]; then
+    [ "$COMPARATOR" = botan ] || [ "$COMPARATOR" = openssl ]; then
   comparator_update=delegated-to-product-builder
 else
   if ! git -C "$comparator_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -181,6 +188,9 @@ case "$COMPARATOR" in
     comparator_cxx="$BOTAN_CXX"
     comparator_disabled_modules="$BOTAN_DISABLED_MODULES"
     comparator_cxx_stdlib_flags="$GOAL_CXX_STDLIB_FLAGS"
+    ;;
+  openssl)
+    comparator_cflags="$OPENSSL_CFLAGS"
     ;;
 esac
 if [ "$COMPARATOR" = botan ] &&
@@ -322,6 +332,14 @@ case "$COMPARATOR" in
       "$ROOT_DIR/scripts/build_goal_botan_product.sh" \
       > "$comparator_build_report"
     ;;
+  openssl)
+    PROFILE="$PROFILE" OUTPUT="$comparator_artifact" \
+    OPENSSL_DIR="$comparator_dir" OPENSSL_REPO_URL="$comparator_repo_url" \
+    OPENSSL_PRODUCT_CFLAGS="$comparator_cflags" \
+    UPDATE_REPOS="$UPDATE_REPOS" C_COMPILER="$C_COMPILER" \
+      "$ROOT_DIR/scripts/build_goal_openssl_product.sh" \
+      > "$comparator_build_report"
+    ;;
 esac
 if [ "$COMPARATOR" = libcrux ]; then
   comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
@@ -383,6 +401,72 @@ elif [ "$COMPARATOR" = botan ]; then
     echo "Botan comparator update status does not match UPDATE_REPOS" >&2
     exit 2
   fi
+elif [ "$COMPARATOR" = openssl ]; then
+  comparator_update="$(sed -n 's/^comparator_update=//p' "$comparator_build_report")"
+  comparator_commit="$(sed -n 's/^openssl_commit=//p' "$comparator_build_report")"
+  comparator_source="$(sed -n 's/^openssl_remote=//p' "$comparator_build_report")"
+  openssl_effective_cflags="$(sed -n 's/^openssl_cflags=//p' "$comparator_build_report")"
+  openssl_no_cached_fetch="$(sed -n 's/^openssl_config_no_cached_fetch=//p' "$comparator_build_report")"
+  openssl_adapter_mode="$(sed -n 's/^adapter_mode=//p' "$comparator_build_report")"
+  openssl_selected_objects="$(sed -n 's/^selected_object_count=//p' "$comparator_build_report")"
+  openssl_mlkem_sha="$(sed -n 's/^openssl_mlkem_object_sha256=//p' "$comparator_build_report")"
+  openssl_sha3_sha="$(sed -n 's/^openssl_sha3_object_sha256=//p' "$comparator_build_report")"
+  openssl_keccak_sha="$(sed -n 's/^openssl_keccak_object_sha256=//p' "$comparator_build_report")"
+  openssl_provider_registry="$(sed -n 's/^provider_registry_linked=//p' "$comparator_build_report")"
+  openssl_error_queue="$(sed -n 's/^error_queue_shim=//p' "$comparator_build_report")"
+  openssl_runtime_dependencies="$(sed -n 's/^runtime_dependencies=//p' "$comparator_build_report")"
+  openssl_wire_parse="$(sed -n 's/^wire_key_parse_per_call=//p' "$comparator_build_report")"
+  openssl_operation_rebuild="$(sed -n 's/^operation_rebuild_per_call=//p' "$comparator_build_report")"
+  openssl_matrix_timed="$(sed -n 's/^matrix_precompute_timed=//p' "$comparator_build_report")"
+  openssl_entropy_shim="$(sed -n 's/^deterministic_entropy_shim=//p' "$comparator_build_report")"
+  openssl_api_count="$(sed -n 's/^api_count=//p' "$comparator_build_report")"
+  openssl_cache_audit="$(sed -n 's/^cache_audit=//p' "$comparator_build_report")"
+  openssl_entropy_audit="$(sed -n 's/^reachable_entropy_audit=//p' "$comparator_build_report")"
+  openssl_provider_audit="$(sed -n 's/^provider_fetch_audit=//p' "$comparator_build_report")"
+  openssl_noexec_audit="$(sed -n 's/^noexec_stack_audit=//p' "$comparator_build_report")"
+  openssl_unwind="$(sed -n 's/^unwind_metadata=//p' "$comparator_build_report")"
+  openssl_avx512="$(sed -n 's/^avx512_audit=//p' "$comparator_build_report")"
+  openssl_smoke="$(sed -n 's/^correctness_smoke=//p' "$comparator_build_report")"
+  openssl_corpus_fixtures="$(sed -n 's/^cross_path_corpus_fixtures=//p' "$comparator_build_report")"
+  openssl_corpus_bytes="$(sed -n 's/^cross_path_corpus_bytes=//p' "$comparator_build_report")"
+  openssl_corpus_sha="$(sed -n 's/^cross_path_corpus_sha256=//p' "$comparator_build_report")"
+  openssl_corpus_correctness="$(sed -n 's/^cross_path_correctness=//p' "$comparator_build_report")"
+  if [ "$PROFILE" = avx2 ]; then
+    openssl_expected_avx512=pass
+  else
+    openssl_expected_avx512=not-applicable
+  fi
+  if [ -z "$comparator_commit" ] || [ "$comparator_source" != "$comparator_repo_url" ] ||
+      [[ "$openssl_effective_cflags" != "$comparator_cflags "* ]] ||
+      [ "$openssl_no_cached_fetch" != pass ] ||
+      [ "$openssl_adapter_mode" != internal-core-selected-objects ] ||
+      [ "$openssl_selected_objects" != 3 ] ||
+      ! [[ "$openssl_mlkem_sha" =~ ^[0-9a-f]{64}$ ]] ||
+      ! [[ "$openssl_sha3_sha" =~ ^[0-9a-f]{64}$ ]] ||
+      ! [[ "$openssl_keccak_sha" =~ ^[0-9a-f]{64}$ ]] ||
+      [ "$openssl_provider_registry" != no ] ||
+      [ "$openssl_error_queue" != discarded ] ||
+      [ "$openssl_runtime_dependencies" != libc,pthread ] ||
+      [ "$openssl_wire_parse" != pass ] ||
+      [ "$openssl_operation_rebuild" != pass ] ||
+      [ "$openssl_matrix_timed" != pass ] ||
+      [ "$openssl_entropy_shim" != fail-closed ] ||
+      [ "$openssl_api_count" != 3 ] || [ "$openssl_cache_audit" != pass ] ||
+      [ "$openssl_entropy_audit" != pass ] || [ "$openssl_provider_audit" != pass ] ||
+      [ "$openssl_noexec_audit" != pass ] || [ "$openssl_unwind" != removed ] ||
+      [ "$openssl_avx512" != "$openssl_expected_avx512" ] ||
+      [ "$openssl_smoke" != pass ] || [ "$openssl_corpus_fixtures" != 64 ] ||
+      [ "$openssl_corpus_bytes" != 381228 ] ||
+      [ "$openssl_corpus_sha" != e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67 ] ||
+      [ "$openssl_corpus_correctness" != pass ]; then
+    echo "failed to validate OpenSSL product provenance or core-only contract" >&2
+    exit 2
+  fi
+  if { [ "$UPDATE_REPOS" = "1" ] && [ "$comparator_update" != pass ]; } ||
+      { [ "$UPDATE_REPOS" = "0" ] && [ "$comparator_update" != skipped ]; }; then
+    echo "OpenSSL comparator update status does not match UPDATE_REPOS" >&2
+    exit 2
+  fi
 fi
 comparator_stack_linker="$C_COMPILER"
 comparator_stack_ldflags=""
@@ -392,6 +476,8 @@ if [ "$COMPARATOR" = botan ]; then
   if [ -n "$comparator_cxx_stdlib_flags" ]; then
     comparator_stack_ldflags="$comparator_cxx_stdlib_flags $comparator_stack_ldflags"
   fi
+elif [ "$COMPARATOR" = openssl ]; then
+  comparator_stack_ldflags="-no-pie -pthread"
 fi
 STACK_RUNS="$STACK_RUNS" STACK_USABLE_BYTES="$STACK_USABLE_BYTES" \
 C_COMPILER="$C_COMPILER" STACK_CFLAGS="$stack_cflags" \
@@ -463,6 +549,12 @@ host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {
     printf "botan_modules_resolved=%s\n" "$comparator_modules_resolved"
     printf "botan_adapter_mode=%s\n" "$botan_adapter_mode"
     printf "botan_no_cache_contract=pass\n"
+  elif [ "$COMPARATOR" = openssl ]; then
+    printf "openssl_commit=%s\n" "$comparator_commit"
+    printf "openssl_remote=%s\n" "$comparator_source"
+    printf "openssl_adapter_mode=%s\n" "$openssl_adapter_mode"
+    printf "openssl_selected_object_count=%s\n" "$openssl_selected_objects"
+    printf "openssl_core_only_contract=pass\n"
   else
     printf "%s_commit=%s\n" "$comparator_key" \
       "$(git -C "$comparator_dir" rev-parse HEAD)"
