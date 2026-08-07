@@ -1,0 +1,77 @@
+candidate_ref=7f03bcce40c3b5ee80c9292730d0d21aa454883c
+baseline_ref=8c221d8f6d46ac83611618fc8f94bae55365936b
+candidate_source_sha256=14b9c3a81ef0f6fb92483e3e70ff598f869007dc5a3065b9012138063c50814f
+
+[clang-native]
+compiler=clang
+arch_cflags=-march=native
+kat=pass
+product=pass
+stage=pass sink=12134279420840345582
+product_sha256=345d507a054d8196b342ec88ad6e3b946473f60a423d5abe33ee9dd30cd6468e
+code_bytes=63336
+readonly_bytes=19351
+primary_bytes=82687
+writable_bytes=18001
+
+[clang-avx2]
+compiler=clang
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=4297556503821386549
+product_sha256=1fbd2356a5c10467ff896e31b7b5dcb46a8c12f131975cffd9c23051246c704a
+code_bytes=47242
+readonly_bytes=12065
+primary_bytes=59307
+writable_bytes=26593
+
+[clang-scalar]
+compiler=clang
+arch_cflags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=5836653274444122727
+product_sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c
+code_bytes=60160
+readonly_bytes=2033
+primary_bytes=62193
+writable_bytes=18944
+
+[gcc-native]
+compiler=gcc
+arch_cflags=-march=native
+kat=pass
+product=pass
+stage=pass sink=12134279420840348911
+product_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+code_bytes=56006
+readonly_bytes=3565
+primary_bytes=59571
+writable_bytes=33728
+
+[gcc-avx2]
+compiler=gcc
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=4297556503821386549
+product_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+code_bytes=49829
+readonly_bytes=3785
+primary_bytes=53614
+writable_bytes=34920
+
+[gcc-scalar]
+compiler=gcc
+arch_cflags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=5836653274444122727
+product_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+code_bytes=21530
+readonly_bytes=1737
+primary_bytes=23267
+writable_bytes=19488
+
+correctness_matrix=PASS

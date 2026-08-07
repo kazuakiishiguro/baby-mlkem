@@ -1,0 +1,21 @@
+candidate_ref=7f03bcce40c3b5ee80c9292730d0d21aa454883c
+baseline_ref=8c221d8f6d46ac83611618fc8f94bae55365936b
+measurement=allocatable code plus allocatable read-only data
+cache_mode=production_internal_caches_disabled
+flags=normal compiler-specific production speed flags
+
+profile=clang-native baseline_code=66370 baseline_readonly=19319 baseline_primary=85689 candidate_code=63336 candidate_readonly=19351 candidate_primary=82687 primary_delta=-3002 candidate_writable=18001
+profile=clang-avx2 baseline_code=47242 baseline_readonly=12065 baseline_primary=59307 candidate_code=47242 candidate_readonly=12065 candidate_primary=59307 primary_delta=0 candidate_writable=26593
+profile=clang-scalar baseline_code=60160 baseline_readonly=2033 baseline_primary=62193 candidate_code=60160 candidate_readonly=2033 candidate_primary=62193 primary_delta=0 candidate_writable=18944
+profile=gcc-native baseline_code=56006 baseline_readonly=3565 baseline_primary=59571 candidate_code=56006 candidate_readonly=3565 candidate_primary=59571 primary_delta=0 candidate_writable=33728
+profile=gcc-avx2 baseline_code=49829 baseline_readonly=3785 baseline_primary=53614 candidate_code=49829 candidate_readonly=3785 candidate_primary=53614 primary_delta=0 candidate_writable=34920
+profile=gcc-scalar baseline_code=21530 baseline_readonly=1737 baseline_primary=23267 candidate_code=21530 candidate_readonly=1737 candidate_primary=23267 primary_delta=0 candidate_writable=19488
+
+target_helper_baseline_bytes=8443
+target_helper_candidate_bytes=5409
+target_helper_delta=-3034
+clang_native_readonly_delta=+32
+clang_native_primary_delta=-3002
+timed_candidate_sha256=345d507a054d8196b342ec88ad6e3b946473f60a423d5abe33ee9dd30cd6468e
+implementation_candidate_sha256=345d507a054d8196b342ec88ad6e3b946473f60a423d5abe33ee9dd30cd6468e
+size_gate=PASS
