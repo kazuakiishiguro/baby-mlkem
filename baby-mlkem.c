@@ -6627,10 +6627,114 @@ static void sample_ntt_tail_lane2_accum3_parse_avx2(const __m256i st[25],
   }
 }
 
+#if defined(__clang__) && defined(__AVX512F__)
+/* Share the three-permutation hash/matrix-tail body without crossing a
+ * permutation boundary and spilling all 25 x4 lanes at every round. */
+static MLKEM_NOINLINE void sha3_sample_ntt_tail_shared_clang_avx512(
+    const uint8_t *in0, const uint8_t *in1, const uint8_t *rho,
+    poly256 out, uint8_t *hash, int public_key_hash) {
+  __m256i st[25];
+  uint64_t hst[25];
+  uint64_t stream[63];
+
+  for (int i = 0; i < 25; i++) {
+    st[i] = _mm256_setzero_si256();
+  }
+  if (__builtin_expect(public_key_hash, 1)) {
+    st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0), 0);
+    st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8), 0);
+    st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16), 0);
+    st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24), 0);
+    st[4] = _mm256_set_epi64x(0, 0, 0x1f0202LL, 0);
+  } else {
+    st[0] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 0),
+                              (long long)load64_le(in0 + 0));
+    st[1] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 8),
+                              (long long)load64_le(in0 + 8));
+    st[2] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 16),
+                              (long long)load64_le(in0 + 16));
+    st[3] = _mm256_set_epi64x(0, 0, (long long)load64_le(rho + 24),
+                              (long long)load64_le(in0 + 24));
+    st[4] = _mm256_set_epi64x(0, 0, 0x1f0202LL,
+                              (long long)load64_le(in1 + 0));
+    st[5] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 8));
+    st[6] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 16));
+    st[7] = _mm256_set_epi64x(0, 0, 0, (long long)load64_le(in1 + 24));
+    st[8] = _mm256_set_epi64x(
+        0, 0, 0, (long long)0x8000000000000006ULL);
+  }
+  st[20] = _mm256_set_epi64x(0, 0, (long long)(0x80ULL << 56), 0);
+
+  for (int block = 0; block < 3; block++) {
+    if (__builtin_expect(public_key_hash, 1)) {
+      const uint8_t *p = in0 + (size_t)block * 136;
+      for (int lane = 0; lane < 16; lane++) {
+        st[lane] = keccak_xor_lane0_u64(st[lane],
+                                        load64_le(p + 8 * lane));
+      }
+      st[16] = keccak_xor_lane0_u64(st[16], load64_le(p + 128));
+    }
+    keccakf4(st);
+    if (__builtin_expect(!public_key_hash, 0) && block == 0) {
+      for (int lane = 0; lane < 8; lane++) {
+        uint64_t word = keccak_lane0_u64(st[lane]);
+        memcpy(hash + 8 * lane, &word, sizeof(word));
+      }
+    }
+    for (int lane = 0; lane < 21; lane++) {
+      stream[(size_t)block * 21 + (size_t)lane] =
+          keccak_lane1_u64(st[lane]);
+    }
+  }
+
+  if (__builtin_expect(public_key_hash, 1)) {
+    for (int lane = 0; lane < 25; lane++) {
+      hst[lane] = keccak_lane0_u64(st[lane]);
+    }
+  }
+
+  sample_ntt_parse_init_avx2();
+  int count = sample_ntt_parse_stream_avx2_ready(
+      (const uint8_t *)stream, sizeof(stream), out, 0);
+  while (count < N) {
+    uint64_t extra[21];
+    keccakf4(st);
+    for (int lane = 0; lane < 21; lane++) {
+      extra[lane] = keccak_lane1_u64(st[lane]);
+    }
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)extra, sizeof(extra), out, count);
+  }
+
+  if (__builtin_expect(public_key_hash, 1)) {
+    for (int block = 3; block < 8; block++) {
+      const uint8_t *p = in0 + (size_t)block * 136;
+      keccak_xor_lanes16_avx512(hst, p);
+      hst[16] ^= load64_le(p + 128);
+      keccakf(hst);
+    }
+
+    const uint8_t *tail = in0 + 8 * 136;
+    keccak_xor_lanes12_avx512(hst, tail);
+    hst[12] ^= 0x06u;
+    hst[16] ^= 0x8000000000000000ULL;
+    keccakf(hst);
+    memcpy(hash, hst, 32);
+  }
+}
+
 static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
-                                           const uint8_t *rho,
-                                           poly256 out,
-                                           uint8_t h[32]) {
+                                          const uint8_t *rho,
+                                          poly256 out,
+                                          uint8_t h[32]) {
+  sha3_sample_ntt_tail_shared_clang_avx512(
+      pk, NULL, rho, out, h, 1);
+}
+#else
+static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
+                                          const uint8_t *rho,
+                                          poly256 out,
+                                          uint8_t h[32]) {
   __m256i st[25];
 #if !defined(MLKEM_HAVE_SHA3_256_1184_SUFFIX6_AVX512VL)
   uint64_t hst[25];
@@ -6711,6 +6815,7 @@ static void sha3_256_sample_ntt_tail_avx2(const uint8_t *pk,
   memcpy(h, hst, 32);
 #endif
 }
+#endif
 
 static inline void hash_matrix_x3_init_group(
     __m256i st[25], const uint8_t *seed, uint8_t row) {
@@ -6826,6 +6931,16 @@ static void sha3_256_sample_matrix_x3_avx2(
   }
 }
 
+#if defined(__clang__) && defined(__AVX512F__)
+static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
+                                          const uint8_t *in1,
+                                          const uint8_t *rho,
+                                          poly256 out,
+                                          uint8_t ghash[64]) {
+  sha3_sample_ntt_tail_shared_clang_avx512(
+      in0, in1, rho, out, ghash, 0);
+}
+#else
 static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
                                           const uint8_t *in1,
                                           const uint8_t *rho,
@@ -6879,6 +6994,7 @@ static void sha3_512_sample_ntt_tail_avx2(const uint8_t *in0,
         (const uint8_t *)extra, sizeof(extra), out, count);
   }
 }
+#endif
 
 #if defined(__AVX512BW__) && defined(__GNUC__) && !defined(__clang__)
 static MLKEM_ALWAYS_INLINE void sha3_tail_set_noise3_avx2(
