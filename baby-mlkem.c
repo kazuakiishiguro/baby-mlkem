@@ -6962,14 +6962,15 @@ static MLKEM_NOINLINE void sha3_sample_ntt_tail_shared_clang_avx512(
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
       (const uint8_t *)stream, sizeof(stream), out, 0);
-  while (count < N) {
-    uint64_t extra[21];
-    keccakf4(st);
-    for (int lane = 0; lane < 21; lane++) {
-      extra[lane] = keccak_lane1_u64(st[lane]);
+  if (__builtin_expect(count < N, 0)) {
+    for (int lane = 0; lane < 25; lane++) {
+      stream[lane] = keccak_lane1_u64(st[lane]);
     }
+  }
+  while (__builtin_expect(count < N, 0)) {
+    keccakf(stream);
     count = sample_ntt_parse_stream_avx2_ready(
-        (const uint8_t *)extra, sizeof(extra), out, count);
+        (const uint8_t *)stream, 21 * sizeof(uint64_t), out, count);
   }
 
   if (__builtin_expect(public_key_hash, 1)) {
