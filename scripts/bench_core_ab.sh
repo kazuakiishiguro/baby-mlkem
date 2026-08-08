@@ -66,6 +66,7 @@ IFS=',' read -r -a SUITE_LIST <<< "$SUITES"
 suite_target() {
   case "$1" in
     kem) echo "bench" ;;
+    product) echo "bench-product" ;;
     stage) echo "bench-stages" ;;
     ntt) echo "bench-ntt" ;;
     keccak) echo "bench-keccak" ;;
@@ -76,6 +77,7 @@ suite_target() {
 suite_bin() {
   case "$1" in
     kem) echo "./benchc" ;;
+    product) echo "./bench_productc" ;;
     stage) echo "./bench_core_stagesc" ;;
     ntt) echo "./bench_nttc" ;;
     keccak) echo "./bench_keccakc" ;;
@@ -86,6 +88,7 @@ suite_bin() {
 suite_iters() {
   case "$1" in
     kem) echo "$KEM_ITERS" ;;
+    product) echo "$KEM_ITERS" ;;
     stage) echo "$STAGE_ITERS" ;;
     ntt) echo "$NTT_ITERS" ;;
     keccak) echo "$KECCAK_ITERS" ;;
