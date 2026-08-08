@@ -1,0 +1,6 @@
+candidate_ref=c2ae4e21cf2b1cdce3f456f39472add63be34054
+clang_generated_header_matches=pass
+clang_generated_avx2_assembly_matches=pass
+gcc_generated_header_matches=pass
+gcc_generated_avx2_assembly_matches=pass
+ntt_root_reproducibility=PASS

@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-fixed-ctlen-products.cJisqK/clang-avx2-product.o
+artifact_sha256=760ff0cac1954f5bb63d72fa1962910d338a57a9d276be5ea0a82798b0aa4d78
+artifact_file_bytes=80160
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=44499
+readonly_data_bytes=8152
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=52651
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured
