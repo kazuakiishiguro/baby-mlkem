@@ -8559,6 +8559,49 @@ static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
 #endif
 }
 
+#if defined(__AVX2__) && !defined(__AVX512F__) && defined(__clang__)
+/* e2 is dead after encryption. Fuse its message and inverse-final additions
+ * so the polynomial is not read and written in a separate pass. The largest
+ * pre-reduction sum is 2*(Q-1)+(Q+1)/2 = 8321, within signed 16-bit range. */
+static inline void ntt_inv_add_message_mont_final_clang_avx2(
+    const poly256 add, const uint8_t msg[32], poly256 out) {
+  const __m256i bit = _mm256_setr_epi16(
+      1, 2, 4, 8, 16, 32, 64, 128,
+      256, 512, 1024, 2048, 4096, 8192, 16384, INT16_MIN);
+  const __m256i hqs = _mm256_set1_epi16((Q + 1) / 2);
+  const __m256i zero = _mm256_setzero_si256();
+
+  ntt_inv_mont_before_final_avx2(out);
+#pragma clang loop unroll(disable)
+  for (int j = 0; j < N / 2; j += 16) {
+    uint16_t bits0, bits1;
+    memcpy(&bits0, msg + j / 8, sizeof(bits0));
+    memcpy(&bits1, msg + 16 + j / 8, sizeof(bits1));
+    __m256i mu0 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits0), bit);
+    __m256i mu1 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits1), bit);
+    mu0 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu0, zero), hqs);
+    mu1 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu1, zero), hqs);
+
+    __m256i a = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + j));
+    __m256i b = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(out + N / 2 + j));
+    __m256i scaled0, scaled1;
+    ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+    __m256i add0 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add + j));
+    __m256i add1 = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(add + N / 2 + j));
+    scaled0 = ntt_canonicalize_i16x16(
+        _mm256_add_epi16(_mm256_add_epi16(scaled0, add0), mu0));
+    scaled1 = ntt_canonicalize_i16x16(
+        _mm256_add_epi16(_mm256_add_epi16(scaled1, add1), mu1));
+    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
+    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  }
+}
+#endif
+
 #if defined(__AVX2__) && !defined(__AVX512F__)
 static MLKEM_ALWAYS_INLINE void
 mlkem_encrypt_noise3_matrix1_set_noise_avx2(
@@ -8684,9 +8727,10 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
   }
 
   if (mlen == 32) {
-    mlkem_add_message_to_poly(m, e2_arg);
+    ntt_inv_add_message_mont_final_clang_avx2(e2_arg, m, v);
+  } else {
+    ntt_inv_add_v_inplace(e2_arg, v);
   }
-  ntt_inv_add_v_inplace(e2_arg, v);
 
   uint8_t *p = out_c;
   compress_encode_poly_d10x3_shared_clang_avx2(u, p);
