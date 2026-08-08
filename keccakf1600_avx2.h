@@ -78,7 +78,12 @@ static const uint64_t mlkem_keccakf1_iota4[24][4] __attribute__((aligned(32))) =
 #endif
 
 static inline __m256i mlkem_keccakf1_load_count(const uint64_t counts[4]) {
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+  /* Keep one rotation-count table shared by the two outlined permutations. */
+  return *(const volatile __m256i *)(const void *)counts;
+#else
   return _mm256_load_si256((const __m256i *)counts);
+#endif
 }
 
 /*
