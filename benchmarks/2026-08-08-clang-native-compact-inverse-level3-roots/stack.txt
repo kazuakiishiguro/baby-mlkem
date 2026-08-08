@@ -1,0 +1,19 @@
+baseline_ref=f1dc83021bbc2e76162a0cbe5ff866b849740cea
+candidate_ref=54ea49d534e2375c1da99e9de00eadb57edfbbff
+artifact_baseline_sha256=0bdc8790a1f44a2f1e20244155dffe07930547a15a708d88d799770d512c0f9e
+artifact_candidate_sha256=83fe2ee3d41348b47e8d0ce87ad404f45776324b15ea5cd005f986837baf26ff
+compiler=clang
+flags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+method=guarded alternate stack touched high-water
+runs=8
+usable_bytes=1048576
+
+operation baseline candidate delta
+keygen 6648 6648 0
+encaps 6776 6776 0
+decaps_valid 8056 8056 0
+decaps_invalid 8056 8056 0
+maximum 8056 8056 0
+
+correctness_smoke=pass
+stack_identity=PASS
