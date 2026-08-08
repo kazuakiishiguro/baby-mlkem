@@ -1900,8 +1900,12 @@ static int NTT_ROOTS_READY = 0;
 #define MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index) \
   (MLKEM_INV_MONT_INDEX(level, index) - 32)
 #define MLKEM_HEAD_MONT_AVX512_SCALAR_INDEX 6
+/* Shared add4 needs the YMM splat; Clang's single-output inverse uses the
+ * scalar mirrors below. A common level-3 representation regresses one path. */
 #define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
-  ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)]
+  ((level) < 3 \
+       ? ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)] \
+       : _mm512_broadcast_i64x4(ZETA_NTT_INV_MONT_LO_AVX512_L3[index]))
 #define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
   ZETA_NTT_INV_MONT_HI_AVX512_DENSE[8 * (level) + (index)]
 #define MLKEM_INV_MONT_SCALAR_LO_AVX512(level, index) \
@@ -2170,6 +2174,25 @@ static inline __m512i ntt_inv_mont_level_lazy_i16x32_avx512(
   return _mm512_mask_mov_epi16(sum, product_mask, product);
 }
 
+#if defined(__clang__)
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_inv_mont_level_l3_scalar_i16x32_avx512(
+    __m512i x, __m512i partner, int16_t zeta_lo, int16_t zeta_hi,
+    __mmask32 product_mask) {
+  const __m512i q = _mm512_set1_epi16(Q);
+  __m512i sum =
+      ntt_barrett_reduce_i16x32_avx512(_mm512_add_epi16(x, partner));
+  __m512i difference = _mm512_sub_epi16(x, partner);
+  __m512i low = _mm512_mullo_epi16(
+      difference, _mm512_set1_epi16(zeta_lo));
+  __m512i high = _mm512_mulhi_epi16(
+      difference, _mm512_set1_epi16(zeta_hi));
+  __m512i product =
+      _mm512_sub_epi16(high, _mm512_mulhi_epi16(low, q));
+  return _mm512_mask_mov_epi16(sum, product_mask, product);
+}
+#endif
+
 static inline void ntt_inv_mont_pair_i16x32_avx512(
     __m512i a, __m512i b, __m512i zeta_lo, __m512i zeta_hi,
     __m512i *sum, __m512i *product) {
@@ -2216,10 +2239,17 @@ static void ntt_inv_mont_before_final_avx512(poly256 f) {
         (__mmask32)0xff00ff00u);
 
     partner = _mm512_permutexvar_epi64(swap_halves, x);
+#if defined(__clang__)
+    x = ntt_inv_mont_level_l3_scalar_i16x32_avx512(
+        x, partner, ZETA_NTT_INV_MONT_LO_AVX512_L3_SCALAR[block],
+        ZETA_NTT_INV_MONT_HI_AVX512_L3_SCALAR[block],
+        (__mmask32)0xffff0000u);
+#else
     x = ntt_inv_mont_level_i16x32_avx512(
         x, partner, MLKEM_INV_MONT_DENSE_LO_AVX512(3, block),
         MLKEM_INV_MONT_DENSE_HI_AVX512(3, block),
         (__mmask32)0xffff0000u);
+#endif
     _mm512_storeu_si512((void *)(f + 32 * block), x);
   }
 

@@ -319,6 +319,9 @@ int main(int argc, char **argv) {
   vec512 tail_mont_hi_avx512[3][8];
   vec512 inv_mont_lo_avx512_dense[32];
   vec512 inv_mont_hi_avx512_dense[32];
+  vec256 inv_mont_lo_avx512_l3[8];
+  int16_t inv_mont_lo_avx512_l3_scalar[8];
+  int16_t inv_mont_hi_avx512_l3_scalar[8];
   int16_t mont_lo_avx512_scalar[7];
   int16_t mont_hi_avx512_scalar[7];
   int16_t inv_mont_final_avx512_scalar[3];
@@ -419,6 +422,15 @@ int main(int argc, char **argv) {
       inv_mont_lo_avx512_dense[8 * level + block] = vec512_i16(low);
       inv_mont_hi_avx512_dense[8 * level + block] = vec512_i16(high);
     }
+  }
+
+  for (int block = 0; block < 8; block++) {
+    for (int word = 0; word < 4; word++) {
+      inv_mont_lo_avx512_l3[block].word[word] =
+          inv_mont_lo_avx512_dense[24 + block].word[word];
+    }
+    inv_mont_lo_avx512_l3_scalar[block] = inv_mont_lo_scalar[block];
+    inv_mont_hi_avx512_l3_scalar[block] = inv_mont_hi_scalar[block];
   }
 
   int scalar_index = 0;
@@ -546,9 +558,15 @@ int main(int argc, char **argv) {
   print_vec512_matrix("ZETA_NTT_TAIL_MONT_HI_AVX512",
                       &tail_mont_hi_avx512[0][0], 3, 8);
   print_vec512_array("ZETA_NTT_INV_MONT_LO_AVX512_DENSE",
-                     inv_mont_lo_avx512_dense, 32);
+                     inv_mont_lo_avx512_dense, 24);
   print_vec512_array("ZETA_NTT_INV_MONT_HI_AVX512_DENSE",
                      inv_mont_hi_avx512_dense, 32);
+  print_vec256_array("ZETA_NTT_INV_MONT_LO_AVX512_L3",
+                     inv_mont_lo_avx512_l3, 8);
+  print_i16_array("ZETA_NTT_INV_MONT_LO_AVX512_L3_SCALAR",
+                  inv_mont_lo_avx512_l3_scalar, 8);
+  print_i16_array("ZETA_NTT_INV_MONT_HI_AVX512_L3_SCALAR",
+                  inv_mont_hi_avx512_l3_scalar, 8);
   print_i16_array("ZETA_MONT_LO_AVX512_SCALAR",
                   mont_lo_avx512_scalar, 7);
   print_i16_array("ZETA_MONT_HI_AVX512_SCALAR",

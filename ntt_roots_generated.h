@@ -852,7 +852,7 @@ static const __m512i ZETA_NTT_TAIL_MONT_HI_AVX512[3][8] = {
   }
 };
 
-static const __m512i ZETA_NTT_INV_MONT_LO_AVX512_DENSE[32] = {
+static const __m512i ZETA_NTT_INV_MONT_LO_AVX512_DENSE[24] = {
     {
       (long long)UINT64_C(0x5a5c5a5c5a5c5a5c), (long long)UINT64_C(0xbbf2bbf2bbf2bbf2),
       (long long)UINT64_C(0x1e4c1e4c1e4c1e4c), (long long)UINT64_C(0x5dbe5dbe5dbe5dbe),
@@ -996,54 +996,6 @@ static const __m512i ZETA_NTT_INV_MONT_LO_AVX512_DENSE[32] = {
       (long long)UINT64_C(0x43d343d343d343d3), (long long)UINT64_C(0x43d343d343d343d3),
       (long long)UINT64_C(0xe93de93de93de93d), (long long)UINT64_C(0xe93de93de93de93d),
       (long long)UINT64_C(0xe93de93de93de93d), (long long)UINT64_C(0xe93de93de93de93d)
-    },
-    {
-      (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc),
-      (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc),
-      (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc),
-      (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc)
-    },
-    {
-      (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e),
-      (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e),
-      (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e),
-      (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e)
-    },
-    {
-      (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e),
-      (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e),
-      (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e),
-      (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e)
-    },
-    {
-      (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2),
-      (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2),
-      (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2),
-      (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2)
-    },
-    {
-      (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6),
-      (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6),
-      (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6),
-      (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6)
-    },
-    {
-      (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129),
-      (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129),
-      (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129),
-      (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129)
-    },
-    {
-      (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e),
-      (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e),
-      (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e),
-      (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e)
-    },
-    {
-      (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55),
-      (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55),
-      (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55),
-      (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55)
     }
 };
 
@@ -1240,6 +1192,25 @@ static const __m512i ZETA_NTT_INV_MONT_HI_AVX512_DENSE[32] = {
       (long long)UINT64_C(0xff55ff55ff55ff55), (long long)UINT64_C(0xff55ff55ff55ff55),
       (long long)UINT64_C(0xff55ff55ff55ff55), (long long)UINT64_C(0xff55ff55ff55ff55)
     }
+};
+
+static const __m256i ZETA_NTT_INV_MONT_LO_AVX512_L3[8] = {
+    {(long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc), (long long)UINT64_C(0x79bc79bc79bc79bc)},
+    {(long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e), (long long)UINT64_C(0xd43ed43ed43ed43e)},
+    {(long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e), (long long)UINT64_C(0x054e054e054e054e)},
+    {(long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2), (long long)UINT64_C(0x29c229c229c229c2)},
+    {(long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6), (long long)UINT64_C(0xc2b6c2b6c2b6c2b6)},
+    {(long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129), (long long)UINT64_C(0xf129f129f129f129)},
+    {(long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e), (long long)UINT64_C(0x6c6e6c6e6c6e6c6e)},
+    {(long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55), (long long)UINT64_C(0xae55ae55ae55ae55)}
+};
+
+static const int16_t ZETA_NTT_INV_MONT_LO_AVX512_L3_SCALAR[8] = {
+     31164, -11202,   1358,  10690, -15690,  -3799,  27758, -20907
+};
+
+static const int16_t ZETA_NTT_INV_MONT_HI_AVX512_L3_SCALAR[8] = {
+      1468,  -1474,  -1202,    962,    182,   1577,    622,   -171
 };
 
 static const int16_t ZETA_MONT_LO_AVX512_SCALAR[7] = {
