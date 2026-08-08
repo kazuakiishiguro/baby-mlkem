@@ -1,0 +1,16 @@
+stage batch1_gmean batch2_gmean combined_18_pair_gmean
+mlkem_core_stage_encrypt_noise_ntt 0.9981x 1.0076x 1.002839x
+mlkem_core_stage_encrypt_noise_ntt_lazy 0.9976x 0.9946x 0.996099x
+mlkem_core_stage_encrypt_noise_ntt_lazy_level_batch 1.0023x 1.0002x 1.001249x
+mlkem_core_stage_keygen_noise_ntt 0.9953x 1.0002x 0.997747x
+mlkem_core_stage_keygen_noise_ntt_only 0.9936x 0.9873x 0.990445x
+mlkem_core_stage_keygen_noise_ntt_head_only 1.0001x 0.9971x 0.998599x
+mlkem_core_stage_keygen_noise_ntt_tail_only 0.9991x 1.0017x 1.000399x
+mlkem_core_stage_keygen_noise_ntt_headtail_batch 0.9947x 0.9962x 0.995450x
+mlkem_core_stage_kpke_encrypt_cached 1.0077x 0.9976x 1.002637x
+mlkem_core_stage_kpke_encrypt_uncached 1.0007x 1.0010x 1.000850x
+mlkem_core_stage_kpke_keygen_full 0.9917x 0.9982x 0.994945x
+minimum_selected_combined=0.990445x
+diagnostic_gate=MIXED
+speed_gain_credit=none
+note=complete stage oracle correctness passes; timing rows are retained as diagnostics and do not establish a speed improvement

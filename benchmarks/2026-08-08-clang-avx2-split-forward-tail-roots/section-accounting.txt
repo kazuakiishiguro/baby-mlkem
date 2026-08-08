@@ -1,0 +1,18 @@
+baseline_ref=753961b3bace2dcbf43ba4d3c145f4056f17da72
+candidate_ref=dc09558236d1141437b1e5f41bd464a026f0b456
+section baseline candidate delta
+code_total 44701 44701 +0
+readonly_total 9449 8937 -512
+primary_total 54150 53638 -512
+ntt_mont_lazy_avx2_text 3584 3584 +0
+rodata.cst32 4512 4512 +0
+forward_tail_explicit_lo 768 512 -256
+forward_tail_explicit_hi 768 512 -256
+forward_tail_explicit_total 1536 1024 -512
+writable_total 26593 26593 +0
+
+The candidate leaves the forward-NTT function and compiler-local cst32 pool
+unchanged in size. Clang folds the level-0 factors into cst32 operands, so
+separating that level lets --gc-sections discard its two explicit 256-byte
+arrays. Levels 1 and 2 remain two contiguous 512-byte arrays per low/high
+factor family and preserve one indexed base address.

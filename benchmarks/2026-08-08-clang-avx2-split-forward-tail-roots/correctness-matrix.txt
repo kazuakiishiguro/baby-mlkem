@@ -1,0 +1,12 @@
+[clang-native]
+kat=pass product=pass stage=pass sink=5236638352469415403 sha256=7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e code=53409 ro=19639 primary=73048 writable=18001
+[clang-avx2]
+kat=pass product=pass stage=pass sink=8086079251842987743 sha256=8219abeb783e39b6ba0e40ee80ea715ac004332720c321a404ccae53bbe9361d code=44701 ro=8937 primary=53638 writable=26593
+[clang-scalar]
+kat=pass product=pass stage=pass sink=3075663932904715540 sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c code=60160 ro=2033 primary=62193 writable=18944
+[gcc-native]
+kat=pass product=pass stage=pass sink=5236638352469415403 sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0 code=56006 ro=3565 primary=59571 writable=33728
+[gcc-avx2]
+kat=pass product=pass stage=pass sink=8086079251842987743 sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5 code=49829 ro=3785 primary=53614 writable=34920
+[gcc-scalar]
+kat=pass product=pass stage=pass sink=3075663932904715540 sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390 code=21530 ro=1737 primary=23267 writable=19488

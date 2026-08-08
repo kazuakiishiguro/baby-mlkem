@@ -1,0 +1,17 @@
+artifact=/tmp/forward-tail-split/matrix/clang-avx2.o
+artifact_sha256=8219abeb783e39b6ba0e40ee80ea715ac004332720c321a404ccae53bbe9361d
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4544
+encaps_stack_bytes=4176
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4544
+correctness_smoke=pass

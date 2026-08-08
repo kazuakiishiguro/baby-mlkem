@@ -1,0 +1,13 @@
+operation batch1_gmean batch2_gmean combined_32_pair_gmean
+mlkem_decaps 1.0077x 1.0023x 1.004997x
+mlkem_decaps_core 1.0162x 1.0007x 1.008417x
+mlkem_encaps 0.9988x 1.0001x 0.999450x
+mlkem_encaps_core 1.0007x 1.0027x 1.001699x
+mlkem_keygen 1.0056x 0.9957x 1.000638x
+mlkem_keygen_core 1.0066x 0.9944x 1.000484x
+mlkem_roundtrip 1.0049x 0.9971x 1.000992x
+mlkem_roundtrip_core 1.0066x 0.9992x 1.002892x
+minimum_combined=0.999450x
+internal_floor=0.995000x
+gate=PASS
+note=combined values are geometric means of equal-size batch gmeans printed to four decimals
