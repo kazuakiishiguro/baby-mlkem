@@ -511,8 +511,12 @@ int main(int argc, char **argv) {
   print_vec256_array("ZETA_NTT_HEAD_MONT_LO", head_mont_lo, 15);
   print_vec256_array("ZETA_NTT_HEAD_MONT_HI", head_mont_hi, 15);
   printf("#endif\n\n");
-  print_vec256_matrix("ZETA_NTT_TAIL_MONT_LO", &tail_mont_lo[0][0], 3, 8);
-  print_vec256_matrix("ZETA_NTT_TAIL_MONT_HI", &tail_mont_hi[0][0], 3, 8);
+  print_vec256_array("ZETA_NTT_TAIL_MONT_LO_L0", tail_mont_lo[0], 8);
+  print_vec256_matrix("ZETA_NTT_TAIL_MONT_LO_L12", &tail_mont_lo[1][0],
+                      2, 8);
+  print_vec256_array("ZETA_NTT_TAIL_MONT_HI_L0", tail_mont_hi[0], 8);
+  print_vec256_matrix("ZETA_NTT_TAIL_MONT_HI_L12", &tail_mont_hi[1][0],
+                      2, 8);
   printf("#if !(defined(__AVX512F__) && defined(__AVX512BW__))\n");
   printf("#if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)\n");
   printf("extern const __m256i ZETA_NTT_INV_MONT_LO[24]\n");
