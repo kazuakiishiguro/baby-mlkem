@@ -1,0 +1,96 @@
+baseline_ref=3d435b70434b4c5dba10a7c5cd240c2a1936d7c8
+candidate_ref=3a93975f17001c03f3a3671d57b6c9ea531803e3
+compiler=clang
+profile=avx2-only
+avx2_backend=core
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+product_core=BABY_MLKEM_DISABLE_INTERNAL_CACHES
+baseline_product_sha256=707c90499c2dd27a8cb634cb1d148a8a553052ae9a44fa0b62d77002767910f2
+candidate_product_sha256=b7d3a42108f5442c6a177133b7e1e5357d6f5b0a14d8f107d0baa720a6c5bffa
+baseline_benchmark_sha256=ea97fc9f120b75696364ed1414e09770340dc090280e5ae6772041b9cc3f2b8d
+candidate_benchmark_sha256=bc77819ff26dfe50a628a6464e8c186a940812c9e4ff447be195efbaaa5dc31f
+common_harness_object_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+batch=3
+source_batch=5
+warmup_pairs=3
+measured_pairs=16
+iterations=100000
+pin_cpu=0
+run_order=alternating, odd baseline-first
+speedup_direction=baseline_time/candidate_time
+normal_core_alias_check=PASS
+
+run order base_keygen cand_keygen base_encaps cand_encaps base_decaps cand_decaps base_roundtrip cand_roundtrip
+01 baseline-first 5895.15 5771.93 4646.74 4668.63 4652.18 4670.86 15554.85 15382.77
+02 candidate-first 5782.26 5779.45 4644.82 4641.39 4638.03 4626.87 15410.89 15367.69
+03 baseline-first 5864.12 5812.42 4646.69 4635.82 4680.97 4632.65 15390.70 15378.18
+04 candidate-first 5769.16 5790.45 4642.55 4645.67 4635.93 4640.75 15445.70 15425.87
+05 baseline-first 5836.40 5778.08 4702.93 4629.83 4634.76 4659.86 15473.34 15394.27
+06 candidate-first 5764.41 5774.16 4648.09 4643.97 4632.21 4672.45 15365.02 15412.59
+07 baseline-first 5835.42 5779.70 4730.07 4634.32 4697.39 4637.20 15579.66 15367.82
+08 candidate-first 5765.40 5777.54 4649.57 4704.44 4686.02 4681.60 15413.70 15490.70
+09 baseline-first 5809.77 5768.87 4644.52 4632.48 4669.32 4630.59 15441.10 15414.31
+10 candidate-first 5774.49 5781.17 4642.38 4673.90 4633.06 4630.76 15357.96 15415.78
+11 baseline-first 5770.54 5783.39 4643.63 4639.39 4708.84 4762.73 15399.52 15549.15
+12 candidate-first 5831.28 5773.84 4653.14 4646.61 5000.59 4671.00 15860.53 15415.52
+13 baseline-first 5804.26 5799.48 4646.75 4675.08 4639.91 4665.35 15487.20 15447.73
+14 candidate-first 6160.44 5807.35 4805.92 4640.24 4676.19 4639.23 15927.40 15404.11
+15 baseline-first 5808.85 5801.83 4687.29 4649.20 4676.29 4653.58 15409.90 15473.39
+16 candidate-first 5826.15 5804.39 4672.83 4629.18 4657.73 4641.75 15457.03 15426.29
+
+batch=3
+baseline_object_sha256=707c90499c2dd27a8cb634cb1d148a8a553052ae9a44fa0b62d77002767910f2
+candidate_object_sha256=b7d3a42108f5442c6a177133b7e1e5357d6f5b0a14d8f107d0baa720a6c5bffa
+common_harness_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+keygen_runs=16
+keygen_local_mean_ns=5786.50
+keygen_local_median_ns=5780.43
+keygen_competitor_mean_ns=5831.13
+keygen_competitor_median_ns=5809.31
+keygen_speedup_ratio_of_medians=1.0050x
+keygen_speedup_gmean=1.0076x
+keygen_speedup_ci95_low=1.0018x
+keygen_speedup_ci95_high=1.0159x
+keygen_speedup_median=1.0025x
+keygen_wins=11/16
+keygen_local_first_median=1.0080x
+keygen_competitor_first_median=0.9997x
+encaps_runs=16
+encaps_local_mean_ns=4649.38
+encaps_local_median_ns=4642.68
+encaps_competitor_mean_ns=4669.24
+encaps_competitor_median_ns=4647.42
+encaps_speedup_ratio_of_medians=1.0010x
+encaps_speedup_gmean=1.0042x
+encaps_speedup_ci95_low=0.9992x
+encaps_speedup_ci95_high=1.0102x
+encaps_speedup_median=1.0012x
+encaps_wins=11/16
+encaps_local_first_median=1.0025x
+encaps_competitor_first_median=1.0008x
+decaps_runs=16
+decaps_local_mean_ns=4657.33
+decaps_local_median_ns=4647.66
+decaps_competitor_mean_ns=4682.46
+decaps_competitor_median_ns=4663.52
+decaps_speedup_ratio_of_medians=1.0034x
+decaps_speedup_gmean=1.0053x
+decaps_speedup_ci95_low=0.9985x
+decaps_speedup_ci95_high=1.0153x
+decaps_speedup_median=1.0017x
+decaps_wins=10/16
+decaps_local_first_median=1.0004x
+decaps_competitor_first_median=1.0017x
+roundtrip_runs=16
+roundtrip_local_mean_ns=15422.89
+roundtrip_local_median_ns=15414.92
+roundtrip_competitor_mean_ns=15498.41
+roundtrip_competitor_median_ns=15443.40
+roundtrip_speedup_ratio_of_medians=1.0018x
+roundtrip_speedup_gmean=1.0048x
+roundtrip_speedup_ci95_low=0.9998x
+roundtrip_speedup_ci95_high=1.0109x
+roundtrip_speedup_median=1.0019x
+roundtrip_wins=11/16
+roundtrip_local_first_median=1.0021x
+roundtrip_competitor_first_median=1.0016x

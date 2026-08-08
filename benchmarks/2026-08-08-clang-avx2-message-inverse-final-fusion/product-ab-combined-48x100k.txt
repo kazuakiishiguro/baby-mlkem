@@ -1,0 +1,73 @@
+baseline_ref=3d435b70434b4c5dba10a7c5cd240c2a1936d7c8
+candidate_ref=3a93975f17001c03f3a3671d57b6c9ea531803e3
+baseline_product_sha256=707c90499c2dd27a8cb634cb1d148a8a553052ae9a44fa0b62d77002767910f2
+candidate_product_sha256=b7d3a42108f5442c6a177133b7e1e5357d6f5b0a14d8f107d0baa720a6c5bffa
+common_harness_object_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+protocol=3 independent batches x 16 paired runs x 100000 iterations
+combination=geometric mean over all 48 unrounded paired ratios
+speedup_direction=baseline_time/candidate_time
+bootstrap_samples=100000
+operation_regression_floor=0.995000000
+normal_core_alias_processes=96
+normal_core_alias_check=PASS
+
+metric batch1 batch2 batch3 combined
+keygen 1.0061 1.0019 1.0076 1.005197725
+encaps 1.0043 1.0019 1.0042 1.003486551
+decaps 0.9925 1.0093 1.0053 1.002353694
+roundtrip 0.9998 1.0045 1.0048 1.003048456
+
+keygen_runs=48
+keygen_local_mean_ns=5790.159792
+keygen_local_median_ns=5780.970000
+keygen_competitor_mean_ns=5820.790625
+keygen_competitor_median_ns=5791.515000
+keygen_speedup_ratio_of_medians=1.001824088x
+keygen_speedup_gmean=1.005197725x
+keygen_speedup_ci95_low=1.001320193x
+keygen_speedup_ci95_high=1.009620666x
+keygen_speedup_median=1.001124851x
+keygen_wins=28/48
+keygen_local_first_median=1.001448814x
+keygen_competitor_first_median=1.000343616x
+encaps_runs=48
+encaps_local_mean_ns=4653.438125
+encaps_local_median_ns=4641.455000
+encaps_competitor_mean_ns=4669.672917
+encaps_competitor_median_ns=4651.515000
+encaps_speedup_ratio_of_medians=1.002167424x
+encaps_speedup_gmean=1.003486551x
+encaps_speedup_ci95_low=0.999973177x
+encaps_speedup_ci95_high=1.006916864x
+encaps_speedup_median=1.002471912x
+encaps_wins=36/48
+encaps_local_first_median=1.003031957x
+encaps_competitor_first_median=1.001668517x
+decaps_runs=48
+decaps_local_mean_ns=4669.945417
+decaps_local_median_ns=4640.735000
+decaps_competitor_mean_ns=4681.878333
+decaps_competitor_median_ns=4642.200000
+decaps_speedup_ratio_of_medians=1.000315683x
+decaps_speedup_gmean=1.002353694x
+decaps_speedup_ci95_low=0.993916004x
+decaps_speedup_ci95_high=1.012237099x
+decaps_speedup_median=1.000145545x
+decaps_wins=24/48
+decaps_local_first_median=0.999568089x
+decaps_competitor_first_median=1.000664757x
+roundtrip_runs=48
+roundtrip_local_mean_ns=15443.577083
+roundtrip_local_median_ns=15402.685000
+roundtrip_competitor_mean_ns=15491.385625
+roundtrip_competitor_median_ns=15436.005000
+roundtrip_speedup_ratio_of_medians=1.002163259x
+roundtrip_speedup_gmean=1.003048456x
+roundtrip_speedup_ci95_low=0.998954771x
+roundtrip_speedup_ci95_high=1.007636000x
+roundtrip_speedup_median=1.001948676x
+roundtrip_wins=34/48
+roundtrip_local_first_median=1.001501026x
+roundtrip_competitor_first_median=1.003473712x
+minimum_combined_ratio=decaps 1.002353694
+formal_gate=PASS

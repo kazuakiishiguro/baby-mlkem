@@ -1,0 +1,7 @@
+baseline_ref=3d435b70434b4c5dba10a7c5cd240c2a1936d7c8
+accepted_ref=3a93975f17001c03f3a3671d57b6c9ea531803e3
+candidate code_bytes readonly_bytes primary_bytes delta_vs_baseline decisive_result
+fixed_mlen32_source 44195 7578 51773 0 machine_code_disassembly_identical; rejected_no_effect
+fused_noinline_minsize 43415 7818 51233 -540 386_bytes_larger_than_inline; rejected_before_timing
+fused_inline_accepted 43293 7554 50847 -926 direct_gmean=1.0584; direct_ci95_low=1.0560; product_48_pair_minimum=1.002353694
+selection=The inline fusion is the smallest candidate, has a significant focused speedup, and clears the 0.995 complete-product operation floor.
