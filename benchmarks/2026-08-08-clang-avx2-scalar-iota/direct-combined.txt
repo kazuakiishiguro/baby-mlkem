@@ -1,0 +1,13 @@
+metric batch1 batch2 combined
+generic_keccak_paired_gmean 1.001718408x 1.002540200x 1.002129220x
+generic_keccak_paired_median 0.999862990x 1.000688702x 1.000218441x
+generic_keccak_wins 14/31 18/31 32/62
+fixed_hash_paired_gmean=1.006657782x
+fixed_hash_paired_median=1.008777167x
+fixed_hash_wins=29/31
+generic_keccak_iterations_per_run=1000000
+fixed_hash_iterations_per_run=100000
+warmup_pairs=4
+run_order=alternating
+pin_cpu=0
+kem_speed_gain_credit=none
