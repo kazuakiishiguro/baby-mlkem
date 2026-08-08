@@ -1,0 +1,15 @@
+baseline_ref=85e0cb3584d0a9a6900aad278534cc476e030918
+candidate_ref=07c105095c43b3bc46cffd2796033dfe5041eae6
+profile=clang-avx2-only
+method=guarded alternate stack touched high-water
+runs=8
+usable_bytes=1048576
+operation baseline_bytes candidate_bytes delta
+keygen 4512 4512 0
+encaps 4144 4144 0
+decaps_valid 4512 4512 0
+decaps_invalid 4512 4512 0
+maximum 4512 4512 0
+baseline_correctness_smoke=pass
+candidate_correctness_smoke=pass
+maximum_stack_nonincrease=PASS

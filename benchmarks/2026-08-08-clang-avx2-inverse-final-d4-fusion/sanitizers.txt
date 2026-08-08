@@ -1,0 +1,18 @@
+candidate_ref=07c105095c43b3bc46cffd2796033dfe5041eae6
+profile=clang-avx2-only
+compiler=clang
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+asan_options=detect_leaks=0:halt_on_error=1
+ubsan_options=halt_on_error=1
+kat=pass
+product_method=direct-link-without-relocatable-compiler-r
+product=pass
+complete_stage_iterations=1000
+complete_stage=pass
+complete_stage_sink=4297556503821386549
+sanitizer_diagnostics=none
+build_log_sha256=edb23583f5b10d26d181e38d06f76b660dcf4808fb2d0b31361c3e6448ae98b6
+kat_log_sha256=528ea755d8cf280a79b91816b3c4ce5d620a298287045c4c918d12735624fd5d
+product_log_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+stage_log_sha256=234469a8f42abae343e1413fe732abd7c3538aa9c7f3be246eb6bf02be03a2d7
+sanitizer_gate=PASS
