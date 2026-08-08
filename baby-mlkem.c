@@ -462,7 +462,15 @@ static void keccakf(uint64_t state[25])
         state[24] = Asu;
 }
 #else
+#if defined(__clang__) && !defined(__AVX512F__)
+/* Reuse the scalar constants instead of retaining a duplicate four-lane table. */
+#define MLKEM_KECCAKF1_IOTA(round) \
+  _mm256_set1_epi64x((long long)rc[(round)])
+#endif
 #include "keccakf1600_avx2.h"
+#if defined(MLKEM_KECCAKF1_IOTA)
+#undef MLKEM_KECCAKF1_IOTA
+#endif
 static MLKEM_ALWAYS_INLINE void keccakf(uint64_t state[25]) {
   mlkem_keccakf1600_avx2(state);
 }

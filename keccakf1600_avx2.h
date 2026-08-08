@@ -55,7 +55,9 @@ static const uint64_t mlkem_keccakf1_rotr_count[6][4] __attribute__((aligned(32)
     {61, 46, 28, 23}, {63, 2, 36, 37}, {19, 58, 8, 25},
     {54, 3, 9, 56}, {62, 49, 39, 44}, {20, 21, 43, 50}};
 
-#define MLKEM_KECCAKF1_RC4(x) {UINT64_C(x), UINT64_C(x), UINT64_C(x), UINT64_C(x)}
+#if !defined(MLKEM_KECCAKF1_IOTA)
+#define MLKEM_KECCAKF1_RC4(x) \
+  {UINT64_C(x), UINT64_C(x), UINT64_C(x), UINT64_C(x)}
 static const uint64_t mlkem_keccakf1_iota4[24][4] __attribute__((aligned(32))) = {
     MLKEM_KECCAKF1_RC4(0x0000000000000001), MLKEM_KECCAKF1_RC4(0x0000000000008082),
     MLKEM_KECCAKF1_RC4(0x800000000000808a), MLKEM_KECCAKF1_RC4(0x8000000080008000),
@@ -70,6 +72,10 @@ static const uint64_t mlkem_keccakf1_iota4[24][4] __attribute__((aligned(32))) =
     MLKEM_KECCAKF1_RC4(0x8000000080008081), MLKEM_KECCAKF1_RC4(0x8000000000008080),
     MLKEM_KECCAKF1_RC4(0x0000000080000001), MLKEM_KECCAKF1_RC4(0x8000000080008008)};
 #undef MLKEM_KECCAKF1_RC4
+#define MLKEM_KECCAKF1_IOTA(round) \
+  _mm256_load_si256((const __m256i *)mlkem_keccakf1_iota4[(round)])
+#define MLKEM_KECCAKF1_UNDEF_IOTA
+#endif
 
 static inline __m256i mlkem_keccakf1_load_count(const uint64_t counts[4]) {
   return _mm256_load_si256((const __m256i *)counts);
@@ -237,8 +243,7 @@ mlkem_keccakf1600_avx2_permute(mlkem_keccakf1600_avx2_state *state) {
     x0 = _mm256_xor_si256(x0, x7);
     x1 = _mm256_xor_si256(x1, x8);
     x4 = _mm256_xor_si256(x4, x11);
-    x0 = _mm256_xor_si256(
-        x0, _mm256_load_si256((const __m256i *)mlkem_keccakf1_iota4[round]));
+    x0 = _mm256_xor_si256(x0, MLKEM_KECCAKF1_IOTA(round));
   }
 
   state->x0 = x0;
@@ -379,8 +384,7 @@ mlkem_keccakf1600_avx2_permute_native_rotate(
     x0 = _mm256_xor_si256(x0, x7);
     x1 = _mm256_xor_si256(x1, x8);
     x4 = _mm256_xor_si256(x4, x11);
-    x0 = _mm256_xor_si256(
-        x0, _mm256_load_si256((const __m256i *)mlkem_keccakf1_iota4[round]));
+    x0 = _mm256_xor_si256(x0, MLKEM_KECCAKF1_IOTA(round));
   }
 
   state->x0 = x0;
@@ -438,5 +442,9 @@ static MLKEM_KECCAKF1_NOINLINE void mlkem_keccakf1600_avx2(uint64_t st[25]) {
 
 #undef MLKEM_KECCAKF1_ALWAYS_INLINE
 #undef MLKEM_KECCAKF1_NOINLINE
+#if defined(MLKEM_KECCAKF1_UNDEF_IOTA)
+#undef MLKEM_KECCAKF1_IOTA
+#undef MLKEM_KECCAKF1_UNDEF_IOTA
+#endif
 
 #endif
