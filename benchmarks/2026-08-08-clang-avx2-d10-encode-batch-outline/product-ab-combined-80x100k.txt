@@ -1,0 +1,16 @@
+baseline_ref=ed903ae02e53d14b42f533c24ab7237870d549ff
+candidate_ref=a32efa8e26e1ada223ce126805352774d0d530ba
+protocol=5 independent batches x 16 paired runs x 100000 iterations
+combination=geometric mean over all 80 unrounded paired ratios
+speedup_direction=baseline_time/candidate_time
+bootstrap_samples=100000
+operation_regression_floor=0.995000000
+normal_core_alias_check=PASS
+
+metric batch1 batch2 batch3 batch4 batch5 combined ci95_low ci95_high median wins decision
+keygen 0.999411490 1.008147200 0.997703450 1.001039204 1.002207064 1.001695358 0.998050378 1.005607652 1.000558755 43/80 PASS
+encaps 1.000941777 0.995754096 0.994933635 1.002673708 1.010135196 1.000872674 0.997746829 1.003960404 1.000642032 43/80 PASS
+decaps 0.989374055 1.006316484 1.001897373 1.004197712 1.000948255 1.000529364 0.993932211 1.007167169 0.999864715 39/80 PASS
+roundtrip 0.996026514 1.004184022 0.998487235 1.001109869 1.002470814 1.000451502 0.997359848 1.003625745 0.999772842 37/80 PASS
+minimum_combined_ratio=roundtrip 1.000451502
+formal_gate=PASS

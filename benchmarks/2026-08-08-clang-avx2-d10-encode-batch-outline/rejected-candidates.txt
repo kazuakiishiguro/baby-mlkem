@@ -1,0 +1,6 @@
+baseline_ref=ed903ae02e53d14b42f533c24ab7237870d549ff
+candidate primary_bytes delta_vs_baseline decisive_result
+global_falign_loops_32 51299 -896 independent_20_pair_decaps_gmean=0.991303; rejected
+global_falign_loops_16 50859 -1336 three_way_16_pair_keygen_gmean=0.991921; rejected
+compact_d10x3_accepted 51773 -422 direct_helper_gmean=1.006970559; product_80_pair_minimum=1.000451502
+selection=The compact d10 x3 boundary is smaller and clears the 0.995 operation floor; the globally smaller loop-alignment products regress complete KEM operations and remain rejected.

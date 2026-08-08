@@ -1,0 +1,13 @@
+baseline_ref=ed903ae02e53d14b42f533c24ab7237870d549ff
+candidate_ref=a32efa8e26e1ada223ce126805352774d0d530ba
+direct_harness_compile=PASS
+direct_harness_output_identity=PASS
+direct_harness_sink=f2adc04c7fd8dd7f
+markdown_links=PASS
+product_80_pair_minimum=1.000451502
+product_regression_gate=PASS
+size_arithmetic=PASS
+candidate_artifact_hash=PASS
+pass_markers=PASS
+report_evidence=PASS
+git_diff_check=PASS

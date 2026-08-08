@@ -1,0 +1,13 @@
+candidate_ref=a32efa8e26e1ada223ce126805352774d0d530ba
+profile=clang-avx2-only
+clean_build=pass
+product_api=pass
+complete_stage_iterations=1000
+complete_stage=pass
+complete_stage_sink=4297556503821386549
+artifact_sha256=707c90499c2dd27a8cb634cb1d148a8a553052ae9a44fa0b62d77002767910f2
+code_bytes=44195
+readonly_data_bytes=7578
+primary_bytes=51773
+writable_bytes=26593
+postcommit_reproduction=PASS
