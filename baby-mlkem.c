@@ -6228,6 +6228,20 @@ static int sample_ntt_parse_stream_avx2(const uint8_t *stream,
   sample_ntt_parse_init_avx2();
   return sample_ntt_parse_stream_avx2_ready(stream, stream_len, out, count);
 }
+
+#if defined(__clang__) && !defined(__AVX512F__)
+/* Share the rare scalar continuation instead of cloning the AVX2 parser into
+ * every matrix sampler. Callers have already consumed the first three rates. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+sample_ntt_scalar_refill_shared_clang_avx2(uint64_t st[25], poly256 out,
+                                           int count) {
+  while (count < N) {
+    keccakf(st);
+    count = sample_ntt_parse_stream_avx2_ready(
+        (const uint8_t *)(const void *)st, 21 * sizeof(uint64_t), out, count);
+  }
+}
+#endif
 #endif
 
 static int sample_ntt_parse_stream(const uint8_t *stream,
@@ -6318,11 +6332,15 @@ static void sample_ntt(const uint8_t *seed, int i, int j, poly256 out) {
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
       (const uint8_t *)(const void *)stream, sizeof(stream), out, 0);
+#if defined(__clang__) && !defined(__AVX512F__)
+  sample_ntt_scalar_refill_shared_clang_avx2(st, out, count);
+#else
   while (count < N) {
     keccakf(st);
     count = sample_ntt_parse_stream_avx2_ready(
         (const uint8_t *)(const void *)st, 168, out, count);
   }
+#endif
 #else
   keccak_ctx ctx;
   keccak_init(&ctx, 168);
@@ -6452,12 +6470,17 @@ static void sample_ntt4(const uint8_t *seed,
         _mm256_storeu_si256((__m256i *)(void *)words, st[word]);
         scalar_st[word] = words[lane];
       }
+#if defined(__clang__) && !defined(__AVX512F__)
+      sample_ntt_scalar_refill_shared_clang_avx2(
+          scalar_st, outs[lane], count[lane]);
+#else
       while (count[lane] < N) {
         keccakf(scalar_st);
         count[lane] = sample_ntt_parse_stream_avx2_ready(
             (const uint8_t *)(const void *)scalar_st, 168, outs[lane],
             count[lane]);
       }
+#endif
     }
   }
 }
@@ -6914,6 +6937,9 @@ static void sample_ntt_tail_lane2_accum3_parse_avx2(const __m256i st[25],
   sample_ntt_parse_init_avx2();
   int count = sample_ntt_parse_stream_avx2_ready(
       (const uint8_t *)stream, sizeof(stream), tail, 0);
+#if defined(__clang__) && !defined(__AVX512F__)
+  sample_ntt_scalar_refill_shared_clang_avx2(tail_state, tail, count);
+#else
   while (count < N) {
     uint64_t extra[21];
     keccakf(tail_state);
@@ -6923,6 +6949,7 @@ static void sample_ntt_tail_lane2_accum3_parse_avx2(const __m256i st[25],
     count = sample_ntt_parse_stream_avx2_ready(
         (const uint8_t *)extra, sizeof(extra), tail, count);
   }
+#endif
 }
 
 #if defined(__clang__) && defined(__AVX512F__)
@@ -7190,6 +7217,10 @@ static void hash_matrix_x3_parse_group(const __m256i st[25],
       _mm256_storeu_si256((__m256i *)(void *)lanes, st[word]);
       scalar_st[word] = lanes[lane + 1];
     }
+#if defined(__clang__) && !defined(__AVX512F__)
+    sample_ntt_scalar_refill_shared_clang_avx2(
+        scalar_st, outs[lane], count);
+#else
     while (count < N) {
       uint64_t extra[21];
       keccakf(scalar_st);
@@ -7198,6 +7229,7 @@ static void hash_matrix_x3_parse_group(const __m256i st[25],
           (const uint8_t *)(const void *)extra, sizeof(extra), outs[lane],
           count);
     }
+#endif
   }
 }
 
@@ -9491,11 +9523,15 @@ static MLKEM_NOINLINE void mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2(
     for (int word = 0; word < 25; word++) {
       scalar_st[word] = keccak_lane0_u64(st[word]);
     }
+#if defined(__clang__) && !defined(__AVX512F__)
+    sample_ntt_scalar_refill_shared_clang_avx2(scalar_st, tail, count);
+#else
     while (count < N) {
       keccakf(scalar_st);
       count = sample_ntt_parse_stream_avx2_ready(
           (const uint8_t *)(const void *)scalar_st, 168, tail, count);
     }
+#endif
   }
 }
 #endif
@@ -9695,12 +9731,17 @@ static MLKEM_NOINLINE void mlkem_keygen_noise2_sample_matrix2_avx2(
                             ? (uint64_t)_mm_cvtsi128_si64(matrix)
                             : (uint64_t)_mm_extract_epi64(matrix, 1);
     }
+#if defined(__clang__) && !defined(__AVX512F__)
+    sample_ntt_scalar_refill_shared_clang_avx2(
+        scalar_st, out[lane], count[lane]);
+#else
     while (count[lane] < N) {
       keccakf(scalar_st);
       count[lane] = sample_ntt_parse_stream_avx2_ready(
           (const uint8_t *)(const void *)scalar_st, 168, out[lane],
           count[lane]);
     }
+#endif
   }
 }
 
