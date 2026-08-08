@@ -3422,13 +3422,8 @@ static void prepare_inputs(void) {
   }
 
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
-    size_t clen = 0;
     kpke_encrypt(stage_ek[0], stage_msg[lane], 32, stage_r[lane], 32,
-                 stage_ct_key0[lane], &clen, 0);
-    if (clen != STAGE_CT_BYTES) {
-      fprintf(stderr, "unexpected key0 ciphertext length: %zu\n", clen);
-      exit(EXIT_FAILURE);
-    }
+                 stage_ct_key0[lane], 0);
   }
 }
 
@@ -3939,7 +3934,6 @@ static void validate_core_stage_helpers(void) {
   uint8_t dk[STAGE_DK_PKE_BYTES];
   uint8_t ct[STAGE_CT_BYTES];
   uint8_t msg[32];
-  size_t clen = 0;
   size_t mlen = 0;
 
   prepare_inputs();
@@ -4350,8 +4344,8 @@ static void validate_core_stage_helpers(void) {
     exit(EXIT_FAILURE);
   }
 
-  kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, ct, &clen, 0);
-  if (clen != STAGE_CT_BYTES || memcmp(ct, stage_ct[0], sizeof(ct)) != 0) {
+  kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, ct, 0);
+  if (memcmp(ct, stage_ct[0], sizeof(ct)) != 0) {
     fprintf(stderr, "derived encrypt stage mismatch\n");
     exit(EXIT_FAILURE);
   }
@@ -4384,14 +4378,13 @@ static uint64_t bench_kpke_keygen_full(size_t iters) {
 static uint64_t bench_kpke_encrypt_cached(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  size_t clen = 0;
   kpke_encrypt(stage_ek[0], stage_msg[0], 32, stage_r[0], 32, stage_tmp_ct[0],
-               &clen, 0);
+               0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     kpke_encrypt(stage_ek[0], stage_msg[lane], 32, stage_r[lane], 32,
-                 stage_tmp_ct[lane], &clen, 0);
+                 stage_tmp_ct[lane], 0);
     acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
   }
   t1 = now_ns();
@@ -4497,7 +4490,8 @@ static void stage_kpke_encrypt_uncached_9x4_avx2(
 
   kpke_public_cache_store(ek_pke, that, ahat, 0);
   kpke_encrypt_prepared_public_with_noise_avx2(
-      m, 32, out_c, out_clen, rhat, e1, e2);
+      m, 32, out_c, rhat, e1, e2);
+  *out_clen = STAGE_CT_BYTES;
 }
 
 static void stage_kpke_encrypt_uncached_tail21_avx2(
@@ -4798,13 +4792,13 @@ static void stage_kpke_prepare_public_no_cache_tail_idx_avx2(
 static void validate_kpke_encrypt_uncached_rowwise_avx2(void) {
   uint8_t want[STAGE_CT_BYTES];
   uint8_t got[STAGE_CT_BYTES];
-  size_t want_len = 0;
+  size_t want_len = STAGE_CT_BYTES;
   size_t got_len = 0;
 
   mlkem_set_internal_caches_enabled(0);
   for (size_t lane = 0; lane < STAGE_BENCH_LANES; lane++) {
     kpke_encrypt(stage_ek[lane], stage_msg[lane], 32, stage_r[lane], 32,
-                 want, &want_len, 0);
+                 want, 0);
     stage_kpke_encrypt_uncached_rowwise_avx2(
         stage_ek[lane], stage_msg[lane], stage_r[lane], got, &got_len, lane);
     if (want_len != got_len || memcmp(want, got, want_len) != 0) {
@@ -5052,14 +5046,13 @@ static uint64_t bench_kpke_prepare_public_no_cache_tail_idx(size_t iters,
 static uint64_t bench_kpke_encrypt_uncached(size_t iters) {
   uint64_t acc = 0;
   uint64_t t0, t1;
-  size_t clen = 0;
 
   mlkem_set_internal_caches_enabled(0);
   t0 = now_ns();
   for (size_t i = 0; i < iters; i++) {
     size_t lane = i & (STAGE_BENCH_LANES - 1);
     kpke_encrypt(stage_ek[lane], stage_msg[lane], 32, stage_r[lane], 32,
-                 stage_tmp_ct[lane], &clen, 0);
+                 stage_tmp_ct[lane], 0);
     acc ^= stage_tmp_ct[lane][(i * 13u) % STAGE_CT_BYTES];
   }
   t1 = now_ns();

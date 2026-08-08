@@ -1091,8 +1091,8 @@ void test_kpke() {
 
   /* Encrypt */
   uint8_t ct[4096];
-  size_t ct_len = 0;
-  kpke_encrypt(ek_pke, msg, 32, r, 32, ct, &ct_len, 0);
+  size_t ct_len = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  kpke_encrypt(ek_pke, msg, 32, r, 32, ct, 0);
 
   /* Decrypt */
   uint8_t decrypted[64];

@@ -14,22 +14,31 @@ extern "C" {
 #define BABY_MLKEM768_KEYPAIR_COINS_BYTES 64
 #define BABY_MLKEM768_ENCAPS_COINS_BYTES 32
 
+#if defined(__GNUC__) || defined(__clang__)
+#define BABY_MLKEM_NONNULL(...) __attribute__((nonnull(__VA_ARGS__)))
+#else
+#define BABY_MLKEM_NONNULL(...)
+#endif
+
 /* coins is the FIPS 203 seed encoding d || z. */
 void baby_mlkem768_keypair_derand(
     uint8_t ek[BABY_MLKEM768_PUBLIC_KEY_BYTES],
     uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES],
-    const uint8_t coins[BABY_MLKEM768_KEYPAIR_COINS_BYTES]);
+    const uint8_t coins[BABY_MLKEM768_KEYPAIR_COINS_BYTES])
+    BABY_MLKEM_NONNULL(1, 2, 3);
 
 void baby_mlkem768_encaps_derand(
     uint8_t ct[BABY_MLKEM768_CIPHERTEXT_BYTES],
     uint8_t ss[BABY_MLKEM768_SHARED_SECRET_BYTES],
     const uint8_t ek[BABY_MLKEM768_PUBLIC_KEY_BYTES],
-    const uint8_t coins[BABY_MLKEM768_ENCAPS_COINS_BYTES]);
+    const uint8_t coins[BABY_MLKEM768_ENCAPS_COINS_BYTES])
+    BABY_MLKEM_NONNULL(1, 2, 3, 4);
 
 void baby_mlkem768_decaps(
     uint8_t ss[BABY_MLKEM768_SHARED_SECRET_BYTES],
     const uint8_t ct[BABY_MLKEM768_CIPHERTEXT_BYTES],
-    const uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES]);
+    const uint8_t dk[BABY_MLKEM768_SECRET_KEY_BYTES])
+    BABY_MLKEM_NONNULL(1, 2, 3);
 
 #ifdef __cplusplus
 }

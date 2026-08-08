@@ -8657,8 +8657,8 @@ static int eta2_i8_prepared;
 /* Clang otherwise duplicates this finish path in encapsulation and decapsulation. */
 static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
     const uint8_t *restrict m, size_t mlen, uint8_t *restrict out_c,
-    size_t *restrict out_clen, int16_t (*restrict rhat_arg)[N],
-    int16_t (*restrict e1_arg)[N], int16_t *restrict e2_arg) {
+    int16_t (*restrict rhat_arg)[N], int16_t (*restrict e1_arg)[N],
+    int16_t *restrict e2_arg) {
   static poly256 u[K];
   static poly256 v;
 
@@ -8682,8 +8682,6 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
     p += (N * DU) / 8;
   }
   compress_encode_poly_d4_avx2(v, p);
-  p += (N * DV) / 8;
-  *out_clen = (size_t)(p - out_c);
 }
 #endif
 
@@ -8691,12 +8689,11 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
     defined(__GNUC__) && !defined(__clang__)
 static inline void kpke_encrypt_prepared_public_impl(
     const uint8_t *m, size_t mlen, const uint8_t *r, size_t rlen,
-    uint8_t *out_c, size_t *out_clen, int eta2_i8_prepared) {
+    uint8_t *out_c, int eta2_i8_prepared) {
 #else
 static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
                                          const uint8_t *r, size_t rlen,
-                                         uint8_t *out_c,
-                                         size_t *out_clen) {
+                                         uint8_t *out_c) {
 #endif
   ensure_ntt_roots();
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
@@ -8764,7 +8761,7 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     }
   }
 #if defined(__AVX2__) && !defined(__AVX512F__) && defined(__clang__)
-  kpke_encrypt_finish_avx2(m, mlen, out_c, out_clen, rhat, e1, e2);
+  kpke_encrypt_finish_avx2(m, mlen, out_c, rhat, e1, e2);
 #else
   /* u[i] = invntt( sum_j(ahat[i][j]*rhat[j]) ) + e1[i] */
   static poly256 u[K];
@@ -8853,7 +8850,6 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
   }
 #endif
   compress_encode_poly_d4_avx2(v, p);
-  p += (N * DV) / 8;
 #else
   for (int i = 0; i < K; i++) {
     uint16_t cbuf[N];
@@ -8865,10 +8861,8 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     uint16_t cbuf[N];
     compress_poly(DV, v, cbuf);
     byte_encode_u16(DV, cbuf, p);
-    p += (N * DV) / 8;
   }
 #endif
-  *out_clen = (size_t)(p - out_c);
 #endif
 }
 
@@ -8876,20 +8870,18 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
     defined(__GNUC__) && !defined(__clang__)
 static inline void kpke_encrypt_prepared_public(
     const uint8_t *m, size_t mlen, const uint8_t *r, size_t rlen,
-    uint8_t *out_c, size_t *out_clen) {
-  kpke_encrypt_prepared_public_impl(
-      m, mlen, r, rlen, out_c, out_clen, 0);
+    uint8_t *out_c) {
+  kpke_encrypt_prepared_public_impl(m, mlen, r, rlen, out_c, 0);
 }
 #endif
 
 #if defined(__AVX2__) && !defined(__AVX512F__)
 static inline void kpke_encrypt_prepared_public_with_noise_avx2(
-    const uint8_t *m, size_t mlen, uint8_t *out_c, size_t *out_clen,
-    poly256 rhat_in[K], poly256 e1_in[K], poly256 e2_in) {
+    const uint8_t *m, size_t mlen, uint8_t *out_c, poly256 rhat_in[K],
+    poly256 e1_in[K], poly256 e2_in) {
   ensure_ntt_roots();
 #if defined(__clang__)
-  kpke_encrypt_finish_avx2(
-      m, mlen, out_c, out_clen, rhat_in, e1_in, e2_in);
+  kpke_encrypt_finish_avx2(m, mlen, out_c, rhat_in, e1_in, e2_in);
 #else
   static poly256 u[K];
   static poly256 v;
@@ -8914,8 +8906,6 @@ static inline void kpke_encrypt_prepared_public_with_noise_avx2(
     p += (N * DU) / 8;
   }
   compress_encode_poly_d4_avx2(v, p);
-  p += (N * DV) / 8;
-  *out_clen = (size_t)(p - out_c);
 #endif
 }
 #endif
@@ -8923,7 +8913,7 @@ static inline void kpke_encrypt_prepared_public_with_noise_avx2(
 
 static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
                          const uint8_t *r, size_t rlen, uint8_t *out_c,
-                         size_t *out_clen, int ek_cache_verified) {
+                         int ek_cache_verified) {
   /* parse ek_pke => that[K], rho (cached for repeated use with same key) */
   int public_cache_hit = MLKEM_INTERNAL_CACHES_ENABLED &&
                          kpke_public_cache_valid && ek_cache_verified &&
@@ -9019,20 +9009,18 @@ static void kpke_encrypt(const uint8_t *ek_pke, const uint8_t *m, size_t mlen,
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
   if (eta2_i8_prepared) {
-    kpke_encrypt_prepared_public_impl(
-        m, mlen, r, rlen, out_c, out_clen, 1);
+    kpke_encrypt_prepared_public_impl(m, mlen, r, rlen, out_c, 1);
     return;
   }
 #endif
 #if defined(__AVX2__) && !defined(__AVX512F__)
   if (noise_prepared) {
-    kpke_encrypt_prepared_public_with_noise_avx2(m, mlen, out_c, out_clen,
-                                                 prepared_rhat, prepared_e1,
-                                                 prepared_e2);
+    kpke_encrypt_prepared_public_with_noise_avx2(
+        m, mlen, out_c, prepared_rhat, prepared_e1, prepared_e2);
     return;
   }
 #endif
-  kpke_encrypt_prepared_public(m, mlen, r, rlen, out_c, out_clen);
+  kpke_encrypt_prepared_public(m, mlen, r, rlen, out_c);
 }
 
 static void mlkem_recover_message(const poly256 w, uint8_t out[32]) {
@@ -9157,6 +9145,30 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
  * 7) ML-KEM top-level
  * =============================================================================
  */
+static void mlkem_keygen_seeded(const uint8_t d[32], const uint8_t z[32],
+                                uint8_t *ek, uint8_t *dk) {
+  uint8_t *ek_pke = ek;
+  uint8_t *dk_pke = dk;
+  kpke_keygen(d, ek_pke, dk_pke);
+
+  /* ek = ek_pke,
+     dk = dk_pke || ek_pke || H(ek_pke) || z
+     => lengths:
+       - dk_pke => K*384
+       - ek_pke => K*384+32
+       - H(ek_pke) => 32
+       - z => 32
+     => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
+  */
+  uint8_t *h = dk + (K * 384) + (K * 384 + 32);
+  sha3_256_copy_1184(dk + (K * 384), ek_pke, h);
+  memcpy(h + 32, z, 32);
+  if (MLKEM_INTERNAL_CACHES_ENABLED) {
+    mlkem_ek_hash_cache_store(ek, h);
+    kpke_public_cache_generation = mlkem_ek_hash_cache_generation;
+  }
+}
+
 static void mlkem_keygen(const uint8_t *d_seed, const uint8_t *z_seed,
                          uint8_t *ek, uint8_t *dk) {
 #if defined(USE_PQCLEAN_AVX2_BACKEND)
@@ -9202,26 +9214,7 @@ static void mlkem_keygen(const uint8_t *d_seed, const uint8_t *z_seed,
     z = z_buf;
   }
 
-  uint8_t *ek_pke = ek;
-  uint8_t *dk_pke = dk;
-  kpke_keygen(d, ek_pke, dk_pke);
-
-  /* ek = ek_pke,
-     dk = dk_pke || ek_pke || H(ek_pke) || z
-     => lengths:
-       - dk_pke => K*384
-       - ek_pke => K*384+32
-       - H(ek_pke) => 32
-       - z => 32
-     => total = K*384 + (K*384+32) + 32 + 32 = 768*K + 96
-  */
-  uint8_t *h = dk + (K * 384) + (K * 384 + 32);
-  sha3_256_copy_1184(dk + (K * 384), ek_pke, h);
-  memcpy(h + 32, z, 32);
-  if (MLKEM_INTERNAL_CACHES_ENABLED) {
-    mlkem_ek_hash_cache_store(ek, h);
-    kpke_public_cache_generation = mlkem_ek_hash_cache_generation;
-  }
+  mlkem_keygen_seeded(d, z, ek, dk);
 }
 
 static void mlkem_keygen_derand(const uint8_t coins[64],
@@ -9234,40 +9227,11 @@ static void mlkem_keygen_derand(const uint8_t coins[64],
   (void)pqcrystals_kyber768_avx2_keypair_derand(ek, dk, coins);
   return;
 #endif
-  mlkem_keygen(coins, coins + 32, ek, dk);
+  mlkem_keygen_seeded(coins, coins + 32, ek, dk);
 }
 
-static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
-                         uint8_t *c, size_t *clen) {
-#if defined(USE_PQCLEAN_AVX2_BACKEND)
-  uint8_t coins[32];
-  const uint8_t *coins_ptr = seed;
-  if (!coins_ptr) {
-    randombytes(coins, sizeof(coins));
-    coins_ptr = coins;
-  }
-  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(c, k, ek, coins_ptr);
-  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
-  return;
-#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
-  uint8_t coins[32];
-  const uint8_t *coins_ptr = seed;
-  if (!coins_ptr) {
-    randombytes(coins, sizeof(coins));
-    coins_ptr = coins;
-  }
-  (void)pqcrystals_kyber768_avx2_enc_derand(c, k, ek, coins_ptr);
-  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
-  return;
-#endif
-
-  /* m = random 32 if seed==NULL, else seed. */
-  uint8_t m_random[32];
-  const uint8_t *m = seed;
-  if (!m) {
-    randombytes(m_random, 32);
-    m = m_random;
-  }
+static void mlkem_encaps_seeded(const uint8_t *ek, const uint8_t m[32],
+                                uint8_t *k, uint8_t *c, size_t *clen) {
   /* H(ek) => 32 (cached for repeated encaps with same key) */
   uint8_t h_local[32];
   const uint8_t *h = mlkem_ek_hash_cache_output;
@@ -9295,10 +9259,46 @@ static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
 
   /* c = kpke_encrypt(ek, m, r) */
   if (public_prepared) {
-    kpke_encrypt_prepared_public(m, 32, r_out, 32, c, clen);
+    kpke_encrypt_prepared_public(m, 32, r_out, 32, c);
   } else {
-    kpke_encrypt(ek, m, 32, r_out, 32, c, clen, 1);
+    kpke_encrypt(ek, m, 32, r_out, 32, c, 1);
   }
+  if (clen) {
+    *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  }
+}
+
+static void mlkem_encaps(const uint8_t *ek, const uint8_t *seed, uint8_t *k,
+                         uint8_t *c, size_t *clen) {
+#if defined(USE_PQCLEAN_AVX2_BACKEND)
+  uint8_t coins[32];
+  const uint8_t *coins_ptr = seed;
+  if (!coins_ptr) {
+    randombytes(coins, sizeof(coins));
+    coins_ptr = coins;
+  }
+  (void)PQCLEAN_MLKEM768_AVX2_crypto_kem_enc_derand(c, k, ek, coins_ptr);
+  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  return;
+#elif defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
+  uint8_t coins[32];
+  const uint8_t *coins_ptr = seed;
+  if (!coins_ptr) {
+    randombytes(coins, sizeof(coins));
+    coins_ptr = coins;
+  }
+  (void)pqcrystals_kyber768_avx2_enc_derand(c, k, ek, coins_ptr);
+  *clen = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  return;
+#endif
+
+  uint8_t m_random[32];
+  const uint8_t *m = seed;
+  if (!m) {
+    randombytes(m_random, sizeof(m_random));
+    m = m_random;
+  }
+  mlkem_encaps_seeded(ek, m, k, c, clen);
 }
 
 static void mlkem_encaps_derand(const uint8_t *ek,
@@ -9319,12 +9319,7 @@ static void mlkem_encaps_derand(const uint8_t *ek,
   }
   return;
 #endif
-  if (clen) {
-    mlkem_encaps(ek, coins, k, c, clen);
-  } else {
-    size_t ct_len = 0;
-    mlkem_encaps(ek, coins, k, c, &ct_len);
-  }
+  mlkem_encaps_seeded(ek, coins, k, c, clen);
 }
 
 #if defined(__clang__)
@@ -9479,29 +9474,26 @@ static void mlkem_decaps(const uint8_t *c, size_t clen, const uint8_t *dk,
   /* cdash = kpke_encrypt(ek_pke, mdash, rdash) => compare with c */
   enum { CT_BYTES = K * ((N * DU) / 8) + (N * DV) / 8 };
   uint8_t cdash[CT_BYTES];
-  size_t cdash_len = 0;
   if (public_prepared) {
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
     if (eta2_i8_prepared) {
-      kpke_encrypt_prepared_public_impl(
-          mdash, 32, rdash, 32, cdash, &cdash_len, 1);
+      kpke_encrypt_prepared_public_impl(mdash, 32, rdash, 32, cdash, 1);
     } else
 #endif
 #if defined(__AVX2__) && !defined(__AVX512F__)
     if (noise_prepared) {
       kpke_encrypt_prepared_public_with_noise_avx2(
-          mdash, 32, cdash, &cdash_len, prepared_rhat, prepared_e1,
-          prepared_e2);
+          mdash, 32, cdash, prepared_rhat, prepared_e1, prepared_e2);
     } else
 #endif
     {
-      kpke_encrypt_prepared_public(mdash, 32, rdash, 32, cdash, &cdash_len);
+      kpke_encrypt_prepared_public(mdash, 32, rdash, 32, cdash);
     }
   } else {
-    kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, &cdash_len, 0);
+    kpke_encrypt(ek_pke, mdash, 32, rdash, 32, cdash, 0);
   }
-  if (cdash_len != clen || memcmp(c, cdash, clen) != 0) {
+  if (clen != CT_BYTES || memcmp(c, cdash, clen) != 0) {
     /* kbar = shake256(z||c) => 32 */
 #if defined(__clang__)
     if (clen == CT_BYTES) {
