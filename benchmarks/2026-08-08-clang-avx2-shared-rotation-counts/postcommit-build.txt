@@ -1,0 +1,12 @@
+clang -c test.c -o test.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing  -Wno-unused-function -DMLKEM_AVX2_EXTERNAL_INV_MONT -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang -c ntt_roots_avx2_constants.S -o ntt_roots_avx2_constants.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -Wa,--noexecstack
+clang -c bench_core_stages.c -o bench_core_stages.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -Wno-unused-function -DMLKEM_AVX2_EXTERNAL_INV_MONT -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang -c bench_keccakf4_avx2.S -o bench_keccakf4_avx2.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -Wa,--noexecstack
+clang test.o ntt_roots_avx2_constants.o -o testc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+./testc
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: 8d1dc7a5a32f18b8de3f5aaff568c50ee15e6a7544496600be4629ec727983a0
+Decapsulated k2: 8d1dc7a5a32f18b8de3f5aaff568c50ee15e6a7544496600be4629ec727983a0
+OK
+clang bench_core_stages.o bench_keccakf4_avx2.o ntt_roots_avx2_constants.o -o bench_core_stagesc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f

@@ -1,0 +1,17 @@
+baseline_ref=baece39
+accepted_ref=66bfaaa
+
+[cross-call-alias]
+observation=mlkem_keygen_keccakf4_mem_parity_avx2 and mlkem_encrypt_keccakf4_mem_parity_avx2 both name one 1457-byte ELF section at the same address
+result=no duplicate body to remove
+status=rejected-no-opportunity
+
+[external-assembly-rotation-tables]
+artifact_sha256=39eeb5280709c48d2f630461d45c019007d8f49b4602ae645d3af21015a6319a
+code_bytes=44868
+readonly_data_bytes=7768
+primary_bytes=52636
+baseline_primary_bytes=52651
+primary_delta_bytes=-15
+reason=external table references add 369 code bytes and save only 384 read-only bytes; the accepted source-table form saves 456 primary bytes without another object
+status=rejected

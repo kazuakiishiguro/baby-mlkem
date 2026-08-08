@@ -1,0 +1,15 @@
+baseline_ref=baece39
+candidate_ref=66bfaaa
+validation_iterations=1000
+profile kat product complete_stage stage_sink
+clang-native pass pass pass 12134279420840345582
+clang-avx2 pass pass pass 4297556503821386549
+clang-scalar pass pass pass 5836653274444122727
+gcc-native pass pass pass 12134279420840348911
+gcc-avx2 pass pass pass 4297556503821386549
+gcc-scalar pass pass pass 5836653274444122727
+postcommit_clang_avx2_kat=pass
+postcommit_clang_avx2_product=pass
+postcommit_clang_avx2_complete_stage=pass
+postcommit_clang_avx2_stage_sink=4297556503821386549
+validation_matrix=PASS

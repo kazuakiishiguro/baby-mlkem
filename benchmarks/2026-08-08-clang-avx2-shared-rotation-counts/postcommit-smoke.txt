@@ -1,0 +1,9 @@
+candidate_ref=66bfaaa
+command=make clean && make product test-product CC=clang ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+product_test=pass
+product_sha256=86f0f636e8cf18b7db4e8c74fb4b8f3ae258a0450eead10f3c683bcd1d655d45
+code_bytes=44459
+readonly_data_bytes=7736
+primary_bytes=52195
+writable_bytes=26593
+artifact_matches_precommit_validation=PASS

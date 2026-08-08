@@ -1,0 +1,14 @@
+baseline_ref=baece39
+candidate_ref=66bfaaa
+profile=clang-avx2-only
+component baseline_bytes candidate_bytes delta_bytes
+.text.mlkem_keccakf1600_avx2 1004 1013 9
+.text.sha3_256_1184_avx2 1770 1721 -49
+.rodata.cst32 4512 3712 -800
+.rodata.mlkem_keccakf1_rotl_count 0 192 192
+.rodata.mlkem_keccakf1_rotr_count 0 192 192
+code_total 44499 44459 -40
+readonly_total 8152 7736 -416
+primary_total 52651 52195 -456
+writable_total 26593 26593 0
+section_accounting=PASS
