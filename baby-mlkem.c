@@ -7916,6 +7916,18 @@ compress_encode_poly_d10x3_shared_clang_avx512(const poly256 x[K],
 }
 #endif
 
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+/* Keep the shared AVX2 encryption finish compact for the same fixed batch. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+compress_encode_poly_d10x3_shared_clang_avx2(const poly256 x[K],
+                                              uint8_t *out) {
+#pragma clang loop unroll(disable)
+  for (int i = 0; i < K; i++) {
+    compress_encode_poly_d10_avx2(x[i], out + i * ((N * DU) / 8));
+  }
+}
+#endif
+
 static void compress_encode_poly_d4_avx2(const poly256 x, uint8_t *out) {
   const __m256i shift2 = _mm256_set1_epi16((16 << 8) + 1);
   const __m256i permdidx = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
@@ -8677,10 +8689,8 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
   ntt_inv_add_v_inplace(e2_arg, v);
 
   uint8_t *p = out_c;
-  for (int i = 0; i < K; i++) {
-    compress_encode_poly_d10_avx2(u[i], p);
-    p += (N * DU) / 8;
-  }
+  compress_encode_poly_d10x3_shared_clang_avx2(u, p);
+  p += K * ((N * DU) / 8);
   compress_encode_poly_d4_avx2(v, p);
 }
 #endif
