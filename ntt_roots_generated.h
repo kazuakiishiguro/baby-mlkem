@@ -261,6 +261,16 @@ static const __m256i ZETA_NTT_TAIL_MONT_HI[3][8] = {
 };
 
 #if !(defined(__AVX512F__) && defined(__AVX512BW__))
+#if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)
+extern const __m256i ZETA_NTT_INV_MONT_LO[24]
+    __attribute__((visibility("hidden")));
+extern const __m256i ZETA_NTT_INV_MONT_HI[24]
+    __attribute__((visibility("hidden")));
+extern const int16_t ZETA_NTT_INV_MONT_LO_SCALAR[14]
+    __attribute__((visibility("hidden")));
+extern const int16_t ZETA_NTT_INV_MONT_HI_SCALAR[14]
+    __attribute__((visibility("hidden")));
+#else
 static const __m256i ZETA_NTT_INV_MONT_LO[38] = {
     {(long long)UINT64_C(0xbbf2bbf25a5c5a5c), (long long)UINT64_C(0x5dbe5dbe1e4c1e4c), (long long)UINT64_C(0x6fe46fe4b0dfb0df), (long long)UINT64_C(0x7b947b94a2cca2cc)},
     {(long long)UINT64_C(0x2a9a2a9abbdebbde), (long long)UINT64_C(0xa81aa81a5aaa5aaa), (long long)UINT64_C(0xe102e102b11ab11a), (long long)UINT64_C(0x285f285fac06ac06)},
@@ -342,6 +352,8 @@ static const __m256i ZETA_NTT_INV_MONT_HI[38] = {
     {(long long)UINT64_C(0xfa13fa13fa13fa13), (long long)UINT64_C(0xfa13fa13fa13fa13), (long long)UINT64_C(0xfa13fa13fa13fa13), (long long)UINT64_C(0xfa13fa13fa13fa13)},
     {(long long)UINT64_C(0xfe99fe99fe99fe99), (long long)UINT64_C(0xfe99fe99fe99fe99), (long long)UINT64_C(0xfe99fe99fe99fe99), (long long)UINT64_C(0xfe99fe99fe99fe99)}
 };
+
+#endif
 
 static const __m256i ZETA_NTT_INV_MONT_SCALE_LO =
     {(long long)UINT64_C(0x0200020002000200), (long long)UINT64_C(0x0200020002000200), (long long)UINT64_C(0x0200020002000200), (long long)UINT64_C(0x0200020002000200)};

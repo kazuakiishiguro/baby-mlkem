@@ -1864,10 +1864,23 @@ static int NTT_ROOTS_READY = 0;
 #if defined(__clang__)
 #define MLKEM_INV_MONT_INDEX(level, index) \
   ((level) < 4 ? 8 * (level) + (index) : 4 * (level) + 16 + (index))
+#if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)
+#define MLKEM_INV_MONT_LO(level, index) \
+  ((level) < 3 \
+       ? ZETA_NTT_INV_MONT_LO[8 * (level) + (index)] \
+       : _mm256_set1_epi16(ZETA_NTT_INV_MONT_LO_SCALAR[ \
+             MLKEM_INV_MONT_INDEX(level, index) - 24]))
+#define MLKEM_INV_MONT_HI(level, index) \
+  ((level) < 3 \
+       ? ZETA_NTT_INV_MONT_HI[8 * (level) + (index)] \
+       : _mm256_set1_epi16(ZETA_NTT_INV_MONT_HI_SCALAR[ \
+             MLKEM_INV_MONT_INDEX(level, index) - 24]))
+#else
 #define MLKEM_INV_MONT_LO(level, index) \
   ZETA_NTT_INV_MONT_LO[MLKEM_INV_MONT_INDEX(level, index)]
 #define MLKEM_INV_MONT_HI(level, index) \
   ZETA_NTT_INV_MONT_HI[MLKEM_INV_MONT_INDEX(level, index)]
+#endif
 /* Levels 4..5 need only six splats; keep their factors scalar in
  * read-only data. */
 #define MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index) \
