@@ -1,0 +1,28 @@
+candidate_ref=36cbd84354ef47d12141474a9de71bc8400a1ae8
+baseline_ref=3a3e9d021069b92daaead7890935852f584235d1
+recorded_at_utc=2026-08-08T00:39:55Z
+recorded_at_local=2026-08-08T09:39:55+09:00
+uname=Linux kdot 6.8.0-124-generic #124-Ubuntu SMP PREEMPT_DYNAMIC Tue May 26 13:00:45 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+logical_cpus=128
+cpu=AMD Ryzen Threadripper 7980X 64-Cores
+microcode=0xa108108
+governor=powersave
+clang=Ubuntu clang version 18.1.3 (1ubuntu1)
+gcc=gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+linker=GNU ld (GNU Binutils for Ubuntu) 2.42
+pin_cpu=0
+native_flags=-march=native
+avx2_flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+scalar_flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+stage_runs=9 pairs per batch, 2 warmup pairs, alternating order
+stage_batches=2
+stage_pairs=18
+stage_iterations=30000
+stage_batch1_mtime=2026-08-08 09:16:49.196337558 +0900
+stage_batch2_mtime=2026-08-08 09:20:12.973025931 +0900
+kem_runs=16 pairs per batch, 3 warmup pairs, alternating order
+kem_batches=2
+kem_pairs=32
+kem_iterations=100000
+kem_batch1_mtime=2026-08-08 09:24:08.155383288 +0900
+kem_batch2_mtime=2026-08-08 09:28:14.011317443 +0900

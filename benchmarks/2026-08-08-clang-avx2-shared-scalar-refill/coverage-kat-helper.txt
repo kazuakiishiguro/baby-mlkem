@@ -1,0 +1,9 @@
+test.c:sample_ntt_scalar_refill_shared_clang_avx2:
+ 6237|      5|                                           int count) {
+ 6238|      5|  while (count < N) {
+ 6239|      0|    keccakf(st);
+ 6240|      0|    count = sample_ntt_parse_stream_avx2_ready(
+ 6241|      0|        (const uint8_t *)(const void *)st, 21 * sizeof(uint64_t), out, count);
+ 6242|      0|  }
+ 6243|      5|}
+

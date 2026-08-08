@@ -1,0 +1,19 @@
+baseline_ref=3a3e9d021069b92daaead7890935852f584235d1
+candidate_ref=36cbd84354ef47d12141474a9de71bc8400a1ae8
+profile=AVX2-only
+sanitizer_product_method=direct-link-without-relocatable-compiler-r
+
+== Clang AVX2 ASan+UBSan ==
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+asan_options=detect_leaks=0:halt_on_error=1
+kat=pass
+product_direct=pass
+stage=pass sink=8086079251842987743
+clang_avx2_asan_ubsan=PASS
+
+== GCC AVX2 UBSan ==
+flags=-O1 -g -fsanitize=undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product_direct=pass
+stage=pass sink=8086079251842987743
+gcc_avx2_ubsan=PASS
