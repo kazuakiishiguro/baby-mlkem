@@ -1,0 +1,17 @@
+artifact=/tmp/dense-scalar-inv-validation-final/clang-avx2-baseline.o
+artifact_sha256=b995a643dc4b884f5202f79213d6c70fcb77bfe5f3411224f81e7aaa75e2f704
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4544
+encaps_stack_bytes=4176
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4544
+correctness_smoke=pass

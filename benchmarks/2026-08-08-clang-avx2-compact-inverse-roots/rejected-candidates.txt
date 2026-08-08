@@ -1,0 +1,28 @@
+All experiments used the Clang AVX2-only profile and baseline 93c1b09.
+
+1. Volatile full inverse table
+
+Marking both 38-vector C arrays volatile reduced primary size from 56,328 to
+54,927 bytes (-1,401), but it forced vector loads and prevented folded multiply
+operands. A nine-pair 30,000-iteration stage screen reported:
+
+  encrypt_accum_inv gmean=0.9846x wins=0/9
+  kpke_encrypt_cached gmean=0.9890x wins=0/9
+  kpke_encrypt_uncached gmean=0.9960x
+
+This candidate was removed. The complete screen is retained in
+rejected-volatile-full-table-stage-9x30k.txt.
+
+2. External full 38-vector table
+
+A hidden assembly definition for all 38 low/high vectors reached 54,890 primary
+bytes (-1,438). It changed the fourteen uniform tail factors from baseline
+vpbroadcastw loads to full-vector vmovdqa loads, reproducing the mechanism that
+failed in the volatile experiment. It was not advanced to a formal KEM gate.
+
+3. Accepted dense/scalar split
+
+Only non-uniform levels 0..2 remain dense (24 vectors per low/high table).
+Uniform levels 3..5 use fourteen generated int16 factors and vpbroadcastw.
+This reaches 54,150 primary bytes (-2,178) and passes the combined 32-pair KEM
+and selected 18-pair stage gates.

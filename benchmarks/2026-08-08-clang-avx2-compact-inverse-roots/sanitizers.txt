@@ -1,0 +1,18 @@
+candidate_ref=36a773f0388d1c264cb413181ae3b8cfda0401b6
+profile=AVX2-only
+sanitizer_product_method=direct-link-without-relocatable-compiler-r
+
+[clang-asan-ubsan]
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+asan_options=detect_leaks=0:halt_on_error=1
+kat=pass
+product_direct=pass
+stage=pass sink=8086079251842987743
+
+[gcc-ubsan]
+flags=-O1 -g -fsanitize=undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product_direct=pass
+stage=pass sink=8086079251842987743
+
+sanitizers=PASS

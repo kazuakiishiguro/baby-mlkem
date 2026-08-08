@@ -1,0 +1,11 @@
+baseline_ref=93c1b0932497f55fe3d0a3297d95db979500ac74
+candidate_ref=36a773f0388d1c264cb413181ae3b8cfda0401b6
+profile=Clang AVX2-only
+runs=8
+operation baseline candidate delta
+keygen 4544 4544 +0
+encaps 4176 4176 +0
+decaps_valid 4512 4512 +0
+decaps_invalid 4512 4512 +0
+maximum 4544 4544 +0
+correctness_smoke=pass

@@ -1,0 +1,12 @@
+operation batch1_gmean batch2_gmean combined_32_pair_gmean
+mlkem_decaps 0.9906x 1.0031x 0.996830x
+mlkem_decaps_core 0.9981x 1.0143x 1.006167x
+mlkem_encaps 0.9928x 1.0012x 0.996991x
+mlkem_encaps_core 0.9940x 1.0025x 0.998241x
+mlkem_keygen 0.9931x 1.0081x 1.000572x
+mlkem_keygen_core 0.9958x 1.0069x 1.001335x
+mlkem_roundtrip 0.9921x 1.0049x 0.998479x
+mlkem_roundtrip_core 0.9952x 1.0082x 1.001679x
+minimum_combined=0.996830x
+internal_floor=0.995000x
+gate=PASS

@@ -283,7 +283,8 @@ generated immutable root and Montgomery-factor tables. The inverse tables store
 38 live vectors rather than 48 padded slots. GCC retains the cold initializer
 and produces byte-identical native and AVX2-only product and benchmark
 artifacts relative to the parent. Regenerate or verify the checked-in constants
-with `make generate-ntt-roots` or `make check-ntt-roots`.
+and the Clang AVX2 inverse-factor assembly with `make generate-ntt-roots` or
+`make check-ntt-roots`.
 
 Commit `a03a486` shares Clang's AVX2-only encryption finish between
 encapsulation and decapsulation instead of emitting the same NTT, inverse-add,
@@ -359,6 +360,15 @@ AVX512, GCC, and scalar products remain byte-identical. This adds no sampling
 arithmetic, cache, external object, runtime library, table, API, algorithm, or
 wire-format change.
 
+Commit `36a773f` keeps Clang AVX2 inverse-NTT levels 0..2 in generated dense
+low/high tables but stores the fourteen uniform level-3/4/5 factors as
+generated 16-bit values and broadcasts them at use. The tables live in one
+repository-local hidden assembly object so Clang no longer retains both the C
+arrays and 1,408 bytes of folded function-local constants. Native AVX512, GCC,
+and scalar products remain byte-identical. This adds no external library,
+external cryptographic runtime object, cache, runtime dispatch, API,
+algorithm, or wire-format dependency.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -382,14 +392,14 @@ for Botan because its reachable exception handlers require it.
 
 The current 2026-08-08 no-cache baselines use the normal compiler-specific
 speed flags. The Clang native row is measured at `411ce5c`, the Clang AVX2-only
-row at `36cbd84`, and the GCC AVX2-only row at `58858b8`. The other rows are
+row at `36a773f`, and the GCC AVX2-only row at `58858b8`. The other rows are
 unchanged by the latest Clang-only AVX2 change:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 53,409 | 19,639 | 73,048 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 56,006 | 3,565 | 59,571 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 44,607 | 11,721 | 56,328 | 0 | 26,593 | 26,593 |
+| AVX2-only | Clang 18.1.3 | 44,701 | 9,449 | 54,150 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 49,829 | 3,785 | 53,614 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 60,160 | 2,033 | 62,193 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,530 | 1,737 | 23,267 | 0 | 19,488 | 19,488 |
@@ -615,13 +625,27 @@ Maximum stack remains 4,544 bytes, encapsulation stack falls 176 bytes, and all
 five non-target products are byte-identical. The OpenSSL AVX2-only deficit
 falls to 11,279 bytes and still fails.
 
+The [Clang AVX2 compact inverse-root report](benchmarks/2026-08-08-clang-avx2-compact-inverse-roots/README.md)
+records the next AVX2-only size step at `36a773f`. Generated hidden assembly
+holds the 24 non-uniform vectors per low/high inverse table, while fourteen
+uniform factors per table remain 16-bit broadcast sources. The inverse body
+grows 94 bytes, but table storage falls 840 bytes and Clang's duplicated
+`cst32` pool falls 1,408 bytes; with another 24-byte constant reduction,
+primary size falls 2,178 bytes to 54,150 bytes. Two 16-pair 100k KEM batches
+keep every combined operation geometric mean above `0.995x`; the minimum is
+`0.996830x`, so no speed gain is credited. The generated factor bytes match
+the legacy representation exactly, maximum stack remains 4,544 bytes, and all
+five non-target products are byte-identical. This is repository-local core
+code and adds no external dependency. The OpenSSL AVX2-only deficit falls to
+9,101 bytes and still fails.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
 native deficit in that complete matrix was 52,299 bytes against mlkem-native;
 the limiting AVX2-only deficit was 19,970 bytes against OpenSSL. The later
-diagnostics at `411ce5c` and `36cbd84` reduce the mlkem-native native deficit
-to 21,862 bytes and the OpenSSL AVX2-only deficit to 11,279 bytes. A complete
+diagnostics at `411ce5c` and `36a773f` reduce the mlkem-native native deficit
+to 21,862 bytes and the OpenSSL AVX2-only deficit to 9,101 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
