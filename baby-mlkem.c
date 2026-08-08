@@ -7878,6 +7878,22 @@ static inline __m256i compress_poly_d4_vec_avx2(__m256i f) {
   return _mm256_and_si256(f, mask);
 }
 
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+static inline void compress_encode_poly_d4x2_clang_avx2(
+    __m256i f0, __m256i f1, uint8_t out[16]) {
+  const __m256i shift2 = _mm256_set1_epi16((16 << 8) + 1);
+  f0 = compress_poly_d4_vec_avx2(f0);
+  f1 = compress_poly_d4_vec_avx2(f1);
+  f0 = _mm256_packus_epi16(f0, f1);
+  f0 = _mm256_maddubs_epi16(f0, shift2);
+  f0 = _mm256_permute4x64_epi64(f0, 0xd8);
+  __m128i lo = _mm256_castsi256_si128(f0);
+  __m128i hi = _mm256_extracti128_si256(f0, 1);
+  lo = _mm_packus_epi16(lo, hi);
+  _mm_storeu_si128((__m128i *)(void *)out, lo);
+}
+#endif
+
 static void compress_encode_poly_d10_avx2(const poly256 x, uint8_t *out) {
   const __m256i shift2 = _mm256_set1_epi64x(
       (1024LL << 48) + (1LL << 32) + (1024LL << 16) + 1);
@@ -8560,11 +8576,54 @@ static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
 }
 
 #if defined(__AVX2__) && !defined(__AVX512F__) && defined(__clang__)
-/* e2 is dead after encryption. Fuse its message and inverse-final additions
- * so the polynomial is not read and written in a separate pass. The largest
- * pre-reduction sum is 2*(Q-1)+(Q+1)/2 = 8321, within signed 16-bit range. */
-static inline void ntt_inv_add_message_mont_final_clang_avx2(
-    const poly256 add, const uint8_t msg[32], poly256 out) {
+/* The final d4 output only needs a canonical value modulo Q. This bounded
+ * input is nonnegative and below 3Q, so two conditional subtractions replace
+ * the general signed Barrett reduction. */
+static MLKEM_ALWAYS_INLINE __m256i
+ntt_canonicalize_0_8321_i16x16_clang_avx2(__m256i v) {
+  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  __m256i ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
+  v = _mm256_sub_epi16(v, _mm256_and_si256(ge_q, q));
+  ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
+  return _mm256_sub_epi16(v, _mm256_and_si256(ge_q, q));
+}
+
+static MLKEM_ALWAYS_INLINE void
+ntt_inv_add_message_mont_final_block_clang_avx2(
+    const poly256 add, const uint8_t msg[32], const poly256 out, int k,
+    __m256i bit, __m256i hqs, __m256i zero,
+    __m256i *result0, __m256i *result1) {
+  uint16_t bits0, bits1;
+  memcpy(&bits0, msg + k / 8, sizeof(bits0));
+  memcpy(&bits1, msg + 16 + k / 8, sizeof(bits1));
+  __m256i mu0 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits0), bit);
+  __m256i mu1 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits1), bit);
+  mu0 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu0, zero), hqs);
+  mu1 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu1, zero), hqs);
+
+  __m256i a = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(out + k));
+  __m256i b = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(out + N / 2 + k));
+  __m256i scaled0, scaled1;
+  ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
+  __m256i add0 = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(add + k));
+  __m256i add1 = _mm256_loadu_si256(
+      (const __m256i *)(const void *)(add + N / 2 + k));
+  *result0 = ntt_canonicalize_0_8321_i16x16_clang_avx2(
+      _mm256_add_epi16(_mm256_add_epi16(scaled0, add0), mu0));
+  *result1 = ntt_canonicalize_0_8321_i16x16_clang_avx2(
+      _mm256_add_epi16(_mm256_add_epi16(scaled1, add1), mu1));
+}
+
+/* e2 and the final v coefficients are dead after ciphertext output. Fuse the
+ * message, inverse-final add, and d4 encode so v is not stored and reloaded.
+ * The largest pre-reduction sum is 2*(Q-1)+(Q+1)/2 = 8321. */
+static inline void ntt_inv_add_message_mont_final_encode_d4_clang_avx2(
+    const poly256 add, const uint8_t msg[32], poly256 out,
+    uint8_t encoded[N / 2]) {
   const __m256i bit = _mm256_setr_epi16(
       1, 2, 4, 8, 16, 32, 64, 128,
       256, 512, 1024, 2048, 4096, 8192, 16384, INT16_MIN);
@@ -8573,31 +8632,15 @@ static inline void ntt_inv_add_message_mont_final_clang_avx2(
 
   ntt_inv_mont_before_final_avx2(out);
 #pragma clang loop unroll(disable)
-  for (int j = 0; j < N / 2; j += 16) {
-    uint16_t bits0, bits1;
-    memcpy(&bits0, msg + j / 8, sizeof(bits0));
-    memcpy(&bits1, msg + 16 + j / 8, sizeof(bits1));
-    __m256i mu0 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits0), bit);
-    __m256i mu1 = _mm256_and_si256(_mm256_set1_epi16((int16_t)bits1), bit);
-    mu0 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu0, zero), hqs);
-    mu1 = _mm256_andnot_si256(_mm256_cmpeq_epi16(mu1, zero), hqs);
-
-    __m256i a = _mm256_loadu_si256(
-        (const __m256i *)(const void *)(out + j));
-    __m256i b = _mm256_loadu_si256(
-        (const __m256i *)(const void *)(out + N / 2 + j));
-    __m256i scaled0, scaled1;
-    ntt_inv_mont_scale_pair_i16x16(a, b, &scaled0, &scaled1);
-    __m256i add0 = _mm256_loadu_si256(
-        (const __m256i *)(const void *)(add + j));
-    __m256i add1 = _mm256_loadu_si256(
-        (const __m256i *)(const void *)(add + N / 2 + j));
-    scaled0 = ntt_canonicalize_i16x16(
-        _mm256_add_epi16(_mm256_add_epi16(scaled0, add0), mu0));
-    scaled1 = ntt_canonicalize_i16x16(
-        _mm256_add_epi16(_mm256_add_epi16(scaled1, add1), mu1));
-    _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
-    _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
+  for (int j = 0; j < N / 2; j += 32) {
+    __m256i lo0, hi0, lo1, hi1;
+    ntt_inv_add_message_mont_final_block_clang_avx2(
+        add, msg, out, j, bit, hqs, zero, &lo0, &hi0);
+    ntt_inv_add_message_mont_final_block_clang_avx2(
+        add, msg, out, j + 16, bit, hqs, zero, &lo1, &hi1);
+    compress_encode_poly_d4x2_clang_avx2(lo0, lo1, encoded + j / 2);
+    compress_encode_poly_d4x2_clang_avx2(
+        hi0, hi1, encoded + (N / 2 + j) / 2);
   }
 }
 #endif
@@ -8727,7 +8770,8 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
   }
 
   if (mlen == 32) {
-    ntt_inv_add_message_mont_final_clang_avx2(e2_arg, m, v);
+    ntt_inv_add_message_mont_final_encode_d4_clang_avx2(
+        e2_arg, m, v, out_c + K * ((N * DU) / 8));
   } else {
     ntt_inv_add_v_inplace(e2_arg, v);
   }
@@ -8735,7 +8779,9 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
   uint8_t *p = out_c;
   compress_encode_poly_d10x3_shared_clang_avx2(u, p);
   p += K * ((N * DU) / 8);
-  compress_encode_poly_d4_avx2(v, p);
+  if (mlen != 32) {
+    compress_encode_poly_d4_avx2(v, p);
+  }
 }
 #endif
 
