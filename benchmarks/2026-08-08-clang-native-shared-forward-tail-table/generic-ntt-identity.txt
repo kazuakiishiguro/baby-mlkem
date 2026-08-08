@@ -1,0 +1,8 @@
+baseline_ref=50b54e5d6fabf345779b93f65c7bf1b3025e58d3
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+76e252e1eca1cdaa45929cd1239523d99d4376f6480901293141a3b7fc06260b  /tmp/native-shared-tail-base-bench_ntt.o
+76e252e1eca1cdaa45929cd1239523d99d4376f6480901293141a3b7fc06260b  /tmp/native-shared-tail-candidate-bench_ntt.o
+e2fb214d99c519e2676e15bae5fd9f90f7d5d77a4f2bd0366751fe9118d04fcd  /tmp/native-shared-tail-base-bench_nttc
+e2fb214d99c519e2676e15bae5fd9f90f7d5d77a4f2bd0366751fe9118d04fcd  /tmp/native-shared-tail-candidate-bench_nttc
+generic_ntt_object_identity=PASS
+generic_ntt_binary_identity=PASS

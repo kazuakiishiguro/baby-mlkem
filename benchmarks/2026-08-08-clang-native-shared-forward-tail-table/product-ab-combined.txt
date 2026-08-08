@@ -1,0 +1,29 @@
+baseline_ref=50b54e5d6fabf345779b93f65c7bf1b3025e58d3
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+compiler=clang
+profile=native
+suites=product
+runs_per_batch=16
+batches=3
+measured_pairs=48
+warmup_pairs_per_batch=3
+iterations=100000
+run_order=alternating
+pin_cpu=0
+ratio=baseline_time/candidate_time
+combination=geometric mean of the three reported paired batch geometric means
+
+operation batch1 batch2 batch3 combined
+decaps 1.0026x 1.0043x 1.0021x 1.003000x
+decaps_core 1.0026x 1.0043x 1.0021x 1.003000x
+encaps 1.0022x 1.0027x 1.0004x 1.001766x
+encaps_core 1.0022x 1.0027x 1.0004x 1.001766x
+keygen 1.0047x 1.0012x 1.0039x 1.003266x
+keygen_core 1.0047x 1.0012x 1.0039x 1.003266x
+roundtrip 1.0018x 1.0032x 1.0033x 1.002766x
+roundtrip_core 1.0018x 1.0032x 1.0033x 1.002766x
+
+minimum_combined_gmean=1.001766x
+internal_regression_floor=0.995000x
+internal_regression_gate=PASS
+speed_gain_credit=none
