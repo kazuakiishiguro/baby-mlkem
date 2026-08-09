@@ -7747,6 +7747,46 @@ static void byte_decode_d12_avx2(const uint8_t *in, poly256 out) {
   f = _mm256_and_si256(_mm256_blend_epi16(f, hi, 0xaa), mask);
   _mm256_storeu_si256((__m256i *)(out + 240), f);
 }
+
+#if defined(__clang__) && !defined(__AVX512F__)
+/* Decode the contiguous K-polynomial secret-key object with one loop instead
+ * of letting Clang retain a separate loop and tail for each polynomial. */
+static MLKEM_ALWAYS_INLINE void byte_decode_d12_x3_avx2(
+    const uint8_t *in, poly256 (*out)[K]) {
+  const __m256i idx8 = _mm256_set_epi8(
+      15, 14, 14, 13, 12, 11, 11, 10,
+       9,  8,  8,  7,  6,  5,  5,  4,
+      11, 10, 10,  9,  8,  7,  7,  6,
+       5,  4,  4,  3,  2,  1,  1,  0);
+  const __m256i mask = _mm256_set1_epi16(0x0fff);
+  uint8_t *out_bytes = (uint8_t *)(void *)out;
+
+  for (int block = 0; block < (K * N) / 16 - 1; block++) {
+    __m256i f = _mm256_loadu_si256(
+        (const __m256i *)(const void *)(in + (size_t)block * 24));
+    f = _mm256_permute4x64_epi64(f, 0x94);
+    f = _mm256_shuffle_epi8(f, idx8);
+    __m256i hi = _mm256_srli_epi16(f, 4);
+    f = _mm256_and_si256(_mm256_blend_epi16(f, hi, 0xaa), mask);
+    _mm256_storeu_si256(
+        (__m256i *)(void *)(out_bytes + (size_t)block * 32), f);
+  }
+
+  {
+    const int block = (K * N) / 16 - 1;
+    const __m256i tail_mask =
+        _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, 0, 0);
+    __m256i f = _mm256_maskload_epi32(
+        (const int *)(const void *)(in + (size_t)block * 24), tail_mask);
+    f = _mm256_permute4x64_epi64(f, 0x94);
+    f = _mm256_shuffle_epi8(f, idx8);
+    __m256i hi = _mm256_srli_epi16(f, 4);
+    f = _mm256_and_si256(_mm256_blend_epi16(f, hi, 0xaa), mask);
+    _mm256_storeu_si256(
+        (__m256i *)(void *)(out_bytes + (size_t)block * 32), f);
+  }
+}
+#endif
 #endif
 
 static void byte_decode(int d, const uint8_t *in, poly256 out) {
@@ -9233,9 +9273,13 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
   if (!MLKEM_INTERNAL_CACHES_ENABLED || !kpke_secret_cache_valid ||
       memcmp(kpke_secret_cache_dk, dk_pke,
              sizeof(kpke_secret_cache_dk)) != 0) {
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+    byte_decode_d12_x3_avx2(dk_pke, &kpke_secret_cache_shat);
+#else
     for (int i = 0; i < K; i++) {
       byte_decode(12, dk_pke + i * 384, kpke_secret_cache_shat[i]);
     }
+#endif
     if (MLKEM_INTERNAL_CACHES_ENABLED) {
       memcpy(kpke_secret_cache_dk, dk_pke, sizeof(kpke_secret_cache_dk));
       kpke_secret_cache_valid = 1;
