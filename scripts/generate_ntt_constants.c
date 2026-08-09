@@ -88,6 +88,27 @@ static vec256 vec256_splat_u32(uint32_t value) {
   return vec256_u32(lane);
 }
 
+static uint16_t vec256_i16_lane(const vec256 *value, int lane) {
+  return (uint16_t)(value->word[lane / 4] >> (16 * (lane % 4)));
+}
+
+static int validate_forward_inverse_tail_relation(
+    const vec256 forward[3][8], const vec256 inverse[6][8]) {
+  for (int level = 1; level < 3; level++) {
+    for (int vector = 0; vector < 8; vector++) {
+      const vec256 *forward_vector = &forward[level][vector];
+      const vec256 *inverse_vector = &inverse[2 - level][7 - vector];
+      for (int lane = 0; lane < 16; lane++) {
+        if (vec256_i16_lane(forward_vector, lane) !=
+            vec256_i16_lane(inverse_vector, 15 - lane)) {
+          return 0;
+        }
+      }
+    }
+  }
+  return 1;
+}
+
 static vec512 vec512_i16(const int16_t lane[32]) {
   vec512 result;
   for (int word = 0; word < 8; word++) {
@@ -405,6 +426,11 @@ int main(int argc, char **argv) {
   }
   if (inv_scalar_index != 14) {
     fprintf(stderr, "unexpected inverse Montgomery scalar count\n");
+    return 1;
+  }
+  if (!validate_forward_inverse_tail_relation(tail_mont_lo, inv_mont_lo) ||
+      !validate_forward_inverse_tail_relation(tail_mont_hi, inv_mont_hi)) {
+    fprintf(stderr, "forward/inverse Montgomery tail relation differs\n");
     return 1;
   }
 

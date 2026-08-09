@@ -1870,12 +1870,30 @@ static int NTT_ROOTS_READY = 0;
 
 #if defined(__AVX2__)
 #if defined(__clang__)
+#if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)
+/* Forward levels 1..2 are the inverse dense factors in global reverse order.
+ * Reverse the gathered coefficient lanes so both transforms share one table. */
+#define MLKEM_AVX2_REUSE_INV_FORWARD_TAIL 1
+#define MLKEM_NTT_TAIL_MONT_REUSE(table, level, index) \
+  ((table)[(level) == 1 ? 15 - (index) : 7 - (index)])
+#define MLKEM_NTT_TAIL_MONT_LO(level, index) \
+  ((level) == 0 \
+       ? ZETA_NTT_TAIL_MONT_LO_L0[index] \
+       : MLKEM_NTT_TAIL_MONT_REUSE( \
+             ZETA_NTT_INV_MONT_LO, level, index))
+#define MLKEM_NTT_TAIL_MONT_HI(level, index) \
+  ((level) == 0 \
+       ? ZETA_NTT_TAIL_MONT_HI_L0[index] \
+       : MLKEM_NTT_TAIL_MONT_REUSE( \
+             ZETA_NTT_INV_MONT_HI, level, index))
+#else
 #define MLKEM_NTT_TAIL_MONT_LO(level, index) \
   ((level) == 0 ? ZETA_NTT_TAIL_MONT_LO_L0[index] \
                 : ZETA_NTT_TAIL_MONT_LO_L12[(level) - 1][index])
 #define MLKEM_NTT_TAIL_MONT_HI(level, index) \
   ((level) == 0 ? ZETA_NTT_TAIL_MONT_HI_L0[index] \
                 : ZETA_NTT_TAIL_MONT_HI_L12[(level) - 1][index])
+#endif
 #define MLKEM_INV_MONT_INDEX(level, index) \
   ((level) < 4 ? 8 * (level) + (index) : 4 * (level) + 16 + (index))
 #if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)
@@ -3778,32 +3796,65 @@ static void ntt_tail_before_l1_mont_lazy_raw_avx2(poly256 f) {
   }
 
   for (int start = 0, i = 0; start < N; start += 32, i++) {
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    __m256i a = load_i16x4_quad_avx2(
+        f + start + 24, f + start + 16, f + start + 8, f + start);
+    __m256i b = load_i16x4_quad_avx2(f + start + 28, f + start + 20,
+                                     f + start + 12, f + start + 4);
+#else
     __m256i a = load_i16x4_quad_avx2(
         f + start, f + start + 8, f + start + 16, f + start + 24);
     __m256i b = load_i16x4_quad_avx2(f + start + 4, f + start + 12,
                                      f + start + 20, f + start + 28);
+#endif
     __m256i t = ntt_mont_mul_precomp_i16x16(
         b, MLKEM_NTT_TAIL_MONT_LO(1, i),
         MLKEM_NTT_TAIL_MONT_HI(1, i));
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    store_i16x4_quad_avx2(f + start + 24, f + start + 16, f + start + 8,
+                          f + start, _mm256_add_epi16(a, t));
+    store_i16x4_quad_avx2(f + start + 28, f + start + 20, f + start + 12,
+                          f + start + 4, _mm256_sub_epi16(a, t));
+#else
     store_i16x4_quad_avx2(f + start, f + start + 8, f + start + 16,
                           f + start + 24, _mm256_add_epi16(a, t));
     store_i16x4_quad_avx2(f + start + 4, f + start + 12, f + start + 20,
                           f + start + 28, _mm256_sub_epi16(a, t));
+#endif
   }
 }
 
 static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
   ntt_tail_before_l1_mont_lazy_raw_avx2(f);
   for (int start = 0, i = 0; start < N; start += 32, i++) {
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    __m256i a = load_i16x2_oct_avx2(
+        f + start + 28, f + start + 24, f + start + 20, f + start + 16,
+        f + start + 12, f + start + 8, f + start + 4, f + start);
+    __m256i b = load_i16x2_oct_avx2(
+        f + start + 30, f + start + 26, f + start + 22, f + start + 18,
+        f + start + 14, f + start + 10, f + start + 6, f + start + 2);
+#else
     __m256i a = load_i16x2_oct_avx2(
         f + start, f + start + 4, f + start + 8, f + start + 12,
         f + start + 16, f + start + 20, f + start + 24, f + start + 28);
     __m256i b = load_i16x2_oct_avx2(
         f + start + 2, f + start + 6, f + start + 10, f + start + 14,
         f + start + 18, f + start + 22, f + start + 26, f + start + 30);
+#endif
     __m256i t = ntt_mont_mul_precomp_i16x16(
         b, MLKEM_NTT_TAIL_MONT_LO(2, i),
         MLKEM_NTT_TAIL_MONT_HI(2, i));
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    store_i16x2_oct_avx2(
+        f + start + 28, f + start + 24, f + start + 20, f + start + 16,
+        f + start + 12, f + start + 8, f + start + 4, f + start,
+        _mm256_add_epi16(a, t));
+    store_i16x2_oct_avx2(
+        f + start + 30, f + start + 26, f + start + 22, f + start + 18,
+        f + start + 14, f + start + 10, f + start + 6, f + start + 2,
+        _mm256_sub_epi16(a, t));
+#else
     store_i16x2_oct_avx2(
         f + start, f + start + 4, f + start + 8, f + start + 12,
         f + start + 16, f + start + 20, f + start + 24, f + start + 28,
@@ -3812,6 +3863,7 @@ static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
         f + start + 2, f + start + 6, f + start + 10, f + start + 14,
         f + start + 18, f + start + 22, f + start + 26, f + start + 30,
         _mm256_sub_epi16(a, t));
+#endif
   }
 }
 
