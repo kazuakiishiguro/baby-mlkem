@@ -1,0 +1,11 @@
+In file included from bench_core_stages.c:8:
+./baby-mlkem.c:4149:7: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 4149 |       for (int j = 0; j < length; j++) {
+      |       ^
+bench_core_stages.c:11004:9: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 11004 |         for (int j = 0; j < length; j++) {
+       |         ^
+bench_core_stages.c:14224:5: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 14224 |     for (int j = 0; j < length; j++) {
+       |     ^
+3 warnings generated.

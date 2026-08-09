@@ -1,0 +1,12 @@
+profile=clang-avx2-only
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+leak_detection=disabled-environment-ptrace-constraint
+kat=PASS
+product_method=direct-link-without-relocatable-compiler-r
+product=PASS
+complete_stage_iterations=1000
+complete_stage=PASS
+complete_stage_sink=4297556503821386549
+sanitizer_diagnostics=none
+sanitizer_gate=PASS
+candidate_ref=7219cad508ae199475d8b1cc2a2f0404479991b7
