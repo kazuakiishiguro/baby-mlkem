@@ -7749,8 +7749,8 @@ static void byte_decode_d12_avx2(const uint8_t *in, poly256 out) {
 }
 
 #if defined(__clang__) && !defined(__AVX512F__)
-/* Decode the contiguous K-polynomial secret-key object with one loop instead
- * of letting Clang retain a separate loop and tail for each polynomial. */
+/* Decode a contiguous K-polynomial d12 object with one loop instead of
+ * letting Clang retain a separate loop and tail for each polynomial. */
 static MLKEM_ALWAYS_INLINE void byte_decode_d12_x3_avx2(
     const uint8_t *in, poly256 (*out)[K]) {
   const __m256i idx8 = _mm256_set_epi8(
@@ -8377,9 +8377,13 @@ static MLKEM_ALWAYS_INLINE void kpke_prepare_public_no_cache(
 static MLKEM_NOINLINE void kpke_prepare_public_no_cache(
     const uint8_t *ek_pke, uint8_t h[32]) {
   const uint8_t *rho = ek_pke + K * 384;
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+  byte_decode_d12_x3_avx2(ek_pke, &kpke_public_cache_that);
+#else
   for (int i = 0; i < K; i++) {
     byte_decode(12, ek_pke + i * 384, kpke_public_cache_that[i]);
   }
+#endif
 
 #if defined(__AVX2__)
 #if defined(__AVX512F__)
