@@ -1871,21 +1871,15 @@ static int NTT_ROOTS_READY = 0;
 #if defined(__AVX2__)
 #if defined(__clang__)
 #if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)
-/* Forward levels 1..2 are the inverse dense factors in global reverse order.
+/* Forward levels 0..2 are the inverse dense factors in global reverse order.
  * Reverse the gathered coefficient lanes so both transforms share one table. */
 #define MLKEM_AVX2_REUSE_INV_FORWARD_TAIL 1
 #define MLKEM_NTT_TAIL_MONT_REUSE(table, level, index) \
-  ((table)[(level) == 1 ? 15 - (index) : 7 - (index)])
+  ((table)[23 - 8 * (level) - (index)])
 #define MLKEM_NTT_TAIL_MONT_LO(level, index) \
-  ((level) == 0 \
-       ? ZETA_NTT_TAIL_MONT_LO_L0[index] \
-       : MLKEM_NTT_TAIL_MONT_REUSE( \
-             ZETA_NTT_INV_MONT_LO, level, index))
+  MLKEM_NTT_TAIL_MONT_REUSE(ZETA_NTT_INV_MONT_LO, level, index)
 #define MLKEM_NTT_TAIL_MONT_HI(level, index) \
-  ((level) == 0 \
-       ? ZETA_NTT_TAIL_MONT_HI_L0[index] \
-       : MLKEM_NTT_TAIL_MONT_REUSE( \
-             ZETA_NTT_INV_MONT_HI, level, index))
+  MLKEM_NTT_TAIL_MONT_REUSE(ZETA_NTT_INV_MONT_HI, level, index)
 #else
 #define MLKEM_NTT_TAIL_MONT_LO(level, index) \
   ((level) == 0 ? ZETA_NTT_TAIL_MONT_LO_L0[index] \
@@ -3785,14 +3779,25 @@ static inline void store_i16x2_oct_avx2(
 
 static void ntt_tail_before_l1_mont_lazy_raw_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 32, i++) {
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    __m256i a = load_i16x8_pair(f + start + 16, f + start);
+    __m256i b = load_i16x8_pair(f + start + 24, f + start + 8);
+#else
     __m256i a = load_i16x8_pair(f + start, f + start + 16);
     __m256i b = load_i16x8_pair(f + start + 8, f + start + 24);
+#endif
     __m256i t = ntt_mont_mul_precomp_i16x16(
         b, MLKEM_NTT_TAIL_MONT_LO(0, i),
         MLKEM_NTT_TAIL_MONT_HI(0, i));
+#if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
+    store_i16x8_pair(f + start + 16, f + start, _mm256_add_epi16(a, t));
+    store_i16x8_pair(f + start + 24, f + start + 8,
+                     _mm256_sub_epi16(a, t));
+#else
     store_i16x8_pair(f + start, f + start + 16, _mm256_add_epi16(a, t));
     store_i16x8_pair(f + start + 8, f + start + 24,
                      _mm256_sub_epi16(a, t));
+#endif
   }
 
   for (int start = 0, i = 0; start < N; start += 32, i++) {

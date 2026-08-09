@@ -94,7 +94,7 @@ static uint16_t vec256_i16_lane(const vec256 *value, int lane) {
 
 static int validate_forward_inverse_tail_relation(
     const vec256 forward[3][8], const vec256 inverse[6][8]) {
-  for (int level = 1; level < 3; level++) {
+  for (int level = 0; level < 3; level++) {
     for (int vector = 0; vector < 8; vector++) {
       const vec256 *forward_vector = &forward[level][vector];
       const vec256 *inverse_vector = &inverse[2 - level][7 - vector];
