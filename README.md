@@ -427,6 +427,15 @@ and scalar products remain byte-identical. This adds no external object,
 runtime library, cache, dispatch, API, table, algorithm, or wire-format
 dependency.
 
+Commit `db9a208` replaces Clang AVX2-only's three expanded d10 ciphertext
+decode/decompress loops in decapsulation with one private 768-coefficient
+loop. The helper names the enclosing three-polynomial output object and keeps
+the existing byte shuffle and decompression identity. The complete 1,088-byte
+ciphertext is checked before the call, so the final vector load remains within
+the following d4 ciphertext bytes. GCC, native AVX512, and scalar products
+remain byte-identical. This adds no external object, runtime library, cache,
+dispatch, API, table, algorithm, or wire-format dependency.
+
 `make test-product` links that exact intrinsically no-cache artifact and checks
 a deterministic roundtrip plus implicit rejection. `make product-size` verifies
 the three exported KEM operations and reports:
@@ -449,14 +458,14 @@ for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
 The current 2026-08-08 no-cache baselines use the normal compiler-specific
-speed flags. The Clang AVX2-only row is measured at `07c1050`; the five
+speed flags. The Clang AVX2-only row is measured at `db9a208`; the five
 non-target rows remain byte-identical to `c2ae4e2`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 53,285 | 16,326 | 69,611 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 55,640 | 3,508 | 59,148 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 43,234 | 7,556 | 50,790 | 0 | 26,593 | 26,593 |
+| AVX2-only | Clang 18.1.3 | 42,925 | 7,555 | 50,480 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 49,687 | 3,756 | 53,443 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 60,082 | 2,016 | 62,098 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,238 | 1,756 | 22,994 | 0 | 19,488 | 19,488 |
@@ -832,13 +841,28 @@ ABI/ISA, roots, stack, and clean post-commit checks pass, while all five
 non-target products are byte-identical. The pinned OpenSSL AVX2-only deficit
 falls to 5,741 bytes and still fails.
 
+The [Clang AVX2 d10 ciphertext decode x3 report](benchmarks/2026-08-08-clang-avx2-d10-ciphertext-decode-x3/README.md)
+records the next AVX2-only size step at `db9a208`. Decapsulation now uses one
+private loop for all three contiguous d10 ciphertext polynomials instead of
+letting Clang expand the same loop three times. The decapsulation caller falls
+448 bytes; the 139-byte helper and compiler-pool movement leave code,
+read-only, and primary reductions of 309, 1, and 310 bytes, reaching 50,480
+bytes. An exhaustive d10 oracle plus 16,384 deterministic ciphertexts and four
+boundaries are identical. The 31-pair direct interval is
+`0.998669572x..1.005368036x`, and the three-batch 48-pair product minimum is
+`0.998716209x`, so the result is accepted as no-regression evidence and no
+speed gain is credited. Six-build correctness, target AVX2 sanitizers, corpus,
+ABI/ISA, roots, stack, and clean post-commit checks pass, while all five
+non-target products are byte-identical. The pinned OpenSSL AVX2-only deficit
+falls to 5,431 bytes and still fails.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
 native deficit in that complete matrix was 52,299 bytes against mlkem-native;
 the limiting AVX2-only deficit was 19,970 bytes against OpenSSL. The later
-diagnostics at `c2ae4e2` and `07c1050` reduce the mlkem-native native deficit
-to 18,425 bytes and the OpenSSL AVX2-only deficit to 5,741 bytes. A complete
+diagnostics at `c2ae4e2` and `db9a208` reduce the mlkem-native native deficit
+to 18,425 bytes and the OpenSSL AVX2-only deficit to 5,431 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
@@ -1064,12 +1088,12 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `07c1050` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2 ASan+UBSan passes, all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`, and all five non-target products are byte-identical to the previously sanitized parent. |
+| Correctness | current candidate pass | `db9a208` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2 ASan+UBSan passes, all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`, and all five non-target products are byte-identical to the previously sanitized parent. |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the current artifacts are still 18,425 bytes larger than mlkem-native native and 5,741 bytes larger than OpenSSL AVX2-only. |
-| Maximum stack | current measurements reported | At `c2ae4e2` native and `07c1050` AVX2-only, the current maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
+| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the current artifacts are still 18,425 bytes larger than mlkem-native native and 5,431 bytes larger than OpenSSL AVX2-only. |
+| Maximum stack | current measurements reported | At `c2ae4e2` native and `db9a208` AVX2-only, the current maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
@@ -1199,6 +1223,7 @@ Near-term target selection:
 | Clang AVX2 d10 encode batch outline | Accepted as an AVX2-only size optimization with a focused helper speedup; GCC/native/scalar byte-identical | Clang's shared encryption finish calls one private `noinline,minsize` K=3 d10 encoder instead of retaining three loops. The caller shrinks 502 bytes; the 238-byte helper and compiler-pool changes leave code/read-only/primary reductions of 264/158/422 bytes and a 51,773-byte product. Direct d10 x3 improves `1.006971x` with a `1.004323x` 95% lower bound. The 80-pair product minimum is `1.000451502x`, so no broad KEM gain is credited. Maximum stack remains 4,512 bytes. No arithmetic, cache, external object, runtime library, source table, API, algorithm, or wire-format change is used. |
 | Clang AVX2 message/inverse-final fusion | Accepted as an AVX2-only size optimization with a focused 5.84% speedup; GCC/native/scalar byte-identical | The fixed encryption finish folds message bits and canonical `e2` into the inverse-NTT final scale/add, replacing two canonicalizing output passes with one. The proved pre-reduction maximum is 8,321. The caller and primary product shrink 902/926 bytes to 3,900/50,847 bytes. Direct timing improves `1.0584x` with a `1.0560x` 95% lower bound and 31/31 wins; the 48-pair product minimum is `1.002353694x`, so no broad KEM gain is credited. Maximum stack remains 4,512 bytes. No cache, external object, runtime library, source table, API, algorithm, or wire-format change is used. |
 | Clang AVX2 inverse-final/d4 fusion | Accepted as an AVX2-only size optimization with a focused 5.58% speedup; GCC/native/scalar byte-identical | The fixed encryption finish keeps pairs of final inverse/message/noise vectors live through d4 compression and ciphertext packing, removing a 512-byte polynomial store and reload. Two conditional `Q` subtractions cover the proved `0..8321` range. The caller and primary product shrink 59/57 bytes to 3,841/50,790 bytes. Committed-source direct timing improves `1.055840910x` with a `1.053636058x` 95% lower bound and 31/31 wins; the 48-pair product minimum is `1.000135840x`, so no broad KEM gain is credited. Maximum stack remains 4,512 bytes. No cache, external object, runtime library, source table, API, algorithm, or wire-format change is used. |
+| Clang AVX2 d10 ciphertext decode x3 | Accepted as an AVX2-only size optimization; native/GCC/scalar byte-identical | Decapsulation calls one private 768-coefficient loop for the three contiguous d10 ciphertext polynomials instead of retaining three compiler-expanded copies. The caller shrinks 448 bytes; the 139-byte helper and compiler-pool movement leave code/read-only/primary reductions of 309/1/310 bytes and a 50,480-byte product. All 1,024 d10 values, 16,384 deterministic ciphertexts, and four boundaries match. The direct 95% interval is `0.998669572x..1.005368036x`, and the 48-pair product minimum is `0.998716209x`, so no speed gain is credited. Maximum stack remains 4,512 bytes. No arithmetic, cache, external object, runtime library, source table, API, algorithm, or wire-format change is used. |
 | Sampler seed/init hoisting | Closed | `sample_ntt4_init_only` is only 6.30 ns median, and matrix-level seed word reuse regressed in earlier checks versus production. |
 | AVX2 three-polynomial inverse-add batching | Closed for production | Full-path grouping is only 1.0049x median on the raw diagnostic, while grouped tail/final is 0.9918x; this is not a robust representation win. |
 | Adjacent inverse-level fusion | Closed as a standalone tactic; superseded by the full representation | Head `l2+l3`, tail `l4+l5`/`l5+l6`, and `l6/final` fusion attempts were slower in the old 32-bit representation. The accepted full 16-bit inverse succeeds by changing butterfly arithmetic and range handling across all seven levels, not by reviving those local schedules. |

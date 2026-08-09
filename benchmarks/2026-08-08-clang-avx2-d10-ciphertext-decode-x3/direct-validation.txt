@@ -1,0 +1,5 @@
+validation=PASS
+exhaustive_d10_values=1024
+random_ciphertexts=16384
+boundary_patterns=4
+validated_cases=17412

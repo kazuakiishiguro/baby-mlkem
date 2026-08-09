@@ -1,0 +1,89 @@
+baseline_ref=ed3b9dc73b9ed7ccd2fda4b63bb985e1fc3c7a46
+candidate_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+baseline_product_sha256=f70fcf311b8de744b63d8d75c0f647186ecd3db21a076d5aae1be662d03baefd
+candidate_product_sha256=7cc168832d6f820e7ae1cd0e1d8fc01a80aa0a503042635ac574db1c7c2fd0d8
+common_benchmark_object_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+compiler=clang
+profile=avx2-only
+avx2_backend=core
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+product_core=BABY_MLKEM_DISABLE_INTERNAL_CACHES
+iterations=100000
+pin_cpu=0
+speedup_direction=baseline_time/candidate_time
+normal_core_alias_check=PASS
+batch=3
+warmup_pairs=3
+measured_pairs=16
+run_order=alternating, odd candidate-first
+
+run order base_keygen candidate_keygen base_encaps candidate_encaps base_decaps candidate_decaps base_roundtrip candidate_roundtrip
+01 candidate-first 5775.49 5780.56 4614.63 4680.74 4616.06 4667.34 15377.26 15398.04
+02 baseline-first 5791.63 5975.88 4644.74 4630.92 4637.71 4672.29 15370.47 15533.45
+03 candidate-first 5771.05 5773.43 4611.32 4619.63 4954.51 4616.94 15706.62 15319.89
+04 baseline-first 5936.09 5781.45 4743.09 4627.10 4619.20 4631.02 15621.73 15346.38
+05 candidate-first 5779.87 5777.15 4630.46 4617.20 4654.47 4647.56 15387.50 15368.82
+06 baseline-first 5771.18 5764.24 4627.29 4615.86 4620.50 4625.70 15360.32 15397.91
+07 candidate-first 5799.71 5782.45 4618.54 4632.84 4614.76 4670.45 15326.11 15387.23
+08 baseline-first 5787.58 5772.34 4642.39 4629.26 4625.38 4635.13 15408.18 15392.83
+09 candidate-first 5765.91 5778.01 4620.82 4628.39 4629.58 4694.54 15334.21 15407.01
+10 baseline-first 5769.82 5780.64 4621.95 4630.00 4966.39 4959.92 15700.28 15682.53
+11 candidate-first 5774.27 5814.68 4622.75 4621.99 4618.90 4623.36 15329.86 15335.87
+12 baseline-first 5774.93 5774.92 4623.06 4640.01 4960.00 4633.33 15714.72 15350.08
+13 candidate-first 5773.31 5807.72 4620.29 4664.34 4620.06 4984.14 15352.16 15706.78
+14 baseline-first 5778.24 5779.49 4694.84 4632.15 4635.57 4782.98 15413.41 15501.33
+15 candidate-first 5772.26 5775.89 4617.65 4623.87 4613.20 4624.44 15338.79 15312.24
+16 baseline-first 5766.06 5776.04 4633.79 4620.91 4613.54 4618.69 15332.48 15331.48
+
+keygen_runs=16
+keygen_baseline_mean_ns=5786.712500000
+keygen_baseline_median_ns=5774.600000000
+keygen_candidate_mean_ns=5793.430625000
+keygen_candidate_median_ns=5778.750000000
+keygen_ratio_of_medians=0.999281852x
+keygen_gmean=0.998851975x
+keygen_ci95_low=0.993467573x
+keygen_ci95_high=1.003996236x
+keygen_median=0.999479646x
+keygen_wins=6/16
+keygen_candidate_first_median=0.999247224x
+keygen_baseline_first_median=0.999892725x
+encaps_runs=16
+encaps_baseline_mean_ns=4636.725625000
+encaps_baseline_median_ns=4622.905000000
+encaps_candidate_mean_ns=4632.200625000
+encaps_candidate_median_ns=4628.825000000
+encaps_ratio_of_medians=0.998721058x
+encaps_gmean=1.000957595x
+encaps_ci95_low=0.997107496x
+encaps_ci95_high=1.005383442x
+encaps_median=0.999409619x
+encaps_wins=8/16
+encaps_candidate_first_median=0.998282798x
+encaps_baseline_first_median=1.002811818x
+decaps_runs=16
+decaps_baseline_mean_ns=4687.489375000
+decaps_baseline_median_ns=4622.940000000
+decaps_candidate_mean_ns=4692.989375000
+decaps_candidate_median_ns=4641.345000000
+decaps_ratio_of_medians=0.996034555x
+decaps_gmean=0.998727134x
+decaps_ci95_low=0.983471915x
+decaps_ci95_high=1.015002899x
+decaps_median=0.997732967x
+decaps_wins=4/16
+decaps_candidate_first_median=0.993291225x
+decaps_baseline_first_median=0.998386172x
+roundtrip_runs=16
+roundtrip_baseline_mean_ns=15442.131250000
+roundtrip_baseline_median_ns=15373.865000000
+roundtrip_candidate_mean_ns=15423.241875000
+roundtrip_candidate_median_ns=15390.030000000
+roundtrip_ratio_of_medians=0.998949645x
+roundtrip_gmean=1.001210493x
+roundtrip_ci95_low=0.995690251x
+roundtrip_ci95_high=1.007161439x
+roundtrip_median=0.999836667x
+roundtrip_wins=8/16
+roundtrip_candidate_first_median=0.999129293x
+roundtrip_baseline_first_median=1.000531221x

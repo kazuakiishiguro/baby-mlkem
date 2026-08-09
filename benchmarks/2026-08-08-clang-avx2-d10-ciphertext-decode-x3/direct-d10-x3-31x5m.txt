@@ -1,0 +1,65 @@
+baseline_ref=ed3b9dc73b9ed7ccd2fda4b63bb985e1fc3c7a46
+candidate_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+profile=clang-avx2-only
+boundary=three contiguous d10 ciphertext polynomials
+speedup_direction=baseline_time/candidate_time
+baseline_shape=three compiler-expanded 256-coefficient loops
+candidate_shape=one noinline 768-coefficient loop
+baseline_model_function_bytes=396
+candidate_model_function_bytes=137
+warmup_calls_per_process=10000
+measured_calls_per_process=5000000
+measured_pairs=31
+run_order=alternating, odd candidate-first
+pin_cpu=0
+sink=00000000000000fc
+
+pair order baseline_ns candidate_ns ratio
+01 candidate-first 31.245084800 31.203814800 1.001322595x
+02 base-first 31.566280600 31.291690600 1.008775173x
+03 candidate-first 31.233705600 31.302855400 0.997790943x
+04 base-first 31.412003200 31.166432800 1.007879323x
+05 candidate-first 31.243688600 31.295572600 0.998342130x
+06 base-first 31.340181400 31.206288400 1.004290578x
+07 candidate-first 31.231276000 31.392437800 0.994866222x
+08 base-first 31.306448800 31.281942200 1.000783410x
+09 candidate-first 31.225571400 31.869297200 0.979801067x
+10 base-first 31.468598000 31.225016600 1.007800841x
+11 candidate-first 31.253421200 31.336990600 0.997333203x
+12 base-first 31.507923000 31.198789400 1.009908513x
+13 candidate-first 31.246408800 31.320782400 0.997625423x
+14 base-first 32.020101600 31.177733600 1.027018256x
+15 candidate-first 31.235378000 31.307722600 0.997689241x
+16 base-first 31.897425400 31.183648600 1.022889458x
+17 candidate-first 31.302919400 31.389958000 0.997227183x
+18 base-first 31.377952000 31.201311000 1.005661333x
+19 candidate-first 31.225489200 31.299123800 0.997647391x
+20 base-first 31.513766000 31.490909600 1.000725809x
+21 candidate-first 31.257148800 31.405635600 0.995271970x
+22 base-first 31.379700800 31.217767600 1.005187213x
+23 candidate-first 31.209813800 31.386552800 0.994368958x
+24 base-first 31.378781400 31.791424400 0.987020305x
+25 candidate-first 31.289128800 31.323260000 0.998910356x
+26 base-first 31.412884400 31.201912000 1.006761522x
+27 candidate-first 31.254929400 31.333052600 0.997506684x
+28 base-first 31.862429000 31.160207200 1.022535851x
+29 candidate-first 31.246210400 31.423204000 0.994367424x
+30 base-first 31.374106400 31.230256400 1.004606110x
+31 candidate-first 31.397016800 31.423518400 0.999156632x
+
+d10_x3_runs=31
+d10_x3_baseline_mean_ns=31.384379774
+d10_x3_baseline_median_ns=31.306448800
+d10_x3_candidate_mean_ns=31.323842226
+d10_x3_candidate_median_ns=31.299123800
+d10_x3_ratio_of_medians=1.000234032x
+d10_x3_gmean=1.001924793x
+d10_x3_ci95_low=0.998669572x
+d10_x3_ci95_high=1.005368036x
+d10_x3_median=0.999156632x
+d10_x3_wins=15/31
+d10_x3_candidate_first_median=0.997566054x
+d10_x3_baseline_first_median=1.006761522x
+direct_regression_floor=0.995000000x
+direct_no_regression=PASS
+focused_speed_gain_credit=none
