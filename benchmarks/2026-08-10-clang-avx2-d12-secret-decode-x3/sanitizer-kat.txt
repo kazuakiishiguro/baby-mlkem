@@ -1,0 +1,5 @@
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: d7f98004eaf3d5b2b745ec563d3c6e8c16a860d4092b486a92894b23bda899dd
+Decapsulated k2: d7f98004eaf3d5b2b745ec563d3c6e8c16a860d4092b486a92894b23bda899dd
+OK

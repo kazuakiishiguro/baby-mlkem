@@ -1,0 +1,16 @@
+noinline_x3_primary_bytes=50179
+noinline_x3_primary_delta=-301
+noinline_x3_product_screen_pairs=9
+noinline_x3_decaps_gmean=0.994220x
+noinline_x3_gate=REJECTED
+restrict_variant_product_sha256=bcbc68b7a6fac3b6d25e02706f244bb0b92a130cb40ec7b1422b69762dbb5168
+restrict_variant_code_change=none
+restrict_variant=REMOVED_AS_REDUNDANT
+short_direct_pairs=31
+short_direct_outlier_ns=24.7
+short_direct=REJECTED_HOST_INTERRUPTION
+postcommit_direct_pairs=30
+postcommit_direct_gmean=0.988057693x
+postcommit_direct_paired_median=1.002416272x
+postcommit_direct_outliers=pair06-candidate:17.922601460,pair26-candidate:24.450289120
+postcommit_direct=REJECTED_HOST_INTERRUPTION_NO_SPEED_CLAIM

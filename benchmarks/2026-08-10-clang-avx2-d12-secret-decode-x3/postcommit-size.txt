@@ -1,0 +1,14 @@
+artifact=/tmp/d12-postcommit.Rs4yS3/baby_mlkem768_product.o
+artifact_sha256=bcbc68b7a6fac3b6d25e02706f244bb0b92a130cb40ec7b1422b69762dbb5168
+artifact_file_bytes=77120
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=42541
+readonly_data_bytes=7555
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=50096
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

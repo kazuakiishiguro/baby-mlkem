@@ -1,0 +1,43 @@
+compiler=clang
+profile=avx2-only
+calls_per_process=50000000
+pairs=15
+run_order=alternating, odd candidate-first
+pin_cpu=0
+speedup_direction=baseline_time/candidate_time
+source_context=production-source-including-harness
+baseline_function_bytes=589
+candidate_function_bytes=205
+
+pair order baseline_ns candidate_ns ratio
+01	candidate-first	17.026920020	16.992679040	1.002015043
+02	base-first	17.045838000	16.977208240	1.004042464
+03	candidate-first	17.043599840	17.042800860	1.000046881
+04	base-first	17.059870060	17.070622580	0.999370116
+05	candidate-first	17.080986940	17.011666340	1.004074886
+06	base-first	17.061908520	17.019617080	1.002484864
+07	candidate-first	17.039362700	17.007748660	1.001858802
+08	base-first	17.043051640	16.978445500	1.003805186
+09	candidate-first	17.027897500	16.995715000	1.001893566
+10	base-first	17.063789940	16.972400820	1.005384572
+11	candidate-first	17.039044820	17.003305200	1.002101922
+12	base-first	17.059072860	16.976155660	1.004884333
+13	candidate-first	17.042685460	17.023859640	1.001105849
+14	base-first	17.056583120	16.974125620	1.004857835
+15	candidate-first	17.021818180	16.993958780	1.001639371
+
+calls_per_process=50000000
+pairs=15
+baseline_mean_ns=17.047495307
+baseline_median_ns=17.043599840
+candidate_mean_ns=17.002687268
+candidate_median_ns=16.995715000
+ratio_of_medians=1.002817465x
+gmean=1.002636199x
+ci95_low=1.001756681x
+ci95_high=1.003511678x
+paired_median=1.002101922x
+wins=14/15
+candidate_first_median=1.001876184x
+baseline_first_median=1.004042464x
+focused_gate=PASS
