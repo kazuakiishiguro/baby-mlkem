@@ -1,0 +1,17 @@
+half=LO
+forward_bytes=512
+inverse_prefix_bytes=512
+word_count=256
+forward_sha256=e3bfd06470ce2203e56e6e15c04d77f86cb8cf641e78ca7af6c68e93a1a1b2bc
+inverse_prefix_sha256=bb6550b09512dcd42e3d8249a30ba57b74481f2f80223a5dbb7a38e845feaf9a
+forward_equals_reverse16_inverse_prefix=PASS
+half=HI
+forward_bytes=512
+inverse_prefix_bytes=512
+word_count=256
+forward_sha256=19a413346c8597e9990e3e0def5ddace34b34d088ce43af770f821ba559f1a44
+inverse_prefix_sha256=851180e6e5b6ed984a82d2b17ae7973683eeef513195ed5ba086ea49d1bd8138
+forward_equals_reverse16_inverse_prefix=PASS
+relation=forward[level][vector][lane] == inverse[2-level][7-vector][15-lane] for level=1..2
+generator_assertion=PASS
+root_relation=PASS

@@ -1,0 +1,8 @@
+baseline_ref=8a0120e01868c8881fcdd07bb070f1f55f438807
+accepted_ref=1809825900eb257ad1baf240423281748b267a0b
+candidate=load-plus-vpermq-vpshufd primary_bytes=48764 direct_gmean=0.974160573x direct_wins=0/15 product_minimum=0.994669408x status=REJECTED
+candidate=load-plus-vpermd primary_bytes=48764 direct_gmean=0.970389614x direct_wins=0/15 status=REJECTED
+candidate=hybrid-vpermq-vpermd primary_bytes=48764 direct_gmean=0.955631975x direct_median=0.970009575x direct_wins=0/15 status=REJECTED
+candidate=reverse-gather-store-lanes primary_bytes=48722 direct_gmean=1.004281636x direct_wins=17/32 product_minimum=0.999748066x status=ACCEPTED
+rejected_candidates_retained=3
+candidate_selection=PASS

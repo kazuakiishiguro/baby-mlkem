@@ -1,0 +1,10 @@
+baseline_ref=8a0120e01868c8881fcdd07bb070f1f55f438807
+candidate_ref=1809825900eb257ad1baf240423281748b267a0b
+operation baseline_bytes candidate_bytes delta_bytes
+keygen 4512 4512 0
+encaps 4144 4144 0
+decaps_valid 4512 4512 0
+decaps_invalid 4512 4512 0
+maximum 4512 4512 0
+maximum_stack_nonincrease=PASS
+correctness_smoke=PASS

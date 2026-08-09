@@ -1,0 +1,11 @@
+candidate_ref=1809825900eb257ad1baf240423281748b267a0b
+profile=clang-avx2
+sanitizers=address,undefined
+leak_detection=disabled-ptrace-environment
+kat=PASS
+product=PASS
+complete_stage_1000=PASS
+complete_stage_sink=4297556503821386549
+generator=PASS
+sanitizer_diagnostics=none
+sanitizer_gate=PASS

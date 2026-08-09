@@ -1,0 +1,8 @@
+commit=1809825900eb257ad1baf240423281748b267a0b
+artifact_sha256=6d2f660ef7a830827b5e35aa8cbde0d13f90aebda481a1f69ac94f8df949bb91
+primary_bytes=48722
+complete_stage_sink=4297556503821386549
+postcommit_reproduction=PASS
+product_smoke=PASS
+kat=PASS
+ntt_root_reproducibility=PASS
