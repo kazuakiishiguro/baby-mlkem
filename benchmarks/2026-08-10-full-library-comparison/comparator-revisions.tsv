@@ -1,0 +1,11 @@
+comparator	checkout_or_source	revision_or_version	comparison_note
+Kyber upstream AVX2	https://github.com/pq-crystals/kyber.git	3edd5af5991927164edd4aacebfcbee00b8064e7	Kyber reference/upstream AVX2 path
+Kyber fair-flags	https://github.com/pq-crystals/kyber.git	3edd5af5991927164edd4aacebfcbee00b8064e7	Same source with candidate-equivalent compiler flags
+PQClean AVX2	https://github.com/PQClean/PQClean.git	0586a824fc0d49df0b6b6e9179d8d15d06d0974f	Kyber768 AVX2 implementation
+mlkem-native	https://github.com/pq-code-package/mlkem-native.git	0457037e74ec8f93d35333890740f61032b515cc	Native C implementation
+liboqs	https://github.com/open-quantum-safe/liboqs.git	4e1183aaa34b0d0d52413c49f269f909b505e0cf	ML-KEM implementation through liboqs product path
+BoringSSL	https://boringssl.googlesource.com/boringssl	a204be272595867e7069221050f19697a0cf66ad	Internal ML-KEM path selected by harness
+libcrux Rust	crates.io libcrux-ml-kem	0.0.10; lock fb8e17a643a60b25160aba36e0a28c5ff47f5fc73d38884420a98a923c940b3f	Rust implementation; SIMD256 enabled
+libjade Kyber768 AVX2	https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz	release/2023.05-2; semantics Kyber768-pre-FIPS	Pre-FIPS semantics; not a current FIPS ML-KEM claim
+Botan ML-KEM-768	https://github.com/randombit/botan.git	3.13.0 unreleased; 7ffae689f89286ecddf5ffecb17803403ad96fde	Internal-core-direct adapter; wire/key material rebuilt per call
+OpenSSL ML-KEM-768	https://github.com/openssl/openssl.git	1a3455e2ce3989530015d72e8fa98f5741e5da1f	Three internal core objects; provider registry excluded

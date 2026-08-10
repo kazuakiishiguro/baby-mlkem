@@ -1,0 +1,23 @@
+candidate_commit=dab05133e89f0ae5db81b294207430e64cfe4b77
+candidate_remote=git@github.com:kazuakiishiguro/baby-mlkem.git
+report_date=2026-08-10
+host_cpu=AMD Ryzen Threadripper 7980X 64-Cores
+host_kernel=Linux 6.8.0-124-generic
+compiler=clang
+compiler_version=Ubuntu clang version 18.1.3 (1ubuntu1)
+benchmark_cpu_pin=2
+benchmark_iterations=5000
+benchmark_runs=5
+benchmark_warmup_runs=1
+benchmark_bootstrap_samples=5000
+benchmark_stats_mode=mean (operation speed ratios use paired geometric mean)
+benchmark_trim_count=1
+randombytes=deterministic benchmark shim; not a production entropy comparison
+local_backend=core (AVX2_BACKEND=core)
+avx2_profile=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+native_profile=-march=native -mavx2 -mbmi2 -mpopcnt
+size_api_scope=three exported product APIs: baby_mlkem768_keypair_derand, baby_mlkem768_encaps_derand, baby_mlkem768_decaps
+size_stack_runs=8
+size_stack_usable_bytes=1048576
+size_update_repos=0
+size_enforce=0 (measurement only)
