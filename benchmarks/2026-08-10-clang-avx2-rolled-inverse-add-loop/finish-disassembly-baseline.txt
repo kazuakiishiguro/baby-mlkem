@@ -1,0 +1,896 @@
+
+/tmp/baby-mlkem-inv-add-loop-artifacts.EdEJgv/baseline-product.o:     file format elf64-x86-64
+
+
+Disassembly of section .text.kpke_encrypt_finish_avx2:
+
+0000000000000000 <kpke_encrypt_finish_avx2>:
+   0:	55                   	push   %rbp
+   1:	41 57                	push   %r15
+   3:	41 56                	push   %r14
+   5:	41 55                	push   %r13
+   7:	41 54                	push   %r12
+   9:	53                   	push   %rbx
+   a:	48 81 ec f8 01 00 00 	sub    $0x1f8,%rsp
+  11:	4c 89 c3             	mov    %r8,%rbx
+  14:	49 89 cd             	mov    %rcx,%r13
+  17:	49 89 d6             	mov    %rdx,%r14
+  1a:	48 89 74 24 08       	mov    %rsi,0x8(%rsp)
+  1f:	49 89 ff             	mov    %rdi,%r15
+  22:	48 89 d7             	mov    %rdx,%rdi
+  25:	e8 00 00 00 00       	call   2a <kpke_encrypt_finish_avx2+0x2a>
+			26: R_X86_64_PLT32	.text.ntt_mont_lazy_avx2-0x4
+  2a:	49 8d be 00 02 00 00 	lea    0x200(%r14),%rdi
+  31:	e8 00 00 00 00       	call   36 <kpke_encrypt_finish_avx2+0x36>
+			32: R_X86_64_PLT32	.text.ntt_mont_lazy_avx2-0x4
+  36:	49 81 c6 00 04 00 00 	add    $0x400,%r14
+  3d:	4c 89 f7             	mov    %r14,%rdi
+  40:	e8 00 00 00 00       	call   45 <kpke_encrypt_finish_avx2+0x45>
+			41: R_X86_64_PLT32	.text.ntt_mont_lazy_avx2-0x4
+  45:	48 c7 c0 f0 ff ff ff 	mov    $0xfffffffffffffff0,%rax
+  4c:	48 8d 0d 00 00 00 00 	lea    0x0(%rip),%rcx        # 53 <kpke_encrypt_finish_avx2+0x53>
+			4f: R_X86_64_PC32	.rodata.GAMMA-0x4
+  53:	48 8d 15 00 00 00 00 	lea    0x0(%rip),%rdx        # 5a <kpke_encrypt_finish_avx2+0x5a>
+			56: R_X86_64_PC32	.bss.kpke_public_cache_ahat-0x4
+  5a:	c4 e2 7d 18 05 00 00 	vbroadcastss 0x0(%rip),%ymm0        # 63 <kpke_encrypt_finish_avx2+0x63>
+  61:	00 00
+			5f: R_X86_64_PC32	.LCPI15_3-0x4
+  63:	c5 fc 11 84 24 50 01 	vmovups %ymm0,0x150(%rsp)
+  6a:	00 00
+  6c:	c4 e2 7d 18 05 00 00 	vbroadcastss 0x0(%rip),%ymm0        # 75 <kpke_encrypt_finish_avx2+0x75>
+  73:	00 00
+			71: R_X86_64_PC32	.LCPI15_4-0x4
+  75:	c5 fc 11 84 24 30 01 	vmovups %ymm0,0x130(%rsp)
+  7c:	00 00
+  7e:	c4 e2 7d 18 05 00 00 	vbroadcastss 0x0(%rip),%ymm0        # 87 <kpke_encrypt_finish_avx2+0x87>
+  85:	00 00
+			83: R_X86_64_PC32	.LCPI15_5-0x4
+  87:	c5 fc 11 84 24 10 01 	vmovups %ymm0,0x110(%rsp)
+  8e:	00 00
+  90:	c4 e2 7d 18 05 00 00 	vbroadcastss 0x0(%rip),%ymm0        # 99 <kpke_encrypt_finish_avx2+0x99>
+  97:	00 00
+			95: R_X86_64_PC32	.LCPI15_6-0x4
+  99:	c5 fc 11 84 24 f0 00 	vmovups %ymm0,0xf0(%rsp)
+  a0:	00 00
+  a2:	c4 e2 7d 58 05 00 00 	vpbroadcastd 0x0(%rip),%ymm0        # ab <kpke_encrypt_finish_avx2+0xab>
+  a9:	00 00
+			a7: R_X86_64_PC32	.LCPI15_7-0x4
+  ab:	c5 fe 7f 84 24 d0 00 	vmovdqu %ymm0,0xd0(%rsp)
+  b2:	00 00
+  b4:	48 8d 2d 00 00 00 00 	lea    0x0(%rip),%rbp        # bb <kpke_encrypt_finish_avx2+0xbb>
+			b7: R_X86_64_PC32	.bss.kpke_encrypt_finish_avx2.u-0x4
+  bb:	48 8d 35 00 00 00 00 	lea    0x0(%rip),%rsi        # c2 <kpke_encrypt_finish_avx2+0xc2>
+			be: R_X86_64_PC32	.bss.kpke_public_cache_that-0x4
+  c2:	4c 8d 25 00 00 00 00 	lea    0x0(%rip),%r12        # c9 <kpke_encrypt_finish_avx2+0xc9>
+			c5: R_X86_64_PC32	.bss.kpke_encrypt_finish_avx2.v-0x4
+  c9:	c5 fe 6f bc 24 f0 00 	vmovdqu 0xf0(%rsp),%ymm7
+  d0:	00 00
+  d2:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  d9:	0f 1f 84 00 00 00 00
+  e0:	00
+  e1:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  e8:	0f 1f 84 00 00 00 00
+  ef:	00
+  f0:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  f7:	0f 1f 84 00 00 00 00
+  fe:	00
+  ff:	90                   	nop
+ 100:	c4 c1 7e 6f 84 46 20 	vmovdqu -0x3e0(%r14,%rax,2),%ymm0
+ 107:	fc ff ff
+ 10a:	c4 c1 7e 6f 8c 46 20 	vmovdqu -0x1e0(%r14,%rax,2),%ymm1
+ 111:	fe ff ff
+ 114:	c4 41 7e 6f 44 46 20 	vmovdqu 0x20(%r14,%rax,2),%ymm8
+ 11b:	c4 62 7d 79 25 00 00 	vpbroadcastw 0x0(%rip),%ymm12        # 124 <kpke_encrypt_finish_avx2+0x124>
+ 122:	00 00
+			120: R_X86_64_PC32	.rodata+0x3e
+ 124:	c4 41 7d 65 cc       	vpcmpgtw %ymm12,%ymm0,%ymm9
+ 129:	c4 e2 7d 79 15 00 00 	vpbroadcastw 0x0(%rip),%ymm2        # 132 <kpke_encrypt_finish_avx2+0x132>
+ 130:	00 00
+			12e: R_X86_64_PC32	.rodata+0x40
+ 132:	c5 35 db ca          	vpand  %ymm2,%ymm9,%ymm9
+ 136:	c5 b5 fd f0          	vpaddw %ymm0,%ymm9,%ymm6
+ 13a:	c4 c1 75 65 c4       	vpcmpgtw %ymm12,%ymm1,%ymm0
+ 13f:	c5 fd db c2          	vpand  %ymm2,%ymm0,%ymm0
+ 143:	c5 fd fd e9          	vpaddw %ymm1,%ymm0,%ymm5
+ 147:	c4 c1 3d 65 c4       	vpcmpgtw %ymm12,%ymm8,%ymm0
+ 14c:	c5 fd db c2          	vpand  %ymm2,%ymm0,%ymm0
+ 150:	c5 bd fd e0          	vpaddw %ymm0,%ymm8,%ymm4
+ 154:	c4 e2 7d 33 44 08 10 	vpmovzxwd 0x10(%rax,%rcx,1),%ymm0
+ 15b:	c5 fe 7f 44 24 10    	vmovdqu %ymm0,0x10(%rsp)
+ 161:	c5 fe 6f 44 42 20    	vmovdqu 0x20(%rdx,%rax,2),%ymm0
+ 167:	c5 fe 6f 8c 42 20 02 	vmovdqu 0x220(%rdx,%rax,2),%ymm1
+ 16e:	00 00
+ 170:	c5 7d f5 f6          	vpmaddwd %ymm6,%ymm0,%ymm14
+ 174:	c4 41 11 ef ed       	vpxor  %xmm13,%xmm13,%xmm13
+ 179:	c4 e3 15 0e d6 aa    	vpblendw $0xaa,%ymm6,%ymm13,%ymm2
+ 17f:	c5 fe 7f 94 24 90 00 	vmovdqu %ymm2,0x90(%rsp)
+ 186:	00 00
+ 188:	c5 7d f5 fa          	vpmaddwd %ymm2,%ymm0,%ymm15
+ 18c:	c5 fd 6f 1d 00 00 00 	vmovdqa 0x0(%rip),%ymm3        # 194 <kpke_encrypt_finish_avx2+0x194>
+ 193:	00
+			190: R_X86_64_PC32	.LCPI15_2-0x4
+ 194:	c4 e2 4d 00 d3       	vpshufb %ymm3,%ymm6,%ymm2
+ 199:	c5 fe 7f 94 24 d0 01 	vmovdqu %ymm2,0x1d0(%rsp)
+ 1a0:	00 00
+ 1a2:	c5 7d 6f ce          	vmovdqa %ymm6,%ymm9
+ 1a6:	c5 fe 7f b4 24 b0 01 	vmovdqu %ymm6,0x1b0(%rsp)
+ 1ad:	00 00
+ 1af:	c5 fd f5 c2          	vpmaddwd %ymm2,%ymm0,%ymm0
+ 1b3:	c5 f5 f5 d5          	vpmaddwd %ymm5,%ymm1,%ymm2
+ 1b7:	c5 8d fe d2          	vpaddd %ymm2,%ymm14,%ymm2
+ 1bb:	c4 e3 15 0e f5 aa    	vpblendw $0xaa,%ymm5,%ymm13,%ymm6
+ 1c1:	c5 fe 7f 74 24 70    	vmovdqu %ymm6,0x70(%rsp)
+ 1c7:	c5 75 f5 c6          	vpmaddwd %ymm6,%ymm1,%ymm8
+ 1cb:	c4 41 3d fe c7       	vpaddd %ymm15,%ymm8,%ymm8
+ 1d0:	c4 e2 55 00 f3       	vpshufb %ymm3,%ymm5,%ymm6
+ 1d5:	c5 fe 7f 74 24 50    	vmovdqu %ymm6,0x50(%rsp)
+ 1db:	c5 7d 6f d5          	vmovdqa %ymm5,%ymm10
+ 1df:	c5 fe 7f ac 24 90 01 	vmovdqu %ymm5,0x190(%rsp)
+ 1e6:	00 00
+ 1e8:	c5 f5 f5 ce          	vpmaddwd %ymm6,%ymm1,%ymm1
+ 1ec:	c5 f5 fe c0          	vpaddd %ymm0,%ymm1,%ymm0
+ 1f0:	c5 fe 6f 8c 42 20 04 	vmovdqu 0x420(%rdx,%rax,2),%ymm1
+ 1f7:	00 00
+ 1f9:	c5 75 f5 e4          	vpmaddwd %ymm4,%ymm1,%ymm12
+ 1fd:	c5 1d fe e2          	vpaddd %ymm2,%ymm12,%ymm12
+ 201:	c4 e3 15 0e d4 aa    	vpblendw $0xaa,%ymm4,%ymm13,%ymm2
+ 207:	c5 fe 7f 54 24 30    	vmovdqu %ymm2,0x30(%rsp)
+ 20d:	c5 75 f5 ea          	vpmaddwd %ymm2,%ymm1,%ymm13
+ 211:	c4 41 3d fe ed       	vpaddd %ymm13,%ymm8,%ymm13
+ 216:	c4 e2 5d 00 d3       	vpshufb %ymm3,%ymm4,%ymm2
+ 21b:	c5 fe 7f 94 24 b0 00 	vmovdqu %ymm2,0xb0(%rsp)
+ 222:	00 00
+ 224:	c5 7d 6f dc          	vmovdqa %ymm4,%ymm11
+ 228:	c5 fe 7f a4 24 70 01 	vmovdqu %ymm4,0x170(%rsp)
+ 22f:	00 00
+ 231:	c5 f5 f5 ca          	vpmaddwd %ymm2,%ymm1,%ymm1
+ 235:	c5 fd fe c1          	vpaddd %ymm1,%ymm0,%ymm0
+ 239:	c4 c1 1d fa cd       	vpsubd %ymm13,%ymm12,%ymm1
+ 23e:	c4 c1 1d 72 e5 03    	vpsrad $0x3,%ymm13,%ymm12
+ 244:	c5 fe 6f 9c 24 50 01 	vmovdqu 0x150(%rsp),%ymm3
+ 24b:	00 00
+ 24d:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 252:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 258:	c5 fe 6f ac 24 30 01 	vmovdqu 0x130(%rsp),%ymm5
+ 25f:	00 00
+ 261:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 265:	c4 41 1d fe e5       	vpaddd %ymm13,%ymm12,%ymm12
+ 26a:	c4 c1 15 72 e4 1f    	vpsrad $0x1f,%ymm12,%ymm13
+ 270:	c5 15 db ef          	vpand  %ymm7,%ymm13,%ymm13
+ 274:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 279:	c5 fe 6f a4 24 d0 00 	vmovdqu 0xd0(%rsp),%ymm4
+ 280:	00 00
+ 282:	c5 1d 66 ec          	vpcmpgtd %ymm4,%ymm12,%ymm13
+ 286:	c5 fe 6f b4 24 10 01 	vmovdqu 0x110(%rsp),%ymm6
+ 28d:	00 00
+ 28f:	c5 15 db ee          	vpand  %ymm6,%ymm13,%ymm13
+ 293:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 298:	c5 7e 6f 7c 24 10    	vmovdqu 0x10(%rsp),%ymm15
+ 29e:	c4 42 1d 40 e7       	vpmulld %ymm15,%ymm12,%ymm12
+ 2a3:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 2a7:	c5 9d 72 e1 03       	vpsrad $0x3,%ymm1,%ymm12
+ 2ac:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 2b1:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 2b7:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 2bb:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 2bf:	c5 9d 72 e1 1f       	vpsrad $0x1f,%ymm1,%ymm12
+ 2c4:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 2c8:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 2cc:	c5 75 66 e4          	vpcmpgtd %ymm4,%ymm1,%ymm12
+ 2d0:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 2d4:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 2d8:	c5 9d 72 e0 03       	vpsrad $0x3,%ymm0,%ymm12
+ 2dd:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 2e2:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 2e8:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 2ec:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 2f0:	c5 9d 72 e0 1f       	vpsrad $0x1f,%ymm0,%ymm12
+ 2f5:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 2f9:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 2fd:	c5 7d 66 e4          	vpcmpgtd %ymm4,%ymm0,%ymm12
+ 301:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 305:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 309:	c4 c3 7d 39 cc 01    	vextracti128 $0x1,%ymm1,%xmm12
+ 30f:	c4 c2 71 2b cc       	vpackusdw %xmm12,%xmm1,%xmm1
+ 314:	c4 c3 7d 39 c4 01    	vextracti128 $0x1,%ymm0,%xmm12
+ 31a:	c4 c2 79 2b c4       	vpackusdw %xmm12,%xmm0,%xmm0
+ 31f:	c5 71 61 e0          	vpunpcklwd %xmm0,%xmm1,%xmm12
+ 323:	c5 79 7f 64 45 20    	vmovdqa %xmm12,0x20(%rbp,%rax,2)
+ 329:	c5 f1 69 c0          	vpunpckhwd %xmm0,%xmm1,%xmm0
+ 32d:	c5 f9 7f 44 45 30    	vmovdqa %xmm0,0x30(%rbp,%rax,2)
+ 333:	c5 fe 6f 84 42 20 06 	vmovdqu 0x620(%rdx,%rax,2),%ymm0
+ 33a:	00 00
+ 33c:	c5 b5 f5 c8          	vpmaddwd %ymm0,%ymm9,%ymm1
+ 340:	c5 fe 6f 94 24 90 00 	vmovdqu 0x90(%rsp),%ymm2
+ 347:	00 00
+ 349:	c5 7d f5 e2          	vpmaddwd %ymm2,%ymm0,%ymm12
+ 34d:	c5 7e 6f 8c 24 d0 01 	vmovdqu 0x1d0(%rsp),%ymm9
+ 354:	00 00
+ 356:	c5 b5 f5 c0          	vpmaddwd %ymm0,%ymm9,%ymm0
+ 35a:	c5 7e 6f ac 42 20 08 	vmovdqu 0x820(%rdx,%rax,2),%ymm13
+ 361:	00 00
+ 363:	c4 41 15 f5 f2       	vpmaddwd %ymm10,%ymm13,%ymm14
+ 368:	c5 8d fe c9          	vpaddd %ymm1,%ymm14,%ymm1
+ 36c:	c5 7e 6f 44 24 70    	vmovdqu 0x70(%rsp),%ymm8
+ 372:	c4 41 15 f5 f0       	vpmaddwd %ymm8,%ymm13,%ymm14
+ 377:	c4 41 0d fe e4       	vpaddd %ymm12,%ymm14,%ymm12
+ 37c:	c5 7e 6f 54 24 50    	vmovdqu 0x50(%rsp),%ymm10
+ 382:	c4 41 15 f5 ea       	vpmaddwd %ymm10,%ymm13,%ymm13
+ 387:	c5 95 fe c0          	vpaddd %ymm0,%ymm13,%ymm0
+ 38b:	c5 7e 6f ac 42 20 0a 	vmovdqu 0xa20(%rdx,%rax,2),%ymm13
+ 392:	00 00
+ 394:	c4 41 15 f5 f3       	vpmaddwd %ymm11,%ymm13,%ymm14
+ 399:	c5 8d fe c9          	vpaddd %ymm1,%ymm14,%ymm1
+ 39d:	c5 7e 6f 5c 24 30    	vmovdqu 0x30(%rsp),%ymm11
+ 3a3:	c4 41 15 f5 f3       	vpmaddwd %ymm11,%ymm13,%ymm14
+ 3a8:	c4 41 1d fe e6       	vpaddd %ymm14,%ymm12,%ymm12
+ 3ad:	c5 15 f5 ac 24 b0 00 	vpmaddwd 0xb0(%rsp),%ymm13,%ymm13
+ 3b4:	00 00
+ 3b6:	c5 95 fe c0          	vpaddd %ymm0,%ymm13,%ymm0
+ 3ba:	c4 c1 75 fa cc       	vpsubd %ymm12,%ymm1,%ymm1
+ 3bf:	c4 c1 15 72 e4 03    	vpsrad $0x3,%ymm12,%ymm13
+ 3c5:	c4 62 15 40 eb       	vpmulld %ymm3,%ymm13,%ymm13
+ 3ca:	c4 c1 15 72 e5 11    	vpsrad $0x11,%ymm13,%ymm13
+ 3d0:	c5 15 f5 ed          	vpmaddwd %ymm5,%ymm13,%ymm13
+ 3d4:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 3d9:	c4 c1 15 72 e4 1f    	vpsrad $0x1f,%ymm12,%ymm13
+ 3df:	c5 15 db ef          	vpand  %ymm7,%ymm13,%ymm13
+ 3e3:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 3e8:	c5 1d 66 ec          	vpcmpgtd %ymm4,%ymm12,%ymm13
+ 3ec:	c5 15 db ee          	vpand  %ymm6,%ymm13,%ymm13
+ 3f0:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 3f5:	c4 42 1d 40 e7       	vpmulld %ymm15,%ymm12,%ymm12
+ 3fa:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 3fe:	c5 9d 72 e1 03       	vpsrad $0x3,%ymm1,%ymm12
+ 403:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 408:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 40e:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 412:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 416:	c5 9d 72 e1 1f       	vpsrad $0x1f,%ymm1,%ymm12
+ 41b:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 41f:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 423:	c5 75 66 e4          	vpcmpgtd %ymm4,%ymm1,%ymm12
+ 427:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 42b:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 42f:	c5 9d 72 e0 03       	vpsrad $0x3,%ymm0,%ymm12
+ 434:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 439:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 43f:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 443:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 447:	c5 9d 72 e0 1f       	vpsrad $0x1f,%ymm0,%ymm12
+ 44c:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 450:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 454:	c5 7d 66 e4          	vpcmpgtd %ymm4,%ymm0,%ymm12
+ 458:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 45c:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 460:	c4 c3 7d 39 cc 01    	vextracti128 $0x1,%ymm1,%xmm12
+ 466:	c4 c2 71 2b cc       	vpackusdw %xmm12,%xmm1,%xmm1
+ 46b:	c4 c3 7d 39 c4 01    	vextracti128 $0x1,%ymm0,%xmm12
+ 471:	c4 c2 79 2b c4       	vpackusdw %xmm12,%xmm0,%xmm0
+ 476:	c5 71 61 e0          	vpunpcklwd %xmm0,%xmm1,%xmm12
+ 47a:	c5 79 7f a4 45 20 02 	vmovdqa %xmm12,0x220(%rbp,%rax,2)
+ 481:	00 00
+ 483:	c5 f1 69 c0          	vpunpckhwd %xmm0,%xmm1,%xmm0
+ 487:	c5 f9 7f 84 45 30 02 	vmovdqa %xmm0,0x230(%rbp,%rax,2)
+ 48e:	00 00
+ 490:	c5 fe 6f 84 42 20 0c 	vmovdqu 0xc20(%rdx,%rax,2),%ymm0
+ 497:	00 00
+ 499:	c5 7e 6f bc 24 b0 01 	vmovdqu 0x1b0(%rsp),%ymm15
+ 4a0:	00 00
+ 4a2:	c5 85 f5 c8          	vpmaddwd %ymm0,%ymm15,%ymm1
+ 4a6:	c5 7d f5 e2          	vpmaddwd %ymm2,%ymm0,%ymm12
+ 4aa:	c5 b5 f5 c0          	vpmaddwd %ymm0,%ymm9,%ymm0
+ 4ae:	c5 7e 6f ac 42 20 0e 	vmovdqu 0xe20(%rdx,%rax,2),%ymm13
+ 4b5:	00 00
+ 4b7:	c5 fe 6f 94 24 90 01 	vmovdqu 0x190(%rsp),%ymm2
+ 4be:	00 00
+ 4c0:	c5 15 f5 f2          	vpmaddwd %ymm2,%ymm13,%ymm14
+ 4c4:	c5 8d fe c9          	vpaddd %ymm1,%ymm14,%ymm1
+ 4c8:	c4 41 15 f5 f0       	vpmaddwd %ymm8,%ymm13,%ymm14
+ 4cd:	c4 41 0d fe e4       	vpaddd %ymm12,%ymm14,%ymm12
+ 4d2:	c4 41 15 f5 ea       	vpmaddwd %ymm10,%ymm13,%ymm13
+ 4d7:	c5 95 fe c0          	vpaddd %ymm0,%ymm13,%ymm0
+ 4db:	c5 7e 6f ac 42 20 10 	vmovdqu 0x1020(%rdx,%rax,2),%ymm13
+ 4e2:	00 00
+ 4e4:	c5 7e 6f 84 24 70 01 	vmovdqu 0x170(%rsp),%ymm8
+ 4eb:	00 00
+ 4ed:	c4 41 15 f5 f0       	vpmaddwd %ymm8,%ymm13,%ymm14
+ 4f2:	c5 8d fe c9          	vpaddd %ymm1,%ymm14,%ymm1
+ 4f6:	c4 41 15 f5 f3       	vpmaddwd %ymm11,%ymm13,%ymm14
+ 4fb:	c4 41 1d fe e6       	vpaddd %ymm14,%ymm12,%ymm12
+ 500:	c5 7e 6f b4 24 b0 00 	vmovdqu 0xb0(%rsp),%ymm14
+ 507:	00 00
+ 509:	c4 41 15 f5 ee       	vpmaddwd %ymm14,%ymm13,%ymm13
+ 50e:	c5 95 fe c0          	vpaddd %ymm0,%ymm13,%ymm0
+ 512:	c4 c1 75 fa cc       	vpsubd %ymm12,%ymm1,%ymm1
+ 517:	c4 c1 15 72 e4 03    	vpsrad $0x3,%ymm12,%ymm13
+ 51d:	c4 62 15 40 eb       	vpmulld %ymm3,%ymm13,%ymm13
+ 522:	c4 c1 15 72 e5 11    	vpsrad $0x11,%ymm13,%ymm13
+ 528:	c5 15 f5 ed          	vpmaddwd %ymm5,%ymm13,%ymm13
+ 52c:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 531:	c4 c1 15 72 e4 1f    	vpsrad $0x1f,%ymm12,%ymm13
+ 537:	c5 15 db ef          	vpand  %ymm7,%ymm13,%ymm13
+ 53b:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 540:	c5 1d 66 ec          	vpcmpgtd %ymm4,%ymm12,%ymm13
+ 544:	c5 15 db ee          	vpand  %ymm6,%ymm13,%ymm13
+ 548:	c4 41 15 fe e4       	vpaddd %ymm12,%ymm13,%ymm12
+ 54d:	c5 7e 6f 6c 24 10    	vmovdqu 0x10(%rsp),%ymm13
+ 553:	c4 42 1d 40 e5       	vpmulld %ymm13,%ymm12,%ymm12
+ 558:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 55c:	c5 9d 72 e1 03       	vpsrad $0x3,%ymm1,%ymm12
+ 561:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 566:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 56c:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 570:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 574:	c5 9d 72 e1 1f       	vpsrad $0x1f,%ymm1,%ymm12
+ 579:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 57d:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 581:	c5 75 66 e4          	vpcmpgtd %ymm4,%ymm1,%ymm12
+ 585:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 589:	c5 9d fe c9          	vpaddd %ymm1,%ymm12,%ymm1
+ 58d:	c5 9d 72 e0 03       	vpsrad $0x3,%ymm0,%ymm12
+ 592:	c4 62 1d 40 e3       	vpmulld %ymm3,%ymm12,%ymm12
+ 597:	c4 c1 1d 72 e4 11    	vpsrad $0x11,%ymm12,%ymm12
+ 59d:	c5 1d f5 e5          	vpmaddwd %ymm5,%ymm12,%ymm12
+ 5a1:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 5a5:	c5 9d 72 e0 1f       	vpsrad $0x1f,%ymm0,%ymm12
+ 5aa:	c5 1d db e7          	vpand  %ymm7,%ymm12,%ymm12
+ 5ae:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 5b2:	c5 7d 66 e4          	vpcmpgtd %ymm4,%ymm0,%ymm12
+ 5b6:	c5 1d db e6          	vpand  %ymm6,%ymm12,%ymm12
+ 5ba:	c5 9d fe c0          	vpaddd %ymm0,%ymm12,%ymm0
+ 5be:	c4 c3 7d 39 cc 01    	vextracti128 $0x1,%ymm1,%xmm12
+ 5c4:	c4 c2 71 2b cc       	vpackusdw %xmm12,%xmm1,%xmm1
+ 5c9:	c4 c3 7d 39 c4 01    	vextracti128 $0x1,%ymm0,%xmm12
+ 5cf:	c4 c2 79 2b c4       	vpackusdw %xmm12,%xmm0,%xmm0
+ 5d4:	c5 71 61 e0          	vpunpcklwd %xmm0,%xmm1,%xmm12
+ 5d8:	c5 79 7f a4 45 20 04 	vmovdqa %xmm12,0x420(%rbp,%rax,2)
+ 5df:	00 00
+ 5e1:	c5 f1 69 c0          	vpunpckhwd %xmm0,%xmm1,%xmm0
+ 5e5:	c5 f9 7f 84 45 30 04 	vmovdqa %xmm0,0x430(%rbp,%rax,2)
+ 5ec:	00 00
+ 5ee:	c5 fe 6f 44 46 20    	vmovdqu 0x20(%rsi,%rax,2),%ymm0
+ 5f4:	c5 85 f5 c8          	vpmaddwd %ymm0,%ymm15,%ymm1
+ 5f8:	c5 7d f5 9c 24 90 00 	vpmaddwd 0x90(%rsp),%ymm0,%ymm11
+ 5ff:	00 00
+ 601:	c5 b5 f5 c0          	vpmaddwd %ymm0,%ymm9,%ymm0
+ 605:	c5 7e 6f a4 46 20 02 	vmovdqu 0x220(%rsi,%rax,2),%ymm12
+ 60c:	00 00
+ 60e:	c5 1d f5 d2          	vpmaddwd %ymm2,%ymm12,%ymm10
+ 612:	c5 ad fe c9          	vpaddd %ymm1,%ymm10,%ymm1
+ 616:	c5 1d f5 54 24 70    	vpmaddwd 0x70(%rsp),%ymm12,%ymm10
+ 61c:	c4 41 2d fe d3       	vpaddd %ymm11,%ymm10,%ymm10
+ 621:	c5 1d f5 5c 24 50    	vpmaddwd 0x50(%rsp),%ymm12,%ymm11
+ 627:	c5 a5 fe c0          	vpaddd %ymm0,%ymm11,%ymm0
+ 62b:	c5 7e 6f 9c 46 20 04 	vmovdqu 0x420(%rsi,%rax,2),%ymm11
+ 632:	00 00
+ 634:	c4 41 25 f5 c8       	vpmaddwd %ymm8,%ymm11,%ymm9
+ 639:	c5 b5 fe c9          	vpaddd %ymm1,%ymm9,%ymm1
+ 63d:	c5 a5 f5 54 24 30    	vpmaddwd 0x30(%rsp),%ymm11,%ymm2
+ 643:	c5 ad fe d2          	vpaddd %ymm2,%ymm10,%ymm2
+ 647:	c4 41 25 f5 c6       	vpmaddwd %ymm14,%ymm11,%ymm8
+ 64c:	c5 bd fe c0          	vpaddd %ymm0,%ymm8,%ymm0
+ 650:	c5 f5 fa ca          	vpsubd %ymm2,%ymm1,%ymm1
+ 654:	c5 bd 72 e2 03       	vpsrad $0x3,%ymm2,%ymm8
+ 659:	c4 62 3d 40 c3       	vpmulld %ymm3,%ymm8,%ymm8
+ 65e:	c4 c1 3d 72 e0 11    	vpsrad $0x11,%ymm8,%ymm8
+ 664:	c5 3d f5 c5          	vpmaddwd %ymm5,%ymm8,%ymm8
+ 668:	c5 bd fe d2          	vpaddd %ymm2,%ymm8,%ymm2
+ 66c:	c5 bd 72 e2 1f       	vpsrad $0x1f,%ymm2,%ymm8
+ 671:	c5 3d db c7          	vpand  %ymm7,%ymm8,%ymm8
+ 675:	c5 bd fe d2          	vpaddd %ymm2,%ymm8,%ymm2
+ 679:	c5 6d 66 c4          	vpcmpgtd %ymm4,%ymm2,%ymm8
+ 67d:	c5 3d db c6          	vpand  %ymm6,%ymm8,%ymm8
+ 681:	c5 bd fe d2          	vpaddd %ymm2,%ymm8,%ymm2
+ 685:	c4 c2 6d 40 d5       	vpmulld %ymm13,%ymm2,%ymm2
+ 68a:	c5 f5 fe ca          	vpaddd %ymm2,%ymm1,%ymm1
+ 68e:	c5 ed 72 e1 03       	vpsrad $0x3,%ymm1,%ymm2
+ 693:	c4 e2 6d 40 d3       	vpmulld %ymm3,%ymm2,%ymm2
+ 698:	c5 ed 72 e2 11       	vpsrad $0x11,%ymm2,%ymm2
+ 69d:	c5 ed f5 d5          	vpmaddwd %ymm5,%ymm2,%ymm2
+ 6a1:	c5 ed fe c9          	vpaddd %ymm1,%ymm2,%ymm1
+ 6a5:	c5 ed 72 e1 1f       	vpsrad $0x1f,%ymm1,%ymm2
+ 6aa:	c5 ed db d7          	vpand  %ymm7,%ymm2,%ymm2
+ 6ae:	c5 ed fe c9          	vpaddd %ymm1,%ymm2,%ymm1
+ 6b2:	c5 f5 66 d4          	vpcmpgtd %ymm4,%ymm1,%ymm2
+ 6b6:	c5 ed db d6          	vpand  %ymm6,%ymm2,%ymm2
+ 6ba:	c5 ed fe c9          	vpaddd %ymm1,%ymm2,%ymm1
+ 6be:	c5 ed 72 e0 03       	vpsrad $0x3,%ymm0,%ymm2
+ 6c3:	c4 e2 6d 40 d3       	vpmulld %ymm3,%ymm2,%ymm2
+ 6c8:	c5 ed 72 e2 11       	vpsrad $0x11,%ymm2,%ymm2
+ 6cd:	c5 ed f5 d5          	vpmaddwd %ymm5,%ymm2,%ymm2
+ 6d1:	c5 ed fe c0          	vpaddd %ymm0,%ymm2,%ymm0
+ 6d5:	c5 ed 72 e0 1f       	vpsrad $0x1f,%ymm0,%ymm2
+ 6da:	c5 ed db d7          	vpand  %ymm7,%ymm2,%ymm2
+ 6de:	c5 ed fe c0          	vpaddd %ymm0,%ymm2,%ymm0
+ 6e2:	c5 fd 66 d4          	vpcmpgtd %ymm4,%ymm0,%ymm2
+ 6e6:	c5 ed db d6          	vpand  %ymm6,%ymm2,%ymm2
+ 6ea:	c5 ed fe c0          	vpaddd %ymm0,%ymm2,%ymm0
+ 6ee:	c4 e3 7d 39 ca 01    	vextracti128 $0x1,%ymm1,%xmm2
+ 6f4:	c4 e2 71 2b ca       	vpackusdw %xmm2,%xmm1,%xmm1
+ 6f9:	c4 e3 7d 39 c2 01    	vextracti128 $0x1,%ymm0,%xmm2
+ 6ff:	c4 e2 79 2b c2       	vpackusdw %xmm2,%xmm0,%xmm0
+ 704:	c5 f1 61 d0          	vpunpcklwd %xmm0,%xmm1,%xmm2
+ 708:	c4 c1 79 7f 54 44 20 	vmovdqa %xmm2,0x20(%r12,%rax,2)
+ 70f:	c5 f1 69 c0          	vpunpckhwd %xmm0,%xmm1,%xmm0
+ 713:	c4 c1 79 7f 44 44 30 	vmovdqa %xmm0,0x30(%r12,%rax,2)
+ 71a:	48 83 c0 10          	add    $0x10,%rax
+ 71e:	48 3d f0 00 00 00    	cmp    $0xf0,%rax
+ 724:	0f 82 d6 f9 ff ff    	jb     100 <kpke_encrypt_finish_avx2+0x100>
+ 72a:	48 89 ef             	mov    %rbp,%rdi
+ 72d:	c5 f8 77             	vzeroupper
+ 730:	e8 00 00 00 00       	call   735 <kpke_encrypt_finish_avx2+0x735>
+			731: R_X86_64_PLT32	.text.ntt_inv_mont_before_final_avx2-0x4
+ 735:	48 c7 c0 f0 ff ff ff 	mov    $0xfffffffffffffff0,%rax
+ 73c:	c4 e2 7d 79 3d 00 00 	vpbroadcastw 0x0(%rip),%ymm7        # 745 <kpke_encrypt_finish_avx2+0x745>
+ 743:	00 00
+			741: R_X86_64_PC32	.rodata+0x42
+ 745:	c4 62 7d 79 05 00 00 	vpbroadcastw 0x0(%rip),%ymm8        # 74e <kpke_encrypt_finish_avx2+0x74e>
+ 74c:	00 00
+			74a: R_X86_64_PC32	.rodata+0x44
+ 74e:	c5 f9 ef c0          	vpxor  %xmm0,%xmm0,%xmm0
+ 752:	c4 e2 7d 79 35 00 00 	vpbroadcastw 0x0(%rip),%ymm6        # 75b <kpke_encrypt_finish_avx2+0x75b>
+ 759:	00 00
+			757: R_X86_64_PC32	.rodata+0x40
+ 75b:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ 762:	0f 1f 84 00 00 00 00
+ 769:	00
+ 76a:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ 771:	0f 1f 84 00 00 00 00
+ 778:	00
+ 779:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+ 780:	c5 fe 6f 4c 45 20    	vmovdqu 0x20(%rbp,%rax,2),%ymm1
+ 786:	c5 fe 6f 94 45 20 01 	vmovdqu 0x120(%rbp,%rax,2),%ymm2
+ 78d:	00 00
+ 78f:	c5 ed fd d9          	vpaddw %ymm1,%ymm2,%ymm3
+ 793:	c5 dd 71 f3 09       	vpsllw $0x9,%ymm3,%ymm4
+ 798:	c5 e5 e5 1d 00 00 00 	vpmulhw 0x0(%rip),%ymm3,%ymm3        # 7a0 <kpke_encrypt_finish_avx2+0x7a0>
+ 79f:	00
+			79c: R_X86_64_PC32	.LCPI15_8-0x4
+ 7a0:	c5 dd e5 e7          	vpmulhw %ymm7,%ymm4,%ymm4
+ 7a4:	c5 e5 f9 dc          	vpsubw %ymm4,%ymm3,%ymm3
+ 7a8:	c5 bd e5 e3          	vpmulhw %ymm3,%ymm8,%ymm4
+ 7ac:	c5 dd 71 e4 0a       	vpsraw $0xa,%ymm4,%ymm4
+ 7b1:	c5 dd d5 e6          	vpmullw %ymm6,%ymm4,%ymm4
+ 7b5:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ 7b9:	c5 dd 71 e3 0f       	vpsraw $0xf,%ymm3,%ymm4
+ 7be:	c5 dd db e7          	vpand  %ymm7,%ymm4,%ymm4
+ 7c2:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ 7c6:	c5 e5 fd e6          	vpaddw %ymm6,%ymm3,%ymm4
+ 7ca:	c5 fd 65 ec          	vpcmpgtw %ymm4,%ymm0,%ymm5
+ 7ce:	c4 e3 5d 4c db 50    	vpblendvb %ymm5,%ymm3,%ymm4,%ymm3
+ 7d4:	c5 ed f9 c9          	vpsubw %ymm1,%ymm2,%ymm1
+ 7d8:	c5 f5 d5 15 00 00 00 	vpmullw 0x0(%rip),%ymm1,%ymm2        # 7e0 <kpke_encrypt_finish_avx2+0x7e0>
+ 7df:	00
+			7dc: R_X86_64_PC32	.LCPI15_11-0x4
+ 7e0:	c5 f5 e5 0d 00 00 00 	vpmulhw 0x0(%rip),%ymm1,%ymm1        # 7e8 <kpke_encrypt_finish_avx2+0x7e8>
+ 7e7:	00
+			7e4: R_X86_64_PC32	.LCPI15_12-0x4
+ 7e8:	c5 ed e5 d7          	vpmulhw %ymm7,%ymm2,%ymm2
+ 7ec:	c5 f5 f9 ca          	vpsubw %ymm2,%ymm1,%ymm1
+ 7f0:	c5 bd e5 d1          	vpmulhw %ymm1,%ymm8,%ymm2
+ 7f4:	c5 ed 71 e2 0a       	vpsraw $0xa,%ymm2,%ymm2
+ 7f9:	c5 ed d5 d6          	vpmullw %ymm6,%ymm2,%ymm2
+ 7fd:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ 801:	c5 ed 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm2
+ 806:	c5 ed db d7          	vpand  %ymm7,%ymm2,%ymm2
+ 80a:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ 80e:	c5 f5 fd d6          	vpaddw %ymm6,%ymm1,%ymm2
+ 812:	c5 fd 65 e2          	vpcmpgtw %ymm2,%ymm0,%ymm4
+ 816:	c4 e3 6d 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm2,%ymm1
+ 81c:	c4 c1 65 fd 54 45 20 	vpaddw 0x20(%r13,%rax,2),%ymm3,%ymm2
+ 823:	c5 bd e5 da          	vpmulhw %ymm2,%ymm8,%ymm3
+ 827:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ 82c:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ 830:	c5 ed fd d3          	vpaddw %ymm3,%ymm2,%ymm2
+ 834:	c5 e5 71 e2 0f       	vpsraw $0xf,%ymm2,%ymm3
+ 839:	c5 e5 db df          	vpand  %ymm7,%ymm3,%ymm3
+ 83d:	c5 e5 fd d2          	vpaddw %ymm2,%ymm3,%ymm2
+ 841:	c5 ed fd de          	vpaddw %ymm6,%ymm2,%ymm3
+ 845:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ 849:	c4 e3 65 4c d2 40    	vpblendvb %ymm4,%ymm2,%ymm3,%ymm2
+ 84f:	c4 c1 75 fd 8c 45 20 	vpaddw 0x120(%r13,%rax,2),%ymm1,%ymm1
+ 856:	01 00 00
+ 859:	c5 bd e5 d9          	vpmulhw %ymm1,%ymm8,%ymm3
+ 85d:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ 862:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ 866:	c5 f5 fd cb          	vpaddw %ymm3,%ymm1,%ymm1
+ 86a:	c5 e5 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm3
+ 86f:	c5 e5 db df          	vpand  %ymm7,%ymm3,%ymm3
+ 873:	c5 e5 fd c9          	vpaddw %ymm1,%ymm3,%ymm1
+ 877:	c5 f5 fd de          	vpaddw %ymm6,%ymm1,%ymm3
+ 87b:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ 87f:	c4 e3 65 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm3,%ymm1
+ 885:	c5 fe 7f 54 45 20    	vmovdqu %ymm2,0x20(%rbp,%rax,2)
+ 88b:	c5 fe 7f 8c 45 20 01 	vmovdqu %ymm1,0x120(%rbp,%rax,2)
+ 892:	00 00
+ 894:	48 83 c0 10          	add    $0x10,%rax
+ 898:	48 83 f8 70          	cmp    $0x70,%rax
+ 89c:	0f 82 de fe ff ff    	jb     780 <kpke_encrypt_finish_avx2+0x780>
+ 8a2:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # 8a9 <kpke_encrypt_finish_avx2+0x8a9>
+			8a5: R_X86_64_PC32	.bss.kpke_encrypt_finish_avx2.u+0x1fc
+ 8a9:	c5 f8 77             	vzeroupper
+ 8ac:	e8 00 00 00 00       	call   8b1 <kpke_encrypt_finish_avx2+0x8b1>
+			8ad: R_X86_64_PLT32	.text.ntt_inv_mont_before_final_avx2-0x4
+ 8b1:	c4 62 7d 79 1d 00 00 	vpbroadcastw 0x0(%rip),%ymm11        # 8ba <kpke_encrypt_finish_avx2+0x8ba>
+ 8b8:	00 00
+			8b6: R_X86_64_PC32	.rodata+0x46
+ 8ba:	c4 62 7d 79 15 00 00 	vpbroadcastw 0x0(%rip),%ymm10        # 8c3 <kpke_encrypt_finish_avx2+0x8c3>
+ 8c1:	00 00
+			8bf: R_X86_64_PC32	.rodata+0x48
+ 8c3:	c4 62 7d 79 0d 00 00 	vpbroadcastw 0x0(%rip),%ymm9        # 8cc <kpke_encrypt_finish_avx2+0x8cc>
+ 8ca:	00 00
+			8c8: R_X86_64_PC32	.rodata+0x44
+ 8cc:	c4 62 7d 79 05 00 00 	vpbroadcastw 0x0(%rip),%ymm8        # 8d5 <kpke_encrypt_finish_avx2+0x8d5>
+ 8d3:	00 00
+			8d1: R_X86_64_PC32	.rodata+0x42
+ 8d5:	c4 e2 7d 79 3d 00 00 	vpbroadcastw 0x0(%rip),%ymm7        # 8de <kpke_encrypt_finish_avx2+0x8de>
+ 8dc:	00 00
+			8da: R_X86_64_PC32	.rodata+0x4a
+ 8de:	c4 e2 7d 79 35 00 00 	vpbroadcastw 0x0(%rip),%ymm6        # 8e7 <kpke_encrypt_finish_avx2+0x8e7>
+ 8e5:	00 00
+			8e3: R_X86_64_PC32	.rodata+0x40
+ 8e7:	48 c7 c0 f0 ff ff ff 	mov    $0xfffffffffffffff0,%rax
+ 8ee:	c5 f9 ef c0          	vpxor  %xmm0,%xmm0,%xmm0
+ 8f2:	66 66 66 66 66 2e 0f 	data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ 8f9:	1f 84 00 00 00 00 00
+ 900:	c5 fe 6f 8c 45 20 02 	vmovdqu 0x220(%rbp,%rax,2),%ymm1
+ 907:	00 00
+ 909:	c5 fe 6f 94 45 20 03 	vmovdqu 0x320(%rbp,%rax,2),%ymm2
+ 910:	00 00
+ 912:	c5 ed fd d9          	vpaddw %ymm1,%ymm2,%ymm3
+ 916:	c5 dd 71 f3 09       	vpsllw $0x9,%ymm3,%ymm4
+ 91b:	c5 e5 e5 df          	vpmulhw %ymm7,%ymm3,%ymm3
+ 91f:	c5 bd e5 e4          	vpmulhw %ymm4,%ymm8,%ymm4
+ 923:	c5 e5 f9 dc          	vpsubw %ymm4,%ymm3,%ymm3
+ 927:	c5 b5 e5 e3          	vpmulhw %ymm3,%ymm9,%ymm4
+ 92b:	c5 dd 71 e4 0a       	vpsraw $0xa,%ymm4,%ymm4
+ 930:	c5 dd d5 e6          	vpmullw %ymm6,%ymm4,%ymm4
+ 934:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ 938:	c5 dd 71 e3 0f       	vpsraw $0xf,%ymm3,%ymm4
+ 93d:	c5 bd db e4          	vpand  %ymm4,%ymm8,%ymm4
+ 941:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ 945:	c5 e5 fd e6          	vpaddw %ymm6,%ymm3,%ymm4
+ 949:	c5 fd 65 ec          	vpcmpgtw %ymm4,%ymm0,%ymm5
+ 94d:	c4 e3 5d 4c db 50    	vpblendvb %ymm5,%ymm3,%ymm4,%ymm3
+ 953:	c5 ed f9 c9          	vpsubw %ymm1,%ymm2,%ymm1
+ 957:	c5 ad d5 d1          	vpmullw %ymm1,%ymm10,%ymm2
+ 95b:	c5 a5 e5 c9          	vpmulhw %ymm1,%ymm11,%ymm1
+ 95f:	c5 bd e5 d2          	vpmulhw %ymm2,%ymm8,%ymm2
+ 963:	c5 f5 f9 ca          	vpsubw %ymm2,%ymm1,%ymm1
+ 967:	c5 b5 e5 d1          	vpmulhw %ymm1,%ymm9,%ymm2
+ 96b:	c5 ed 71 e2 0a       	vpsraw $0xa,%ymm2,%ymm2
+ 970:	c5 ed d5 d6          	vpmullw %ymm6,%ymm2,%ymm2
+ 974:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ 978:	c5 ed 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm2
+ 97d:	c5 bd db d2          	vpand  %ymm2,%ymm8,%ymm2
+ 981:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ 985:	c5 f5 fd d6          	vpaddw %ymm6,%ymm1,%ymm2
+ 989:	c5 fd 65 e2          	vpcmpgtw %ymm2,%ymm0,%ymm4
+ 98d:	c4 e3 6d 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm2,%ymm1
+ 993:	c4 c1 65 fd 94 45 20 	vpaddw 0x220(%r13,%rax,2),%ymm3,%ymm2
+ 99a:	02 00 00
+ 99d:	c5 b5 e5 da          	vpmulhw %ymm2,%ymm9,%ymm3
+ 9a1:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ 9a6:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ 9aa:	c5 ed fd d3          	vpaddw %ymm3,%ymm2,%ymm2
+ 9ae:	c5 e5 71 e2 0f       	vpsraw $0xf,%ymm2,%ymm3
+ 9b3:	c5 bd db db          	vpand  %ymm3,%ymm8,%ymm3
+ 9b7:	c5 e5 fd d2          	vpaddw %ymm2,%ymm3,%ymm2
+ 9bb:	c5 ed fd de          	vpaddw %ymm6,%ymm2,%ymm3
+ 9bf:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ 9c3:	c4 e3 65 4c d2 40    	vpblendvb %ymm4,%ymm2,%ymm3,%ymm2
+ 9c9:	c4 c1 75 fd 8c 45 20 	vpaddw 0x320(%r13,%rax,2),%ymm1,%ymm1
+ 9d0:	03 00 00
+ 9d3:	c5 b5 e5 d9          	vpmulhw %ymm1,%ymm9,%ymm3
+ 9d7:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ 9dc:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ 9e0:	c5 f5 fd cb          	vpaddw %ymm3,%ymm1,%ymm1
+ 9e4:	c5 e5 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm3
+ 9e9:	c5 bd db db          	vpand  %ymm3,%ymm8,%ymm3
+ 9ed:	c5 e5 fd c9          	vpaddw %ymm1,%ymm3,%ymm1
+ 9f1:	c5 f5 fd de          	vpaddw %ymm6,%ymm1,%ymm3
+ 9f5:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ 9f9:	c4 e3 65 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm3,%ymm1
+ 9ff:	c5 fe 7f 94 45 20 02 	vmovdqu %ymm2,0x220(%rbp,%rax,2)
+ a06:	00 00
+ a08:	c5 fe 7f 8c 45 20 03 	vmovdqu %ymm1,0x320(%rbp,%rax,2)
+ a0f:	00 00
+ a11:	48 83 c0 10          	add    $0x10,%rax
+ a15:	48 83 f8 70          	cmp    $0x70,%rax
+ a19:	0f 82 e1 fe ff ff    	jb     900 <kpke_encrypt_finish_avx2+0x900>
+ a1f:	48 8d 3d 00 00 00 00 	lea    0x0(%rip),%rdi        # a26 <kpke_encrypt_finish_avx2+0xa26>
+			a22: R_X86_64_PC32	.bss.kpke_encrypt_finish_avx2.u+0x3fc
+ a26:	c5 f8 77             	vzeroupper
+ a29:	e8 00 00 00 00       	call   a2e <kpke_encrypt_finish_avx2+0xa2e>
+			a2a: R_X86_64_PLT32	.text.ntt_inv_mont_before_final_avx2-0x4
+ a2e:	c4 62 7d 79 1d 00 00 	vpbroadcastw 0x0(%rip),%ymm11        # a37 <kpke_encrypt_finish_avx2+0xa37>
+ a35:	00 00
+			a33: R_X86_64_PC32	.rodata+0x46
+ a37:	c4 62 7d 79 15 00 00 	vpbroadcastw 0x0(%rip),%ymm10        # a40 <kpke_encrypt_finish_avx2+0xa40>
+ a3e:	00 00
+			a3c: R_X86_64_PC32	.rodata+0x48
+ a40:	c4 62 7d 79 0d 00 00 	vpbroadcastw 0x0(%rip),%ymm9        # a49 <kpke_encrypt_finish_avx2+0xa49>
+ a47:	00 00
+			a45: R_X86_64_PC32	.rodata+0x44
+ a49:	c4 62 7d 79 05 00 00 	vpbroadcastw 0x0(%rip),%ymm8        # a52 <kpke_encrypt_finish_avx2+0xa52>
+ a50:	00 00
+			a4e: R_X86_64_PC32	.rodata+0x42
+ a52:	c4 e2 7d 79 3d 00 00 	vpbroadcastw 0x0(%rip),%ymm7        # a5b <kpke_encrypt_finish_avx2+0xa5b>
+ a59:	00 00
+			a57: R_X86_64_PC32	.rodata+0x4a
+ a5b:	c4 e2 7d 79 35 00 00 	vpbroadcastw 0x0(%rip),%ymm6        # a64 <kpke_encrypt_finish_avx2+0xa64>
+ a62:	00 00
+			a60: R_X86_64_PC32	.rodata+0x40
+ a64:	48 c7 c0 f0 ff ff ff 	mov    $0xfffffffffffffff0,%rax
+ a6b:	c5 f9 ef c0          	vpxor  %xmm0,%xmm0,%xmm0
+ a6f:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ a76:	0f 1f 84 00 00 00 00
+ a7d:	00
+ a7e:	66 90                	xchg   %ax,%ax
+ a80:	c5 fe 6f 8c 45 20 04 	vmovdqu 0x420(%rbp,%rax,2),%ymm1
+ a87:	00 00
+ a89:	c5 fe 6f 94 45 20 05 	vmovdqu 0x520(%rbp,%rax,2),%ymm2
+ a90:	00 00
+ a92:	c5 ed fd d9          	vpaddw %ymm1,%ymm2,%ymm3
+ a96:	c5 dd 71 f3 09       	vpsllw $0x9,%ymm3,%ymm4
+ a9b:	c5 e5 e5 df          	vpmulhw %ymm7,%ymm3,%ymm3
+ a9f:	c5 bd e5 e4          	vpmulhw %ymm4,%ymm8,%ymm4
+ aa3:	c5 e5 f9 dc          	vpsubw %ymm4,%ymm3,%ymm3
+ aa7:	c5 b5 e5 e3          	vpmulhw %ymm3,%ymm9,%ymm4
+ aab:	c5 dd 71 e4 0a       	vpsraw $0xa,%ymm4,%ymm4
+ ab0:	c5 dd d5 e6          	vpmullw %ymm6,%ymm4,%ymm4
+ ab4:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ ab8:	c5 dd 71 e3 0f       	vpsraw $0xf,%ymm3,%ymm4
+ abd:	c5 bd db e4          	vpand  %ymm4,%ymm8,%ymm4
+ ac1:	c5 dd fd db          	vpaddw %ymm3,%ymm4,%ymm3
+ ac5:	c5 e5 fd e6          	vpaddw %ymm6,%ymm3,%ymm4
+ ac9:	c5 fd 65 ec          	vpcmpgtw %ymm4,%ymm0,%ymm5
+ acd:	c4 e3 5d 4c db 50    	vpblendvb %ymm5,%ymm3,%ymm4,%ymm3
+ ad3:	c5 ed f9 c9          	vpsubw %ymm1,%ymm2,%ymm1
+ ad7:	c5 ad d5 d1          	vpmullw %ymm1,%ymm10,%ymm2
+ adb:	c5 a5 e5 c9          	vpmulhw %ymm1,%ymm11,%ymm1
+ adf:	c5 bd e5 d2          	vpmulhw %ymm2,%ymm8,%ymm2
+ ae3:	c5 f5 f9 ca          	vpsubw %ymm2,%ymm1,%ymm1
+ ae7:	c5 b5 e5 d1          	vpmulhw %ymm1,%ymm9,%ymm2
+ aeb:	c5 ed 71 e2 0a       	vpsraw $0xa,%ymm2,%ymm2
+ af0:	c5 ed d5 d6          	vpmullw %ymm6,%ymm2,%ymm2
+ af4:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ af8:	c5 ed 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm2
+ afd:	c5 bd db d2          	vpand  %ymm2,%ymm8,%ymm2
+ b01:	c5 ed fd c9          	vpaddw %ymm1,%ymm2,%ymm1
+ b05:	c5 f5 fd d6          	vpaddw %ymm6,%ymm1,%ymm2
+ b09:	c5 fd 65 e2          	vpcmpgtw %ymm2,%ymm0,%ymm4
+ b0d:	c4 e3 6d 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm2,%ymm1
+ b13:	c4 c1 65 fd 94 45 20 	vpaddw 0x420(%r13,%rax,2),%ymm3,%ymm2
+ b1a:	04 00 00
+ b1d:	c5 b5 e5 da          	vpmulhw %ymm2,%ymm9,%ymm3
+ b21:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ b26:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ b2a:	c5 ed fd d3          	vpaddw %ymm3,%ymm2,%ymm2
+ b2e:	c5 e5 71 e2 0f       	vpsraw $0xf,%ymm2,%ymm3
+ b33:	c5 bd db db          	vpand  %ymm3,%ymm8,%ymm3
+ b37:	c5 e5 fd d2          	vpaddw %ymm2,%ymm3,%ymm2
+ b3b:	c5 ed fd de          	vpaddw %ymm6,%ymm2,%ymm3
+ b3f:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ b43:	c4 e3 65 4c d2 40    	vpblendvb %ymm4,%ymm2,%ymm3,%ymm2
+ b49:	c4 c1 75 fd 8c 45 20 	vpaddw 0x520(%r13,%rax,2),%ymm1,%ymm1
+ b50:	05 00 00
+ b53:	c5 b5 e5 d9          	vpmulhw %ymm1,%ymm9,%ymm3
+ b57:	c5 e5 71 e3 0a       	vpsraw $0xa,%ymm3,%ymm3
+ b5c:	c5 e5 d5 de          	vpmullw %ymm6,%ymm3,%ymm3
+ b60:	c5 f5 fd cb          	vpaddw %ymm3,%ymm1,%ymm1
+ b64:	c5 e5 71 e1 0f       	vpsraw $0xf,%ymm1,%ymm3
+ b69:	c5 bd db db          	vpand  %ymm3,%ymm8,%ymm3
+ b6d:	c5 e5 fd c9          	vpaddw %ymm1,%ymm3,%ymm1
+ b71:	c5 f5 fd de          	vpaddw %ymm6,%ymm1,%ymm3
+ b75:	c5 fd 65 e3          	vpcmpgtw %ymm3,%ymm0,%ymm4
+ b79:	c4 e3 65 4c c9 40    	vpblendvb %ymm4,%ymm1,%ymm3,%ymm1
+ b7f:	c5 fe 7f 94 45 20 04 	vmovdqu %ymm2,0x420(%rbp,%rax,2)
+ b86:	00 00
+ b88:	c5 fe 7f 8c 45 20 05 	vmovdqu %ymm1,0x520(%rbp,%rax,2)
+ b8f:	00 00
+ b91:	48 83 c0 10          	add    $0x10,%rax
+ b95:	48 83 f8 70          	cmp    $0x70,%rax
+ b99:	0f 82 e1 fe ff ff    	jb     a80 <kpke_encrypt_finish_avx2+0xa80>
+ b9f:	4c 89 e7             	mov    %r12,%rdi
+ ba2:	c5 f8 77             	vzeroupper
+ ba5:	e8 00 00 00 00       	call   baa <kpke_encrypt_finish_avx2+0xbaa>
+			ba6: R_X86_64_PLT32	.text.ntt_inv_mont_before_final_avx2-0x4
+ baa:	c4 62 7d 79 3d 00 00 	vpbroadcastw 0x0(%rip),%ymm15        # bb3 <kpke_encrypt_finish_avx2+0xbb3>
+ bb1:	00 00
+			baf: R_X86_64_PC32	.rodata+0x4a
+ bb3:	c4 62 7d 79 35 00 00 	vpbroadcastw 0x0(%rip),%ymm14        # bbc <kpke_encrypt_finish_avx2+0xbbc>
+ bba:	00 00
+			bb8: R_X86_64_PC32	.rodata+0x40
+ bbc:	48 c7 c0 e0 ff ff ff 	mov    $0xffffffffffffffe0,%rax
+ bc3:	b9 00 01 00 00       	mov    $0x100,%ecx
+ bc8:	c5 fd 6f 05 00 00 00 	vmovdqa 0x0(%rip),%ymm0        # bd0 <kpke_encrypt_finish_avx2+0xbd0>
+ bcf:	00
+			bcc: R_X86_64_PC32	.LCPI15_13-0x4
+ bd0:	c4 e2 7d 79 15 00 00 	vpbroadcastw 0x0(%rip),%ymm2        # bd9 <kpke_encrypt_finish_avx2+0xbd9>
+ bd7:	00 00
+			bd5: R_X86_64_PC32	.rodata+0x4c
+ bd9:	c4 e2 7d 79 2d 00 00 	vpbroadcastw 0x0(%rip),%ymm5        # be2 <kpke_encrypt_finish_avx2+0xbe2>
+ be0:	00 00
+			bde: R_X86_64_PC32	.rodata+0x3c
+ be2:	48 8b 7c 24 08       	mov    0x8(%rsp),%rdi
+ be7:	c4 e2 7d 79 1d 00 00 	vpbroadcastw 0x0(%rip),%ymm3        # bf0 <kpke_encrypt_finish_avx2+0xbf0>
+ bee:	00 00
+			bec: R_X86_64_PC32	.rodata+0x44
+ bf0:	c5 d9 ef e4          	vpxor  %xmm4,%xmm4,%xmm4
+ bf4:	66 66 66 2e 0f 1f 84 	data16 data16 cs nopw 0x0(%rax,%rax,1)
+ bfb:	00 00 00 00 00
+ c00:	c4 41 7e 6f 44 44 40 	vmovdqu 0x40(%r12,%rax,2),%ymm8
+ c07:	c4 c1 7e 6f 74 44 60 	vmovdqu 0x60(%r12,%rax,2),%ymm6
+ c0e:	c4 41 7e 6f 8c 44 40 	vmovdqu 0x140(%r12,%rax,2),%ymm9
+ c15:	01 00 00
+ c18:	c4 c1 7e 6f bc 44 60 	vmovdqu 0x160(%r12,%rax,2),%ymm7
+ c1f:	01 00 00
+ c22:	c4 41 35 fd d0       	vpaddw %ymm8,%ymm9,%ymm10
+ c27:	c4 c1 25 71 f2 09    	vpsllw $0x9,%ymm10,%ymm11
+ c2d:	c4 41 2d e5 d7       	vpmulhw %ymm15,%ymm10,%ymm10
+ c32:	c4 e2 7d 79 0d 00 00 	vpbroadcastw 0x0(%rip),%ymm1        # c3b <kpke_encrypt_finish_avx2+0xc3b>
+ c39:	00 00
+			c37: R_X86_64_PC32	.rodata+0x42
+ c3b:	c5 25 e5 d9          	vpmulhw %ymm1,%ymm11,%ymm11
+ c3f:	c4 41 2d f9 d3       	vpsubw %ymm11,%ymm10,%ymm10
+ c44:	c5 2d e5 db          	vpmulhw %ymm3,%ymm10,%ymm11
+ c48:	c4 c1 25 71 e3 0a    	vpsraw $0xa,%ymm11,%ymm11
+ c4e:	c4 41 25 d5 de       	vpmullw %ymm14,%ymm11,%ymm11
+ c53:	c4 41 25 fd d2       	vpaddw %ymm10,%ymm11,%ymm10
+ c58:	c5 45 fd de          	vpaddw %ymm6,%ymm7,%ymm11
+ c5c:	c4 c1 1d 71 f3 09    	vpsllw $0x9,%ymm11,%ymm12
+ c62:	c4 c1 15 71 e2 0f    	vpsraw $0xf,%ymm10,%ymm13
+ c68:	c4 41 25 e5 df       	vpmulhw %ymm15,%ymm11,%ymm11
+ c6d:	c5 1d e5 e1          	vpmulhw %ymm1,%ymm12,%ymm12
+ c71:	c4 41 25 f9 dc       	vpsubw %ymm12,%ymm11,%ymm11
+ c76:	c5 15 db e1          	vpand  %ymm1,%ymm13,%ymm12
+ c7a:	c5 25 e5 eb          	vpmulhw %ymm3,%ymm11,%ymm13
+ c7e:	c4 c1 15 71 e5 0a    	vpsraw $0xa,%ymm13,%ymm13
+ c84:	c4 41 15 d5 ee       	vpmullw %ymm14,%ymm13,%ymm13
+ c89:	c4 41 1d fd d2       	vpaddw %ymm10,%ymm12,%ymm10
+ c8e:	c4 41 15 fd db       	vpaddw %ymm11,%ymm13,%ymm11
+ c93:	c4 c1 1d 71 e3 0f    	vpsraw $0xf,%ymm11,%ymm12
+ c99:	c5 1d db e1          	vpand  %ymm1,%ymm12,%ymm12
+ c9d:	c4 41 2d fd ee       	vpaddw %ymm14,%ymm10,%ymm13
+ ca2:	c4 41 1d fd e3       	vpaddw %ymm11,%ymm12,%ymm12
+ ca7:	c4 41 5d 65 dd       	vpcmpgtw %ymm13,%ymm4,%ymm11
+ cac:	c4 43 15 4c da b0    	vpblendvb %ymm11,%ymm10,%ymm13,%ymm11
+ cb2:	c4 41 1d fd d6       	vpaddw %ymm14,%ymm12,%ymm10
+ cb7:	c4 41 5d 65 ea       	vpcmpgtw %ymm10,%ymm4,%ymm13
+ cbc:	c4 43 2d 4c d4 d0    	vpblendvb %ymm13,%ymm12,%ymm10,%ymm10
+ cc2:	c4 41 35 f9 c0       	vpsubw %ymm8,%ymm9,%ymm8
+ cc7:	c4 62 7d 79 25 00 00 	vpbroadcastw 0x0(%rip),%ymm12        # cd0 <kpke_encrypt_finish_avx2+0xcd0>
+ cce:	00 00
+			ccc: R_X86_64_PC32	.rodata+0x48
+ cd0:	c4 41 3d d5 cc       	vpmullw %ymm12,%ymm8,%ymm9
+ cd5:	c4 62 7d 79 2d 00 00 	vpbroadcastw 0x0(%rip),%ymm13        # cde <kpke_encrypt_finish_avx2+0xcde>
+ cdc:	00 00
+			cda: R_X86_64_PC32	.rodata+0x46
+ cde:	c4 41 3d e5 c5       	vpmulhw %ymm13,%ymm8,%ymm8
+ ce3:	c5 35 e5 c9          	vpmulhw %ymm1,%ymm9,%ymm9
+ ce7:	c4 41 3d f9 c1       	vpsubw %ymm9,%ymm8,%ymm8
+ cec:	c5 3d e5 cb          	vpmulhw %ymm3,%ymm8,%ymm9
+ cf0:	c4 c1 35 71 e1 0a    	vpsraw $0xa,%ymm9,%ymm9
+ cf6:	c4 41 35 d5 ce       	vpmullw %ymm14,%ymm9,%ymm9
+ cfb:	c4 41 35 fd c0       	vpaddw %ymm8,%ymm9,%ymm8
+ d00:	c5 c5 f9 f6          	vpsubw %ymm6,%ymm7,%ymm6
+ d04:	c5 9d d5 fe          	vpmullw %ymm6,%ymm12,%ymm7
+ d08:	c4 c1 35 71 e0 0f    	vpsraw $0xf,%ymm8,%ymm9
+ d0e:	c5 95 e5 f6          	vpmulhw %ymm6,%ymm13,%ymm6
+ d12:	c5 c5 e5 f9          	vpmulhw %ymm1,%ymm7,%ymm7
+ d16:	c5 cd f9 f7          	vpsubw %ymm7,%ymm6,%ymm6
+ d1a:	c5 b5 db f9          	vpand  %ymm1,%ymm9,%ymm7
+ d1e:	c5 4d e5 cb          	vpmulhw %ymm3,%ymm6,%ymm9
+ d22:	c4 c1 35 71 e1 0a    	vpsraw $0xa,%ymm9,%ymm9
+ d28:	c4 41 35 d5 ce       	vpmullw %ymm14,%ymm9,%ymm9
+ d2d:	c5 bd fd ff          	vpaddw %ymm7,%ymm8,%ymm7
+ d31:	c5 b5 fd f6          	vpaddw %ymm6,%ymm9,%ymm6
+ d35:	c5 bd 71 e6 0f       	vpsraw $0xf,%ymm6,%ymm8
+ d3a:	c5 3d db c1          	vpand  %ymm1,%ymm8,%ymm8
+ d3e:	c5 0d fd cf          	vpaddw %ymm7,%ymm14,%ymm9
+ d42:	c5 bd fd f6          	vpaddw %ymm6,%ymm8,%ymm6
+ d46:	c4 41 5d 65 c1       	vpcmpgtw %ymm9,%ymm4,%ymm8
+ d4b:	c4 63 35 4c c7 80    	vpblendvb %ymm8,%ymm7,%ymm9,%ymm8
+ d51:	c5 8d fd fe          	vpaddw %ymm6,%ymm14,%ymm7
+ d55:	c5 5d 65 cf          	vpcmpgtw %ymm7,%ymm4,%ymm9
+ d59:	c4 e3 45 4c f6 90    	vpblendvb %ymm9,%ymm6,%ymm7,%ymm6
+ d5f:	c4 c2 7d 79 bc 0f 00 	vpbroadcastw -0x100(%r15,%rcx,1),%ymm7
+ d66:	ff ff ff
+ d69:	c4 42 7d 79 8c 0f 10 	vpbroadcastw -0xf0(%r15,%rcx,1),%ymm9
+ d70:	ff ff ff
+ d73:	c5 c5 db f8          	vpand  %ymm0,%ymm7,%ymm7
+ d77:	c5 c5 75 f8          	vpcmpeqw %ymm0,%ymm7,%ymm7
+ d7b:	c4 e2 7d 79 0d 00 00 	vpbroadcastw 0x0(%rip),%ymm1        # d84 <kpke_encrypt_finish_avx2+0xd84>
+ d82:	00 00
+			d80: R_X86_64_PC32	.rodata+0x4e
+ d84:	c5 c5 db f9          	vpand  %ymm1,%ymm7,%ymm7
+ d88:	c5 c5 fd 7c 43 40    	vpaddw 0x40(%rbx,%rax,2),%ymm7,%ymm7
+ d8e:	c5 a5 fd ff          	vpaddw %ymm7,%ymm11,%ymm7
+ d92:	c5 45 65 da          	vpcmpgtw %ymm2,%ymm7,%ymm11
+ d96:	c4 41 25 db de       	vpand  %ymm14,%ymm11,%ymm11
+ d9b:	c5 a5 fd ff          	vpaddw %ymm7,%ymm11,%ymm7
+ d9f:	c5 45 65 da          	vpcmpgtw %ymm2,%ymm7,%ymm11
+ da3:	c4 41 25 db de       	vpand  %ymm14,%ymm11,%ymm11
+ da8:	c5 a5 fd ff          	vpaddw %ymm7,%ymm11,%ymm7
+ dac:	c4 42 7d 79 9c 0f 02 	vpbroadcastw -0xfe(%r15,%rcx,1),%ymm11
+ db3:	ff ff ff
+ db6:	c5 35 db c8          	vpand  %ymm0,%ymm9,%ymm9
+ dba:	c5 35 75 c8          	vpcmpeqw %ymm0,%ymm9,%ymm9
+ dbe:	c5 35 db c9          	vpand  %ymm1,%ymm9,%ymm9
+ dc2:	c5 35 fd 8c 43 40 01 	vpaddw 0x140(%rbx,%rax,2),%ymm9,%ymm9
+ dc9:	00 00
+ dcb:	c4 41 35 fd c0       	vpaddw %ymm8,%ymm9,%ymm8
+ dd0:	c5 25 db c8          	vpand  %ymm0,%ymm11,%ymm9
+ dd4:	c5 35 75 c8          	vpcmpeqw %ymm0,%ymm9,%ymm9
+ dd8:	c5 35 db c9          	vpand  %ymm1,%ymm9,%ymm9
+ ddc:	c5 35 fd 4c 43 60    	vpaddw 0x60(%rbx,%rax,2),%ymm9,%ymm9
+ de2:	c4 41 35 fd ca       	vpaddw %ymm10,%ymm9,%ymm9
+ de7:	c5 35 65 d2          	vpcmpgtw %ymm2,%ymm9,%ymm10
+ deb:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ df0:	c4 41 2d fd c9       	vpaddw %ymm9,%ymm10,%ymm9
+ df5:	c5 35 65 d2          	vpcmpgtw %ymm2,%ymm9,%ymm10
+ df9:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ dfe:	c4 41 2d fd c9       	vpaddw %ymm9,%ymm10,%ymm9
+ e03:	c5 3d 65 d2          	vpcmpgtw %ymm2,%ymm8,%ymm10
+ e07:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ e0c:	c4 41 2d fd c0       	vpaddw %ymm8,%ymm10,%ymm8
+ e11:	c4 42 7d 79 94 0f 12 	vpbroadcastw -0xee(%r15,%rcx,1),%ymm10
+ e18:	ff ff ff
+ e1b:	c5 2d db d0          	vpand  %ymm0,%ymm10,%ymm10
+ e1f:	c5 2d 75 d0          	vpcmpeqw %ymm0,%ymm10,%ymm10
+ e23:	c5 2d db d1          	vpand  %ymm1,%ymm10,%ymm10
+ e27:	c5 2d fd 94 43 60 01 	vpaddw 0x160(%rbx,%rax,2),%ymm10,%ymm10
+ e2e:	00 00
+ e30:	c5 ad fd f6          	vpaddw %ymm6,%ymm10,%ymm6
+ e34:	c5 3d 65 d2          	vpcmpgtw %ymm2,%ymm8,%ymm10
+ e38:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ e3d:	c4 41 2d fd c0       	vpaddw %ymm8,%ymm10,%ymm8
+ e42:	c5 4d 65 d2          	vpcmpgtw %ymm2,%ymm6,%ymm10
+ e46:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ e4b:	c5 ad fd f6          	vpaddw %ymm6,%ymm10,%ymm6
+ e4f:	c5 4d 65 d2          	vpcmpgtw %ymm2,%ymm6,%ymm10
+ e53:	c4 41 2d db d6       	vpand  %ymm14,%ymm10,%ymm10
+ e58:	c5 ad fd f6          	vpaddw %ymm6,%ymm10,%ymm6
+ e5c:	c5 c5 e5 fb          	vpmulhw %ymm3,%ymm7,%ymm7
+ e60:	c4 c2 45 0b ff       	vpmulhrsw %ymm15,%ymm7,%ymm7
+ e65:	c5 35 e5 cb          	vpmulhw %ymm3,%ymm9,%ymm9
+ e69:	c4 42 35 0b cf       	vpmulhrsw %ymm15,%ymm9,%ymm9
+ e6e:	c4 e2 7d 79 0d 00 00 	vpbroadcastw 0x0(%rip),%ymm1        # e77 <kpke_encrypt_finish_avx2+0xe77>
+ e75:	00 00
+			e73: R_X86_64_PC32	.rodata+0x50
+ e77:	c5 c5 db f9          	vpand  %ymm1,%ymm7,%ymm7
+ e7b:	c5 35 db c9          	vpand  %ymm1,%ymm9,%ymm9
+ e7f:	c4 c1 45 67 f9       	vpackuswb %ymm9,%ymm7,%ymm7
+ e84:	c4 e2 45 04 fd       	vpmaddubsw %ymm5,%ymm7,%ymm7
+ e89:	c4 c3 7d 39 f9 01    	vextracti128 $0x1,%ymm7,%xmm9
+ e8f:	c4 c1 41 67 f9       	vpackuswb %xmm9,%xmm7,%xmm7
+ e94:	c5 f9 70 ff d8       	vpshufd $0xd8,%xmm7,%xmm7
+ e99:	c5 fa 7f 7c 8f c0    	vmovdqu %xmm7,-0x40(%rdi,%rcx,4)
+ e9f:	c5 bd e5 fb          	vpmulhw %ymm3,%ymm8,%ymm7
+ ea3:	c4 c2 45 0b ff       	vpmulhrsw %ymm15,%ymm7,%ymm7
+ ea8:	c5 cd e5 f3          	vpmulhw %ymm3,%ymm6,%ymm6
+ eac:	c4 c2 4d 0b f7       	vpmulhrsw %ymm15,%ymm6,%ymm6
+ eb1:	c5 c5 db f9          	vpand  %ymm1,%ymm7,%ymm7
+ eb5:	c5 cd db f1          	vpand  %ymm1,%ymm6,%ymm6
+ eb9:	c5 c5 67 f6          	vpackuswb %ymm6,%ymm7,%ymm6
+ ebd:	c4 e2 4d 04 f5       	vpmaddubsw %ymm5,%ymm6,%ymm6
+ ec2:	c4 e3 7d 39 f7 01    	vextracti128 $0x1,%ymm6,%xmm7
+ ec8:	c5 c9 67 f7          	vpackuswb %xmm7,%xmm6,%xmm6
+ ecc:	c5 f9 70 f6 d8       	vpshufd $0xd8,%xmm6,%xmm6
+ ed1:	c5 fa 7f 34 8f       	vmovdqu %xmm6,(%rdi,%rcx,4)
+ ed6:	48 83 c0 20          	add    $0x20,%rax
+ eda:	48 83 c1 04          	add    $0x4,%rcx
+ ede:	48 83 f8 60          	cmp    $0x60,%rax
+ ee2:	0f 82 18 fd ff ff    	jb     c00 <kpke_encrypt_finish_avx2+0xc00>
+ ee8:	48 81 c4 f8 01 00 00 	add    $0x1f8,%rsp
+ eef:	5b                   	pop    %rbx
+ ef0:	41 5c                	pop    %r12
+ ef2:	41 5d                	pop    %r13
+ ef4:	41 5e                	pop    %r14
+ ef6:	41 5f                	pop    %r15
+ ef8:	5d                   	pop    %rbp
+ ef9:	c5 f8 77             	vzeroupper
+ efc:	e9 00 00 00 00       	jmp    f01 <.LCPI19_8+0x441>
+			efd: R_X86_64_PLT32	.text.compress_encode_poly_d10x3_shared_clang_avx2-0x4

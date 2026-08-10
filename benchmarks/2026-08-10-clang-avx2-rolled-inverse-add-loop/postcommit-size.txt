@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-inv-add-loop-postcommit.b2LXzs/baby_mlkem768_product.o
+artifact_sha256=bdf2c0a541ff857137991666d08f904e9952664fdf192ad75053aa60502f3a8d
+artifact_file_bytes=73152
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=41546
+readonly_data_bytes=5955
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=47501
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

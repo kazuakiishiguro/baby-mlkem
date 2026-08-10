@@ -1,0 +1,6 @@
+profile=clang-native kat=pass product=pass stage=pass sink=12134279420840345582 sha256=9b534f8f47a282baeb9eeed8916f4648800d05854c72d9e2e729ba3739478ec2 code=53285 ro=16326 primary=69611 writable=18001
+profile=clang-avx2 kat=pass product=pass stage=pass sink=4297556503821386549 sha256=bdf2c0a541ff857137991666d08f904e9952664fdf192ad75053aa60502f3a8d code=41546 ro=5955 primary=47501 writable=26593
+profile=clang-scalar kat=pass product=pass stage=pass sink=5836653274444122727 sha256=b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2 code=60082 ro=2016 primary=62098 writable=18944
+profile=gcc-native kat=pass product=pass stage=pass sink=12134279420840348911 sha256=4a2b129b43d5c2dd65d3ba5fc25c169539c4118908b934bc59a717f273d2c664 code=55640 ro=3508 primary=59148 writable=33728
+profile=gcc-avx2 kat=pass product=pass stage=pass sink=4297556503821386549 sha256=45773f61e1930ea2817e11bb9c080b498b583a685c4dc49cb6a386f26ff115cf code=49687 ro=3756 primary=53443 writable=34920
+profile=gcc-scalar kat=pass product=pass stage=pass sink=5836653274444122727 sha256=2bccdaa67e7a9bdaab9bc2ab7cb3eb12b6cce02cf11c5d9419ddb3e9c91e9b93 code=21238 ro=1756 primary=22994 writable=19488

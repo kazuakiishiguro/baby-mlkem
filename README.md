@@ -495,14 +495,14 @@ for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
 The current 2026-08-10 no-cache baselines use the normal compiler-specific
-speed flags. The Clang AVX2-only row is measured at `424a141`; the five
+speed flags. The Clang AVX2-only row is measured at `8fab80d`; the five
 non-target rows remain byte-identical to `c2ae4e2`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 53,285 | 16,326 | 69,611 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 55,640 | 3,508 | 59,148 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 42,191 | 5,955 | 48,146 | 0 | 26,593 | 26,593 |
+| AVX2-only | Clang 18.1.3 | 41,546 | 5,955 | 47,501 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 49,687 | 3,756 | 53,443 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 60,082 | 2,016 | 62,098 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,238 | 1,756 | 22,994 | 0 | 19,488 | 19,488 |
@@ -976,13 +976,34 @@ minimum is `0.996360694x`; individual batches are noisy and no speed gain is
 credited. The pinned OpenSSL AVX2-only deficit falls to 3,097 bytes and still
 fails.
 
+At that historical `424a141` snapshot, baby-mlkem was 3,097 bytes larger than OpenSSL AVX2-only.
+Its complete footprint row was:
+
+| Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
+|---|---|---:|---:|---:|---:|---:|---:|
+| AVX2-only | Clang 18.1.3 | 42,191 | 5,955 | 48,146 | 0 | 26,593 | 26,593 |
+
+The [Clang AVX2 rolled inverse-add loop report](benchmarks/2026-08-10-clang-avx2-rolled-inverse-add-loop/README.md)
+records the next size-only step at `8fab80d`. A Clang-only unroll-disable
+pragma keeps the fixed K=3 inverse-add loop inside
+`kpke_encrypt_finish_avx2()` rolled, preserving row order and arithmetic while
+reducing that text section from 3,841 to 3,196 bytes. All other 22 text
+sections are byte-identical; read-only size is unchanged, with 13 of 14
+read-only sections byte-identical and the same eight 16-bit `.rodata` values
+reordered by Clang. Primary size falls 645 bytes to 47,501 bytes. The combined
+48-pair product minimum is
+`0.997218785x`, but Batch 3 fails its standalone floor at keygen
+`0.989333708x`; every sample is retained and no speed gain is credited. At
+`8fab80d`, baby-mlkem is 2,452 bytes larger than OpenSSL AVX2-only, so the
+primary-size gate remains open.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
 native deficit in that complete matrix was 52,299 bytes against mlkem-native;
 the limiting AVX2-only deficit was 19,970 bytes against OpenSSL. The later
-diagnostics at `c2ae4e2` and `424a141` reduce the mlkem-native native deficit
-to 18,425 bytes and the OpenSSL AVX2-only deficit to 3,097 bytes. A complete
+diagnostics at `c2ae4e2` and `8fab80d` reduce the mlkem-native native deficit
+to 18,425 bytes and the OpenSSL AVX2-only deficit to 2,452 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
@@ -1208,12 +1229,12 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `424a141` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2 ASan+UBSan passes, all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`, all 23 target text sections are byte-identical, and all five non-target products are byte-identical to the previously sanitized baseline. |
+| Correctness | current candidate pass | `8fab80d` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2 ASan+UBSan passes, all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`, the intended target text section changes while the other 22 are byte-identical, read-only size is unchanged with one compiler-pool reorder, and all five non-target products are byte-identical to the previously sanitized baseline. |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the current artifacts are still 18,425 bytes larger than mlkem-native native and 3,097 bytes larger than OpenSSL AVX2-only. |
-| Maximum stack | current measurements reported | At `c2ae4e2` native and `424a141` AVX2-only, the current maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
+| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the current artifacts are still 18,425 bytes larger than mlkem-native native and 2,452 bytes larger than OpenSSL AVX2-only. |
+| Maximum stack | current measurements reported | At `c2ae4e2` native and `8fab80d` AVX2-only, the current maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
@@ -1265,6 +1286,7 @@ Near-term target selection:
 | AVX2 forward-NTT representation | Full seven-stage 16-bit Montgomery/Harvey path accepted | All seven stages now use 16-bit precomputed Montgomery twiddle products and canonicalize once at the end. The final production in-place median is `66.84 ns`, `1.8036x` faster than the accepted four-stage-head version and `2.8567x` faster than the preceding 32-bit transform. The 13-run KEM confirmation improved keygen/encaps/decaps/roundtrip medians by `1.0573x`/`1.0708x`/`1.1061x`/`1.0712x`. The local intrinsics code has no external object dependency, but the arithmetic design is explicitly attributed to upstream Kyber. |
 | Clang AVX2 forward/inverse NTT root sharing | Accepted for Clang AVX2-only; native, GCC, and scalar products byte-identical | Forward levels 0 through 2 reverse their existing gather/store lane order and read identical factors from the inverse low/high vectors. Levels 1/2 removed 1,024 read-only bytes for 34 code bytes; level 0 removes another 512 read-only bytes with no further code growth, reaching 48,210 primary bytes. Both 32-pair direct NTT results show opposing order medians, so no speed gain is credited; the latest 48-pair product minimum is `0.997772026x`. The generator asserts the all-level relation, and no cache, external object, library, new table, API, or wire-format dependency is added. |
 | Clang AVX2 selective Keccak byte-rotation mask reuse | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | Two schedule-insensitive x4 Keccak copies load the same repository-local hidden 8/56-bit `vpshufb` masks, while hot sampler and PRF/CBD copies retain local constants. `.rodata.cst32` shrinks 128 bytes, the shared section adds 64 bytes, and all 23 text sections remain byte-identical, reaching 48,146 primary bytes. Broad four-copy sharing reached 48,018 bytes but failed decaps at `0.992980325x`; it was removed. The combined 48-pair minimum is `0.996360694x`, individual batches are noisy, and no speed gain is credited. No cache, external cryptographic object, runtime library, API, algorithm, or wire-format dependency is added. |
+| Clang AVX2 rolled K=3 inverse-add loop | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | One Clang-only unroll-disable pragma keeps the three row-local inverse-add calls in their existing order but emits one loop body. `.text.kpke_encrypt_finish_avx2` falls 645 bytes and the other 22 text sections are byte-identical, reaching 47,501 primary bytes. Read-only size is unchanged; 13 of 14 sections are byte-identical and `.rodata` only reorders the same eight 16-bit values. The combined 48-pair minimum is `0.997218785x`; Batch 3 independently fails at keygen `0.989333708x`, all samples remain disclosed, and no speed gain is credited. No cache, external cryptographic object, runtime library, table, API, algorithm, or wire-format dependency is added. |
 | Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery baseline accepted; generic lower tail now superseded on native builds | The accepted baseline used ZMM for `l7`..`l5`, YMM for `l4`..`l1`, and one final ZMM Barrett pass. It established the signed-16-bit range and remains the AVX2-only/specialized-partial implementation; native generic `ntt()` now uses the lower-layer ZMM merge below. The arithmetic remains upstream-derived and vendor-free. |
 | GCC AVX512 forward-NTT three-level register merge | Accepted for GCC native; Clang and narrower ISAs unchanged | Eight 32-coefficient ZMM blocks now stay live through `l7`..`l5`, replacing 24 ZMM loads plus 24 stores with 8 plus 8 before the unchanged YMM `l4`. The direct head and full in-place NTT improve `1.1929x`/`1.0883x` paired geometric mean with 9/9 wins; 100k keygen/encaps/decaps/roundtrip improve `1.0125x`/`1.0179x`/`1.0124x`/`1.0163x`. GCC `benchc` text grows 36 bytes. The arithmetic and range contract are unchanged, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 forward-NTT tail layer merge | Accepted for GCC and Clang native; AVX2-only unchanged | Each contiguous 32-coefficient block stays in one ZMM through `l3`..`l1`; qword permutations replace two intermediate load/store boundaries, and low/high Montgomery twiddles are pre-expanded outside the hot loop. GCC/Clang copy NTT paired geometric means improve `1.2125x`/`1.3040x`, in-place `1.2125x`/`1.3119x`, all 9/9. Fifteen-pair keygen medians improve `1.0086x`/`1.0102x`. The immutable factor table adds 3,072 BSS bytes but no key/result cache or external dependency. |
