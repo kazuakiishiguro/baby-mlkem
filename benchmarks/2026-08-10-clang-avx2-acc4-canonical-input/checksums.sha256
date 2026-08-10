@@ -1,0 +1,8 @@
+bea9b61ffd99218dfe43ccf1f81229f18de71b7511589de8bec3a1a9601e24fc  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/baseline-revision.txt
+9e2d4110210e56a374469cc774c7cb9d4b50f85d23b48ce2b08cf2693712588b  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/candidate-revision.txt
+8ff041d5c82f5bd6290e6a86b09441de303b06daa74f1ccbd1cb3406671baf66  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/correctness.txt
+527f2797cd26b4bfe24f32f8c6f6605517e4cbc7e467cb49f64eeea3b74d7b37  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/environment.txt
+9fd903fc3902607d0717fef9a6585606a5aebfd7571abbcae0ae0ceee4ab989f  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/product-ab-9x100k.txt
+10bc29bcc193c338f88b295da760b406c32e30dd0ff6ddb0b3abcf4453d40c7d  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/size-baseline.txt
+0d0e81bc2ac18e057ddd0c713186986e7e1b3c26b8d70243e09077d7788ff851  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/size-candidate.txt
+c1b20c9983dfe94dd514b69b4b2bd80aa2cec4c5edb55357ba464df55ace0587  benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/stage-ab-9x30k.txt

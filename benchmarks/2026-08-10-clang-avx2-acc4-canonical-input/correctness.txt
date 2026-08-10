@@ -1,0 +1,8 @@
+clang: make test test-product product
+./testc: pass
+./product_testc: pass
+gcc: make test test-product bench-stages product
+./testc: pass
+./product_testc: pass
+./bench_core_stagesc 10000: pass
+Root bench_core_stagesc preserved by hash audit.

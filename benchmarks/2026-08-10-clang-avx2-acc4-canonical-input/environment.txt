@@ -1,0 +1,8 @@
+CPU: AMD Ryzen Threadripper 7980X 64-Cores
+Pin: CPU 2
+Clang: Ubuntu Clang 18.1.3
+GCC: Ubuntu GCC 13.3.0
+Flags: -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+Backend: AVX2_BACKEND=core
+Stage: 9 alternating pairs, 30000 iterations per process
+Product: 9 alternating pairs, 100000 iterations per process
