@@ -8942,6 +8942,7 @@ static MLKEM_NOINLINE void kpke_encrypt_finish_avx2(
   }
   ntt_mul_acc4_madd_avx2(kpke_public_cache_ahat, kpke_public_cache_that,
                           rhat_arg, u, v);
+#pragma clang loop unroll(disable)
   for (int i = 0; i < K; i++) {
     ntt_inv_add_inplace(e1_arg[i], u[i]);
   }
