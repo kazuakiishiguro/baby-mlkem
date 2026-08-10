@@ -23,6 +23,6 @@ d816eddfb78b2ce0682b0f5ffa456482a2e74d5a552581ef54beeb38af3de6bd  benchmarks/202
 bad9fd6ddc9b7c23c6551278ef3c6ecdae71fdd394fa47367798f54b7212fba9  benchmarks/2026-08-10-full-library-comparison/sizes/native-pqclean.txt
 99ab694b7c4e38dbfe2694a70e3e645b51f9f5629a13d7e5c14a8fb4c1970f43  benchmarks/2026-08-10-full-library-comparison/size-status.tsv
 79abbfecf3f9b46b2ed567bf197934ee1ab6aecf71e3423d4c59d349d25f488a  benchmarks/2026-08-10-full-library-comparison/size-summary.tsv
-4f4a539dd32ba796f033caf084b8b84b7ae0388ea562b0e76c5622a17005a3b0  benchmarks/2026-08-10-full-library-comparison/speed-avx2-allstats.txt
-a03b93059aa7ef046dd790f236fe3bd00e335d3c063ab1459f6213523b5cdd19  benchmarks/2026-08-10-full-library-comparison/speed-native-allstats.txt
+d09458ba0be535b9a7f2c8739c34776955204bd252b7ff73f2d35bac8b194cc4  benchmarks/2026-08-10-full-library-comparison/speed-avx2-allstats.txt
+4979f45c99b8e73dafdcb4341e039dd61a09d5d0d568fed930f29618c20f925d  benchmarks/2026-08-10-full-library-comparison/speed-native-allstats.txt
 c209214f451a4f3f777fde05441a08054cff9add15cfde59319d037e2cabaf9b  benchmarks/2026-08-10-full-library-comparison/speed-summary.tsv
