@@ -4780,8 +4780,6 @@ static void ntt_mul_acc4_madd_avx2(
       2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
       2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
   const __m256i even_mask = _mm256_set1_epi32(0xffff);
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i half_q = _mm256_set1_epi16(Q / 2);
 
   for (int offset = 0, pair = 0; offset < N; offset += 16, pair += 8) {
     __m256i y0 = _mm256_loadu_si256(
@@ -4790,13 +4788,7 @@ static void ntt_mul_acc4_madd_avx2(
         (const __m256i *)(const void *)(b[1] + offset));
     __m256i y2 = _mm256_loadu_si256(
         (const __m256i *)(const void *)(b[2] + offset));
-    /* Center canonical NTT inputs so signed vpmaddwd cannot overflow. */
-    y0 = _mm256_sub_epi16(
-        y0, _mm256_and_si256(_mm256_cmpgt_epi16(y0, half_q), q));
-    y1 = _mm256_sub_epi16(
-        y1, _mm256_and_si256(_mm256_cmpgt_epi16(y1, half_q), q));
-    y2 = _mm256_sub_epi16(
-        y2, _mm256_and_si256(_mm256_cmpgt_epi16(y2, half_q), q));
+    /* Canonical inputs keep the six-product sum below INT32_MAX. */
     __m256i y0_odd = _mm256_andnot_si256(even_mask, y0);
     __m256i y1_odd = _mm256_andnot_si256(even_mask, y1);
     __m256i y2_odd = _mm256_andnot_si256(even_mask, y2);
