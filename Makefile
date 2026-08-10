@@ -82,6 +82,7 @@ PRODUCT_TARGET = baby_mlkem768_product.o
 PRODUCT_TEST_TARGET = product_testc
 NTT_ROOTS_HEADER = ntt_roots_generated.h
 NTT_ROOTS_AVX2_ASM = ntt_roots_avx2_constants.S
+AVX2_SHARED_CONSTANTS_ASM = avx2_shared_constants.S
 NTT_ROOTS_GENERATOR = scripts/generate_ntt_constants.c
 HOSTCC ?= cc
 PRODUCT_ROOT_SYMBOLS = \
@@ -100,8 +101,9 @@ CORE_ASM_SRCS =
 CORE_ASM_DEF =
 CORE_AVX2_INV_MONT_ASM_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__clang__/ { c = 1 } /__AVX2__/ { a = 1 } /__AVX512F__/ { f = 1 } END { if (x && e && c && a && !f) print "yes" }')
 ifeq ($(CORE_AVX2_INV_MONT_ASM_ENABLED),yes)
-CORE_ASM_SRCS += $(NTT_ROOTS_AVX2_ASM)
-CORE_ASM_DEF += -DMLKEM_AVX2_EXTERNAL_INV_MONT
+CORE_ASM_SRCS += $(NTT_ROOTS_AVX2_ASM) $(AVX2_SHARED_CONSTANTS_ASM)
+CORE_ASM_DEF += -DMLKEM_AVX2_EXTERNAL_INV_MONT \
+	-DMLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS
 endif
 CORE_AVX512VL_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__AVX512F__/ { f = 1 } /__AVX512VL__/ { v = 1 } END { if (x && e && f && v) print "yes" }')
 ifeq ($(CORE_AVX512VL_ENABLED),yes)
@@ -118,7 +120,8 @@ PRODUCT_API_OBJ = baby_mlkem_api.product.o
 PRODUCT_ASM_OBJS := $(patsubst %.S,%.product.o,$(CORE_ASM_SRCS))
 PRODUCT_OBJS := $(PRODUCT_API_OBJ) $(PRODUCT_ASM_OBJS)
 CORE_ASM_CLEAN_OBJS = sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o \
-	ntt_roots_avx2_constants.o ntt_roots_avx2_constants.product.o
+	ntt_roots_avx2_constants.o ntt_roots_avx2_constants.product.o \
+	avx2_shared_constants.o avx2_shared_constants.product.o
 ifeq ($(origin KYBER_FIPS202_CFLAGS), undefined)
 ifneq ($(findstring clang,$(notdir $(CC))),)
 KYBER_FIPS202_CFLAGS := -O3 -fno-vectorize -fno-slp-vectorize

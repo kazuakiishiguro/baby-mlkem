@@ -160,6 +160,37 @@ static inline __m256i rotl64x4_56(__m256i x) {
 #endif
 }
 
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+extern const __m256i MLKEM_AVX2_ROTL64_8_MASK
+    __attribute__((visibility("hidden")));
+extern const __m256i MLKEM_AVX2_ROTL64_56_MASK
+    __attribute__((visibility("hidden")));
+#endif
+
+static MLKEM_ALWAYS_INLINE __m256i rotl64x4_8_mode(__m256i x,
+                                                    int shared_mask) {
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+  if (shared_mask) {
+    return _mm256_shuffle_epi8(x, MLKEM_AVX2_ROTL64_8_MASK);
+  }
+#else
+  (void)shared_mask;
+#endif
+  return rotl64x4_8(x);
+}
+
+static MLKEM_ALWAYS_INLINE __m256i rotl64x4_56_mode(__m256i x,
+                                                     int shared_mask) {
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+  if (shared_mask) {
+    return _mm256_shuffle_epi8(x, MLKEM_AVX2_ROTL64_56_MASK);
+  }
+#else
+  (void)shared_mask;
+#endif
+  return rotl64x4_56(x);
+}
+
 static inline void keccak_xor_lanes16_avx2(uint64_t st[25],
                                            const uint8_t *in) {
   for (int lane = 0; lane < 16; lane += 4) {
@@ -583,8 +614,8 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
 
 /* Matrix sampling, ETA2 PRF/CBD, and mixed noise/matrix-tail schedules benefit
    from this shape; other direct Keccak callers keep keccakf4() above. */
-static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
-    __m256i st[25], __m256i parity[5]) {
+static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity_mode(
+    __m256i st[25], __m256i parity[5], int shared_masks) {
   __m256i e[25];
   __m256i *src = st;
   __m256i *dst = e;
@@ -636,7 +667,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     b0 = rotl64x4(AX4(1, d1), 1);
     b1 = rotl64x4(AX4(7, d2), 6);
     b2 = rotl64x4(AX4(13, d3), 25);
-    b3 = rotl64x4_8(AX4(19, d4));
+    b3 = rotl64x4_8_mode(AX4(19, d4), shared_masks);
     b4 = rotl64x4(AX4(20, d0), 18);
     STORE_ACC(10, CHIX4(b0, b1, b2), n0);
     STORE_ACC(11, CHIX4(b1, b2, b3), n1);
@@ -648,7 +679,7 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
     b1 = rotl64x4(AX4(5, d0), 36);
     b2 = rotl64x4(AX4(11, d1), 10);
     b3 = rotl64x4(AX4(17, d2), 15);
-    b4 = rotl64x4_56(AX4(23, d3));
+    b4 = rotl64x4_56_mode(AX4(23, d3), shared_masks);
     STORE_ACC(15, CHIX4(b0, b1, b2), n0);
     STORE_ACC(16, CHIX4(b1, b2, b3), n1);
     STORE_ACC(17, CHIX4(b2, b3, b4), n2);
@@ -703,8 +734,13 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem_parity(
   parity[3] = c3;
   parity[4] = c4;
 }
+
+#define keccakf4_mem_parity(st, parity) \
+  keccakf4_mem_parity_mode((st), (parity), 0)
+
 /* Generic callers retain the self-contained parity reconstruction. */
-static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
+static MLKEM_ALWAYS_INLINE void keccakf4_mem_mode(__m256i st[25],
+                                                  int shared_masks) {
   __m256i parity[5];
   for (int column = 0; column < 5; column++) {
     parity[column] = _mm256_xor_si256(
@@ -713,8 +749,10 @@ static MLKEM_ALWAYS_INLINE void keccakf4_mem(__m256i st[25]) {
             _mm256_xor_si256(st[column + 10], st[column + 15])),
         st[column + 20]);
   }
-  keccakf4_mem_parity(st, parity);
+  keccakf4_mem_parity_mode(st, parity, shared_masks);
 }
+
+#define keccakf4_mem(st) keccakf4_mem_mode((st), 0)
 
 #if !defined(__clang__) || !defined(__ELF__) || !defined(__AVX2__) || \
     defined(__AVX512F__)
@@ -7404,7 +7442,11 @@ static void sha3_256_sample_matrix_x3_avx2(
     hash_matrix_x3_init_group(st, rho, (uint8_t)row);
     for (int block = 0; block < 3; block++) {
       hash_matrix_x3_absorb_hash(st, pk, 3 * row + block);
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+      keccakf4_mem_mode(st, 1);
+#else
       keccakf4_mem(st);
+#endif
       hash_matrix_x3_store_block(stream, block, st);
     }
     hash_matrix_x3_parse_group(st, stream, out[row][0], out[row][1],
@@ -9784,7 +9826,11 @@ static void mlkem_decaps_ct(const uint8_t *c,
 #if !defined(__AVX512F__)
 static MLKEM_NOINLINE void mlkem_encrypt_keccakf4_mem_parity_avx2(
     __m256i st[25], __m256i parity[5]) {
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+  keccakf4_mem_parity_mode(st, parity, 1);
+#else
   keccakf4_mem_parity(st, parity);
+#endif
 }
 
 #if defined(__clang__) && defined(__ELF__)
