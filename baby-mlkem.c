@@ -165,6 +165,12 @@ extern const __m256i MLKEM_AVX2_ROTL64_8_MASK
     __attribute__((visibility("hidden")));
 extern const __m256i MLKEM_AVX2_ROTL64_56_MASK
     __attribute__((visibility("hidden")));
+extern const __m256i MLKEM_AVX2_Q_I16
+    __attribute__((visibility("hidden")));
+extern const __m256i MLKEM_AVX2_Q_MINUS_1_I16
+    __attribute__((visibility("hidden")));
+extern const __m256i MLKEM_AVX2_BARRETT_I16
+    __attribute__((visibility("hidden")));
 #endif
 
 static MLKEM_ALWAYS_INLINE __m256i rotl64x4_8_mode(__m256i x,
@@ -1848,6 +1854,16 @@ static void shake256_32_suffix1(const uint8_t *in, uint8_t suffix,
  */
 #define N 256
 #define Q 3329
+
+#if defined(__AVX2__) && defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+#define MLKEM_AVX2_SET1_Q_I16() MLKEM_AVX2_Q_I16
+#define MLKEM_AVX2_SET1_Q_MINUS_1_I16() MLKEM_AVX2_Q_MINUS_1_I16
+#define MLKEM_AVX2_SET1_BARRETT_I16() MLKEM_AVX2_BARRETT_I16
+#else
+#define MLKEM_AVX2_SET1_Q_I16() _mm256_set1_epi16(Q)
+#define MLKEM_AVX2_SET1_Q_MINUS_1_I16() _mm256_set1_epi16(Q - 1)
+#define MLKEM_AVX2_SET1_BARRETT_I16() _mm256_set1_epi16(20159)
+#endif
 #define K 3
 #define ETA1 2
 #define ETA2 2
@@ -2088,7 +2104,7 @@ static void ntt_inv_head_avx2(poly256 f);
 /* zeta_lo = zeta_hi * QINV mod 2^16 makes the correction one mulhi. */
 static inline __m256i ntt_mont_mul_precomp_i16x16(
     __m256i b, __m256i zeta_lo, __m256i zeta_hi) {
-  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
   __m256i lo = _mm256_mullo_epi16(b, zeta_lo);
   __m256i hi = _mm256_mulhi_epi16(b, zeta_hi);
   return _mm256_sub_epi16(hi, _mm256_mulhi_epi16(lo, q));
@@ -3259,8 +3275,8 @@ static inline void ntt_butterfly2x4_lazy_avx2(int16_t *a0, int16_t *b0,
 }
 
 static inline void ntt_reduce_once_avx2(poly256 f) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
   for (int i = 0; i < N; i += 16) {
     __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
     __m256i ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
@@ -3718,8 +3734,8 @@ static inline void ensure_ntt_roots(void) {
  */
 static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
 #if defined(__AVX2__)
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
   for (int i = 0; i < N; i += 16) {
     __m256i va = _mm256_loadu_si256((const __m256i *)(a + i));
     __m256i vb = _mm256_loadu_si256((const __m256i *)(b + i));
@@ -3747,8 +3763,8 @@ static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
 
 #if defined(__AVX2__)
 static void ntt_canonicalize_signed_avx2(poly256 f) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i barrett = _mm256_set1_epi16(20159);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i barrett = MLKEM_AVX2_SET1_BARRETT_I16();
   for (int i = 0; i < N; i += 16) {
     __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
     __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
@@ -3995,14 +4011,14 @@ static void ntt_mont_lazy_avx2(poly256 f) {
 /* Keep the established YMM implementation for AVX2-only targets. */
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
 static inline __m256i ntt_barrett_reduce_i16x16(__m256i v) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i barrett = _mm256_set1_epi16(20159);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i barrett = MLKEM_AVX2_SET1_BARRETT_I16();
   __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
   return _mm256_sub_epi16(v, _mm256_mullo_epi16(quot, q));
 }
 
 static inline __m256i ntt_canonicalize_i16x16(__m256i v) {
-  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
   v = ntt_barrett_reduce_i16x16(v);
   v = _mm256_add_epi16(v,
                        _mm256_and_si256(_mm256_srai_epi16(v, 15), q));
@@ -5609,7 +5625,7 @@ static inline uint32_t load32_le(const uint8_t *x) {
 static inline __m256i cbd_eta2_canonicalize_i8x16(__m128i v8) {
   __m256i v = _mm256_cvtepi8_epi16(v8);
   __m256i neg = _mm256_cmpgt_epi16(_mm256_setzero_si256(), v);
-  return _mm256_add_epi16(v, _mm256_and_si256(neg, _mm256_set1_epi16(Q)));
+  return _mm256_add_epi16(v, _mm256_and_si256(neg, MLKEM_AVX2_SET1_Q_I16()));
 }
 
 static inline void sample_poly_cbd_eta2_bytes_avx2(const uint8_t *data,
@@ -6233,7 +6249,7 @@ static MLKEM_SAMPLE_NTT_PARSE_NOINLINE int
 sample_ntt_parse_stream_avx2_ready(const uint8_t *stream, size_t stream_len,
                                   poly256 out, int count) {
   size_t pos = 0;
-  const __m256i bound = _mm256_set1_epi16(Q);
+  const __m256i bound = MLKEM_AVX2_SET1_Q_I16();
 #if !(defined(__AVX512VBMI2__) && defined(__AVX512VL__))
   const __m256i ones = _mm256_set1_epi8(1);
 #endif
@@ -7946,7 +7962,7 @@ static inline uint16_t compress_coeff_d4(int16_t x) {
 /* AVX2 fused compression/encoding avoids scalar bit packing in ciphertext output. */
 #if defined(__AVX2__)
 static inline void compress_poly_d10_avx2(const poly256 x, uint16_t *out) {
-  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v = MLKEM_AVX2_SET1_BARRETT_I16();
   const __m256i v8 = _mm256_slli_epi16(v, 3);
   const __m256i off = _mm256_set1_epi16(15);
   const __m256i shift = _mm256_set1_epi16(1 << 12);
@@ -7969,7 +7985,7 @@ static inline void compress_poly_d10_avx2(const poly256 x, uint16_t *out) {
 }
 
 static inline void compress_poly_d4_avx2(const poly256 x, uint16_t *out) {
-  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v = MLKEM_AVX2_SET1_BARRETT_I16();
   const __m256i shift = _mm256_set1_epi16(1 << 9);
   const __m256i mask = _mm256_set1_epi16(15);
   for (int i = 0; i < N; i += 16) {
@@ -7982,7 +7998,7 @@ static inline void compress_poly_d4_avx2(const poly256 x, uint16_t *out) {
 }
 
 static inline __m256i compress_poly_d10_vec_avx2(__m256i f0) {
-  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v = MLKEM_AVX2_SET1_BARRETT_I16();
   const __m256i v8 = _mm256_slli_epi16(v, 3);
   const __m256i off = _mm256_set1_epi16(15);
   const __m256i shift = _mm256_set1_epi16(1 << 12);
@@ -8001,7 +8017,7 @@ static inline __m256i compress_poly_d10_vec_avx2(__m256i f0) {
 }
 
 static inline __m256i compress_poly_d4_vec_avx2(__m256i f) {
-  const __m256i v = _mm256_set1_epi16(20159);
+  const __m256i v = MLKEM_AVX2_SET1_BARRETT_I16();
   const __m256i shift = _mm256_set1_epi16(1 << 9);
   const __m256i mask = _mm256_set1_epi16(15);
   f = _mm256_mulhi_epi16(f, v);
@@ -8255,7 +8271,7 @@ decompress_decode_poly_d10_ct_x3_avx2(const uint8_t *in,
 #endif
 
 static inline __m256i decompress_d4_vec_avx2(__m256i v) {
-  const __m256i q = _mm256_set1_epi16(Q);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
   const __m256i half = _mm256_set1_epi16(8);
   v = _mm256_mullo_epi16(v, q);
   v = _mm256_add_epi16(v, half);
@@ -8661,8 +8677,8 @@ static void kpke_keygen(const uint8_t *seed, uint8_t *ek_pke, uint8_t *dk_pke) {
 #if defined(__AVX2__)
 static inline void mlkem_add_message_to_poly_vec_avx2(__m256i m,
                                                        int16_t *out) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
   __m256i x = _mm256_loadu_si256((const __m256i *)(const void *)out);
   x = _mm256_add_epi16(x, m);
   __m256i ge_q = _mm256_cmpgt_epi16(x, q_minus_1);
@@ -8750,8 +8766,8 @@ static inline void mlkem_add_message_to_poly(const uint8_t msg[32],
  * the general signed Barrett reduction. */
 static MLKEM_ALWAYS_INLINE __m256i
 ntt_canonicalize_0_8321_i16x16_clang_avx2(__m256i v) {
-  const __m256i q = _mm256_set1_epi16(Q);
-  const __m256i q_minus_1 = _mm256_set1_epi16(Q - 1);
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
   __m256i ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
   v = _mm256_sub_epi16(v, _mm256_and_si256(ge_q, q));
   ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
