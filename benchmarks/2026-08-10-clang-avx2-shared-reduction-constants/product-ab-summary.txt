@@ -1,0 +1,5 @@
+metric base_mean_ns cand_mean_ns mean_speedup paired_gmean paired_median wins
+mlkem_keygen_core 5714.57 5655.85 1.010382x 1.010227x 1.002889x 12/15
+mlkem_encaps_core 4571.72 4550.29 1.004710x 1.004715x 1.003081x 11/15
+mlkem_decaps_core 4588.01 4545.50 1.009353x 1.009093x 1.001406x 10/15
+mlkem_roundtrip_core 15173.41 15039.89 1.008878x 1.008828x 1.002686x 13/15
