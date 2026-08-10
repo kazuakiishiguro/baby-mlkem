@@ -1,0 +1,20 @@
+revision=bf5b5bc
+compiler=clang
+arch=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+
+command=CC=clang ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f' make -B -j2 test product test-product bench-product check-ntt-roots product-size
+result=pass
+
+command=./product_testc
+result=pass
+
+checks:
+- ./testc passed
+- product KAT passed
+- check-ntt-roots passed
+- product-size passed
+
+artifact_sha256=c9c9a3559f2f6b181c18f1d72233691b817b19b046fe06eb24bcb135d065ba93
+artifact_file_bytes=71480
+primary_bytes=46100
+pre-existing_untracked_bench_core_stagesc=not modified

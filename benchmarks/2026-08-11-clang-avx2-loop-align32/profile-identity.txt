@@ -1,0 +1,27 @@
+profile=clang-avx2
+arch=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+baseline_sha256=f7805de3d2cc0edb4ae8371329cb56370ba4e3783ed144a9f595ee00efeeb557
+candidate_sha256=c9c9a3559f2f6b181c18f1d72233691b817b19b046fe06eb24bcb135d065ba93
+result=intended change
+
+profile=clang-scalar
+arch=-march=x86-64
+baseline_sha256=b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2
+candidate_sha256=b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2
+result=byte-identical
+
+profile=gcc-avx2
+arch=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+baseline_sha256=909b0a75840c32502b7beceba2f12f1b47da6e35518dec69a66b1c5251348eb9
+candidate_sha256=909b0a75840c32502b7beceba2f12f1b47da6e35518dec69a66b1c5251348eb9
+result=byte-identical
+
+profile=clang-native
+arch=-march=native
+baseline_sha256=9b534f8f47a282baeb9eeed8916f4648800d05854c72d9e2e729ba3739478ec2
+candidate_sha256=9b534f8f47a282baeb9eeed8916f4648800d05854c72d9e2e729ba3739478ec2
+result=byte-identical
+
+All profiles passed their product KATs. The Makefile selector is active only
+when the default Clang extra flags are in use and the architecture flags show
+the AVX2-only condition.
