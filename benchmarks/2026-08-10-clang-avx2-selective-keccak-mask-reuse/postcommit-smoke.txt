@@ -1,0 +1,16 @@
+candidate_ref=424a14181f08559e55749be5f9eb4601d94f7252
+build_method=git_archive_clean_tree
+compiler=clang
+profile=AVX2-only
+artifact_sha256=668bc7877907af53e849dcf85693f15600142c9f6a7ed965d39a094548bcf98c
+precommit_artifact_identity=PASS
+kat=PASS
+product=PASS
+stage=PASS
+stage_sink=4297556503821386549
+code_bytes=42191
+readonly_data_bytes=5955
+primary_bytes=48146
+writable_bytes=26593
+ntt_generator_check=PASS
+postcommit_reproduction=PASS

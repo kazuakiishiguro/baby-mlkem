@@ -1,0 +1,7 @@
+R ZETA_NTT_INV_MONT_HI
+R ZETA_NTT_INV_MONT_HI_SCALAR
+R ZETA_NTT_INV_MONT_LO
+R ZETA_NTT_INV_MONT_LO_SCALAR
+T baby_mlkem768_decaps
+T baby_mlkem768_encaps_derand
+T baby_mlkem768_keypair_derand

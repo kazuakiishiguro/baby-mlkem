@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-shared-mask-split.hDQNL9/rot8/baby_mlkem768_product.o
+artifact_sha256=227c1ba88199d910dde910658466e6f31b6fe60c174c04083efb12dc9716fa12
+artifact_file_bytes=74256
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=42255
+readonly_data_bytes=5923
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=48178
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-selective-mask-postcommit.baTlPa/baby_mlkem768_product.o
+artifact_sha256=668bc7877907af53e849dcf85693f15600142c9f6a7ed965d39a094548bcf98c
+artifact_file_bytes=74272
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=42191
+readonly_data_bytes=5955
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=48146
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

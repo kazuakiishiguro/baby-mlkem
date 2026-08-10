@@ -1,0 +1,18 @@
+baseline_sha256=a75152c5f4502528809633747b2502a4b0cfeadc83daa428f92ddb4e3f86738f
+candidate_sha256=668bc7877907af53e849dcf85693f15600142c9f6a7ed965d39a094548bcf98c
+metric baseline candidate delta
+code_bytes 42191 42191 +0
+readonly_data_bytes 6019 5955 -64
+primary_bytes 48210 48146 -64
+writable_bytes 26593 26593 +0
+artifact_file_bytes 74248 74272 +24
+section=.rodata.cst32 baseline_bytes=3040 candidate_bytes=2912 delta=-128
+section=.rodata.MLKEM_AVX2_SHARED_CONSTANTS baseline_bytes=0 candidate_bytes=64 delta=+64
+text_sections_baseline=23
+text_sections_candidate=23
+text_section_names_identical=PASS
+text_section_sizes_identical=PASS
+text_section_raw_bytes_identical=PASS
+shared_mask_8_relocations=2
+shared_mask_56_relocations=2
+section_isolation=PASS
