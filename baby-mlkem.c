@@ -173,11 +173,6 @@ extern const __m256i MLKEM_AVX2_BARRETT_I16
     __attribute__((visibility("hidden")));
 #endif
 
-#if defined(MLKEM_AVX2_EXTERNAL_KECCAKF4_PARITY)
-extern void mlkem_keccakf4_mem_parity_avx2(__m256i st[25],
-                                           __m256i parity[5]);
-#endif
-
 static MLKEM_ALWAYS_INLINE __m256i rotl64x4_8_mode(__m256i x,
                                                     int shared_mask) {
 #if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
@@ -6654,11 +6649,7 @@ static void sample_ntt4(const uint8_t *seed,
   parity[4] = st[4];
 
   for (int block = 0; block < 3; block++) {
-#if defined(MLKEM_AVX2_EXTERNAL_KECCAKF4_PARITY)
-    mlkem_keccakf4_mem_parity_avx2(st, parity);
-#else
     keccakf4_mem_parity(st, parity);
-#endif
     sample_ntt4_store_block(stream, (size_t)block * 168, st);
   }
 
@@ -9844,9 +9835,7 @@ static void mlkem_decaps_ct(const uint8_t *c,
 #if !defined(__AVX512F__)
 static MLKEM_NOINLINE void mlkem_encrypt_keccakf4_mem_parity_avx2(
     __m256i st[25], __m256i parity[5]) {
-#if defined(MLKEM_AVX2_EXTERNAL_KECCAKF4_PARITY)
-  mlkem_keccakf4_mem_parity_avx2(st, parity);
-#elif defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
+#if defined(MLKEM_AVX2_EXTERNAL_SHARED_CONSTANTS)
   keccakf4_mem_parity_mode(st, parity, 1);
 #else
   keccakf4_mem_parity(st, parity);
