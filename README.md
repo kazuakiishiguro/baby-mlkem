@@ -7314,6 +7314,13 @@ make bench AVX2_BACKEND=pqclean    # vendored PQClean AVX2
 
 ## External Comparison
 
+The latest complete native/AVX2 speed and normalized size survey is recorded
+in [`benchmarks/2026-08-10-full-library-comparison/`](benchmarks/2026-08-10-full-library-comparison/).
+It includes all ten comparison suites, all four timed operations, comparator
+revisions, raw outputs, and the three-API footprint/stack measurements. The
+survey is a pinned snapshot and does not by itself complete the stricter goal
+gate.
+
 External comparison results now default to the independent core local build.
 For example, this compares `AVX2_BACKEND=core` baby-mlkem against a separately
 checked out upstream Kyber AVX2 build:
