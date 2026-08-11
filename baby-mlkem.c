@@ -4045,6 +4045,71 @@ static inline void ntt_inv_mont_pair_i16x16(
       _mm256_sub_epi16(b, a), zeta_lo, zeta_hi);
 }
 
+/* GCC benefits from keeping inverse l4-l6 in one 128-coefficient block. The
+   eight vectors are overwritten in the same butterfly topology, avoiding two
+   intermediate store/load boundaries without changing the arithmetic. */
+#if defined(__GNUC__) && !defined(__clang__)
+static inline void ntt_inv_mont_tail_l4_l6_block_avx2(
+    int16_t *f, int block) {
+  __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 0));
+  __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 16));
+  __m256i v2 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 32));
+  __m256i v3 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 48));
+  __m256i v4 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 64));
+  __m256i v5 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 80));
+  __m256i v6 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 96));
+  __m256i v7 = _mm256_loadu_si256((const __m256i *)(const void *)(f + 112));
+
+  ntt_inv_mont_pair_i16x16(
+      v0, v1, MLKEM_INV_MONT_LO(3, block * 4 + 0),
+      MLKEM_INV_MONT_HI(3, block * 4 + 0), &v0, &v1);
+  ntt_inv_mont_pair_i16x16(
+      v2, v3, MLKEM_INV_MONT_LO(3, block * 4 + 1),
+      MLKEM_INV_MONT_HI(3, block * 4 + 1), &v2, &v3);
+  ntt_inv_mont_pair_i16x16(
+      v4, v5, MLKEM_INV_MONT_LO(3, block * 4 + 2),
+      MLKEM_INV_MONT_HI(3, block * 4 + 2), &v4, &v5);
+  ntt_inv_mont_pair_i16x16(
+      v6, v7, MLKEM_INV_MONT_LO(3, block * 4 + 3),
+      MLKEM_INV_MONT_HI(3, block * 4 + 3), &v6, &v7);
+
+  ntt_inv_mont_pair_i16x16(
+      v0, v2, MLKEM_INV_MONT_LO(4, block * 2 + 0),
+      MLKEM_INV_MONT_HI(4, block * 2 + 0), &v0, &v2);
+  ntt_inv_mont_pair_i16x16(
+      v1, v3, MLKEM_INV_MONT_LO(4, block * 2 + 0),
+      MLKEM_INV_MONT_HI(4, block * 2 + 0), &v1, &v3);
+  ntt_inv_mont_pair_i16x16(
+      v4, v6, MLKEM_INV_MONT_LO(4, block * 2 + 1),
+      MLKEM_INV_MONT_HI(4, block * 2 + 1), &v4, &v6);
+  ntt_inv_mont_pair_i16x16(
+      v5, v7, MLKEM_INV_MONT_LO(4, block * 2 + 1),
+      MLKEM_INV_MONT_HI(4, block * 2 + 1), &v5, &v7);
+
+  ntt_inv_mont_pair_i16x16(
+      v0, v4, MLKEM_INV_MONT_LO(5, block),
+      MLKEM_INV_MONT_HI(5, block), &v0, &v4);
+  ntt_inv_mont_pair_i16x16(
+      v1, v5, MLKEM_INV_MONT_LO(5, block),
+      MLKEM_INV_MONT_HI(5, block), &v1, &v5);
+  ntt_inv_mont_pair_i16x16(
+      v2, v6, MLKEM_INV_MONT_LO(5, block),
+      MLKEM_INV_MONT_HI(5, block), &v2, &v6);
+  ntt_inv_mont_pair_i16x16(
+      v3, v7, MLKEM_INV_MONT_LO(5, block),
+      MLKEM_INV_MONT_HI(5, block), &v3, &v7);
+
+  _mm256_storeu_si256((__m256i *)(void *)(f + 0), v0);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 16), v1);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 32), v2);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 48), v3);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 64), v4);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 80), v5);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 96), v6);
+  _mm256_storeu_si256((__m256i *)(void *)(f + 112), v7);
+}
+#endif
+
 static void ntt_inv_mont_before_final_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 32, i++) {
     __m256i a = load_i16x2_oct_avx2(
@@ -4093,7 +4158,12 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
     store_i16x8_pair(f + start + 8, f + start + 24, product);
   }
 
-  /* Reducing each sum keeps all six stages within signed 16-bit range. */
+#if defined(__GNUC__) && !defined(__clang__)
+  for (int block = 0; block < N / 128; block++) {
+    ntt_inv_mont_tail_l4_l6_block_avx2(f + block * 128, block);
+  }
+#else
+  /* Clang's existing level-wise schedule is smaller and faster on AVX2. */
   for (int level = 3, length = 16; level < 6; level++, length <<= 1) {
     int i = 0;
     for (int start = 0; start < N; start += 2 * length, i++) {
@@ -4113,6 +4183,7 @@ static void ntt_inv_mont_before_final_avx2(poly256 f) {
       }
     }
   }
+#endif
 }
 
 static inline void ntt_inv_mont_scale_pair_i16x16(
