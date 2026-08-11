@@ -4027,6 +4027,15 @@ static inline __m256i ntt_canonicalize_i16x16(__m256i v) {
       reduced, _mm256_and_si256(_mm256_srai_epi16(reduced, 15), q));
 }
 
+/* Both operands are canonical, so one masked Q subtraction is sufficient. */
+static inline __m256i ntt_add_canonical_i16x16(__m256i a, __m256i b) {
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
+  __m256i sum = _mm256_add_epi16(a, b);
+  __m256i ge_q = _mm256_cmpgt_epi16(sum, q_minus_1);
+  return _mm256_sub_epi16(sum, _mm256_and_si256(ge_q, q));
+}
+
 static inline void ntt_inv_mont_pair_i16x16(
     __m256i a, __m256i b, __m256i zeta_lo, __m256i zeta_hi,
     __m256i *sum, __m256i *product) {
@@ -4144,8 +4153,8 @@ static void ntt_inv_add_mont_final_avx2(const poly256 add, poly256 out) {
         (const __m256i *)(const void *)(add + j));
     __m256i add1 = _mm256_loadu_si256(
         (const __m256i *)(const void *)(add + N / 2 + j));
-    scaled0 = ntt_canonicalize_i16x16(_mm256_add_epi16(scaled0, add0));
-    scaled1 = ntt_canonicalize_i16x16(_mm256_add_epi16(scaled1, add1));
+    scaled0 = ntt_add_canonical_i16x16(scaled0, add0);
+    scaled1 = ntt_add_canonical_i16x16(scaled1, add1);
     _mm256_storeu_si256((__m256i *)(void *)(out + j), scaled0);
     _mm256_storeu_si256((__m256i *)(void *)(out + N / 2 + j), scaled1);
   }
