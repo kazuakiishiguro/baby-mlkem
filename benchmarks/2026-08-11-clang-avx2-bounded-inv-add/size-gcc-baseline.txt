@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-invadd/gcc/product-baseline.o
+artifact_sha256=13b687b089db35c42a7d1a4a7bcf084f961f553c1db997607fd516cfe4190120
+artifact_file_bytes=80984
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49249
+readonly_data_bytes=3756
+unwind_bytes=1452
+exception_table_bytes=0
+primary_bytes=53005
+initialized_writable_bytes=8
+zero_fill_bytes=34856
+writable_bytes=34864
+max_stack_bytes=unmeasured

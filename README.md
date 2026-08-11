@@ -997,6 +997,18 @@ reordered by Clang. Primary size falls 645 bytes to 47,501 bytes. The combined
 `8fab80d`, baby-mlkem is 2,452 bytes larger than OpenSSL AVX2-only, so the
 primary-size gate remains open.
 
+The [AVX2 bounded inverse-add correction report](benchmarks/2026-08-11-clang-avx2-bounded-inv-add/README.md)
+records the focused arithmetic follow-up at `8dde3e5`. Because both the
+Montgomery-scaled inverse output and ETA2 noise/message addend are canonical,
+the AVX2 inverse-add final loop now uses one masked `Q` subtraction instead of
+the generic Barrett canonicalizer. Clang AVX2 primary/code/artifact size falls
+by 1,031/1,031/880 bytes to 45,069/39,720/70,600 bytes; GCC AVX2 falls by
+79/79/96 bytes. Cache-disabled 15-pair Clang medians improve encaps/decaps/
+roundtrip by `1.005370x`/`1.007600x`/`1.007260x`; 9-pair GCC medians improve
+`1.011210x`/`1.012680x`/`1.008700x`. Keygen remains neutral. KATs pass for
+Clang AVX2, GCC AVX2, and GCC scalar. No AVX512 speed or sanitizer claim is
+made by this focused report.
+
 The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
 then updates and measures all ten required comparators in both profiles at
 `9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
@@ -1240,7 +1252,7 @@ in-tree core, product, upstream, and PQClean paths described above.
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
 
-## Current Core Optimization Frontier (2026-08-10)
+## Current Core Optimization Frontier (2026-08-11)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -1249,7 +1261,7 @@ core work in SHAKE/sample_ntt, forward/inverse NTT, K=3 accumulation, or range
 normalization across encode/compress boundaries.
 
 The broad frontier table below is the last full snapshot before the focused
-K=3 follow-up. The post-change A/B data is recorded in
+K=3 and inverse-add follow-ups. The post-change A/B data is recorded in
 [`benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/README.md`](benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/README.md).
 
 Current AVX2-only frontier snapshot, pinned to CPU 0, `clang`,
@@ -1294,6 +1306,7 @@ Near-term target selection:
 | Clang AVX2 canonical K=3 accumulation inputs | Accepted as an AVX2-only size and focused-speed optimization; native AVX512 and scalar paths unchanged | All production K=3 accumulation inputs are canonical `[0,Q)`, so the per-block centerization of three `rhat` vectors was redundant: `6*(Q-1)^2` remains below signed `INT32_MAX`. Removing its three compare/and/sub sequences reduces primary size by 41 bytes to 47,460 bytes, while the 9-pair medians improve direct K=3 accumulation by `1.009658x`, combined accumulation by `1.012004x`, cached encryption by `1.004618x`, and uncached encryption by `1.003196x`. The product API median is neutral-to-positive: encaps `1.002390x`, decaps `1.000483x`, and roundtrip `1.000421x`; keygen is unchanged. No cache, vendored backend, external object, runtime library, table, API, algorithm, or wire-format dependency is added. See the committed [A/B report](benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/README.md). |
 | Clang AVX2 shared reduction constants | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | `Q`, `Q-1`, and the signed 16-bit Barrett reciprocal `20159` are referenced from one repository-local hidden YMM constant section instead of repeated compiler-local pools. Clang AVX2 code/read-only/primary size falls by 116/572/688 bytes to 41,423/5,349/46,772 bytes; writable storage is unchanged. A CPU-0 15-pair 100k product screen after three warmups yields keygen/encaps/decaps/roundtrip paired geometric means of `1.0102x`/`1.0047x`/`1.0091x`/`1.0088x`; no formal speed gain is credited from this single batch. GCC/Clang native and scalar products remain byte-identical. No cache, vendored backend, external cryptographic object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/README.md). |
 | Clang AVX2 default loop alignment | Accepted as an AVX2-only build/layout size optimization; no speed gain credited | When the Makefile's default Clang flags are active and `ARCH_CFLAGS` contains `-mavx2 -mno-avx512f`, the default `-falign-loops=64` is changed to `-falign-loops=32`. Primary size falls from 46,772 to 46,100 bytes; the relocatable product falls from 72,408 to 71,480 bytes; code falls by 672 bytes while read-only and writable storage are unchanged. Two alternating 16-pair product batches give combined keygen/encaps/decaps/roundtrip geometric means of `1.004468x`/`1.000736x`/`0.995528x`/`1.000771x`; Batch 1 decaps is `0.992588x`, so the result is treated as size-only rather than a speed claim. Clang scalar/native and GCC AVX2 products remain byte-identical, and all KATs pass. Explicit `EXTRA_CFLAGS` remains honored. No cache, vendored backend, external object, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-11-clang-avx2-loop-align32/README.md). |
+| AVX2 bounded inverse-add correction | Accepted for Clang/GCC AVX2 focused speed and size; AVX512/scalar code paths unchanged | Canonical inverse-NTT scale output plus canonical ETA2 noise/message addends fit `[0,2Q)`, so `ntt_inv_add_mont_final_avx2()` uses one masked Q subtraction instead of a full Barrett canonicalizer. Clang AVX2 primary/code/artifact size falls 1,031/1,031/880 bytes to 45,069/39,720/70,600; GCC AVX2 falls 79/79/96 bytes. Cache-disabled product medians improve Clang encaps/decaps/roundtrip by `1.005370x`/`1.007600x`/`1.007260x` over 15 pairs and GCC by `1.011210x`/`1.012680x`/`1.008700x` over 9 pairs. Keygen is neutral. No cache, vendored backend, external object, runtime library, table, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-11-clang-avx2-bounded-inv-add/README.md). |
 | Native AVX512 forward-NTT representation | Full seven-stage 16-bit Montgomery baseline accepted; generic lower tail now superseded on native builds | The accepted baseline used ZMM for `l7`..`l5`, YMM for `l4`..`l1`, and one final ZMM Barrett pass. It established the signed-16-bit range and remains the AVX2-only/specialized-partial implementation; native generic `ntt()` now uses the lower-layer ZMM merge below. The arithmetic remains upstream-derived and vendor-free. |
 | GCC AVX512 forward-NTT three-level register merge | Accepted for GCC native; Clang and narrower ISAs unchanged | Eight 32-coefficient ZMM blocks now stay live through `l7`..`l5`, replacing 24 ZMM loads plus 24 stores with 8 plus 8 before the unchanged YMM `l4`. The direct head and full in-place NTT improve `1.1929x`/`1.0883x` paired geometric mean with 9/9 wins; 100k keygen/encaps/decaps/roundtrip improve `1.0125x`/`1.0179x`/`1.0124x`/`1.0163x`. GCC `benchc` text grows 36 bytes. The arithmetic and range contract are unchanged, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 forward-NTT tail layer merge | Accepted for GCC and Clang native; AVX2-only unchanged | Each contiguous 32-coefficient block stays in one ZMM through `l3`..`l1`; qword permutations replace two intermediate load/store boundaries, and low/high Montgomery twiddles are pre-expanded outside the hot loop. GCC/Clang copy NTT paired geometric means improve `1.2125x`/`1.3040x`, in-place `1.2125x`/`1.3119x`, all 9/9. Fifteen-pair keygen medians improve `1.0086x`/`1.0102x`. The immutable factor table adds 3,072 BSS bytes but no key/result cache or external dependency. |
