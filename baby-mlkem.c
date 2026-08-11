@@ -3764,15 +3764,16 @@ static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
 #if defined(__AVX2__)
 static void ntt_canonicalize_signed_avx2(poly256 f) {
   const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  const __m256i q_minus_1 = MLKEM_AVX2_SET1_Q_MINUS_1_I16();
   const __m256i barrett = MLKEM_AVX2_SET1_BARRETT_I16();
   for (int i = 0; i < N; i += 16) {
     __m256i v = _mm256_loadu_si256((const __m256i *)(const void *)(f + i));
     __m256i quot = _mm256_srai_epi16(_mm256_mulhi_epi16(v, barrett), 10);
     v = _mm256_sub_epi16(v, _mm256_mullo_epi16(quot, q));
-    v = _mm256_add_epi16(v, _mm256_and_si256(_mm256_srai_epi16(v, 15), q));
-    __m256i reduced = _mm256_sub_epi16(v, q);
-    v = _mm256_add_epi16(
-        reduced, _mm256_and_si256(_mm256_srai_epi16(reduced, 15), q));
+    /* The seven lazy stages prove -7Q < v < 8Q. Signed Barrett therefore
+       leaves [0,Q], so only the redundant Q representation needs removal. */
+    __m256i ge_q = _mm256_cmpgt_epi16(v, q_minus_1);
+    v = _mm256_sub_epi16(v, _mm256_and_si256(ge_q, q));
     _mm256_storeu_si256((__m256i *)(void *)(f + i), v);
   }
 }
