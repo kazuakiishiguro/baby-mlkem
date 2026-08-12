@@ -1,0 +1,9 @@
+Sibling candidate: mark keccakf8_sparse_eta2x7_32() with Clang minsize.
+
+Baseline: 8590282
+Screened candidate: temporary-only
+Primary: 67820 B -> 67803 B (-17 B)
+Target symbol: 0x0cd9 -> 0x0cc8
+
+The reduction is too small to justify an additional production change. It was
+not run through the formal 15-pair gate and no code remains.
