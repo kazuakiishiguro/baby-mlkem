@@ -10381,7 +10381,11 @@ static MLKEM_ALWAYS_INLINE void sha3_256_1184_absorb_tail(
       _mm256_setr_epi64x((long long)load64_le(in + 48), 0x06, 0, 0));
 }
 
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
 static MLKEM_CLANG_AVX2_NOINLINE_MINSIZE void
+#else
+static MLKEM_NOINLINE void
+#endif
 sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]) {
   mlkem_keccakf1600_avx2_state state;
   sha3_256_1184_state_zero(&state);
