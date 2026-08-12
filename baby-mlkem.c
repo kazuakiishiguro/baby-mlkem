@@ -2688,7 +2688,13 @@ static MLKEM_ALWAYS_INLINE void ntt_inv_add_eta2_i8_final_chunk_avx512(
 #endif
 }
 
-static MLKEM_NOINLINE void ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+static MLKEM_NOINLINE __attribute__((minsize)) void
+#else
+static MLKEM_NOINLINE void
+#endif
+ntt_inv_add4_eta2_i8_mont_final_shared_avx512(
     const int8_t add0[N], const int8_t add1[N], const int8_t add2[N],
     const int8_t add3[N], const uint8_t msg[32],
     poly256 out0, poly256 out1, poly256 out2, poly256 out3) {
