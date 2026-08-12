@@ -4910,7 +4910,7 @@ static void ntt_mul_acc4_madd_avx2(
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-static void ntt_before_final_l1_avx512(poly256 f) {
+static __attribute__((minsize)) void ntt_before_final_l1_avx512(poly256 f) {
   /* Keep six levels lazy, then restore [0,Q) for the unsigned final l1. */
   ntt_head_mont_lazy_raw_avx512(f);
   ntt_tail_before_l1_mont_lazy_raw_avx2(f);
