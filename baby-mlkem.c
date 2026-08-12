@@ -4910,12 +4910,18 @@ static void ntt_mul_acc4_madd_avx2(
 #endif
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
-static __attribute__((minsize)) void ntt_before_final_l1_avx512(poly256 f) {
+#if defined(__clang__)
+#define MLKEM_NTT_HEAD_MINSIZE __attribute__((minsize))
+#else
+#define MLKEM_NTT_HEAD_MINSIZE
+#endif
+static MLKEM_NTT_HEAD_MINSIZE void ntt_before_final_l1_avx512(poly256 f) {
   /* Keep six levels lazy, then restore [0,Q) for the unsigned final l1. */
   ntt_head_mont_lazy_raw_avx512(f);
   ntt_tail_before_l1_mont_lazy_raw_avx2(f);
   ntt_canonicalize_signed_avx512(f);
 }
+#undef MLKEM_NTT_HEAD_MINSIZE
 
 #if defined(__GNUC__)
 /* Exact from -6*(Q-1)*(Q/2) through 6*(Q-1)^2. */
