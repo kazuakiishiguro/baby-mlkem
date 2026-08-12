@@ -5846,14 +5846,45 @@ static void sample_poly_cbd_eta2x4_state_avx2(const __m256i st[25],
 }
 
 #if defined(__AVX512F__)
+#if defined(__clang__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
+static MLKEM_ALWAYS_INLINE void
+cbd_eta2_decode4_i8_clang_avx512(__m256i bytes, __m256i *values01,
+                                 __m256i *values23);
+
+static MLKEM_ALWAYS_INLINE void
+cbd_eta2_store2_signed_i8x32_clang_avx512(__m256i values8, int16_t *out0,
+                                          int16_t *out1) {
+  __m512i values = _mm512_cvtepi8_epi16(values8);
+  _mm256_storeu_si256((__m256i *)(void *)out0,
+                      _mm512_castsi512_si256(values));
+  _mm256_storeu_si256((__m256i *)(void *)out1,
+                      _mm512_extracti64x4_epi64(values, 1));
+}
+#endif
+
 static void sample_poly_cbd_eta2x6_signed_state_avx512(
     const __m512i st[25], poly256 out0, poly256 out1, poly256 out2,
     poly256 out3, poly256 out4, poly256 out5) {
   /* Keygen feeds all six centered outputs directly to signed-lazy NTTs. */
-#if defined(__clang__)
+#if defined(__clang__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
   /* Eight-way unrolling bloats Clang's already large keygen caller. */
 #pragma clang loop unroll_count(4)
 #endif
+#if defined(__clang__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
+  for (int i = 0; i < 16; i++) {
+    __m256i values01, values23, values45, values67;
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_castsi512_si256(st[i]), &values01, &values23);
+    cbd_eta2_decode4_i8_clang_avx512(
+        _mm512_extracti64x4_epi64(st[i], 1), &values45, &values67);
+    cbd_eta2_store2_signed_i8x32_clang_avx512(
+        values01, out0 + 16 * i, out1 + 16 * i);
+    cbd_eta2_store2_signed_i8x32_clang_avx512(
+        values23, out2 + 16 * i, out3 + 16 * i);
+    cbd_eta2_store2_signed_i8x32_clang_avx512(
+        values45, out4 + 16 * i, out5 + 16 * i);
+  }
+#else
   for (int i = 0; i < 16; i++) {
     uint64_t words[8];
     _mm512_storeu_si512((__m512i *)words, st[i]);
@@ -5867,6 +5898,7 @@ static void sample_poly_cbd_eta2x6_signed_state_avx512(
         _mm_loadu_si128((const __m128i *)&words[4]),
         out4 + 16 * i, out5 + 16 * i);
   }
+#endif
 }
 
 #if defined(__clang__) && defined(__AVX512F__) && \
