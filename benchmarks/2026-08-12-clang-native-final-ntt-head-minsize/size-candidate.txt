@@ -1,0 +1,14 @@
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=bcd950ccca55902d008548a17c0f960c3d82b087b188a7fd9afe0c7de16a5d4c
+artifact_file_bytes=96520
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=51238
+readonly_data_bytes=16582
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=67820
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

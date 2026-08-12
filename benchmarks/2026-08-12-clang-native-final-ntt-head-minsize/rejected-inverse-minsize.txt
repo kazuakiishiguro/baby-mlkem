@@ -1,0 +1,14 @@
+Sibling candidate: mark ntt_inv_add4_eta2_i8_mont_final_shared_avx512() with Clang minsize.
+
+Baseline: f6ff06c
+Screened candidate: temporary-only
+Primary: 68769 B -> 66535 B (-2234 B)
+Target symbol: 0x120e -> 0x0b14
+
+15-pair CPU-0 product ratio, baseline time / candidate time:
+keygen_core:   1.0066x (95% CI 1.0009x..1.0130x)
+encaps_core:   0.9999x (95% CI 0.9860x..1.0172x)
+decaps_core:   0.9820x (95% CI 0.9708x..0.9916x)
+roundtrip_core:0.9972x (95% CI 0.9909x..1.0033x)
+
+Rejected because decaps_core is below the 0.995x size-only regression floor.
