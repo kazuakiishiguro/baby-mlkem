@@ -1,0 +1,4 @@
+profile=Clang AVX2-only
+command=ASAN_OPTIONS=detect_leaks=0 make -B -j2 CC=clang ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f' OPT_CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' test
+result=PASS
+note=The first run without detect_leaks=0 was stopped by LeakSanitizer because the execution environment uses ptrace. No ASan or UBSan diagnostic was emitted.

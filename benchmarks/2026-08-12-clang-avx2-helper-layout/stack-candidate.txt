@@ -1,0 +1,17 @@
+artifact=/tmp/baby-mlkem-avx2-small-combo/all/baby_mlkem768_product.o
+artifact_sha256=b6fd46a016be510d9bd343ecdfc83f599e9a149f8adee160e39525dca9408329
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4512
+encaps_stack_bytes=4152
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4512
+correctness_smoke=pass

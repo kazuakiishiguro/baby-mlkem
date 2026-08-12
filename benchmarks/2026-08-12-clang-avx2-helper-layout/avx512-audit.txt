@@ -1,0 +1,4 @@
+artifact_sha256=b6fd46a016be510d9bd343ecdfc83f599e9a149f8adee160e39525dca9408329
+command=objdump -d baby_mlkem768_product.o followed by AVX512 register/opcode scan
+scan_patterns=zmm registers vpermb vpermt2 vcompress vexpand vpmovdb vpmovwb
+result=PASS

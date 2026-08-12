@@ -1,0 +1,510 @@
+mlkem_bench_iterations=100000
+B1 keygen 5530.26
+mlkem_keygen_ops_per_s=180823.41
+B1 encaps 4423.43
+mlkem_encaps_ops_per_s=226068.70
+B1 decaps 4399.06
+mlkem_decaps_ops_per_s=227321.39
+B1 roundtrip 14665.65
+mlkem_roundtrip_ops_per_s=68186.54
+B1 keygen_core 5530.26
+mlkem_keygen_core_ops_per_s=180823.41
+B1 encaps_core 4423.43
+mlkem_encaps_core_ops_per_s=226068.70
+B1 decaps_core 4399.06
+mlkem_decaps_core_ops_per_s=227321.39
+B1 roundtrip_core 14665.65
+mlkem_roundtrip_core_ops_per_s=68186.54
+mlkem_bench_iterations=100000
+C1 keygen 5546.26
+mlkem_keygen_ops_per_s=180301.79
+C1 encaps 4413.68
+mlkem_encaps_ops_per_s=226568.42
+C1 decaps 4384.36
+mlkem_decaps_ops_per_s=228083.34
+C1 roundtrip 14665.08
+mlkem_roundtrip_ops_per_s=68189.20
+C1 keygen_core 5546.26
+mlkem_keygen_core_ops_per_s=180301.79
+C1 encaps_core 4413.68
+mlkem_encaps_core_ops_per_s=226568.42
+C1 decaps_core 4384.36
+mlkem_decaps_core_ops_per_s=228083.34
+C1 roundtrip_core 14665.08
+mlkem_roundtrip_core_ops_per_s=68189.20
+mlkem_bench_iterations=100000
+B2 keygen 5554.04
+mlkem_keygen_ops_per_s=180049.14
+B2 encaps 4424.37
+mlkem_encaps_ops_per_s=226020.71
+B2 decaps 4386.96
+mlkem_decaps_ops_per_s=227948.39
+B2 roundtrip 14683.20
+mlkem_roundtrip_ops_per_s=68105.04
+B2 keygen_core 5554.04
+mlkem_keygen_core_ops_per_s=180049.14
+B2 encaps_core 4424.37
+mlkem_encaps_core_ops_per_s=226020.71
+B2 decaps_core 4386.96
+mlkem_decaps_core_ops_per_s=227948.39
+B2 roundtrip_core 14683.20
+mlkem_roundtrip_core_ops_per_s=68105.04
+mlkem_bench_iterations=100000
+C2 keygen 5627.24
+mlkem_keygen_ops_per_s=177707.11
+C2 encaps 4412.84
+mlkem_encaps_ops_per_s=226611.49
+C2 decaps 4391.84
+mlkem_decaps_ops_per_s=227695.19
+C2 roundtrip 14660.82
+mlkem_roundtrip_ops_per_s=68208.99
+C2 keygen_core 5627.24
+mlkem_keygen_core_ops_per_s=177707.11
+C2 encaps_core 4412.84
+mlkem_encaps_core_ops_per_s=226611.49
+C2 decaps_core 4391.84
+mlkem_decaps_core_ops_per_s=227695.19
+C2 roundtrip_core 14660.82
+mlkem_roundtrip_core_ops_per_s=68208.99
+mlkem_bench_iterations=100000
+B3 keygen 5539.57
+mlkem_keygen_ops_per_s=180519.45
+B3 encaps 4419.80
+mlkem_encaps_ops_per_s=226254.51
+B3 decaps 4403.72
+mlkem_decaps_ops_per_s=227080.92
+B3 roundtrip 14662.82
+mlkem_roundtrip_ops_per_s=68199.72
+B3 keygen_core 5539.57
+mlkem_keygen_core_ops_per_s=180519.45
+B3 encaps_core 4419.80
+mlkem_encaps_core_ops_per_s=226254.51
+B3 decaps_core 4403.72
+mlkem_decaps_core_ops_per_s=227080.92
+B3 roundtrip_core 14662.82
+mlkem_roundtrip_core_ops_per_s=68199.72
+mlkem_bench_iterations=100000
+C3 keygen 5543.58
+mlkem_keygen_ops_per_s=180388.75
+C3 encaps 4433.00
+mlkem_encaps_ops_per_s=225580.97
+C3 decaps 4402.54
+mlkem_decaps_ops_per_s=227141.37
+C3 roundtrip 14676.48
+mlkem_roundtrip_ops_per_s=68136.22
+C3 keygen_core 5543.58
+mlkem_keygen_core_ops_per_s=180388.75
+C3 encaps_core 4433.00
+mlkem_encaps_core_ops_per_s=225580.97
+C3 decaps_core 4402.54
+mlkem_decaps_core_ops_per_s=227141.37
+C3 roundtrip_core 14676.48
+mlkem_roundtrip_core_ops_per_s=68136.22
+mlkem_bench_iterations=100000
+B4 keygen 5552.00
+mlkem_keygen_ops_per_s=180115.27
+B4 encaps 4414.16
+mlkem_encaps_ops_per_s=226543.83
+B4 decaps 4496.07
+mlkem_decaps_ops_per_s=222416.22
+B4 roundtrip 14748.50
+mlkem_roundtrip_ops_per_s=67803.49
+B4 keygen_core 5552.00
+mlkem_keygen_core_ops_per_s=180115.27
+B4 encaps_core 4414.16
+mlkem_encaps_core_ops_per_s=226543.83
+B4 decaps_core 4496.07
+mlkem_decaps_core_ops_per_s=222416.22
+B4 roundtrip_core 14748.50
+mlkem_roundtrip_core_ops_per_s=67803.49
+mlkem_bench_iterations=100000
+C4 keygen 5533.83
+mlkem_keygen_ops_per_s=180706.59
+C4 encaps 4403.66
+mlkem_encaps_ops_per_s=227083.82
+C4 decaps 4426.76
+mlkem_decaps_ops_per_s=225898.94
+C4 roundtrip 14652.99
+mlkem_roundtrip_ops_per_s=68245.44
+C4 keygen_core 5533.83
+mlkem_keygen_core_ops_per_s=180706.59
+C4 encaps_core 4403.66
+mlkem_encaps_core_ops_per_s=227083.82
+C4 decaps_core 4426.76
+mlkem_decaps_core_ops_per_s=225898.94
+C4 roundtrip_core 14652.99
+mlkem_roundtrip_core_ops_per_s=68245.44
+mlkem_bench_iterations=100000
+B5 keygen 5537.08
+mlkem_keygen_ops_per_s=180600.51
+B5 encaps 4411.50
+mlkem_encaps_ops_per_s=226680.41
+B5 decaps 4404.99
+mlkem_decaps_ops_per_s=227015.46
+B5 roundtrip 14628.00
+mlkem_roundtrip_ops_per_s=68362.03
+B5 keygen_core 5537.08
+mlkem_keygen_core_ops_per_s=180600.51
+B5 encaps_core 4411.50
+mlkem_encaps_core_ops_per_s=226680.41
+B5 decaps_core 4404.99
+mlkem_decaps_core_ops_per_s=227015.46
+B5 roundtrip_core 14628.00
+mlkem_roundtrip_core_ops_per_s=68362.03
+mlkem_bench_iterations=100000
+C5 keygen 5540.52
+mlkem_keygen_ops_per_s=180488.40
+C5 encaps 4422.22
+mlkem_encaps_ops_per_s=226130.67
+C5 decaps 4393.88
+mlkem_decaps_ops_per_s=227589.05
+C5 roundtrip 14658.61
+mlkem_roundtrip_ops_per_s=68219.27
+C5 keygen_core 5540.52
+mlkem_keygen_core_ops_per_s=180488.40
+C5 encaps_core 4422.22
+mlkem_encaps_core_ops_per_s=226130.67
+C5 decaps_core 4393.88
+mlkem_decaps_core_ops_per_s=227589.05
+C5 roundtrip_core 14658.61
+mlkem_roundtrip_core_ops_per_s=68219.27
+mlkem_bench_iterations=100000
+B6 keygen 5540.94
+mlkem_keygen_ops_per_s=180474.74
+B6 encaps 4426.83
+mlkem_encaps_ops_per_s=225895.13
+B6 decaps 4398.81
+mlkem_decaps_ops_per_s=227334.42
+B6 roundtrip 14664.33
+mlkem_roundtrip_ops_per_s=68192.70
+B6 keygen_core 5540.94
+mlkem_keygen_core_ops_per_s=180474.74
+B6 encaps_core 4426.83
+mlkem_encaps_core_ops_per_s=225895.13
+B6 decaps_core 4398.81
+mlkem_decaps_core_ops_per_s=227334.42
+B6 roundtrip_core 14664.33
+mlkem_roundtrip_core_ops_per_s=68192.70
+mlkem_bench_iterations=100000
+C6 keygen 5548.10
+mlkem_keygen_ops_per_s=180241.85
+C6 encaps 4419.95
+mlkem_encaps_ops_per_s=226246.91
+C6 decaps 4391.37
+mlkem_decaps_ops_per_s=227719.24
+C6 roundtrip 14734.66
+mlkem_roundtrip_ops_per_s=67867.18
+C6 keygen_core 5548.10
+mlkem_keygen_core_ops_per_s=180241.85
+C6 encaps_core 4419.95
+mlkem_encaps_core_ops_per_s=226246.91
+C6 decaps_core 4391.37
+mlkem_decaps_core_ops_per_s=227719.24
+C6 roundtrip_core 14734.66
+mlkem_roundtrip_core_ops_per_s=67867.18
+mlkem_bench_iterations=100000
+B7 keygen 5583.53
+mlkem_keygen_ops_per_s=179098.07
+B7 encaps 4419.94
+mlkem_encaps_ops_per_s=226247.47
+B7 decaps 4541.40
+mlkem_decaps_ops_per_s=220196.25
+B7 roundtrip 14791.47
+mlkem_roundtrip_ops_per_s=67606.53
+B7 keygen_core 5583.53
+mlkem_keygen_core_ops_per_s=179098.07
+B7 encaps_core 4419.94
+mlkem_encaps_core_ops_per_s=226247.47
+B7 decaps_core 4541.40
+mlkem_decaps_core_ops_per_s=220196.25
+B7 roundtrip_core 14791.47
+mlkem_roundtrip_core_ops_per_s=67606.53
+mlkem_bench_iterations=100000
+C7 keygen 5548.54
+mlkem_keygen_ops_per_s=180227.46
+C7 encaps 4418.49
+mlkem_encaps_ops_per_s=226321.58
+C7 decaps 4395.36
+mlkem_decaps_ops_per_s=227512.60
+C7 roundtrip 14686.38
+mlkem_roundtrip_ops_per_s=68090.29
+C7 keygen_core 5548.54
+mlkem_keygen_core_ops_per_s=180227.46
+C7 encaps_core 4418.49
+mlkem_encaps_core_ops_per_s=226321.58
+C7 decaps_core 4395.36
+mlkem_decaps_core_ops_per_s=227512.60
+C7 roundtrip_core 14686.38
+mlkem_roundtrip_core_ops_per_s=68090.29
+mlkem_bench_iterations=100000
+B8 keygen 5787.94
+mlkem_keygen_ops_per_s=172773.15
+B8 encaps 4527.23
+mlkem_encaps_ops_per_s=220885.84
+B8 decaps 4410.75
+mlkem_decaps_ops_per_s=226718.56
+B8 roundtrip 15007.11
+mlkem_roundtrip_ops_per_s=66635.09
+B8 keygen_core 5787.94
+mlkem_keygen_core_ops_per_s=172773.15
+B8 encaps_core 4527.23
+mlkem_encaps_core_ops_per_s=220885.84
+B8 decaps_core 4410.75
+mlkem_decaps_core_ops_per_s=226718.56
+B8 roundtrip_core 15007.11
+mlkem_roundtrip_core_ops_per_s=66635.09
+mlkem_bench_iterations=100000
+C8 keygen 5543.23
+mlkem_keygen_ops_per_s=180400.36
+C8 encaps 4407.69
+mlkem_encaps_ops_per_s=226876.37
+C8 decaps 4383.21
+mlkem_decaps_ops_per_s=228143.46
+C8 roundtrip 14628.05
+mlkem_roundtrip_ops_per_s=68361.83
+C8 keygen_core 5543.23
+mlkem_keygen_core_ops_per_s=180400.36
+C8 encaps_core 4407.69
+mlkem_encaps_core_ops_per_s=226876.37
+C8 decaps_core 4383.21
+mlkem_decaps_core_ops_per_s=228143.46
+C8 roundtrip_core 14628.05
+mlkem_roundtrip_core_ops_per_s=68361.83
+mlkem_bench_iterations=100000
+B9 keygen 5539.91
+mlkem_keygen_ops_per_s=180508.45
+B9 encaps 4409.42
+mlkem_encaps_ops_per_s=226787.08
+B9 decaps 4734.57
+mlkem_decaps_ops_per_s=211212.26
+B9 roundtrip 14988.51
+mlkem_roundtrip_ops_per_s=66717.76
+B9 keygen_core 5539.91
+mlkem_keygen_core_ops_per_s=180508.45
+B9 encaps_core 4409.42
+mlkem_encaps_core_ops_per_s=226787.08
+B9 decaps_core 4734.57
+mlkem_decaps_core_ops_per_s=211212.26
+B9 roundtrip_core 14988.51
+mlkem_roundtrip_core_ops_per_s=66717.76
+mlkem_bench_iterations=100000
+C9 keygen 5549.97
+mlkem_keygen_ops_per_s=180181.29
+C9 encaps 4417.05
+mlkem_encaps_ops_per_s=226395.46
+C9 decaps 4391.63
+mlkem_decaps_ops_per_s=227705.94
+C9 roundtrip 14666.33
+mlkem_roundtrip_ops_per_s=68183.38
+C9 keygen_core 5549.97
+mlkem_keygen_core_ops_per_s=180181.29
+C9 encaps_core 4417.05
+mlkem_encaps_core_ops_per_s=226395.46
+C9 decaps_core 4391.63
+mlkem_decaps_core_ops_per_s=227705.94
+C9 roundtrip_core 14666.33
+mlkem_roundtrip_core_ops_per_s=68183.38
+mlkem_bench_iterations=100000
+B10 keygen 5553.97
+mlkem_keygen_ops_per_s=180051.39
+B10 encaps 4411.53
+mlkem_encaps_ops_per_s=226678.78
+B10 decaps 4390.39
+mlkem_decaps_ops_per_s=227770.07
+B10 roundtrip 14642.46
+mlkem_roundtrip_ops_per_s=68294.55
+B10 keygen_core 5553.97
+mlkem_keygen_core_ops_per_s=180051.39
+B10 encaps_core 4411.53
+mlkem_encaps_core_ops_per_s=226678.78
+B10 decaps_core 4390.39
+mlkem_decaps_core_ops_per_s=227770.07
+B10 roundtrip_core 14642.46
+mlkem_roundtrip_core_ops_per_s=68294.55
+mlkem_bench_iterations=100000
+C10 keygen 5538.07
+mlkem_keygen_ops_per_s=180568.46
+C10 encaps 4409.03
+mlkem_encaps_ops_per_s=226807.09
+C10 decaps 4387.69
+mlkem_decaps_ops_per_s=227910.32
+C10 roundtrip 14633.39
+mlkem_roundtrip_ops_per_s=68336.88
+C10 keygen_core 5538.07
+mlkem_keygen_core_ops_per_s=180568.46
+C10 encaps_core 4409.03
+mlkem_encaps_core_ops_per_s=226807.09
+C10 decaps_core 4387.69
+mlkem_decaps_core_ops_per_s=227910.32
+C10 roundtrip_core 14633.39
+mlkem_roundtrip_core_ops_per_s=68336.88
+mlkem_bench_iterations=100000
+B11 keygen 5534.54
+mlkem_keygen_ops_per_s=180683.60
+B11 encaps 4412.32
+mlkem_encaps_ops_per_s=226637.89
+B11 decaps 4391.91
+mlkem_decaps_ops_per_s=227691.35
+B11 roundtrip 14716.69
+mlkem_roundtrip_ops_per_s=67950.05
+B11 keygen_core 5534.54
+mlkem_keygen_core_ops_per_s=180683.60
+B11 encaps_core 4412.32
+mlkem_encaps_core_ops_per_s=226637.89
+B11 decaps_core 4391.91
+mlkem_decaps_core_ops_per_s=227691.35
+B11 roundtrip_core 14716.69
+mlkem_roundtrip_core_ops_per_s=67950.05
+mlkem_bench_iterations=100000
+C11 keygen 5539.18
+mlkem_keygen_ops_per_s=180532.10
+C11 encaps 4414.87
+mlkem_encaps_ops_per_s=226507.03
+C11 decaps 4376.80
+mlkem_decaps_ops_per_s=228477.26
+C11 roundtrip 14653.10
+mlkem_roundtrip_ops_per_s=68244.93
+C11 keygen_core 5539.18
+mlkem_keygen_core_ops_per_s=180532.10
+C11 encaps_core 4414.87
+mlkem_encaps_core_ops_per_s=226507.03
+C11 decaps_core 4376.80
+mlkem_decaps_core_ops_per_s=228477.26
+C11 roundtrip_core 14653.10
+mlkem_roundtrip_core_ops_per_s=68244.93
+mlkem_bench_iterations=100000
+B12 keygen 5545.61
+mlkem_keygen_ops_per_s=180322.96
+B12 encaps 4417.80
+mlkem_encaps_ops_per_s=226357.06
+B12 decaps 4385.81
+mlkem_decaps_ops_per_s=228008.26
+B12 roundtrip 14647.17
+mlkem_roundtrip_ops_per_s=68272.58
+B12 keygen_core 5545.61
+mlkem_keygen_core_ops_per_s=180322.96
+B12 encaps_core 4417.80
+mlkem_encaps_core_ops_per_s=226357.06
+B12 decaps_core 4385.81
+mlkem_decaps_core_ops_per_s=228008.26
+B12 roundtrip_core 14647.17
+mlkem_roundtrip_core_ops_per_s=68272.58
+mlkem_bench_iterations=100000
+C12 keygen 5552.52
+mlkem_keygen_ops_per_s=180098.37
+C12 encaps 4431.73
+mlkem_encaps_ops_per_s=225645.36
+C12 decaps 4384.95
+mlkem_decaps_ops_per_s=228052.84
+C12 roundtrip 14685.36
+mlkem_roundtrip_ops_per_s=68095.04
+C12 keygen_core 5552.52
+mlkem_keygen_core_ops_per_s=180098.37
+C12 encaps_core 4431.73
+mlkem_encaps_core_ops_per_s=225645.36
+C12 decaps_core 4384.95
+mlkem_decaps_core_ops_per_s=228052.84
+C12 roundtrip_core 14685.36
+mlkem_roundtrip_core_ops_per_s=68095.04
+mlkem_bench_iterations=100000
+B13 keygen 5549.33
+mlkem_keygen_ops_per_s=180202.01
+B13 encaps 4444.74
+mlkem_encaps_ops_per_s=224985.27
+B13 decaps 4389.66
+mlkem_decaps_ops_per_s=227807.93
+B13 roundtrip 14677.88
+mlkem_roundtrip_ops_per_s=68129.73
+B13 keygen_core 5549.33
+mlkem_keygen_core_ops_per_s=180202.01
+B13 encaps_core 4444.74
+mlkem_encaps_core_ops_per_s=224985.27
+B13 decaps_core 4389.66
+mlkem_decaps_core_ops_per_s=227807.93
+B13 roundtrip_core 14677.88
+mlkem_roundtrip_core_ops_per_s=68129.73
+mlkem_bench_iterations=100000
+C13 keygen 5541.51
+mlkem_keygen_ops_per_s=180456.35
+C13 encaps 4428.74
+mlkem_encaps_ops_per_s=225797.62
+C13 decaps 4420.55
+mlkem_decaps_ops_per_s=226216.15
+C13 roundtrip 14692.46
+mlkem_roundtrip_ops_per_s=68062.10
+C13 keygen_core 5541.51
+mlkem_keygen_core_ops_per_s=180456.35
+C13 encaps_core 4428.74
+mlkem_encaps_core_ops_per_s=225797.62
+C13 decaps_core 4420.55
+mlkem_decaps_core_ops_per_s=226216.15
+C13 roundtrip_core 14692.46
+mlkem_roundtrip_core_ops_per_s=68062.10
+mlkem_bench_iterations=100000
+B14 keygen 5559.35
+mlkem_keygen_ops_per_s=179877.11
+B14 encaps 4485.91
+mlkem_encaps_ops_per_s=222920.27
+B14 decaps 4439.47
+mlkem_decaps_ops_per_s=225252.36
+B14 roundtrip 14737.35
+mlkem_roundtrip_ops_per_s=67854.82
+B14 keygen_core 5559.35
+mlkem_keygen_core_ops_per_s=179877.11
+B14 encaps_core 4485.91
+mlkem_encaps_core_ops_per_s=222920.27
+B14 decaps_core 4439.47
+mlkem_decaps_core_ops_per_s=225252.36
+B14 roundtrip_core 14737.35
+mlkem_roundtrip_core_ops_per_s=67854.82
+mlkem_bench_iterations=100000
+C14 keygen 5538.76
+mlkem_keygen_ops_per_s=180545.86
+C14 encaps 4415.82
+mlkem_encaps_ops_per_s=226458.54
+C14 decaps 4409.75
+mlkem_decaps_ops_per_s=226770.30
+C14 roundtrip 14645.06
+mlkem_roundtrip_ops_per_s=68282.40
+C14 keygen_core 5538.76
+mlkem_keygen_core_ops_per_s=180545.86
+C14 encaps_core 4415.82
+mlkem_encaps_core_ops_per_s=226458.54
+C14 decaps_core 4409.75
+mlkem_decaps_core_ops_per_s=226770.30
+C14 roundtrip_core 14645.06
+mlkem_roundtrip_core_ops_per_s=68282.40
+mlkem_bench_iterations=100000
+B15 keygen 5742.08
+mlkem_keygen_ops_per_s=174153.05
+B15 encaps 4512.51
+mlkem_encaps_ops_per_s=221606.21
+B15 decaps 4387.38
+mlkem_decaps_ops_per_s=227926.58
+B15 roundtrip 14917.45
+mlkem_roundtrip_ops_per_s=67035.60
+B15 keygen_core 5742.08
+mlkem_keygen_core_ops_per_s=174153.05
+B15 encaps_core 4512.51
+mlkem_encaps_core_ops_per_s=221606.21
+B15 decaps_core 4387.38
+mlkem_decaps_core_ops_per_s=227926.58
+B15 roundtrip_core 14917.45
+mlkem_roundtrip_core_ops_per_s=67035.60
+mlkem_bench_iterations=100000
+C15 keygen 5538.05
+mlkem_keygen_ops_per_s=180568.92
+C15 encaps 4419.17
+mlkem_encaps_ops_per_s=226286.78
+C15 decaps 4397.32
+mlkem_decaps_ops_per_s=227411.47
+C15 roundtrip 14728.72
+mlkem_roundtrip_ops_per_s=67894.55
+C15 keygen_core 5538.05
+mlkem_keygen_core_ops_per_s=180568.92
+C15 encaps_core 4419.17
+mlkem_encaps_core_ops_per_s=226286.78
+C15 decaps_core 4397.32
+mlkem_decaps_core_ops_per_s=227411.47
+C15 roundtrip_core 14728.72
+mlkem_roundtrip_core_ops_per_s=67894.55

@@ -1,0 +1,13 @@
+18dfe3bc2aafd0231645fd79a029e68400133467bc8320a4cec6e83fb0695d2d  benchmarks/2026-08-12-clang-avx2-helper-layout/sanitizer.txt
+371547d085e88e9fb77033abc655d23a4a75f8f7691443ff8cde25dd5aec669a  benchmarks/2026-08-12-clang-avx2-helper-layout/product-ab-summary.txt
+3c0b303ac8ae529b1508138df003cd55ef90d64cf0d9e6b2402ba6345b2779d1  benchmarks/2026-08-12-clang-avx2-helper-layout/size-candidate.txt
+3e1dc007d0a6ae9307c0960550588325f26136f590576da1ddf9bdc238456ba6  benchmarks/2026-08-12-clang-avx2-helper-layout/profile-identity.txt
+503bd087275c10b7cad725ec619e0acf5d7519673dd656c280e8b71fee1438b1  benchmarks/2026-08-12-clang-avx2-helper-layout/stack-candidate.txt
+5419a74172bf35af0f86f0f1687c5fd5c4eda46dcd4e39edba2ac137e6d63cda  benchmarks/2026-08-12-clang-avx2-helper-layout/source-audit.txt
+9a3ea2a34cce7601d295b14ebe12a20e27cc5d9feba4b4f531ded764562dc685  benchmarks/2026-08-12-clang-avx2-helper-layout/avx512-audit.txt
+9eb201bce8f975521065a6c5367cca03f5adb338a748c454d92ae34715541ad7  benchmarks/2026-08-12-clang-avx2-helper-layout/environment.txt
+aa2bd68e91be0e851e9a958a977a2ef83ea3a1f07fe8e77eb4fa7a46f35c5be8  benchmarks/2026-08-12-clang-avx2-helper-layout/stack-baseline.txt
+b947850b323f8ee22394f82d951d0d30c3468d218493998352a2efd1964ecb7f  benchmarks/2026-08-12-clang-avx2-helper-layout/stage-30000.txt
+bdef98005279c8705ec727aa462140f271d8963c78af33a26e004a7cc9156ca8  benchmarks/2026-08-12-clang-avx2-helper-layout/size-baseline.txt
+d152c7aa7e71ccd51389dc8955ba217889a073168b8456c770d6fa1c416655b2  benchmarks/2026-08-12-clang-avx2-helper-layout/stage-summary.txt
+d40b0fffff760f107adc12fd853b7bc6d21d2ff2d637aedd953408c014caf6ac  benchmarks/2026-08-12-clang-avx2-helper-layout/product-ab-15x100k.txt

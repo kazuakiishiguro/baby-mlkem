@@ -496,15 +496,15 @@ for Botan because its reachable exception handlers require it.
 
 The current 2026-08-12 no-cache baselines use the normal compiler-specific
 speed flags. The Clang native row is measured at `b90b5fb`; the Clang AVX2-only
-row remains measured at `8fab80d`, and the five non-target rows remain
-byte-identical to `c2ae4e2`:
+row is measured at `aeb1c35`, and the five non-target rows remain byte-identical
+to the parent `a38271f`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
 | native AVX512 | Clang 18.1.3 | 49,525 | 16,262 | 65,787 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 55,640 | 3,508 | 59,148 | 0 | 33,728 | 33,728 |
-| AVX2-only | Clang 18.1.3 | 41,546 | 5,955 | 47,501 | 0 | 26,593 | 26,593 |
-| AVX2-only | GCC 13.3.0 LTO | 49,687 | 3,756 | 53,443 | 8 | 34,912 | 34,920 |
+| AVX2-only | Clang 18.1.3 | 39,762 | 5,270 | 45,032 | 0 | 26,593 | 26,593 |
+| AVX2-only | GCC 13.3.0 LTO | 49,271 | 3,748 | 53,019 | 8 | 34,912 | 34,920 |
 | scalar | Clang 18.1.3 | 60,082 | 2,016 | 62,098 | 0 | 18,944 | 18,944 |
 | scalar | GCC 13.3.0 LTO | 21,238 | 1,756 | 22,994 | 0 | 19,488 | 19,488 |
 
@@ -523,6 +523,14 @@ size by 842 bytes to 68,769 bytes. Fifteen alternating product pairs keep all
 four operation geometric means above the `0.995x` regression floor, with no
 speed gain credited. GCC, AVX2-only, and scalar product artifacts are
 byte-identical.
+
+The [Clang AVX2 helper-layout report](benchmarks/2026-08-12-clang-avx2-helper-layout/README.md)
+records the current AVX2-only size step. Clang-only `noinline,minsize`
+boundaries around four fixed helpers reduce code/read-only/primary size by
+713/79/792 bytes to 39,762/5,270/45,032 bytes. A 15-pair product screen shows
+no regression, but no speed gain is credited. The candidate is 17 bytes smaller
+than the pinned OpenSSL AVX2 comparator, so the pinned AVX2 size matrix now
+passes 10/10; native size and same-revision full comparator reruns remain open.
 
 The [Clang native final-NTT head report](benchmarks/2026-08-12-clang-native-final-ntt-head-minsize/README.md)
 records the next native size-only step. Applying `minsize` to the final
@@ -1055,6 +1063,12 @@ to 18,425 bytes and the OpenSSL AVX2-only deficit to 2,452 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
+The current candidate `aeb1c35` closes the pinned AVX2 OpenSSL comparison:
+45,032 bytes versus 45,049 bytes. Clang native remains 65,787 bytes and still
+fails four pinned native comparators. This updates the local pinned evidence,
+not the authoritative comparator artifacts or the final same-revision speed
+gate.
+
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
 ```bash
@@ -1277,12 +1291,12 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `8fab80d` passes GCC/Clang native, AVX2-only, and scalar KAT, product, and complete stage validation; Clang AVX2 ASan+UBSan passes, all 16 paths reproduce the 381,228-byte corpus with SHA-256 `e4d8f908f9a3c59171deeed712925760b194d692b0c571861f204eabef976b67`, the intended target text section changes while the other 22 are byte-identical, read-only size is unchanged with one compiler-pool reorder, and all five non-target products are byte-identical to the previously sanitized baseline. |
+| Correctness | current candidate pass | `aeb1c35` passes GCC/Clang native, AVX2-only, and scalar KATs, product tests, and the complete Clang AVX2 stage validation; Clang AVX2 ASan+UBSan and the AVX512 opcode audit pass, and all five non-target product artifacts are byte-identical to `a38271f`. The detailed candidate evidence is in the [helper-layout report](benchmarks/2026-08-12-clang-avx2-helper-layout/README.md). |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | The complete Clang matrix at `9952e84` passes 5/10 gates in each profile. Using its pinned comparators, the current native artifact is still 14,834 bytes larger than mlkem-native native and the AVX2-only artifact remains 2,452 bytes larger than OpenSSL AVX2-only. |
-| Maximum stack | current measurements reported | At `b90b5fb` native and `8fab80d` AVX2-only, the current maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the failed primary-size gate. |
+| Production size | fail | At `aeb1c35`, the Clang AVX2-only artifact is 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native remains 65,787 bytes and fails four pinned native comparators; a fresh authoritative matrix is still required. |
+| Maximum stack | current measurements reported | At `b90b5fb` native and `aeb1c35` AVX2-only, the measured maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
@@ -1341,6 +1355,7 @@ Near-term target selection:
 | Clang AVX2 rolled K=3 inverse-add loop | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | One Clang-only unroll-disable pragma keeps the three row-local inverse-add calls in their existing order but emits one loop body. `.text.kpke_encrypt_finish_avx2` falls 645 bytes and the other 22 text sections are byte-identical, reaching 47,501 primary bytes. Read-only size is unchanged; 13 of 14 sections are byte-identical and `.rodata` only reorders the same eight 16-bit values. The combined 48-pair minimum is `0.997218785x`; Batch 3 independently fails at keygen `0.989333708x`, all samples remain disclosed, and no speed gain is credited. No cache, external cryptographic object, runtime library, table, API, algorithm, or wire-format dependency is added. |
 | Clang AVX2 canonical K=3 accumulation inputs | Accepted as an AVX2-only size and focused-speed optimization; native AVX512 and scalar paths unchanged | All production K=3 accumulation inputs are canonical `[0,Q)`, so the per-block centerization of three `rhat` vectors was redundant: `6*(Q-1)^2` remains below signed `INT32_MAX`. Removing its three compare/and/sub sequences reduces primary size by 41 bytes to 47,460 bytes, while the 9-pair medians improve direct K=3 accumulation by `1.009658x`, combined accumulation by `1.012004x`, cached encryption by `1.004618x`, and uncached encryption by `1.003196x`. The product API median is neutral-to-positive: encaps `1.002390x`, decaps `1.000483x`, and roundtrip `1.000421x`; keygen is unchanged. No cache, vendored backend, external object, runtime library, table, API, algorithm, or wire-format dependency is added. See the committed [A/B report](benchmarks/2026-08-10-clang-avx2-acc4-canonical-input/README.md). |
 | Clang AVX2 shared reduction constants | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | `Q`, `Q-1`, and the signed 16-bit Barrett reciprocal `20159` are referenced from one repository-local hidden YMM constant section instead of repeated compiler-local pools. Clang AVX2 code/read-only/primary size falls by 116/572/688 bytes to 41,423/5,349/46,772 bytes; writable storage is unchanged. A CPU-0 15-pair 100k product screen after three warmups yields keygen/encaps/decaps/roundtrip paired geometric means of `1.0102x`/`1.0047x`/`1.0091x`/`1.0088x`; no formal speed gain is credited from this single batch. GCC/Clang native and scalar products remain byte-identical. No cache, vendored backend, external cryptographic object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/README.md). |
+| Clang AVX2 helper layout | Accepted as an AVX2-only size optimization; native, GCC, and scalar products byte-identical | Four fixed helpers receive Clang AVX2-only `noinline,minsize` boundaries so LLVM does not clone their fixed parser, decoder, hash, and matrix bodies into multiple callers. Code/read-only/primary size falls by 713/79/792 bytes to 39,762/5,270/45,032 bytes; writable storage is unchanged. A 15-pair product screen keeps keygen/encaps/decaps/roundtrip at `1.0050x`/`1.0044x`/`1.0092x`/`1.0050x` paired geometric means, with no speed gain credited. The candidate is 17 bytes smaller than the pinned OpenSSL AVX2 comparator, closing the pinned AVX2 size gate. No cache, vendored backend, external object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-12-clang-avx2-helper-layout/README.md). |
 | Clang AVX2 default loop alignment | Accepted as an AVX2-only build/layout size optimization; no speed gain credited | When the Makefile's default Clang flags are active and `ARCH_CFLAGS` contains `-mavx2 -mno-avx512f`, the default `-falign-loops=64` is changed to `-falign-loops=32`. Primary size falls from 46,772 to 46,100 bytes; the relocatable product falls from 72,408 to 71,480 bytes; code falls by 672 bytes while read-only and writable storage are unchanged. Two alternating 16-pair product batches give combined keygen/encaps/decaps/roundtrip geometric means of `1.004468x`/`1.000736x`/`0.995528x`/`1.000771x`; Batch 1 decaps is `0.992588x`, so the result is treated as size-only rather than a speed claim. Clang scalar/native and GCC AVX2 products remain byte-identical, and all KATs pass. Explicit `EXTRA_CFLAGS` remains honored. No cache, vendored backend, external object, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-11-clang-avx2-loop-align32/README.md). |
 | AVX2 bounded inverse-add correction | Accepted for Clang/GCC AVX2 focused speed and size; AVX512/scalar code paths unchanged | Canonical inverse-NTT scale output plus canonical ETA2 noise/message addends fit `[0,2Q)`, so `ntt_inv_add_mont_final_avx2()` uses one masked Q subtraction instead of a full Barrett canonicalizer. Clang AVX2 primary/code/artifact size falls 1,031/1,031/880 bytes to 45,069/39,720/70,600; GCC AVX2 falls 79/79/96 bytes. Cache-disabled product medians improve Clang encaps/decaps/roundtrip by `1.005370x`/`1.007600x`/`1.007260x` over 15 pairs and GCC by `1.011210x`/`1.012680x`/`1.008700x` over 9 pairs. Keygen is neutral. No cache, vendored backend, external object, runtime library, table, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-11-clang-avx2-bounded-inv-add/README.md). |
 | GCC AVX2 inverse l4-l6 block fusion | Accepted for GCC AVX2-only; Clang AVX2, AVX512, and scalar paths unchanged | Each 128-coefficient inverse block keeps eight YMM vectors live through `l4`..`l6`, removing two intermediate store/load boundaries without changing the Montgomery/Barrett arithmetic or final representation. GCC isolated inverse NTT improves `1.047106x` gmean and `1.045160x` paired median with 7/7 wins; cache-disabled product medians improve keygen/encaps/decaps/roundtrip by `1.001360x`/`1.009340x`/`1.009200x`/`1.006680x`. GCC product text grows 160 bytes and the relocatable artifact grows 208 bytes; BSS is unchanged. Clang product text/object remains byte-identical because its smaller schedule is retained. No cache, vendored backend, external object, runtime library, table, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-12-gcc-avx2-inverse-tail-fusion/README.md). |

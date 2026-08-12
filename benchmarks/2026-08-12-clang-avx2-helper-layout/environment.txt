@@ -1,0 +1,18 @@
+report_date=2026-08-12
+baseline_revision=a38271f
+candidate_revision=aeb1c35
+implementation_commit=fdd2c6a
+compiler=Ubuntu clang version 18.1.3 (1ubuntu1)
+gcc_version=gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+linker_version=GNU ld (GNU Binutils for Ubuntu) 2.42
+kernel=Linux 6.8.0-124-generic #124-Ubuntu SMP PREEMPT_DYNAMIC Tue May 26 13:00:45 UTC 2026
+cpu_model=AMD Ryzen Threadripper 7980X 64-Cores
+cpu_pin=0 for product A/B
+warmup_runs=3
+measured_pairs=15
+iterations_per_process=100000
+run_order=alternating_baseline_candidate
+backend=core
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+opt_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden
+extra_cflags=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
