@@ -37,6 +37,15 @@
 #define MLKEM_ALWAYS_INLINE inline
 #endif
 
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+/* Keep the AVX2-only parser and fixed helpers compact without touching other
+ * compiler or ISA profiles. */
+#define MLKEM_CLANG_AVX2_NOINLINE_MINSIZE \
+  MLKEM_NOINLINE __attribute__((minsize))
+#else
+#define MLKEM_CLANG_AVX2_NOINLINE_MINSIZE
+#endif
+
 #if defined(USE_PQCLEAN_AVX2_BACKEND) || defined(USE_KYBER_UPSTREAM_AVX2_BACKEND)
 /* PQClean FIPS202 symbols are renamed via Makefile defines. */
 void pq_shake128(uint8_t *output, size_t outlen, const uint8_t *input,
@@ -6358,7 +6367,10 @@ static inline __m256i sample_ntt_cmpgt_epi16_avx2(__m256i a, __m256i b) {
 #endif
 }
 
-#if defined(__clang__) && defined(__AVX512VBMI2__) && defined(__AVX512VL__)
+#if defined(__clang__) && defined(__AVX2__) && !defined(__AVX512F__)
+/* The AVX2 parser is called from several fixed matrix helpers. */
+#define MLKEM_SAMPLE_NTT_PARSE_NOINLINE MLKEM_CLANG_AVX2_NOINLINE_MINSIZE
+#elif defined(__clang__) && defined(__AVX512VBMI2__) && defined(__AVX512VL__)
 /* Clang otherwise clones the shorter VBMI parser into every sampler. */
 #define MLKEM_SAMPLE_NTT_PARSE_NOINLINE MLKEM_NOINLINE
 #else
@@ -7518,10 +7530,9 @@ static inline void hash_matrix_x3_store_block(
   }
 }
 
-static void hash_matrix_x3_parse_group(const __m256i st[25],
-                                       uint64_t stream[3][63],
-                                       poly256 out0, poly256 out1,
-                                       poly256 out2) {
+static MLKEM_CLANG_AVX2_NOINLINE_MINSIZE void
+hash_matrix_x3_parse_group(const __m256i st[25], uint64_t stream[3][63],
+                           poly256 out0, poly256 out1, poly256 out2) {
   int16_t *outs[3] = {out0, out1, out2};
 
   for (int lane = 0; lane < 3; lane++) {
@@ -8358,7 +8369,7 @@ static void decompress_decode_poly_d10_ct_avx2(const uint8_t *in,
 #if defined(__clang__) && !defined(__AVX512F__)
 /* Name the enclosing K-polynomial object so one byte-wise loop can replace
  * Clang's three expanded decoder copies without crossing a subarray pointer. */
-static MLKEM_NOINLINE void
+static MLKEM_CLANG_AVX2_NOINLINE_MINSIZE void
 decompress_decode_poly_d10_ct_x3_avx2(const uint8_t *in,
                                       poly256 (*out)[K]) {
   const __m256i shuf = _mm256_setr_epi8(
@@ -10370,7 +10381,7 @@ static MLKEM_ALWAYS_INLINE void sha3_256_1184_absorb_tail(
       _mm256_setr_epi64x((long long)load64_le(in + 48), 0x06, 0, 0));
 }
 
-static MLKEM_NOINLINE void
+static MLKEM_CLANG_AVX2_NOINLINE_MINSIZE void
 sha3_256_1184_avx2(const uint8_t in[1184], uint8_t out[32]) {
   mlkem_keccakf1600_avx2_state state;
   sha3_256_1184_state_zero(&state);
