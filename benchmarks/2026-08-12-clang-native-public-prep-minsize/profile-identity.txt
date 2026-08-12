@@ -1,0 +1,6 @@
+Comparison of parent 58718f5 and candidate f6ff06c product artifacts.
+
+Profile        Baseline SHA-256                                                   Candidate SHA-256                                                  Result
+Clang AVX2     5b52cbb203b7513cccf5532a7532c1bc73164aa51a92118e58c6f359e906dd68  5b52cbb203b7513cccf5532a7532c1bc73164aa51a92118e58c6f359e906dd68  identical
+GCC native     4a2b129b43d5c2dd65d3ba5fc25c169539c4118908b934bc59a717f273d2c664  4a2b129b43d5c2dd65d3ba5fc25c169539c4118908b934bc59a717f273d2c664  identical
+Clang scalar   b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2  b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2  identical
