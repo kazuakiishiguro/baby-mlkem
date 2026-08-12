@@ -9064,7 +9064,14 @@ static inline void kpke_encrypt_prepared_public_impl(
     const uint8_t *m, size_t mlen, const uint8_t *r, size_t rlen,
     uint8_t *out_c, int eta2_i8_prepared) {
 #else
-static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+#define MLKEM_PREPARED_ENCRYPT_MINSIZE __attribute__((minsize))
+#else
+#define MLKEM_PREPARED_ENCRYPT_MINSIZE
+#endif
+static inline MLKEM_PREPARED_ENCRYPT_MINSIZE void
+kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
                                          const uint8_t *r, size_t rlen,
                                          uint8_t *out_c) {
 #endif
@@ -9238,6 +9245,8 @@ static inline void kpke_encrypt_prepared_public(const uint8_t *m, size_t mlen,
 #endif
 #endif
 }
+
+#undef MLKEM_PREPARED_ENCRYPT_MINSIZE
 
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__GNUC__) && !defined(__clang__)
