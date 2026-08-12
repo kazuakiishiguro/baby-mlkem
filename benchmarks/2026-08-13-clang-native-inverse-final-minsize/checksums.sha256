@@ -1,0 +1,13 @@
+2b6f17243c577e03c2972dab0611ee006c715f4cb79da641b45158cd77b120cd  benchmarks/2026-08-13-clang-native-inverse-final-minsize/product-ab-summary.txt
+2d0a6f11573908be1b2195e852cd2fbb7c2e17f1c065097691a69d77d1806021  benchmarks/2026-08-13-clang-native-inverse-final-minsize/instruction-audit.txt
+4c83c625d73f5580bdeb04a5fd4e3e46c7ac2ee2b8fe52d02d0d06e6e3620e19  benchmarks/2026-08-13-clang-native-inverse-final-minsize/profile-identity.txt
+4ff2697a8281f8ef03478afde16994a91cef1cb8d0b7929d98db29096fd16f22  benchmarks/2026-08-13-clang-native-inverse-final-minsize/source-audit.txt
+54006cda2f9c8487fc7a82d2ffdfc89a62dc4ad6186b78d9c68d0307006fde05  benchmarks/2026-08-13-clang-native-inverse-final-minsize/stage-summary.txt
+64b8c59f88df70775338379410896d0d9ec1607f0871d11201f19e53004fe23f  benchmarks/2026-08-13-clang-native-inverse-final-minsize/stack-baseline.txt
+7238870ab7bfdd08f8fde3b5a1ae90c3193ad2971b32132439300174ac9c666a  benchmarks/2026-08-13-clang-native-inverse-final-minsize/sanitizer.txt
+7bf3b20f8cdbecdd0d0451a39e86a3052674b32f832c7c170895b8a890c2b63a  benchmarks/2026-08-13-clang-native-inverse-final-minsize/product-ab-15x100k.txt
+9b6697eb8cea506fc31cbd65047b7ffa16f8b31af26db590984a24de3b48b7f8  benchmarks/2026-08-13-clang-native-inverse-final-minsize/size-baseline.txt
+aa8ba9f67fa2560a8257b412a94bfbac91f58674c1b29c392749ec97ef0eabc5  benchmarks/2026-08-13-clang-native-inverse-final-minsize/size-candidate.txt
+b6b7f9cf2cba52a2962ef9b0b81a6b23b1c5addbccd2491167d0a8109f672c09  benchmarks/2026-08-13-clang-native-inverse-final-minsize/stack-candidate.txt
+be3b852ca5e110a8237ff248624444276e9dc1193ab4d600ec217e89db69bba0  benchmarks/2026-08-13-clang-native-inverse-final-minsize/stage-30000.txt
+cacf41ef96d183020251c5a190fe92ce8250a45696cacf1a841a5e6b779d8ffa  benchmarks/2026-08-13-clang-native-inverse-final-minsize/environment.txt

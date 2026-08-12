@@ -1,0 +1,4 @@
+profile=Clang native
+command=ASAN_OPTIONS=detect_leaks=0 make -B -j2 CC=clang ARCH_CFLAGS='-march=native' OPT_CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' test
+result=PASS
+note=LeakSanitizer is disabled because the execution environment uses ptrace; no ASan or UBSan diagnostic was emitted.

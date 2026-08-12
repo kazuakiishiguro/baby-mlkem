@@ -494,14 +494,14 @@ recorded in every report; the clean native diagnostic at `a4d6fec` reports 0 B
 for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
-The current 2026-08-12 no-cache baselines use the normal compiler-specific
-speed flags. The Clang native row is measured at `b90b5fb`; the Clang AVX2-only
+The current 2026-08-13 no-cache baselines use the normal compiler-specific
+speed flags. The Clang native row is measured at `a04304b`; the Clang AVX2-only
 row is measured at `aeb1c35`, and the five non-target rows remain byte-identical
 to the parent `a38271f`:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 49,525 | 16,262 | 65,787 | 0 | 18,001 | 18,001 |
+| native AVX512 | Clang 18.1.3 | 47,739 | 15,814 | 63,553 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 55,640 | 3,508 | 59,148 | 0 | 33,728 | 33,728 |
 | AVX2-only | Clang 18.1.3 | 39,762 | 5,270 | 45,032 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 49,271 | 3,748 | 53,019 | 8 | 34,912 | 34,920 |
@@ -531,6 +531,14 @@ boundaries around four fixed helpers reduce code/read-only/primary size by
 no regression, but no speed gain is credited. The candidate is 17 bytes smaller
 than the pinned OpenSSL AVX2 comparator, so the pinned AVX2 size matrix now
 passes 10/10; native size and same-revision full comparator reruns remain open.
+
+The [Clang native inverse-final report](benchmarks/2026-08-13-clang-native-inverse-final-minsize/README.md)
+records the current native size step. A Clang native-only `noinline,minsize`
+boundary around the four-output ETA2 inverse-final helper reduces
+code/read-only/primary size by 1,786/448/2,234 bytes to 47,739/15,814/63,553
+bytes. The 15-pair product screen remains above the size-gate gmean floor, but
+no speed gain is credited. GCC native, both AVX2 profiles, and both scalar
+profiles remain byte-identical.
 
 The [Clang native final-NTT head report](benchmarks/2026-08-12-clang-native-final-ntt-head-minsize/README.md)
 records the next native size-only step. Applying `minsize` to the final
@@ -1063,11 +1071,12 @@ to 18,425 bytes and the OpenSSL AVX2-only deficit to 2,452 bytes. A complete
 same-revision ten-comparator size matrix has not yet been rerun. Stack is
 reported separately from primary size.
 
-The current candidate `aeb1c35` closes the pinned AVX2 OpenSSL comparison:
-45,032 bytes versus 45,049 bytes. Clang native remains 65,787 bytes and still
-fails four pinned native comparators. This updates the local pinned evidence,
-not the authoritative comparator artifacts or the final same-revision speed
-gate.
+The current candidate `a04304b` closes the pinned AVX2 OpenSSL comparison:
+45,032 bytes versus 45,049 bytes. Clang native is now 63,553 bytes and still
+fails four pinned native comparators: Kyber by 2,521 bytes, Kyber fair by
+1,478 bytes, PQClean by 2,603 bytes, and mlkem-native by 12,367 bytes. This
+updates the local pinned evidence, not the authoritative comparator artifacts
+or the final same-revision speed gate.
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
@@ -1291,13 +1300,13 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `aeb1c35` passes GCC/Clang native, AVX2-only, and scalar KATs, product tests, and the complete Clang AVX2 stage validation; Clang AVX2 ASan+UBSan and the AVX512 opcode audit pass, and all five non-target product artifacts are byte-identical to `a38271f`. The detailed candidate evidence is in the [helper-layout report](benchmarks/2026-08-12-clang-avx2-helper-layout/README.md). |
+| Correctness | current candidate pass | `a04304b` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; the complete Clang native stage validation, Clang native ASan+UBSan, NTT-root check, and all five non-target product identity checks pass. The detailed candidate evidence is in the [inverse-final report](benchmarks/2026-08-13-clang-native-inverse-final-minsize/README.md). |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | At `aeb1c35`, the Clang AVX2-only artifact is 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native remains 65,787 bytes and fails four pinned native comparators; a fresh authoritative matrix is still required. |
-| Maximum stack | current measurements reported | At `b90b5fb` native and `aeb1c35` AVX2-only, the measured maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
-| Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but they are not one final code revision and primary size still fails both profiles. |
+| Production size | fail | At `a04304b`, Clang AVX2-only remains 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native is 63,553 bytes and fails four pinned native comparators; a fresh authoritative matrix is still required. |
+| Maximum stack | current measurements reported | At `a04304b` native and `aeb1c35` AVX2-only, the measured maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
+| Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but same-revision authoritative speed/size reruns remain open and native primary size still fails four pinned comparators. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
@@ -1498,6 +1507,7 @@ Near-term target selection:
 | Clang native shared NTT `minsize` outline | Accepted as a native size-only optimization; GCC and narrower ISA products unchanged | The shared three-polynomial lazy forward-NTT helper now has a Clang-only `noinline,minsize` boundary. Code/read-only/primary size shrink by 1,397/128/1,525 bytes to 49,841/16,454/66,295 bytes; writable storage and maximum stack remain 18,001 and 8,056 bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `0.9989x`/`1.0026x`/`0.9960x`/`0.9972x`, so no speed gain is credited. The x7 sparse Keccak `minsize` sibling saved only 17 bytes and was removed. No cache, external object, runtime library, API, algorithm, table, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-12-clang-native-shared-ntt-minsize/README.md). |
 | Clang native prepared-encryption `minsize` outline | Accepted as a native size-only optimization; GCC and narrower ISA products unchanged | The Clang native prepared-public encryption body now has a `minsize` boundary. Code/read-only/primary size shrink by 19/256/275 bytes to 49,822/16,198/66,020 bytes; writable storage and maximum stack remain 18,001 and 8,056 bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `1.0009x`/`0.9984x`/`0.9981x`/`0.9992x`, so no speed gain is credited. The symbol reduction is only 19 bytes; the rest comes from caller layout and constant-pool selection. No cache, external object, runtime library, API, algorithm, table, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-12-clang-native-prepared-encrypt-minsize/README.md). |
 | Clang native six-way ETA2 CBD widening | Accepted as a native size-only optimization; speed gate not credited | Clang native AVX512/BW/DQ now widens the six signed ETA2 CBD outputs directly into int16 vectors instead of materializing stack intermediates. Code/read-only/primary size shrink by 297/64/233 bytes to 49,525/16,262/65,787 bytes; writable storage and maximum stack remain 18,001 and 8,056 bytes. Fifteen CPU-0 product pairs keep all paired medians above `0.995x`, but decapsulation's outlier-sensitive gmean is `0.992701x`, so no speed or full no-regression claim is made. GCC, AVX2-only, and scalar products remain byte-identical. No cache, external object, runtime library, API, algorithm, table, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-12-clang-native-cbd6/README.md). |
+| Clang native inverse-final ETA2 helper `minsize` | Accepted as a native size-only optimization; GCC and narrower ISA products byte-identical | The four-output ETA2 inverse-final helper now has a Clang native-only `noinline,minsize` boundary. Code/read-only/primary size shrink by 1,786/448/2,234 bytes to 47,739/15,814/63,553 bytes; writable storage and maximum stack remain 18,001 and 8,056 bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `1.007937x`/`1.003895x`/`1.002663x`/`1.005626x`; no speed gain is credited from this size screen. GCC native, both AVX2 profiles, and both scalar profiles remain byte-identical. No cache, external object, runtime library, API, algorithm, table, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-13-clang-native-inverse-final-minsize/README.md). |
 | d10/d12 packing, d12 decode, fixed nonce setup, tail rotation | Closed for now | These rows are small or have explicit rejection records. Reopening them needs new evidence, not another local schedule variant. |
 
 The full 16-bit inverse NTT removes inverse arithmetic as a leading target: the

@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-native-inspect.SnScVQ/baby_mlkem768_product.o
+artifact_sha256=818a53b95a4fd446cb9d7628abcf99e8741f8923c97dcea5bc92bc21954befb7
+artifact_file_bytes=93360
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49525
+readonly_data_bytes=16262
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=65787
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
