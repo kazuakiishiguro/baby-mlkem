@@ -4956,7 +4956,7 @@ ntt_full_mont_lazy_raw_avx512(poly256 f) {
 }
 
 #if defined(__clang__)
-static MLKEM_NOINLINE void
+static MLKEM_NOINLINE __attribute__((minsize)) void
 ntt3_full_mont_lazy_raw_shared_clang_avx512(poly256 f[K]) {
   /* Share one tail body while amortizing the boundary over three transforms. */
 #pragma clang loop unroll(disable)
