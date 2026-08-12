@@ -1,0 +1,4 @@
+profile	parent_commit	parent_sha256	candidate_commit	candidate_sha256	arch_flags
+clang-avx2	91aa1d7	5b52cbb203b7513cccf5532a7532c1bc73164aa51a92118e58c6f359e906dd68	b90b5fb	5b52cbb203b7513cccf5532a7532c1bc73164aa51a92118e58c6f359e906dd68	-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang-scalar	91aa1d7	b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2	b90b5fb	b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2	-mno-avx -mno-avx2 -mno-sse4.1 -mno-bmi2 -mno-popcnt -mno-fma -fomit-frame-pointer
+GCC-native	91aa1d7	4a2b129b43d5c2dd65d3ba5fc25c169539c4118908b934bc59a717f273d2c664	b90b5fb	4a2b129b43d5c2dd65d3ba5fc25c169539c4118908b934bc59a717f273d2c664	-march=native

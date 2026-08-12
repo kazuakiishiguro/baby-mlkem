@@ -1,0 +1,23 @@
+make: Entering directory '/tmp/baby-mlkem-cbd6-candidate.BBdiMq'
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c baby_mlkem_api.c -o baby_mlkem_api.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -ffunction-sections -fdata-sections -DBABY_MLKEM_DISABLE_INTERNAL_CACHES -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -Wno-unused-function
+clang -r -nostdlib baby_mlkem_api.product.o sha3_256_1184_avx512vl.product.o keccakf8_matrix_avx512.product.o -o baby_mlkem768_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native  -Wl,--undefined=baby_mlkem768_keypair_derand -Wl,--undefined=baby_mlkem768_encaps_derand -Wl,--undefined=baby_mlkem768_decaps -Wl,--gc-sections
+compiler=clang
+arch_cflags=-march=native
+./scripts/measure_product_size.sh baby_mlkem768_product.o
+artifact=/tmp/baby-mlkem-cbd6-candidate.BBdiMq/baby_mlkem768_product.o
+artifact_sha256=818a53b95a4fd446cb9d7628abcf99e8741f8923c97dcea5bc92bc21954befb7
+artifact_file_bytes=93360
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49525
+readonly_data_bytes=16262
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=65787
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
+make: Leaving directory '/tmp/baby-mlkem-cbd6-candidate.BBdiMq'
