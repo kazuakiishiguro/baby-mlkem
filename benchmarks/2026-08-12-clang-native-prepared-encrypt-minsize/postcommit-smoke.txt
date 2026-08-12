@@ -1,0 +1,8 @@
+make -j2 CC=clang ARCH_CFLAGS=-march=native product-size test-product test check-ntt-roots
+
+Result: exit 0.
+- Clang native product primary: 66020 bytes.
+- Product API roundtrip and implicit-rejection check: pass.
+- Normal KAT/test: pass.
+- NTT root regeneration check: pass.
+- Stack probe: candidate max_stack_bytes=8056; correctness_smoke=pass.

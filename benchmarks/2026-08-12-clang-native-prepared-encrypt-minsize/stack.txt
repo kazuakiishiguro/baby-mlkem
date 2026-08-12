@@ -1,0 +1,37 @@
+## baseline
+artifact=/tmp/baby-mlkem-next-ntt3-size.EyQ66e/baby_mlkem768_product.o
+artifact_sha256=55203f380ec5e708f50da9ede20602779723dd29a983958e9fe340b3f8d9a523
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=6648
+encaps_stack_bytes=6712
+decaps_valid_stack_bytes=8056
+decaps_invalid_stack_bytes=8056
+max_stack_bytes=8056
+correctness_smoke=pass
+
+## candidate
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=a522bb54b6d9556297fefddc93e5af49f416339df7c13554d65e886b468b58be
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=6648
+encaps_stack_bytes=6712
+decaps_valid_stack_bytes=8056
+decaps_invalid_stack_bytes=8056
+max_stack_bytes=8056
+correctness_smoke=pass

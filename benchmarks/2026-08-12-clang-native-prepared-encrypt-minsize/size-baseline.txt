@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-next-ntt3-size.EyQ66e/baby_mlkem768_product.o
+artifact_sha256=55203f380ec5e708f50da9ede20602779723dd29a983958e9fe340b3f8d9a523
+artifact_file_bytes=93880
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49841
+readonly_data_bytes=16454
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=66295
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
