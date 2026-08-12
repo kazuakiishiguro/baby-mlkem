@@ -8532,7 +8532,7 @@ static void mlkem_ek_hash_cache_store(const uint8_t *ek,
 #if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
     defined(__AVX512BW__)
 /* Share uncached public-key decode and matrix setup across encaps/decaps. */
-static MLKEM_NOINLINE void
+static MLKEM_NOINLINE __attribute__((minsize)) void
 kpke_prepare_public_hash_no_cache_shared_clang_avx512(
     const uint8_t *ek_pke, const uint8_t *in0, const uint8_t *in1,
     uint8_t *hash, int public_key_hash) {
