@@ -2284,7 +2284,14 @@ static inline void ntt_inv_mont_pair_lazy_i16x32_avx512(
       _mm512_sub_epi16(b, a), zeta_lo, zeta_hi);
 }
 
-static void ntt_inv_mont_before_final_avx512(poly256 f) {
+#if defined(__clang__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+/* Keep the native inverse prefix shared instead of cloning it into each final. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+#else
+static void
+#endif
+ntt_inv_mont_before_final_avx512(poly256 f) {
   const __m512i swap_qword_pairs =
       _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
   const __m512i swap_qword_quads =
