@@ -1,0 +1,11 @@
+target_profile=Clang native with __AVX2__, __AVX512F__, and __AVX512BW__
+target_helper=ntt_inv_mont_before_final_avx512
+attribute_change=MLKEM_NOINLINE plus __attribute__((minsize)) for target profile only
+non_target_behavior=original static void declaration retained for GCC and narrower ISA profiles
+algorithm_changed=NO
+api_changed=NO
+wire_format_changed=NO
+cache_changed=NO
+external_object_added=NO
+runtime_library_added=NO
+vendor_backend_added=NO
