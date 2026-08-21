@@ -494,9 +494,9 @@ recorded in every report; the clean native diagnostic at `a4d6fec` reports 0 B
 for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
-The current 2026-08-21 no-cache baselines use the normal compiler-specific
-speed flags. The Clang native row is measured at `14f85e4`; the Clang AVX2-only
-row remains at `aeb1c35`; GCC native reflects the same generated output as
+The current 2026-08-22 no-cache baselines use the normal compiler-specific
+speed flags. The Clang native and AVX2-only rows are measured from the same
+code tree at `d5e58a8`; GCC native reflects the same generated output as
 `b0366cc`, while the AVX2-only and scalar rows remain byte-identical to their
 parent builds:
 
@@ -526,12 +526,13 @@ speed gain credited. GCC, AVX2-only, and scalar product artifacts are
 byte-identical.
 
 The [Clang AVX2 helper-layout report](benchmarks/2026-08-12-clang-avx2-helper-layout/README.md)
-records the current AVX2-only size step. Clang-only `noinline,minsize`
+records the historical AVX2-only size step. Clang-only `noinline,minsize`
 boundaries around four fixed helpers reduce code/read-only/primary size by
 713/79/792 bytes to 39,762/5,270/45,032 bytes. A 15-pair product screen shows
 no regression, but no speed gain is credited. The candidate is 17 bytes smaller
 than the pinned OpenSSL AVX2 comparator, so the pinned AVX2 size matrix now
-passes 10/10; native size and same-revision full comparator reruns remain open.
+passes 10/10 against that historical pinned matrix. The current exact
+mlkem-native size result is recorded in the [2026-08-22 size report](benchmarks/2026-08-22-goal-size-current/README.md).
 
 The [Clang native inverse-final report](benchmarks/2026-08-13-clang-native-inverse-final-minsize/README.md)
 records the current native size step. A Clang native-only `noinline,minsize`
@@ -1113,21 +1114,12 @@ roundtrip by `1.005370x`/`1.007600x`/`1.007260x`; 9-pair GCC medians improve
 Clang AVX2, GCC AVX2, and GCC scalar. No AVX512 speed or sanitizer claim is
 made by this focused report.
 
-The [current Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
-then updates and measures all ten required comparators in both profiles at
-`9952e84`. baby-mlkem passes 5/10 primary-size gates per profile. The largest
-native deficit in that complete matrix was 52,299 bytes against mlkem-native;
-the limiting AVX2-only deficit was 19,970 bytes against OpenSSL. The later
-diagnostics at `c2ae4e2` and `8fab80d` reduce the mlkem-native native deficit
-to 18,425 bytes and the OpenSSL AVX2-only deficit to 2,452 bytes. A complete
-same-revision ten-comparator size matrix has not yet been rerun. Stack is
+The [historical Clang size/stack matrix](benchmarks/2026-08-07-goal-size-stack-clang/README.md)
+measured all ten required comparators in both profiles. The current exact
+mlkem-native comparison at code tree `d5e58a8` is in the [2026-08-22 size
+report](benchmarks/2026-08-22-goal-size-current/README.md): native is still
+`+1,977 B` over mlkem-native, while AVX2-only is `-6,235 B` below it. Stack is
 reported separately from primary size.
-
-The current candidate `f17bb13` keeps the pinned AVX2 OpenSSL comparison closed:
-45,032 bytes versus 45,049 bytes. Clang native is now 57,046 bytes and passes
-Kyber by 3,826 bytes, the fair Kyber comparator by 4,869 bytes, and PQClean by
-3,744 bytes. It still exceeds mlkem-native by roughly 6 KiB. This updates the
-native size evidence, not the final same-revision speed gate.
 
 Reproduce one profile at a time after cleaning ISA-specific objects:
 
@@ -1171,7 +1163,7 @@ The clean commit `ff7ca72` was measured against Kyber commit
 | native | 58,151 B | 59,901 B | 11,072 B | 17,376 B | PASS by 1,750 B |
 | AVX2-only | 51,396 B | 70,063 B | 5,728 B | 18,400 B | PASS by 18,667 B |
 
-The [current complete size, stack, and internal A/B report](benchmarks/2026-08-06-goal-kyber-size-cold-roots/README.md)
+The [historical complete size, stack, and internal A/B report](benchmarks/2026-08-06-goal-kyber-size-cold-roots/README.md)
 contains both raw verifier outputs, operation-level stack values, artifact
 hashes, flags, and the 15-pair regression checks. Commit `ff7ca72` prevents
 GCC's global loop-unrolling policy from expanding the one-time NTT root setup;
@@ -1244,13 +1236,16 @@ distinction.
 
 ### Native All-Comparator Speed Gate
 
-A formal 2026-08-07 run measured commit `f711965` after the FIPS 203 correction
-and passes the native numerical speed contract against all ten required
-comparators. It used the Clang 18.1.3 production/no-cache artifact with
-`-march=native`, CPU 0 on the Threadripper 7980X, 15 paired
-100,000-iteration runs after three warmups, alternating order, and 20,000
-paired bootstrap samples. Each Git comparator was updated once before timing
-and then pinned for the complete run.
+A same-code 2026-08-21 run measured commit `d5e58a8` after the FIPS 203
+correction and passes the native numerical speed contract against all ten
+required comparators. The [current native report](benchmarks/2026-08-22-goal-native-speed/README.md)
+records the Clang 18.1.3 production/no-cache artifact with `-march=native`,
+CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration runs after three
+warmups, alternating order, and 20,000 paired bootstrap samples. Each Git
+comparator was updated once before timing and then pinned for the complete run.
+
+The table below is the superseded 2026-08-07 snapshot; the committed report
+above is the authoritative current result.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -1269,22 +1264,24 @@ among keygen, encaps, and decaps for that comparator.
 | Botan ML-KEM | 10,541.93 | 85,489.61 | 8.1095x | 8.0506x-8.1631x | encaps 6.6221x |
 | OpenSSL ML-KEM | 10,571.56 | 49,125.12 | 4.6469x | 4.6233x-4.6575x | encaps 3.1239x |
 
-All 40 per-operation rows pass. The
-[complete report, provenance, raw output, and verifier result](benchmarks/2026-08-07-goal-native-speed/README.md)
-record the exact revisions and flags. The initial assembled report omitted one
-already enforced Botan fallback-policy metadata line; the evidence directory
-preserves both the original and one-line-completed reports. This supersedes the
-pre-FIPS 2026-08-06 speed milestone. It does not establish either profile's
-production-size gate or the final same-revision Goal.
+The superseded snapshot above also passed all 40 per-operation rows. The
+[current report, provenance, raw output, and verifier result](benchmarks/2026-08-22-goal-native-speed/README.md)
+record the authoritative same-code revisions and flags. The current result
+supersedes both this snapshot and the pre-FIPS 2026-08-06 speed milestone; it
+does not establish the native production-size gate or the final Goal.
 
 ### AVX2-only All-Comparator Speed Gate
 
-A formal 2026-08-07 run at commit `0c0f16c` passes the AVX2-only numerical
-speed contract against all ten required comparators. It used the Clang 18.1.3
-production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and AVX512
-disabled, CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration runs
-after three warmups, alternating order, and 20,000 paired bootstrap samples.
-The local production object passed AVX512 register and symbol audits.
+A same-code 2026-08-21 run measured commit `d5e58a8` and passes the AVX2-only
+numerical speed contract against all ten required comparators. The [current
+AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed/README.md) records the
+Clang 18.1.3 production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and
+AVX512 disabled, CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration
+runs after three warmups, alternating order, and 20,000 paired bootstrap
+samples. The local production object passed AVX512 register and symbol audits.
+
+The table below is the superseded 2026-08-07 snapshot; the committed report
+above is the authoritative current result.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -1303,11 +1300,11 @@ among keygen, encaps, and decaps for that comparator.
 | Botan ML-KEM | 15,325.91 | 89,553.50 | 5.8433x | 5.7919x-5.8496x | encaps 5.2476x |
 | OpenSSL ML-KEM | 15,382.30 | 53,246.09 | 3.4615x | 3.4306x-3.4673x | encaps 2.7724x |
 
-All 40 per-operation rows pass. The
-[complete report, provenance, raw output, and verifier result](benchmarks/2026-08-07-goal-avx2-speed/README.md)
-record the exact revisions and flags. This supersedes the pre-FIPS 2026-08-06
-speed milestone. It does not establish either profile's production-size gate
-or the final same-revision Goal.
+The superseded snapshot above also passed all 40 per-operation rows. The
+[current report, provenance, raw output, and verifier result](benchmarks/2026-08-22-goal-avx2-speed/README.md)
+record the authoritative same-code revisions and flags. The current result
+supersedes both this snapshot and the pre-FIPS 2026-08-06 speed milestone; it
+does not establish the AVX2-only production-size gate or the final Goal.
 
 ### Completion and Reopening
 
@@ -1351,18 +1348,18 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `14f85e4` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; `make check-ntt-roots` passes, and the five non-native product identity checks remain byte-identical. The detailed candidate evidence is in the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md). |
-| Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
-| Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
-| AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | At `14f85e4`, Clang AVX2-only remains 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native is 53,163 bytes, 2,272 bytes below `b0366cc`; the exact same-revision mlkem-native comparison remains open. |
-| Maximum stack | current measurements reported | At `cb4bfe9` native and `aeb1c35` AVX2-only, the measured maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
-| Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but same-revision authoritative speed reruns remain open and native primary size still fails the mlkem-native comparator. |
+| Correctness | current code-tree pass | `d5e58a8` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; `make check-ntt-roots` passes, and the five non-native product identity checks remain byte-identical. The detailed candidate evidence is in the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md). |
+| Native aggregate speed | PASS | The [current native report](benchmarks/2026-08-22-goal-native-speed/README.md) passes all 40 rows; the narrowest roundtrip ratio/CI lower bound is 1.5770x/1.5692x against standard-flags Kyber. |
+| Native operation speed | PASS | The current report passes all 40 rows; the narrowest operation ratio/CI lower bound is 1.3328x/1.3196x for Kyber keygen. |
+| AVX2-only speed | PASS | The [current AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed/README.md) passes all 40 rows and the AVX512 audit; the narrowest roundtrip ratio/CI lower bound is 1.3759x/1.3740x, and the narrowest operation ratio/CI lower bound is 1.1079x/1.1015x. |
+| Production size | native FAIL, AVX2 PASS | The [current size report](benchmarks/2026-08-22-goal-size-current/README.md) compares the same latest mlkem-native commit: native is 53,163 B versus 51,186 B (`+1,977 B`, FAIL); AVX2-only is 45,032 B versus 51,267 B (`-6,235 B`, PASS). |
+| Maximum stack | current measurements reported | The current size report measures 8,056 B native and 4,512 B AVX2-only locally. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
+| Clean final revision | open | Correctness and both same-code speed profiles pass. The remaining hard gate is native primary size against the current mlkem-native comparator; a full ten-comparator size matrix at the current comparator revisions is also not yet rerun. |
 
 Therefore baby-mlkem does not currently claim that this completion contract has
 been met.
 
-## Current Core Optimization Frontier (2026-08-21)
+## Current Core Optimization Frontier (2026-08-22)
 
 The active optimization goal is to keep improving the independent baby-mlkem
 core itself, not to claim wins from benchmark caches or vendored AVX2 backends.
@@ -1377,9 +1374,12 @@ remains above the `0.995x` size-only floor, and the uncached public-preparation
 stage is neutral-to-positive. No broad speed gain is credited. The preceding
 keygen NTT step `b0366cc`, parser-boundary step `f17bb13`, fixed SHA3 absorb
 step `c05f714`, and gamma-pair compaction `e73b71d` remain recorded below.
-The previous roughly 4 KiB native size gap has been reduced by 2,272 bytes;
-the final same-revision all-library speed matrix and exact mlkem-native size
-comparison are still open. See the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md).
+The same code tree now passes both current ten-comparator speed gates. The
+remaining hard size target is native primary: it is 53,163 B versus 51,186 B
+for current mlkem-native, while AVX2-only is already 45,032 B versus 51,267 B.
+See the [native speed report](benchmarks/2026-08-22-goal-native-speed/README.md),
+[AVX2-only speed report](benchmarks/2026-08-22-goal-avx2-speed/README.md), and
+[current size report](benchmarks/2026-08-22-goal-size-current/README.md).
 
 The broad frontier table below is the last full snapshot before the focused
 K=3 and inverse-add follow-ups. The post-change A/B data is recorded in
