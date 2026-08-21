@@ -1,0 +1,17 @@
+measurement=cache-free product API
+baseline_commit=98cc87f
+candidate_commit=f17bb13
+pairs=15
+iterations=100000
+cpu=0
+warmups=3
+ratio=baseline_time/candidate_time
+interpretation=values above 1.0x favor candidate
+ci_method=not calculated for this focused size-only screen
+mlkem_keygen speedup_gmean=1.001574x speedup_median=1.000518x wins=9/15
+mlkem_encaps speedup_gmean=1.006358x speedup_median=1.001233x wins=12/15
+mlkem_decaps speedup_gmean=0.999977x speedup_median=1.003739x wins=11/15
+mlkem_roundtrip speedup_gmean=1.002328x speedup_median=1.001435x wins=10/15
+
+All four operation geometric means clear the 0.995x no-regression floor.
+This is recorded as a size/no-regression step; no broad speed claim is made.
