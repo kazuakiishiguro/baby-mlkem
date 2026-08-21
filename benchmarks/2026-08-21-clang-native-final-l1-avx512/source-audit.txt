@@ -1,0 +1,17 @@
+target_profile=Clang native x86_64 ELF with __AVX2__, __AVX512F__, and __AVX512BW__
+implementation_commit=a6c3c1e
+baseline_revision=ee0ebdf
+new_helper=ntt_tail_before_l1_mont_lazy_raw_avx512
+wrapper=ntt_before_final_l1_avx512
+native_path=Clang-only noinline ZMM l3/l2 preparation before unchanged final l1
+fallback=GCC native and AVX2-only retain established AVX2 two-stage preparation
+native_l12_forward_low_symbol=not reachable in linked Clang native product
+native_l12_forward_high_symbol=not reachable in linked Clang native product
+algorithm_changed=NO
+api_changed=NO
+wire_format_changed=NO
+cache_changed=NO
+external_object_added=NO
+runtime_library_added=NO
+vendor_backend_added=NO
+non_target_profiles=byte-identical to baseline

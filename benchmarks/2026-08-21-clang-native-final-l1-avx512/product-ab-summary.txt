@@ -1,0 +1,5 @@
+metric baseline_mean_ops candidate_mean_ops speedup_gmean speedup_median wins ci95_low ci95_high
+mlkem_keygen_core 255016.66 254253.80 0.996859 1.001186 8/15 0.985421 1.004806
+mlkem_encaps_core 283996.72 283613.07 0.998552 0.998897 6/15 0.986542 1.008710
+mlkem_decaps_core 357867.19 357222.34 0.998116 1.001999 10/15 0.988943 1.004664
+mlkem_roundtrip_core 96710.60 96468.12 0.997411 0.998554 6/15 0.988090 1.004042
