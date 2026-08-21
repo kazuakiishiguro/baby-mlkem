@@ -205,7 +205,7 @@ static void print_i16_matrix(const char *name, const int16_t *values,
 static void print_tail_mont_compact(const char *name,
                                     const vec256 values[3][8]) {
   static const int lanes[3] = {2, 4, 8};
-  int16_t compact[112];
+  int16_t compact[136] = {0};
   int offset = 0;
 
   for (int level = 0; level < 3; level++) {
@@ -217,7 +217,7 @@ static void print_tail_mont_compact(const char *name,
       }
     }
   }
-  print_i16_array(name, compact, offset);
+  print_i16_array(name, compact, 136);
 }
 
 static void print_vec256(const vec256 *value, const char *indent) {

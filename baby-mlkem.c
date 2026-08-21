@@ -2263,32 +2263,29 @@ static inline __m512i ntt_dup_mont_factor_i16x16_avx512(__m256i factor) {
 
 #if defined(__clang__)
 static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L0 = {
-    0x0000000000000000LL, 0x0000000000000000LL,
-    0x0000000000000000LL, 0x0000000000000000LL,
-    0x0001000100010001LL, 0x0001000100010001LL,
-    0x0001000100010001LL, 0x0001000100010001LL};
+    0x0020002000200020LL, 0x0020002000200020LL,
+    0x0020002000200020LL, 0x0020002000200020LL,
+    0x0021002100210021LL, 0x0021002100210021LL,
+    0x0021002100210021LL, 0x0021002100210021LL};
 static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L1 = {
-    0x0000000000000000LL, 0x0000000000000000LL,
-    0x0001000100010001LL, 0x0001000100010001LL,
-    0x0002000200020002LL, 0x0002000200020002LL,
-    0x0003000300030003LL, 0x0003000300030003LL};
+    0x0020002000200020LL, 0x0020002000200020LL,
+    0x0021002100210021LL, 0x0021002100210021LL,
+    0x0022002200220022LL, 0x0022002200220022LL,
+    0x0023002300230023LL, 0x0023002300230023LL};
 static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L2 = {
-    0x0000000000000000LL, 0x0001000100010001LL,
-    0x0002000200020002LL, 0x0003000300030003LL,
-    0x0004000400040004LL, 0x0005000500050005LL,
-    0x0006000600060006LL, 0x0007000700070007LL};
+    0x0020002000200020LL, 0x0021002100210021LL,
+    0x0022002200220022LL, 0x0023002300230023LL,
+    0x0024002400240024LL, 0x0025002500250025LL,
+    0x0026002600260026LL, 0x0027002700270027LL};
 
 static MLKEM_ALWAYS_INLINE __m512i
 ntt_expand_tail_mont_i16x32_avx512(const int16_t *factor, int level) {
-  const __mmask32 load_mask =
-      level == 0 ? (__mmask32)0x0003u
-                 : level == 1 ? (__mmask32)0x000fu : (__mmask32)0x00ffu;
-  const __m512i index =
+  __m512i index =
       level == 0 ? MLKEM_NTT_TAIL_EXPAND_INDEX_L0
                  : level == 1 ? MLKEM_NTT_TAIL_EXPAND_INDEX_L1
                                : MLKEM_NTT_TAIL_EXPAND_INDEX_L2;
-  return _mm512_permutexvar_epi16(
-      index, _mm512_maskz_loadu_epi16(load_mask, factor));
+  return _mm512_permutex2var_epi16(
+      index, index, _mm512_loadu_si512((const void *)factor));
 }
 #endif
 
@@ -4120,6 +4117,60 @@ ntt_tail_mont_lazy_raw_avx512_impl(poly256 f, int shared_table) {
 #undef MLKEM_NTT_TAIL_MONT_HI_SELECT
 }
 
+#if defined(__clang__)
+/* Keygen transforms shat and ehat in pairs; expand each zeta pair once. */
+static MLKEM_NOINLINE __attribute__((minsize)) void
+ntt_tail_mont_lazy_raw_avx512_pair(poly256 f0, poly256 f1) {
+  const __m512i swap_qword_pairs =
+      _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
+  const __m512i swap_qword_quads =
+      _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+
+#pragma clang loop unroll_count(2)
+  for (int block = 0; block < 8; block++) {
+    __m512i lo0 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_LO_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(0, block), 0);
+    __m512i hi0 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_HI_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(0, block), 0);
+    __m512i lo1 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_LO_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(1, block), 1);
+    __m512i hi1 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_HI_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(1, block), 1);
+    __m512i lo2 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_LO_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(2, block), 2);
+    __m512i hi2 = ntt_expand_tail_mont_i16x32_avx512(
+        ZETA_NTT_TAIL_MONT_HI_AVX512_COMPACT +
+            MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(2, block), 2);
+    __m512i x0 = _mm512_loadu_si512((const void *)(f0 + 32 * block));
+    __m512i x1 = _mm512_loadu_si512((const void *)(f1 + 32 * block));
+
+    x0 = ntt_forward_level_i16x32_avx512(
+        x0, _mm512_permutexvar_epi64(swap_qword_quads, x0), lo0, hi0,
+        (__mmask32)0xff00ff00u);
+    x1 = ntt_forward_level_i16x32_avx512(
+        x1, _mm512_permutexvar_epi64(swap_qword_quads, x1), lo0, hi0,
+        (__mmask32)0xff00ff00u);
+    x0 = ntt_forward_level_i16x32_avx512(
+        x0, _mm512_permutexvar_epi64(swap_qword_pairs, x0), lo1, hi1,
+        (__mmask32)0xf0f0f0f0u);
+    x1 = ntt_forward_level_i16x32_avx512(
+        x1, _mm512_permutexvar_epi64(swap_qword_pairs, x1), lo1, hi1,
+        (__mmask32)0xf0f0f0f0u);
+    x0 = ntt_forward_level_i16x32_avx512(
+        x0, _mm512_rol_epi64(x0, 32), lo2, hi2, (__mmask32)0xccccccccu);
+    x1 = ntt_forward_level_i16x32_avx512(
+        x1, _mm512_rol_epi64(x1, 32), lo2, hi2, (__mmask32)0xccccccccu);
+    _mm512_storeu_si512((void *)(f0 + 32 * block), x0);
+    _mm512_storeu_si512((void *)(f1 + 32 * block), x1);
+  }
+}
+#endif
+
 static void ntt_tail_mont_lazy_raw_avx512(poly256 f) {
   ntt_tail_mont_lazy_raw_avx512_impl(f, 0);
 }
@@ -5144,17 +5195,11 @@ ntt3_full_mont_lazy_raw_shared_clang_avx512(poly256 f[K]) {
 
 static MLKEM_NOINLINE __attribute__((minsize)) void
 keygen_ntt6_mixed_shared_clang_avx512(poly256 shat[K], poly256 ehat[K]) {
-  /* Keep keygen order while sharing one tail body across all six transforms. */
-#pragma clang loop unroll_count(2)
-  for (int n = 0; n < 2 * K; n++) {
-    int canonical = n & 1;
-    int row = n >> 1;
-    int16_t *f = canonical ? ehat[row] : shat[row];
-    ntt_head_mont_lazy_raw_avx512(f);
-    ntt_tail_mont_lazy_raw_avx512_impl(f, 1);
-    if (canonical) {
-      ntt_canonicalize_signed_avx512(f);
-    }
+  for (int row = 0; row < K; row++) {
+    ntt_head_mont_lazy_raw_avx512(shat[row]);
+    ntt_head_mont_lazy_raw_avx512(ehat[row]);
+    ntt_tail_mont_lazy_raw_avx512_pair(shat[row], ehat[row]);
+    ntt_canonicalize_signed_avx512(ehat[row]);
   }
 }
 #endif
