@@ -1,11 +1,11 @@
 # Clang Native Default Loop Alignment 32
 
-Commit `c3d955d` narrows the default Clang loop-alignment choice for native
-AVX512BW builds. When the compiler is Clang on x86_64 ELF and the effective
-architecture enables AVX2, AVX512F, and AVX512BW, the Makefile changes the
-default `-falign-loops=64` to `-falign-loops=32`. The rule applies only when
-`EXTRA_CFLAGS` has its Makefile default origin, so an explicit flag selection
-remains authoritative.
+Commits `c3d955d` and `9166ea2` narrow the Clang loop-alignment choice for
+native AVX512BW and AVX2-only builds. When the compiler is Clang on x86_64 ELF
+and the effective architecture enables the selected AVX2/AVX512 feature set,
+the Makefile or official goal-profile helper changes the default
+`-falign-loops=64` to `-falign-loops=32`. A direct Makefile
+`EXTRA_CFLAGS` selection remains authoritative.
 
 This is a code-layout and product-size change. It changes no arithmetic,
 algorithm, API, wire format, cache, vendored backend, external object, or
@@ -14,7 +14,7 @@ runtime library dependency. No speed gain is credited.
 ## Revisions And Environment
 
 - Baseline: `e991ae3`
-- Candidate: `c3d955d`
+- Candidate: `9166ea2`
 - Compiler: Ubuntu Clang 18.1.3
 - GCC: Ubuntu GCC 13.3.0
 - Linker: GNU ld 2.42
