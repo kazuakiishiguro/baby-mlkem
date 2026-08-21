@@ -1,0 +1,10 @@
+artifact=candidate/baby_mlkem768_product.o
+disassembler=objdump -drwC -Mintel
+old_native_l12_factor_symbols=absent
+vpbroadcast_instructions=122 total (vpbroadcastb=3 vpbroadcastd=21 vpbroadcastq=29 vpbroadcastw=69)
+vpermw=12
+vpermb=61
+vperm2i128=57
+vpermt2w=26
+undefined_symbols=bcmp memcpy
+interpretation=the native candidate contains the intended broadcast/word-permute reconstruction and no old dense L12 factor symbol
