@@ -1,0 +1,12 @@
+make -B test CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=native': PASS
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=native': PASS
+make -B check-ntt-roots CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=native': PASS
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f': PASS
+make -B test-product product-size CC=gcc AVX2_BACKEND=core ARCH_CFLAGS='-march=native': PASS
+make -B test-product product-size CC=gcc AVX2_BACKEND=core ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f': PASS
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2': PASS
+make -B test-product product-size CC=gcc AVX2_BACKEND=core ARCH_CFLAGS='-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2': PASS
+cross_profile_artifacts=all non-native candidate artifacts byte-identical to baseline
+product_ab=15 alternating pairs at 100000 iterations: PASS size-only floor
+stage_ab=9 alternating pairs at 30000 iterations: PASS attribution screen
+git_diff_check=PASS

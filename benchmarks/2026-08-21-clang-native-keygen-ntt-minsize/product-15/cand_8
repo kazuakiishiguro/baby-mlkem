@@ -1,0 +1,17 @@
+mlkem_bench_iterations=100000
+mlkem_keygen_ns_per_op=3954.23
+mlkem_keygen_ops_per_s=252893.76
+mlkem_encaps_ns_per_op=3558.97
+mlkem_encaps_ops_per_s=280980.13
+mlkem_decaps_ns_per_op=2841.81
+mlkem_decaps_ops_per_s=351887.80
+mlkem_roundtrip_ns_per_op=10454.26
+mlkem_roundtrip_ops_per_s=95654.78
+mlkem_keygen_core_ns_per_op=3954.23
+mlkem_keygen_core_ops_per_s=252893.76
+mlkem_encaps_core_ns_per_op=3558.97
+mlkem_encaps_core_ops_per_s=280980.13
+mlkem_decaps_core_ns_per_op=2841.81
+mlkem_decaps_core_ops_per_s=351887.80
+mlkem_roundtrip_core_ns_per_op=10454.26
+mlkem_roundtrip_core_ops_per_s=95654.78

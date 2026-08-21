@@ -1,0 +1,17 @@
+measurement=cache-free core stage attribution screen
+baseline_commit=f17bb13
+candidate_commit=b0366cc
+pairs=9
+iterations=30000
+cpu=0
+warmups=3
+ratio=baseline_time/candidate_time
+interpretation=values above 1.0x favor candidate
+ci_method=not calculated for this focused attribution screen
+mlkem_core_stage_kpke_keygen_full speedup_gmean=1.002035x speedup_median=1.006870x wins=7/9
+mlkem_core_stage_keygen_noise_ntt speedup_gmean=1.000213x speedup_median=0.999053x wins=4/9
+mlkem_core_stage_sample_matrix speedup_gmean=0.982270x speedup_median=0.989286x wins=2/9
+mlkem_core_stage_sample_ntt8_full_raw speedup_gmean=0.994490x speedup_median=1.003080x wins=5/9
+
+The source change targets the keygen NTT helper only. Matrix and x8 rows are
+retained to expose whole-binary layout movement and are not speed claims.
