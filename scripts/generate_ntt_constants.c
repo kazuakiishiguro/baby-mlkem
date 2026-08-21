@@ -181,6 +181,13 @@ static void print_i16_array(const char *name, const int16_t *values,
   printf("};\n\n");
 }
 
+static void print_i16_even_array(const char *name, const int16_t *values,
+                                 int count) {
+  int16_t compact[64];
+  for (int i = 0; i < count; i++) compact[i] = values[2 * i];
+  print_i16_array(name, compact, count);
+}
+
 static void print_i16_matrix(const char *name, const int16_t *values,
                              int rows, int columns) {
   printf("static const int16_t %s[%d][%d] = {\n", name, rows, columns);
@@ -193,6 +200,24 @@ static void print_i16_matrix(const char *name, const int16_t *values,
     printf("}%s\n", row + 1 == rows ? "" : ",");
   }
   printf("};\n\n");
+}
+
+static void print_tail_mont_compact(const char *name,
+                                    const vec256 values[3][8]) {
+  static const int lanes[3] = {2, 4, 8};
+  int16_t compact[112];
+  int offset = 0;
+
+  for (int level = 0; level < 3; level++) {
+    for (int block = 0; block < 8; block++) {
+      for (int lane = 0; lane < lanes[level]; lane++) {
+        compact[offset++] =
+            (int16_t)vec256_i16_lane(&values[level][block], lane *
+                                                               (8 >> level));
+      }
+    }
+  }
+  print_i16_array(name, compact, offset);
 }
 
 static void print_vec256(const vec256 *value, const char *indent) {
@@ -588,12 +613,21 @@ int main(int argc, char **argv) {
   print_vec256_array("ZETA_NTT_HEAD_MONT_LO", head_mont_lo, 15);
   print_vec256_array("ZETA_NTT_HEAD_MONT_HI", head_mont_hi, 15);
   printf("#endif\n\n");
+
+  printf("#if defined(__clang__) && defined(__AVX512F__) && "
+         "defined(__AVX512BW__)\n");
+  print_tail_mont_compact("ZETA_NTT_TAIL_MONT_LO_AVX512_COMPACT",
+                          tail_mont_lo);
+  print_tail_mont_compact("ZETA_NTT_TAIL_MONT_HI_AVX512_COMPACT",
+                          tail_mont_hi);
+  printf("#else\n");
   print_vec256_array("ZETA_NTT_TAIL_MONT_LO_L0", tail_mont_lo[0], 8);
   print_vec256_matrix("ZETA_NTT_TAIL_MONT_LO_L12", &tail_mont_lo[1][0],
                       2, 8);
   print_vec256_array("ZETA_NTT_TAIL_MONT_HI_L0", tail_mont_hi[0], 8);
   print_vec256_matrix("ZETA_NTT_TAIL_MONT_HI_L12", &tail_mont_hi[1][0],
                       2, 8);
+  printf("#endif\n\n");
   printf("#if !(defined(__AVX512F__) && defined(__AVX512BW__))\n");
   printf("#if defined(MLKEM_AVX2_EXTERNAL_INV_MONT)\n");
   printf("extern const __m256i ZETA_NTT_INV_MONT_LO[24]\n");
@@ -618,10 +652,12 @@ int main(int argc, char **argv) {
                      head_mont_lo_avx512_dense, 14);
   print_vec512_array("ZETA_NTT_HEAD_MONT_HI_AVX512_DENSE",
                      head_mont_hi_avx512_dense, 14);
+  printf("#if !defined(__clang__)\n");
   print_vec512_matrix("ZETA_NTT_TAIL_MONT_LO_AVX512",
                       &tail_mont_lo_avx512[0][0], 3, 8);
   print_vec512_matrix("ZETA_NTT_TAIL_MONT_HI_AVX512",
                       &tail_mont_hi_avx512[0][0], 3, 8);
+  printf("#endif\n");
   print_vec512_array("ZETA_NTT_INV_MONT_LO_AVX512_DENSE",
                      inv_mont_lo_avx512_dense, 24);
   print_vec512_array("ZETA_NTT_INV_MONT_HI_AVX512_DENSE",
@@ -655,7 +691,8 @@ int main(int argc, char **argv) {
   print_vec512_array("ZETA_NTT_TAIL_L2X2", tail_l2x2, 8);
   printf("#if defined(__clang__)\n");
   print_i16_array("GAMMA_MONT_LO_CLANG_AVX512", gamma_mont_lo, 64);
-  print_i16_array("GAMMA_MONT_HI_CLANG_AVX512", gamma_mont_hi, 128);
+  print_i16_even_array("GAMMA_MONT_HI_CLANG_AVX512_COMPACT", gamma_mont_hi,
+                       64);
   printf("#else\n");
   print_i16_array("GAMMA_MONT_HI_GCC_AVX512", gamma_mont_hi, 128);
   printf("#endif\n");

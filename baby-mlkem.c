@@ -2061,13 +2061,18 @@ static int NTT_ROOTS_READY = 0;
   _mm512_set1_epi16(ZETA_MONT_HI_AVX512_SCALAR[ \
       MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-/* Keep one generated tail table shared by Clang's outlined NTT callers. */
+/* Rebuild 32-lane factors from the 2/4/8 distinct lanes per NTT level. */
+#define MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(level, index) \
+  ((level) == 0 ? 2 * (index) \
+                : (level) == 1 ? 16 + 4 * (index) : 48 + 8 * (index))
 #define MLKEM_NTT_TAIL_MONT_LO_SHARED_AVX512(level, index) \
-  (*(const volatile __m512i *) \
-       &ZETA_NTT_TAIL_MONT_LO_AVX512[level][index])
+  ntt_expand_tail_mont_i16x32_avx512( \
+      ZETA_NTT_TAIL_MONT_LO_AVX512_COMPACT + \
+          MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(level, index), level)
 #define MLKEM_NTT_TAIL_MONT_HI_SHARED_AVX512(level, index) \
-  (*(const volatile __m512i *) \
-       &ZETA_NTT_TAIL_MONT_HI_AVX512[level][index])
+  ntt_expand_tail_mont_i16x32_avx512( \
+      ZETA_NTT_TAIL_MONT_HI_AVX512_COMPACT + \
+          MLKEM_NTT_TAIL_MONT_COMPACT_OFFSET(level, index), level)
 #endif
 #else
 #define MLKEM_NTT_TAIL_MONT_LO(level, index) \
@@ -2253,6 +2258,37 @@ static inline __m512i ntt_mont_mul_precomp_i16x32_avx512(
 static inline __m512i ntt_dup_mont_factor_i16x16_avx512(__m256i factor) {
   __m512i expanded = _mm512_cvtepu16_epi32(factor);
   return _mm512_or_si512(expanded, _mm512_slli_epi32(expanded, 16));
+}
+#endif
+
+#if defined(__clang__)
+static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L0 = {
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0001000100010001LL, 0x0001000100010001LL,
+    0x0001000100010001LL, 0x0001000100010001LL};
+static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L1 = {
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0001000100010001LL, 0x0001000100010001LL,
+    0x0002000200020002LL, 0x0002000200020002LL,
+    0x0003000300030003LL, 0x0003000300030003LL};
+static const __m512i MLKEM_NTT_TAIL_EXPAND_INDEX_L2 = {
+    0x0000000000000000LL, 0x0001000100010001LL,
+    0x0002000200020002LL, 0x0003000300030003LL,
+    0x0004000400040004LL, 0x0005000500050005LL,
+    0x0006000600060006LL, 0x0007000700070007LL};
+
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_expand_tail_mont_i16x32_avx512(const int16_t *factor, int level) {
+  const __mmask32 load_mask =
+      level == 0 ? (__mmask32)0x0003u
+                 : level == 1 ? (__mmask32)0x000fu : (__mmask32)0x00ffu;
+  const __m512i index =
+      level == 0 ? MLKEM_NTT_TAIL_EXPAND_INDEX_L0
+                 : level == 1 ? MLKEM_NTT_TAIL_EXPAND_INDEX_L1
+                               : MLKEM_NTT_TAIL_EXPAND_INDEX_L2;
+  return _mm512_permutexvar_epi16(
+      index, _mm512_maskz_loadu_epi16(load_mask, factor));
 }
 #endif
 
@@ -3925,6 +3961,7 @@ static inline void store_i16x2_oct_avx2(
   store_i16x2_quad(a4, a5, a6, a7, _mm256_extracti128_si256(v, 1));
 }
 
+#if !(defined(__clang__) && defined(__AVX512F__) && defined(__AVX512BW__))
 static void ntt_tail_before_l1_mont_lazy_raw_avx2(poly256 f) {
   for (int start = 0, i = 0; start < N; start += 32, i++) {
 #if defined(MLKEM_AVX2_REUSE_INV_FORWARD_TAIL)
@@ -4019,6 +4056,7 @@ static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
 #endif
   }
 }
+#endif
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 static inline __m512i ntt_forward_level_i16x32_avx512(
@@ -4038,16 +4076,15 @@ ntt_tail_mont_lazy_raw_avx512_impl(poly256 f, int shared_table) {
       _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
   const __m512i swap_qword_quads =
       _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+#if defined(__clang__)
+  (void)shared_table;
+#endif
 
 #if defined(__clang__)
 #define MLKEM_NTT_TAIL_MONT_LO_SELECT(level, index) \
-  (shared_table \
-       ? MLKEM_NTT_TAIL_MONT_LO_SHARED_AVX512(level, index) \
-       : ZETA_NTT_TAIL_MONT_LO_AVX512[level][index])
+  MLKEM_NTT_TAIL_MONT_LO_SHARED_AVX512(level, index)
 #define MLKEM_NTT_TAIL_MONT_HI_SELECT(level, index) \
-  (shared_table \
-       ? MLKEM_NTT_TAIL_MONT_HI_SHARED_AVX512(level, index) \
-       : ZETA_NTT_TAIL_MONT_HI_AVX512[level][index])
+  MLKEM_NTT_TAIL_MONT_HI_SHARED_AVX512(level, index)
 #else
   (void)shared_table;
 #define MLKEM_NTT_TAIL_MONT_LO_SELECT(level, index) \
@@ -4087,30 +4124,38 @@ static void ntt_tail_mont_lazy_raw_avx512(poly256 f) {
   ntt_tail_mont_lazy_raw_avx512_impl(f, 0);
 }
 
+/* The AVX2-named entry point remains available to the cross-check tests. */
+#if defined(__clang__)
+static void ntt_tail_mont_lazy_raw_avx2(poly256 f) {
+  ntt_tail_mont_lazy_raw_avx512(f);
+}
+#endif
+
 #if defined(__clang__)
 /* Keep Clang native's final-l1 preparation on the wide path; GCC and AVX2-only
  * targets continue using the established two-stage layout below. */
-static MLKEM_NOINLINE void
+static MLKEM_NOINLINE __attribute__((minsize)) void
 ntt_tail_before_l1_mont_lazy_raw_avx512(poly256 f) {
   const __m512i swap_qword_pairs =
       _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
   const __m512i swap_qword_quads =
       _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
 
+#pragma clang loop unroll_count(3)
   for (int block = 0; block < 8; block++) {
     __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
     __m512i partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
     x = ntt_forward_level_i16x32_avx512(
         x, partner,
-        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_LO_AVX512[0][block]),
-        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_HI_AVX512[0][block]),
+        MLKEM_NTT_TAIL_MONT_LO_SHARED_AVX512(0, block),
+        MLKEM_NTT_TAIL_MONT_HI_SHARED_AVX512(0, block),
         (__mmask32)0xff00ff00u);
 
     partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
     x = ntt_forward_level_i16x32_avx512(
         x, partner,
-        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_LO_AVX512[1][block]),
-        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_HI_AVX512[1][block]),
+        MLKEM_NTT_TAIL_MONT_LO_SHARED_AVX512(1, block),
+        MLKEM_NTT_TAIL_MONT_HI_SHARED_AVX512(1, block),
         (__mmask32)0xf0f0f0f0u);
     _mm512_storeu_si512((void *)(f + 32 * block), x);
   }
@@ -5176,11 +5221,8 @@ ntt_acc4_asym_c0_factors3_mont_clang_avx512(
     __m512i *y0_c0, __m512i *y1_c0, __m512i *y2_c0) {
   __m512i gamma_lo = ntt_gamma_mont_expand16_clang_avx512(
       GAMMA_MONT_LO_CLANG_AVX512, pair);
-  __m512i gamma_hi = _mm512_slli_epi32(
-      _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-          (const __m256i *)(const void *)(
-              GAMMA_MONT_HI_CLANG_AVX512 + pair))),
-      16);
+  __m512i gamma_hi = ntt_gamma_mont_expand16_clang_avx512(
+      GAMMA_MONT_HI_CLANG_AVX512_COMPACT, pair);
   *y0_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
       y0, gamma_lo, gamma_hi);
   *y1_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
@@ -5472,11 +5514,8 @@ ntt3_mul_acc4_fused_final_lazy512_avx512(
 #if defined(__clang__)
     __m512i gamma_lo = ntt_gamma_mont_expand16_clang_avx512(
         GAMMA_MONT_LO_CLANG_AVX512, pair);
-    __m512i gamma_hi = _mm512_slli_epi32(
-        _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-            (const __m256i *)(const void *)(
-                GAMMA_MONT_HI_CLANG_AVX512 + pair))),
-        16);
+    __m512i gamma_hi = ntt_gamma_mont_expand16_clang_avx512(
+        GAMMA_MONT_HI_CLANG_AVX512_COMPACT, pair);
     __m512i y0_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
         y0, gamma_lo, gamma_hi);
     __m512i y1_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
