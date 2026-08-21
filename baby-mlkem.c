@@ -3633,7 +3633,8 @@ static void init_ntt_roots(void) {
 #endif
   for (int i = 0; i < 128; i++) {
 #if defined(__clang__)
-    ntt_mont_factor(GAMMA[i], &GAMMA_MONT_LO_CLANG_AVX512[i],
+    int16_t gamma_lo_unused;
+    ntt_mont_factor(GAMMA[i], &gamma_lo_unused,
                     &GAMMA_MONT_HI_CLANG_AVX512[i]);
 #else
     int16_t gamma_lo_unused;
@@ -5157,16 +5158,13 @@ static MLKEM_ALWAYS_INLINE void
 ntt_acc4_asym_c0_factors3_mont_clang_avx512(
     __m512i y0, __m512i y1, __m512i y2, int pair,
     __m512i *y0_c0, __m512i *y1_c0, __m512i *y2_c0) {
-  __m512i gamma_lo = _mm512_slli_epi32(
-      _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-          (const __m256i *)(const void *)(
-              GAMMA_MONT_LO_CLANG_AVX512 + pair))),
-      16);
   __m512i gamma_hi = _mm512_slli_epi32(
       _mm512_cvtepu16_epi32(_mm256_loadu_si256(
           (const __m256i *)(const void *)(
               GAMMA_MONT_HI_CLANG_AVX512 + pair))),
       16);
+  const __m512i qinv = _mm512_set1_epi16((int16_t)-3327);
+  __m512i gamma_lo = _mm512_mullo_epi16(gamma_hi, qinv);
   *y0_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
       y0, gamma_lo, gamma_hi);
   *y1_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
@@ -5456,16 +5454,13 @@ ntt3_mul_acc4_fused_final_lazy512_avx512(
     __m512i y2 = ntt_acc4_reduce_lazy_block32_avx512(
         b[2], offset);
 #if defined(__clang__)
-    __m512i gamma_lo = _mm512_slli_epi32(
-        _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-            (const __m256i *)(const void *)(
-                GAMMA_MONT_LO_CLANG_AVX512 + pair))),
-        16);
     __m512i gamma_hi = _mm512_slli_epi32(
         _mm512_cvtepu16_epi32(_mm256_loadu_si256(
             (const __m256i *)(const void *)(
                 GAMMA_MONT_HI_CLANG_AVX512 + pair))),
         16);
+    const __m512i qinv = _mm512_set1_epi16((int16_t)-3327);
+    __m512i gamma_lo = _mm512_mullo_epi16(gamma_hi, qinv);
     __m512i y0_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
         y0, gamma_lo, gamma_hi);
     __m512i y1_c0 = ntt_acc4_asym_c0_factor_mont_clang_avx512(
