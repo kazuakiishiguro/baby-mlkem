@@ -1367,17 +1367,22 @@ The current short-term filter is therefore: only pursue changes that reduce real
 core work in SHAKE/sample_ntt, forward/inverse NTT, K=3 accumulation, or range
 normalization across encode/compress boundaries.
 
-The latest accepted native-only size step is `14f85e4`: native Clang disables
-round-loop unrolling in the existing x4 Keccak helper. It saves 2,272 native
-Clang primary bytes and 2,304 artifact bytes; the 15-pair product screen
-remains above the `0.995x` size-only floor, and the uncached public-preparation
-stage is neutral-to-positive. No broad speed gain is credited. The preceding
-keygen NTT step `b0366cc`, parser-boundary step `f17bb13`, fixed SHA3 absorb
-step `c05f714`, and gamma-pair compaction `e73b71d` remain recorded below.
-The same code tree now passes both current ten-comparator speed gates. The
-remaining hard size target is native primary: it is 53,163 B versus 51,186 B
-for current mlkem-native, while AVX2-only is already 45,032 B versus 51,267 B.
-See the [native speed report](benchmarks/2026-08-22-goal-native-speed/README.md),
+The latest accepted native-only code step is `c8b7823`, following the size
+compaction in `b955d0b`. Clang AVX512 compact NTT factor expansion now uses a
+memory-source `vpermt2w`, and key generation expands each factor pair once for
+the `shat`/`ehat` transform pair. The 15-pair internal product screen improves
+keygen/encaps/decaps/roundtrip by `1.010732x`/`1.004929x`/`1.008387x`/`1.007307x`
+against `b955d0b`. The candidate is correct under native, AVX2-only, and GCC
+native builds, and Clang ASan+UBSan plus GCC UBSan stage checks pass.
+
+The current Clang native product is 42,493 B code, 8,678 B read-only data,
+and 51,171 B primary, which is 15 B below the 51,186 B `mlkem-native`
+comparator. AVX2-only and GCC/scalar paths remain on their established
+profiles. This is an internal b955d0b improvement, not a claim that the
+current ten-comparator speed reports still describe this exact revision; the
+formal native/AVX2 reruns and full size matrix remain open. See the
+[keygen NTT pair report](benchmarks/2026-08-22-clang-native-keygen-ntt-pair/README.md),
+[native speed report](benchmarks/2026-08-22-goal-native-speed/README.md),
 [AVX2-only speed report](benchmarks/2026-08-22-goal-avx2-speed/README.md), and
 [current size report](benchmarks/2026-08-22-goal-size-current/README.md).
 
