@@ -1,0 +1,11 @@
+artifact=baseline/baby_mlkem768_product.o
+artifact_sha256=6cd81216a7d6bb02ba4ec20b03b28fdfaf73ef21b4816a916d702142e83d0e77
+artifact_file_bytes=84408
+code_bytes=46510
+readonly_data_bytes=10982
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=57492
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001

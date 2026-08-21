@@ -1,0 +1,5 @@
+The candidate keeps the existing high-factor load and replaces only the Clang
+native low-factor 16-word load in the keygen and prepared-encryption NTT paths.
+The 64-element source table is expanded to [x,-x] pairs before the existing
+unsigned 16-to-32 widening. No AVX512 instruction is emitted in AVX2-only or
+scalar products; those products are byte-identical to the baseline.

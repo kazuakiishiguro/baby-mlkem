@@ -1,0 +1,11 @@
+artifact=candidate/baby_mlkem768_product.o
+artifact_sha256=f80ad1c126e40c26d338fa7440d2e031045bc69fba25dbccf5cc074e776ba867
+artifact_file_bytes=84344
+code_bytes=46570
+readonly_data_bytes=10854
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=57424
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
