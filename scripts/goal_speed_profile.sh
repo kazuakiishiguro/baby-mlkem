@@ -104,6 +104,8 @@ goal_speed_configure_profile() {
   local profile="$1"
   local compiler="$2"
   local cflags
+  local compact_clang_loops=0
+  local -a compiler_probe_flags
 
   _goal_speed_export_common "$compiler" || return
   case "$profile" in
@@ -168,6 +170,23 @@ goal_speed_configure_profile() {
       return 2
       ;;
   esac
+
+  if "$compiler" --version 2>/dev/null | head -n 1 | grep -qi clang; then
+    if [[ "$ARCH_CFLAGS" == *-mavx2* &&
+          "$ARCH_CFLAGS" == *-mno-avx512f* ]]; then
+      compact_clang_loops=1
+    else
+      read -r -a compiler_probe_flags <<< "$OPT_CFLAGS $ARCH_CFLAGS"
+      if "$compiler" "${compiler_probe_flags[@]}" -dM -E -x c /dev/null 2>/dev/null |
+          awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__clang__/ { c = 1 } /__AVX2__/ { a = 1 } /__AVX512F__/ { f = 1 } /__AVX512BW__/ { b = 1 } END { exit !(x && e && c && a && f && b) }'; then
+        compact_clang_loops=1
+      fi
+    fi
+  fi
+  if [ "$compact_clang_loops" = 1 ]; then
+    EXTRA_CFLAGS="${EXTRA_CFLAGS//-falign-loops=64/-falign-loops=32}"
+    FAIR_UPSTREAM_CFLAGS="$OPT_CFLAGS $cflags $EXTRA_CFLAGS -std=c99"
+  fi
 
   export BENCH_ISA_PROFILE BENCH_PROFILE_TAG ARCH_CFLAGS
   export MLKEM_NATIVE_CFLAGS MLKEM_NATIVE_HARNESS_CFLAGS UPSTREAM_CFLAGS FAIR_UPSTREAM_CFLAGS
