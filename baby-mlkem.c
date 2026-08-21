@@ -5093,10 +5093,10 @@ ntt3_full_mont_lazy_raw_shared_clang_avx512(poly256 f[K]) {
   }
 }
 
-static MLKEM_NOINLINE void
+static MLKEM_NOINLINE __attribute__((minsize)) void
 keygen_ntt6_mixed_shared_clang_avx512(poly256 shat[K], poly256 ehat[K]) {
   /* Keep keygen order while sharing one tail body across all six transforms. */
-#pragma clang loop unroll(disable)
+#pragma clang loop unroll_count(2)
   for (int n = 0; n < 2 * K; n++) {
     int canonical = n & 1;
     int row = n >> 1;
