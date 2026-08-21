@@ -1234,18 +1234,19 @@ now rejects such a source before timing. The [complete report and both raw
 outputs](benchmarks/2026-08-06-clean-kyber-product-core/README.md) preserve this
 distinction.
 
-### Native All-Comparator Speed Gate
+### Historical Native All-Comparator Speed Snapshot
 
 A same-code 2026-08-21 run measured commit `d5e58a8` after the FIPS 203
-correction and passes the native numerical speed contract against all ten
-required comparators. The [current native report](benchmarks/2026-08-22-goal-native-speed/README.md)
+correction and passed the native numerical speed contract against all ten
+required comparators. The [historical native report](benchmarks/2026-08-22-goal-native-speed/README.md)
 records the Clang 18.1.3 production/no-cache artifact with `-march=native`,
 CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration runs after three
 warmups, alternating order, and 20,000 paired bootstrap samples. Each Git
 comparator was updated once before timing and then pinned for the complete run.
 
-The table below is the superseded 2026-08-07 snapshot; the committed report
-above is the authoritative current result.
+The table below is a superseded snapshot. The authoritative current native
+result is the [c8 native report](benchmarks/2026-08-22-goal-native-speed-c8/README.md)
+for source commit `400dbe4`.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -1264,24 +1265,23 @@ among keygen, encaps, and decaps for that comparator.
 | Botan ML-KEM | 10,541.93 | 85,489.61 | 8.1095x | 8.0506x-8.1631x | encaps 6.6221x |
 | OpenSSL ML-KEM | 10,571.56 | 49,125.12 | 4.6469x | 4.6233x-4.6575x | encaps 3.1239x |
 
-The superseded snapshot above also passed all 40 per-operation rows. The
-[current report, provenance, raw output, and verifier result](benchmarks/2026-08-22-goal-native-speed/README.md)
-record the authoritative same-code revisions and flags. The current result
-supersedes both this snapshot and the pre-FIPS 2026-08-06 speed milestone; it
-does not establish the native production-size gate or the final Goal.
+The superseded snapshot above also passed all 40 per-operation rows. The c8
+report supersedes this snapshot and the pre-FIPS 2026-08-06 speed milestone;
+the c8 size and validation evidence is linked from the completion table above.
 
-### AVX2-only All-Comparator Speed Gate
+### Historical AVX2-only All-Comparator Speed Snapshot
 
-A same-code 2026-08-21 run measured commit `d5e58a8` and passes the AVX2-only
-numerical speed contract against all ten required comparators. The [current
+A same-code 2026-08-21 run measured commit `d5e58a8` and passed the AVX2-only
+numerical speed contract against all ten required comparators. The [historical
 AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed/README.md) records the
 Clang 18.1.3 production/no-cache artifact, x86-64-v3 with AVX2/BMI2/POPCNT and
 AVX512 disabled, CPU 0 on the Threadripper 7980X, 15 paired 100,000-iteration
 runs after three warmups, alternating order, and 20,000 paired bootstrap
 samples. The local production object passed AVX512 register and symbol audits.
 
-The table below is the superseded 2026-08-07 snapshot; the committed report
-above is the authoritative current result.
+The table below is a superseded snapshot. The authoritative current AVX2-only
+result is the [c8 AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed-c8/README.md)
+for source commit `400dbe4`.
 
 Ratios are `comparator / baby-mlkem`; the CI column is the paired geometric-mean
 95% interval. The weakest operation column reports the smallest CI lower bound
@@ -1300,15 +1300,13 @@ among keygen, encaps, and decaps for that comparator.
 | Botan ML-KEM | 15,325.91 | 89,553.50 | 5.8433x | 5.7919x-5.8496x | encaps 5.2476x |
 | OpenSSL ML-KEM | 15,382.30 | 53,246.09 | 3.4615x | 3.4306x-3.4673x | encaps 2.7724x |
 
-The superseded snapshot above also passed all 40 per-operation rows. The
-[current report, provenance, raw output, and verifier result](benchmarks/2026-08-22-goal-avx2-speed/README.md)
-record the authoritative same-code revisions and flags. The current result
-supersedes both this snapshot and the pre-FIPS 2026-08-06 speed milestone; it
-does not establish the AVX2-only production-size gate or the final Goal.
+The superseded snapshot above also passed all 40 per-operation rows. The c8
+report supersedes this snapshot and the pre-FIPS 2026-08-06 speed milestone;
+the c8 size and validation evidence is linked from the completion table above.
 
 ### Completion and Reopening
 
-The goal is complete only when one clean, committed revision passes the
+The goal is complete only when one clean, committed product source revision passes the
 correctness, native speed, AVX2-only speed, and native/AVX2 size gates above,
 with reproducible reports committed to the repository. All experimental
 candidates must be accepted, rejected, or removed before that decision.
