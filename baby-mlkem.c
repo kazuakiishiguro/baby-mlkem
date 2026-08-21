@@ -4015,6 +4015,36 @@ ntt_tail_mont_lazy_raw_avx512_impl(poly256 f, int shared_table) {
 static void ntt_tail_mont_lazy_raw_avx512(poly256 f) {
   ntt_tail_mont_lazy_raw_avx512_impl(f, 0);
 }
+
+#if defined(__clang__)
+/* Keep Clang native's final-l1 preparation on the wide path; GCC and AVX2-only
+ * targets continue using the established two-stage layout below. */
+static MLKEM_NOINLINE void
+ntt_tail_before_l1_mont_lazy_raw_avx512(poly256 f) {
+  const __m512i swap_qword_pairs =
+      _mm512_setr_epi64(1, 0, 3, 2, 5, 4, 7, 6);
+  const __m512i swap_qword_quads =
+      _mm512_setr_epi64(2, 3, 0, 1, 6, 7, 4, 5);
+
+  for (int block = 0; block < 8; block++) {
+    __m512i x = _mm512_loadu_si512((const void *)(f + 32 * block));
+    __m512i partner = _mm512_permutexvar_epi64(swap_qword_quads, x);
+    x = ntt_forward_level_i16x32_avx512(
+        x, partner,
+        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_LO_AVX512[0][block]),
+        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_HI_AVX512[0][block]),
+        (__mmask32)0xff00ff00u);
+
+    partner = _mm512_permutexvar_epi64(swap_qword_pairs, x);
+    x = ntt_forward_level_i16x32_avx512(
+        x, partner,
+        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_LO_AVX512[1][block]),
+        (*(const volatile __m512i *)&ZETA_NTT_TAIL_MONT_HI_AVX512[1][block]),
+        (__mmask32)0xf0f0f0f0u);
+    _mm512_storeu_si512((void *)(f + 32 * block), x);
+  }
+}
+#endif
 #endif
 
 static void ntt_mont_lazy_avx2(poly256 f) {
@@ -4934,16 +4964,24 @@ static void ntt_mul_acc4_madd_avx2(
 #if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
 #if defined(__clang__)
 #define MLKEM_NTT_HEAD_MINSIZE __attribute__((minsize))
+#define MLKEM_NTT_HEAD_NOINLINE MLKEM_NOINLINE
 #else
 #define MLKEM_NTT_HEAD_MINSIZE
+#define MLKEM_NTT_HEAD_NOINLINE
 #endif
-static MLKEM_NTT_HEAD_MINSIZE void ntt_before_final_l1_avx512(poly256 f) {
+static MLKEM_NTT_HEAD_NOINLINE MLKEM_NTT_HEAD_MINSIZE void
+ntt_before_final_l1_avx512(poly256 f) {
   /* Keep six levels lazy, then restore [0,Q) for the unsigned final l1. */
   ntt_head_mont_lazy_raw_avx512(f);
+#if defined(__clang__)
+  ntt_tail_before_l1_mont_lazy_raw_avx512(f);
+#else
   ntt_tail_before_l1_mont_lazy_raw_avx2(f);
+#endif
   ntt_canonicalize_signed_avx512(f);
 }
 #undef MLKEM_NTT_HEAD_MINSIZE
+#undef MLKEM_NTT_HEAD_NOINLINE
 
 #if defined(__GNUC__)
 /* Exact from -6*(Q-1)*(Q/2) through 6*(Q-1)^2. */
