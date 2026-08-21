@@ -1885,6 +1885,48 @@ static void shake256_32_suffix1(const uint8_t *in, uint8_t suffix,
 #if defined(__clang__)
 /* Clang is smaller and faster with immutable, generated root tables. */
 #include "ntt_roots_generated.h"
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+/* Rebuild repeated inverse factors from their compact source lanes. */
+static const __m512i MLKEM_INV_COMPACT_MASK_L0 = {
+    0x0000000000000000LL, 0x0001000100010001LL,
+    0x0002000200020002LL, 0x0003000300030003LL,
+    0x0004000400040004LL, 0x0005000500050005LL,
+    0x0006000600060006LL, 0x0007000700070007LL};
+static const __m512i MLKEM_INV_COMPACT_MASK_L1 = {
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0002000200020002LL, 0x0002000200020002LL,
+    0x0004000400040004LL, 0x0004000400040004LL,
+    0x0006000600060006LL, 0x0006000600060006LL};
+static const __m512i MLKEM_INV_COMPACT_MASK_L2 = {
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0000000000000000LL, 0x0000000000000000LL,
+    0x0004000400040004LL, 0x0004000400040004LL,
+    0x0004000400040004LL, 0x0004000400040004LL};
+
+static MLKEM_ALWAYS_INLINE __m512i mlkem_inv_mont_dense_compact_l0(
+    const int16_t factor[8]) {
+  return _mm512_permutexvar_epi16(
+      MLKEM_INV_COMPACT_MASK_L0,
+      _mm512_broadcast_i32x4(
+          _mm_loadu_si128((const __m128i *)(const void *)factor)));
+}
+
+static MLKEM_ALWAYS_INLINE __m512i mlkem_inv_mont_dense_compact_l1(
+    const int16_t factor[8]) {
+  return _mm512_permutexvar_epi16(
+      MLKEM_INV_COMPACT_MASK_L1,
+      _mm512_broadcast_i32x4(
+          _mm_loadu_si128((const __m128i *)(const void *)factor)));
+}
+
+static MLKEM_ALWAYS_INLINE __m512i mlkem_inv_mont_dense_compact_l2(
+    const int16_t factor[8]) {
+  return _mm512_permutexvar_epi16(
+      MLKEM_INV_COMPACT_MASK_L2,
+      _mm512_broadcast_i32x4(
+          _mm_loadu_si128((const __m128i *)(const void *)factor)));
+}
+#endif
 #else
 /* GCC LTO keeps the one-time expansion smaller than pre-expanded constants. */
 static uint16_t ZETA[128];
@@ -1977,12 +2019,37 @@ static int NTT_ROOTS_READY = 0;
 #define MLKEM_HEAD_MONT_AVX512_SCALAR_INDEX 6
 /* Shared add4 needs the YMM splat; Clang's single-output inverse uses the
  * scalar mirrors below. A common level-3 representation regresses one path. */
+#if defined(__AVX512F__) && defined(__AVX512BW__)
 #define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
   ((level) < 3 \
-       ? ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)] \
-       : _mm512_broadcast_i64x4(ZETA_NTT_INV_MONT_LO_AVX512_L3[index]))
+       ? ((level) == 0 \
+             ? mlkem_inv_mont_dense_compact_l0( \
+                   ZETA_NTT_INV_MONT_LO_AVX512_COMPACT[8 * (level) + (index)]) \
+             : (level) == 1 \
+                 ? mlkem_inv_mont_dense_compact_l1( \
+                       ZETA_NTT_INV_MONT_LO_AVX512_COMPACT[8 * (level) + (index)]) \
+                 : mlkem_inv_mont_dense_compact_l2( \
+                       ZETA_NTT_INV_MONT_LO_AVX512_COMPACT[8 * (level) + (index)])) \
+       : _mm512_set1_epi16( \
+             ZETA_NTT_INV_MONT_LO_AVX512_L3_SCALAR[index]))
+#define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
+  ((level) < 3 \
+       ? ((level) == 0 \
+             ? mlkem_inv_mont_dense_compact_l0( \
+                   ZETA_NTT_INV_MONT_HI_AVX512_COMPACT[8 * (level) + (index)]) \
+             : (level) == 1 \
+                 ? mlkem_inv_mont_dense_compact_l1( \
+                       ZETA_NTT_INV_MONT_HI_AVX512_COMPACT[8 * (level) + (index)]) \
+                 : mlkem_inv_mont_dense_compact_l2( \
+                       ZETA_NTT_INV_MONT_HI_AVX512_COMPACT[8 * (level) + (index)])) \
+       : _mm512_set1_epi16( \
+             ZETA_NTT_INV_MONT_HI_AVX512_L3_SCALAR[index]))
+#else
+#define MLKEM_INV_MONT_DENSE_LO_AVX512(level, index) \
+  ZETA_NTT_INV_MONT_LO_AVX512_DENSE[8 * (level) + (index)]
 #define MLKEM_INV_MONT_DENSE_HI_AVX512(level, index) \
   ZETA_NTT_INV_MONT_HI_AVX512_DENSE[8 * (level) + (index)]
+#endif
 #define MLKEM_INV_MONT_SCALAR_LO_AVX512(level, index) \
   _mm512_set1_epi16(ZETA_MONT_LO_AVX512_SCALAR[ \
       MLKEM_INV_MONT_AVX512_SCALAR_INDEX(level, index)])

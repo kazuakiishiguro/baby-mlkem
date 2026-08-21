@@ -118,6 +118,10 @@ static vec512 vec512_i16(const int16_t lane[32]) {
   return result;
 }
 
+static int16_t vec512_i16_lane(const vec512 *value, int lane) {
+  return (int16_t)(uint16_t)(value->word[lane / 4] >> (16 * (lane % 4)));
+}
+
 static vec512 vec512_u32(const uint32_t lane[16]) {
   vec512 result;
   for (int word = 0; word < 8; word++) {
@@ -173,6 +177,20 @@ static void print_i16_array(const char *name, const int16_t *values,
     } else {
       putchar(' ');
     }
+  }
+  printf("};\n\n");
+}
+
+static void print_i16_matrix(const char *name, const int16_t *values,
+                             int rows, int columns) {
+  printf("static const int16_t %s[%d][%d] = {\n", name, rows, columns);
+  for (int row = 0; row < rows; row++) {
+    printf("  {");
+    for (int column = 0; column < columns; column++) {
+      printf("%6d%s", values[row * columns + column],
+             column + 1 == columns ? "" : ",");
+    }
+    printf("}%s\n", row + 1 == rows ? "" : ",");
   }
   printf("};\n\n");
 }
@@ -340,6 +358,8 @@ int main(int argc, char **argv) {
   vec512 tail_mont_hi_avx512[3][8];
   vec512 inv_mont_lo_avx512_dense[32];
   vec512 inv_mont_hi_avx512_dense[32];
+  int16_t inv_mont_lo_avx512_compact[24][8];
+  int16_t inv_mont_hi_avx512_compact[24][8];
   vec256 inv_mont_lo_avx512_l3[8];
   int16_t inv_mont_lo_avx512_l3_scalar[8];
   int16_t inv_mont_hi_avx512_l3_scalar[8];
@@ -447,6 +467,18 @@ int main(int argc, char **argv) {
       }
       inv_mont_lo_avx512_dense[8 * level + block] = vec512_i16(low);
       inv_mont_hi_avx512_dense[8 * level + block] = vec512_i16(high);
+    }
+  }
+
+  /* Keep only the source lanes needed to rebuild repeated AVX-512 factors. */
+  for (int vector = 0; vector < 24; vector++) {
+    int level = vector / 8;
+    for (int lane = 0; lane < 8; lane++) {
+      int source_lane = (lane >> level) * (4 << level);
+      inv_mont_lo_avx512_compact[vector][lane] = vec512_i16_lane(
+          &inv_mont_lo_avx512_dense[vector], source_lane);
+      inv_mont_hi_avx512_compact[vector][lane] = vec512_i16_lane(
+          &inv_mont_hi_avx512_dense[vector], source_lane);
     }
   }
 
@@ -587,6 +619,10 @@ int main(int argc, char **argv) {
                      inv_mont_lo_avx512_dense, 24);
   print_vec512_array("ZETA_NTT_INV_MONT_HI_AVX512_DENSE",
                      inv_mont_hi_avx512_dense, 32);
+  print_i16_matrix("ZETA_NTT_INV_MONT_LO_AVX512_COMPACT",
+                   &inv_mont_lo_avx512_compact[0][0], 24, 8);
+  print_i16_matrix("ZETA_NTT_INV_MONT_HI_AVX512_COMPACT",
+                   &inv_mont_hi_avx512_compact[0][0], 24, 8);
   print_vec256_array("ZETA_NTT_INV_MONT_LO_AVX512_L3",
                      inv_mont_lo_avx512_l3, 8);
   print_i16_array("ZETA_NTT_INV_MONT_LO_AVX512_L3_SCALAR",
