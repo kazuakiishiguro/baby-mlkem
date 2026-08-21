@@ -1,0 +1,32 @@
+note: to learn more about a package, run `cargo info <name>`
+    Updating crates.io index
+     Locking 14 packages to latest compatible versions
+    Updating cc v1.4.0 -> v1.4.4
+    Updating either v1.17.0 -> v1.18.0
+    Updating find-msvc-tools v0.1.9 -> v0.1.11
+    Updating futures-core v0.3.33 -> v0.3.34
+    Updating futures-task v0.3.33 -> v0.3.34
+    Updating futures-util v0.3.33 -> v0.3.34
+    Updating js-sys v0.3.103 -> v0.3.104
+    Updating num-integer v0.1.46 -> v0.1.47
+    Updating pkg-config v0.3.33 -> v0.3.34
+    Updating uuid v1.24.0 -> v1.24.1
+    Updating wasm-bindgen v0.2.126 -> v0.2.127
+    Updating wasm-bindgen-macro v0.2.126 -> v0.2.127
+    Updating wasm-bindgen-macro-support v0.2.126 -> v0.2.127
+    Updating wasm-bindgen-shared v0.2.126 -> v0.2.127
+ Downloading crates ...
+  Downloaded either v1.18.0
+  Downloaded futures-task v0.3.34
+  Downloaded wasm-bindgen-macro v0.2.127
+  Downloaded js-sys v0.3.104
+  Downloaded futures-core v0.3.34
+  Downloaded find-msvc-tools v0.1.11
+  Downloaded pkg-config v0.3.34
+  Downloaded num-integer v0.1.47
+  Downloaded wasm-bindgen-shared v0.2.127
+  Downloaded uuid v1.24.1
+  Downloaded wasm-bindgen v0.2.127
+  Downloaded wasm-bindgen-macro-support v0.2.127
+  Downloaded cc v1.4.4
+  Downloaded futures-util v0.3.34
