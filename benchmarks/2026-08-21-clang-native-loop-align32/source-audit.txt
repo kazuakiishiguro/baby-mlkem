@@ -1,0 +1,12 @@
+target_profile=Clang native x86_64 ELF with __AVX2__, __AVX512F__, and __AVX512BW__
+makefile_change=default Clang native EXTRA_CFLAGS changes -falign-loops=64 to -falign-loops=32
+activation=only when EXTRA_CFLAGS origin is file and compiler predefines x86_64, ELF, Clang, AVX2, AVX512F, and AVX512BW
+explicit_override=EXTRA_CFLAGS supplied by the user is not rewritten
+algorithm_changed=NO
+api_changed=NO
+wire_format_changed=NO
+cache_changed=NO
+external_object_added=NO
+runtime_library_added=NO
+vendor_backend_added=NO
+non_target_profiles=GCC native, Clang/GCC AVX2, and Clang/GCC scalar remain byte-identical

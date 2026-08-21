@@ -1,0 +1,6 @@
+change_scope=Makefile default compiler flag selection only
+algorithm_or_assembly_changed=NO
+new_symbols=none
+new_tables=none
+product_root_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+explicit_alignment_override_test=Clang native EXTRA_CFLAGS with -falign-loops=64 restores baseline artifact e4e6a73b...

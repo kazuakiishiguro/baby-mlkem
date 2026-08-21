@@ -1,0 +1,12 @@
+73a6b194b0c43fb11de447cbc25d30c0159a39bb990599bdcf4c665abe534a24  benchmarks/2026-08-21-clang-native-loop-align32/environment.txt
+b6d5021447a8dd617880e405c1f72850d1e98b91ba868754ebf3740cb61947f7  benchmarks/2026-08-21-clang-native-loop-align32/instruction-audit.txt
+2df8a10278f0e1221562e0db9d609babd254a45bfea1013b2188a10d425cace4  benchmarks/2026-08-21-clang-native-loop-align32/product-ab-15x100k.txt
+bec42eb39518fdc6d9d8736b066ceb95303a1a11dcfb1cae592568257e364c97  benchmarks/2026-08-21-clang-native-loop-align32/product-ab-summary.txt
+680020bfc0fc3f7645085e05352649023ca724d13a76cbcddba51f2c669931f8  benchmarks/2026-08-21-clang-native-loop-align32/profile-identity.txt
+7978419dc9a0714c61e46d53e8a6cdde05cb686dcec70ee50b9a77ea3e1ebf14  benchmarks/2026-08-21-clang-native-loop-align32/README.md
+ddac59de60af84bb8cc72c70cb70ebf6c1d9c7d30e2dc9d4d377025bc30e0625  benchmarks/2026-08-21-clang-native-loop-align32/sanitizer.txt
+a9620c3d950872211850289a6591ae75a82b544f51aa106b5a2b7ded0b275f90  benchmarks/2026-08-21-clang-native-loop-align32/size-baseline.txt
+ac9eda861ad479306d29433f05b6ace5c9fc3acb799f9836760fc579bc437c1d  benchmarks/2026-08-21-clang-native-loop-align32/size-candidate.txt
+6fc07c2f24839fdc2b30fd20e22a08ac360332cd0b26d208310fff3c6d12658b  benchmarks/2026-08-21-clang-native-loop-align32/source-audit.txt
+a0547c98a31205b40832f6b62a0b24b65a6a4d97a56ea01b0254663906a9face  benchmarks/2026-08-21-clang-native-loop-align32/stack-candidate.txt
+8a9ab01145a713aab2b00504352cceecef76dfa2da32b4fa0b54675456b81642  benchmarks/2026-08-21-clang-native-loop-align32/stage-candidate.txt

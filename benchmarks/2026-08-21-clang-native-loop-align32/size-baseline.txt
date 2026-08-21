@@ -1,0 +1,14 @@
+artifact=baseline/baby_mlkem768_product.o
+artifact_sha256=e4e6a73b25ba721a8278025c0b3c99b980b59db76977826551a69799cc969004
+artifact_file_bytes=88376
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=46264
+readonly_data_bytes=14822
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=61086
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
