@@ -1,0 +1,10 @@
+The pragma is guarded by __clang__ && __AVX512F__.
+Only native Clang differs from the preceding revision.
+
+| Profile | Artifact SHA-256 | Primary bytes | Code bytes | RO bytes | Writable bytes | Identity |
+| native Clang | ab224b425bc0689e4d3a9768a7c2698443b39c34f498ba7e6553f382cf79781a | 53163 | 42405 | 10758 | 18001 | changed |
+| native GCC | 9853f4f93572cc2c872d696a14bdf2308d47b65a1f9b606d3e03fef55d679012 | 58814 | 55306 | 3508 | 33728 | byte-identical |
+| AVX2-only Clang | b6fd46a016be510d9bd343ecdfc83f599e9a149f8adee160e39525dca9408329 | 45032 | 39762 | 5270 | 26593 | byte-identical |
+| AVX2-only GCC | c2816644d009902c2d0b9e1eadb776bf858471be58fc6d461a481914acb660e88 | 53019 | 49271 | 3748 | 34920 | byte-identical |
+| scalar Clang | b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2 | 62098 | 60082 | 2016 | 18944 | byte-identical |
+| scalar GCC | 2bccdaa67e7a9bdaab9bc2ab7cb3eb12b6cce02cf11c5d9419ddb3e9c91e9b93 | 22994 | 21238 | 1756 | 19488 | byte-identical |

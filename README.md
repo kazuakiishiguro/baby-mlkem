@@ -495,13 +495,14 @@ for the local Clang product, 676 B for the sampled liboqs product, and 13,088 B
 for Botan because its reachable exception handlers require it.
 
 The current 2026-08-21 no-cache baselines use the normal compiler-specific
-speed flags. The Clang native row is measured at `b0366cc`; the Clang AVX2-only
-row remains at `aeb1c35`; GCC native reflects `b0366cc`, while the AVX2-only
-and scalar rows remain byte-identical to their parent builds:
+speed flags. The Clang native row is measured at `14f85e4`; the Clang AVX2-only
+row remains at `aeb1c35`; GCC native reflects the same generated output as
+`b0366cc`, while the AVX2-only and scalar rows remain byte-identical to their
+parent builds:
 
 | Profile | Compiler | Code bytes | Read-only data | Primary bytes | Initialized writable | Zero-fill | Writable total |
 |---|---|---:|---:|---:|---:|---:|---:|
-| native AVX512 | Clang 18.1.3 | 44,677 | 10,758 | 55,435 | 0 | 18,001 | 18,001 |
+| native AVX512 | Clang 18.1.3 | 42,405 | 10,758 | 53,163 | 0 | 18,001 | 18,001 |
 | native AVX512 | GCC 13.3.0 LTO | 55,306 | 3,508 | 58,814 | 0 | 33,728 | 33,728 |
 | AVX2-only | Clang 18.1.3 | 39,762 | 5,270 | 45,032 | 0 | 26,593 | 26,593 |
 | AVX2-only | GCC 13.3.0 LTO | 49,271 | 3,748 | 53,019 | 8 | 34,912 | 34,920 |
@@ -1350,11 +1351,11 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current candidate pass | `b0366cc` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; `make check-ntt-roots` passes, and the four AVX2/scalar product identity checks remain byte-identical. The detailed candidate evidence is in the [native keygen NTT report](benchmarks/2026-08-21-clang-native-keygen-ntt-minsize/README.md). |
+| Correctness | current candidate pass | `14f85e4` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; `make check-ntt-roots` passes, and the five non-native product identity checks remain byte-identical. The detailed candidate evidence is in the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md). |
 | Native aggregate speed | current post-FIPS milestone pass | The ten-comparator report at `f711965` passes; the narrowest aggregate ratio/CI lower bound is 1.5732x/1.5528x against Kyber. A final code revision still requires a same-revision rerun. |
 | Native operation speed | current post-FIPS milestone pass | All 40 rows pass; the narrowest operation ratio is 1.3323x and the narrowest CI lower bound is 1.3132x. |
 | AVX2-only speed | current post-FIPS milestone pass | The report at `0c0f16c` passes all 40 rows and the AVX512 audit; the narrowest aggregate ratio/CI lower bound is 1.3553x/1.3398x, and the narrowest operation ratio/CI lower bound is 1.0905x/1.0887x. A final code revision still requires a same-revision rerun. |
-| Production size | fail | At `b0366cc`, Clang AVX2-only remains 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native is 55,435 bytes; the current native evidence passes Kyber, fair Kyber, and PQClean but still fails mlkem-native by roughly 4 KiB. |
+| Production size | fail | At `14f85e4`, Clang AVX2-only remains 45,032 bytes and passes all 10 pinned primary-size comparators, including OpenSSL by 17 bytes. Clang native is 53,163 bytes, 2,272 bytes below `b0366cc`; the exact same-revision mlkem-native comparison remains open. |
 | Maximum stack | current measurements reported | At `cb4bfe9` native and `aeb1c35` AVX2-only, the measured maxima are 8,056 and 4,512 bytes. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
 | Clean final revision | open | Current correctness and post-FIPS speed milestones pass, but same-revision authoritative speed reruns remain open and native primary size still fails the mlkem-native comparator. |
 
@@ -1369,16 +1370,16 @@ The current short-term filter is therefore: only pursue changes that reduce real
 core work in SHAKE/sample_ntt, forward/inverse NTT, K=3 accumulation, or range
 normalization across encode/compress boundaries.
 
-The latest accepted native-only size step is `b0366cc`: native Clang applies
-`minsize` and two-way loop unrolling to the existing six-transform keygen NTT
-helper. It saves 1,611 native Clang primary bytes and 2,408 artifact bytes;
-the 15-pair product screen remains above the `0.995x` size-only floor, while
-the focused keygen stage improves directionally. No broad speed gain is
-credited. The preceding parser-boundary step `f17bb13`, fixed SHA3 absorb step
-`c05f714`, and gamma-pair compaction `e73b71d` remain recorded below.
-The remaining hard size target is roughly 4 KiB against mlkem-native; the final
-same-revision all-library speed matrix is also still open. See the [native
-keygen NTT report](benchmarks/2026-08-21-clang-native-keygen-ntt-minsize/README.md).
+The latest accepted native-only size step is `14f85e4`: native Clang disables
+round-loop unrolling in the existing x4 Keccak helper. It saves 2,272 native
+Clang primary bytes and 2,304 artifact bytes; the 15-pair product screen
+remains above the `0.995x` size-only floor, and the uncached public-preparation
+stage is neutral-to-positive. No broad speed gain is credited. The preceding
+keygen NTT step `b0366cc`, parser-boundary step `f17bb13`, fixed SHA3 absorb
+step `c05f714`, and gamma-pair compaction `e73b71d` remain recorded below.
+The previous roughly 4 KiB native size gap has been reduced by 2,272 bytes;
+the final same-revision all-library speed matrix and exact mlkem-native size
+comparison are still open. See the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md).
 
 The broad frontier table below is the last full snapshot before the focused
 K=3 and inverse-add follow-ups. The post-change A/B data is recorded in
@@ -1439,6 +1440,7 @@ Near-term target selection:
 | Clang native fixed SHA3 absorb qword broadcast | Accepted as a Clang-native size-only optimization; GCC native size also falls, AVX2-only and scalar products byte-identical | The fixed 1,184-byte SHA3-256 absorb macros replace temporary qword loads plus XORs with EVEX qword-broadcast memory XORs. Clang native primary/code/read-only/artifact size changes are `-160`/`-160`/`0`/`-128` bytes to `57,264`/`46,410`/`10,854`/`84,216` bytes; GCC native primary/code/artifact changes are `-334`/`-334`/`-320` bytes. A CPU-0, 15-pair, 100,000-iteration product screen remains above the `0.995x` size-only floor, while direct fixed `H(pk)` is `0.999258x` geometric mean with `1/15` wins; no speed gain is credited. No benchmark cache, vendored backend, external object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/README.md). |
 | Clang native AVX512VBMI2 rejection parser `minsize` | Accepted as a native Clang size/no-regression optimization; GCC and narrower profiles byte-identical | The existing AVX512VBMI2 rejection parser keeps its `noinline` boundary and receives `__attribute__((minsize))` only under Clang `AVX512F+VBMI2+VL`. Native primary/code/read-only/artifact size changes are `-218`/`-58`/`-160`/`-192` bytes to `57,046`/`46,352`/`10,694`/`84,024` bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `1.001574x`/`1.006358x`/`0.999977x`/`1.002328x`, all above the `0.995x` size-only floor; no speed gain is credited. The x8 raw stage is directionally `1.010018x`, while Keccak/store is `0.999039x`, so the next target remains the producer/parser boundary rather than another parser shuffle. No cache, vendored backend, external object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-21-clang-native-parser-minsize/README.md). |
 | Clang native keygen mixed-NTT loop compaction | Accepted as a native Clang size/no-regression optimization; GCC and narrower profiles byte-identical | The existing six-transform keygen NTT helper keeps a two-transform loop group under `minsize`, instead of retaining the full six-way body. Native primary/code/read-only/artifact size changes are `-1,611`/`-1,675`/`+64`/`-2,408` bytes to `55,435`/`44,677`/`10,758`/`81,616` bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `0.999551x`/`0.996314x`/`0.999666x`/`1.001256x`; no broad speed gain is credited. The focused keygen stage is directionally positive. No cache, vendored backend, external object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-21-clang-native-keygen-ntt-minsize/README.md). |
+| Clang native x4 Keccak round compaction | Accepted as a native Clang size/no-regression optimization; GCC and narrower profiles byte-identical | The native x4 Keccak round loop now disables unrolling, shrinking `sha3_sample_ntt_tail_shared_clang_avx512` from `0x1521` to `0xc41` bytes. Native primary/code/read-only/artifact size changes are `-2,272`/`-2,272`/`0`/`-2,304` bytes to `53,163`/`42,405`/`10,758`/`79,312` bytes. Fifteen CPU-0 product pairs keep keygen/encaps/decaps/roundtrip geometric means at `1.003378x`/`1.002328x`/`0.996470x`/`0.998976x`; no broad speed gain is credited. The nine-pair uncached public-preparation stage is `1.003387x`; the unchanged x8 raw row is treated as layout noise. No cache, vendored backend, external object, runtime library, API, algorithm, or wire-format dependency is added. See the [A/B report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md). |
 | Native AVX512 partial forward-NTT boundary | Accepted for GCC and Clang native; AVX2-only unchanged | The fused K=3 consumers now carry the forward transform through `l2` in signed 16-bit Montgomery form and canonicalize once before their unchanged unsigned final `l1`. This removes the old head canonicalization plus two levels of 32-bit widening, reciprocal reduction, and per-butterfly correction. Production-aligned GCC/Clang encryption stage medians improve `1.1303x`/`1.1395x`; decrypt NTT+accum improves `1.0756x`/`1.2593x`. GCC 100k KEM paired medians improve encaps/decaps/roundtrip by `1.0724x`/`1.1137x`/`1.0432x`, all 14/14. No external object, runtime library, cache, or wire-format dependency is added; the Montgomery arithmetic remains attributed to the existing upstream-derived local design. |
 | Native AVX512 full-tail consumer handoff | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | Fused K=3 consumers now reuse the existing register-merged ZMM `l3`..`l1` tail, leave its complete NTT output lazy, and canonicalize each contiguous 32-coefficient block only when accumulation or key encoding consumes it. This removes one 512-byte coefficient read/write boundary per transform and the consumer's YMM lane reconstruction. Clang/GCC cached K-PKE paired medians improve `1.0365x`/`1.0358x`; 100k KEM encaps improves `1.0502x`/`1.0264x`, decaps `1.0332x`/`1.0070x`, and roundtrip `1.0173x`/`1.0130x`. The scheduling and handoff are repository-local; Montgomery/Harvey arithmetic remains attributed to upstream Kyber, and no external object, cache, table, API, or wire-format dependency is added. |
 | Native AVX512 full-lazy single-correction canonicalization | Accepted for GCC and Clang native; AVX2-only/scalar unchanged | The proved `(-7Q,8Q)` forward-NTT output reduces by the existing signed Barrett step to `[0,Q]`, so the block consumer now removes only the possible value `Q` with one compare and masked subtract instead of running generic negative and high corrections. Clang/GCC fused lazy K=3 boundaries improve `1.0217x`/`1.0230x` paired median and cached K-PKE improves `1.0111x`/`1.0106x`; 100k encaps improves `1.0094x`/`1.0111x`, decaps `1.0065x`/`1.0132x`, and roundtrip `1.0067x`/`1.0064x`. The output remains canonical, data/BSS are unchanged, and no cache, external object, table, API, or wire-format dependency is added. |

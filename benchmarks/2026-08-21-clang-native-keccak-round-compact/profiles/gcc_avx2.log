@@ -1,0 +1,18 @@
+profile=gcc_avx2
+revision=14f85e4
+compiler=gcc
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+artifact=/tmp/baby-mlkem-final-avx2-gcc.SQxlpm/baby_mlkem768_product.o
+artifact_sha256=c2816644d009902c2d0b9e1ead776bf858471be58fc6d461a481914acb660e88
+artifact_file_bytes=67904
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49271
+readonly_data_bytes=3748
+unwind_bytes=1444
+exception_table_bytes=0
+primary_bytes=53019
+initialized_writable_bytes=8
+zero_fill_bytes=34912
+writable_bytes=34920
+max_stack_bytes=unmeasured
