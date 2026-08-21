@@ -531,6 +531,10 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
   __m256i a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
   __m256i a22 = st[22], a23 = st[23], a24 = st[24];
 
+#if defined(__clang__) && defined(__AVX512F__)
+/* Keep native x4 callers compact without changing the AVX2-only layout. */
+#pragma clang loop unroll(disable)
+#endif
   for (int round = 0; round < 24; round++) {
     __m256i c0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a0, a5), _mm256_xor_si256(a10, a15)), a20);
     __m256i c1 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a1, a6), _mm256_xor_si256(a11, a16)), a21);
