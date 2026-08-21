@@ -120,6 +120,14 @@ ifeq ($(CORE_AVX512_MATRIX_ASM_ENABLED),yes)
 CORE_ASM_SRCS += keccakf8_matrix_avx512.S
 CORE_ASM_DEF += -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM
 endif
+CLANG_NATIVE_AVX512BW_ENABLED := $(shell $(CC) $(CFLAGS) $(ARCH_CFLAGS) -dM -E -x c /dev/null 2>/dev/null | awk '/__x86_64__/ { x = 1 } /__ELF__/ { e = 1 } /__clang__/ { c = 1 } /__AVX2__/ { a = 1 } /__AVX512F__/ { f = 1 } /__AVX512BW__/ { b = 1 } END { if (x && e && c && a && f && b) print "yes" }')
+ifeq ($(origin EXTRA_CFLAGS),file)
+ifeq ($(CLANG_NATIVE_AVX512BW_ENABLED),yes)
+# Native Clang's loop bodies do not need 64-byte alignment; reduce padding
+# without overriding an explicit EXTRA_CFLAGS selection.
+EXTRA_CFLAGS := $(filter-out -falign-loops=64,$(EXTRA_CFLAGS)) -falign-loops=32
+endif
+endif
 CORE_ASM_OBJS := $(CORE_ASM_SRCS:.S=.o)
 PRODUCT_API_OBJ = baby_mlkem_api.product.o
 PRODUCT_ASM_OBJS := $(patsubst %.S,%.product.o,$(CORE_ASM_SRCS))
