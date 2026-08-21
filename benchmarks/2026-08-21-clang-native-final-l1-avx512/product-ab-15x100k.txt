@@ -567,4 +567,3 @@ mlkem_decaps_core_ns_per_op=2776.01
 mlkem_decaps_core_ops_per_s=360229.68
 mlkem_roundtrip_core_ns_per_op=10333.19
 mlkem_roundtrip_core_ops_per_s=96775.51
-
