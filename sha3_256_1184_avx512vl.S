@@ -44,67 +44,40 @@
 .endm
 
 .macro mlkem_absorb_rate input
-    vmovq     0(\input), %xmm31
-    vpxorq  %xmm31, %xmm0, %xmm0
-    vmovq     8(\input), %xmm31
-    vpxorq  %xmm31, %xmm1, %xmm1
-    vmovq    16(\input), %xmm31
-    vpxorq  %xmm31, %xmm2, %xmm2
-    vmovq    24(\input), %xmm31
-    vpxorq  %xmm31, %xmm3, %xmm3
-    vmovq    32(\input), %xmm31
-    vpxorq  %xmm31, %xmm4, %xmm4
-    vmovq    40(\input), %xmm31
-    vpxorq  %xmm31, %xmm5, %xmm5
-    vmovq    48(\input), %xmm31
-    vpxorq  %xmm31, %xmm6, %xmm6
-    vmovq    56(\input), %xmm31
-    vpxorq  %xmm31, %xmm7, %xmm7
-    vmovq    64(\input), %xmm31
-    vpxorq  %xmm31, %xmm8, %xmm8
-    vmovq    72(\input), %xmm31
-    vpxorq  %xmm31, %xmm9, %xmm9
-    vmovq    80(\input), %xmm31
-    vpxorq  %xmm31, %xmm10, %xmm10
-    vmovq    88(\input), %xmm31
-    vpxorq  %xmm31, %xmm11, %xmm11
-    vmovq    96(\input), %xmm31
-    vpxorq  %xmm31, %xmm12, %xmm12
-    vmovq   104(\input), %xmm31
-    vpxorq  %xmm31, %xmm13, %xmm13
-    vmovq   112(\input), %xmm31
-    vpxorq  %xmm31, %xmm14, %xmm14
-    vmovq   120(\input), %xmm31
-    vpxorq  %xmm31, %xmm15, %xmm15
-    vmovq   128(\input), %xmm31
-    vpxorq  %xmm31, %xmm16, %xmm16
+    # Keccak qwords are lane-independent; broadcast preserves the low qword
+    # result while folding the load and XOR into one instruction.
+    vpxorq    0(\input){1to2}, %xmm0, %xmm0
+    vpxorq    8(\input){1to2}, %xmm1, %xmm1
+    vpxorq   16(\input){1to2}, %xmm2, %xmm2
+    vpxorq   24(\input){1to2}, %xmm3, %xmm3
+    vpxorq   32(\input){1to2}, %xmm4, %xmm4
+    vpxorq   40(\input){1to2}, %xmm5, %xmm5
+    vpxorq   48(\input){1to2}, %xmm6, %xmm6
+    vpxorq   56(\input){1to2}, %xmm7, %xmm7
+    vpxorq   64(\input){1to2}, %xmm8, %xmm8
+    vpxorq   72(\input){1to2}, %xmm9, %xmm9
+    vpxorq   80(\input){1to2}, %xmm10, %xmm10
+    vpxorq   88(\input){1to2}, %xmm11, %xmm11
+    vpxorq   96(\input){1to2}, %xmm12, %xmm12
+    vpxorq  104(\input){1to2}, %xmm13, %xmm13
+    vpxorq  112(\input){1to2}, %xmm14, %xmm14
+    vpxorq  120(\input){1to2}, %xmm15, %xmm15
+    vpxorq  128(\input){1to2}, %xmm16, %xmm16
 .endm
 
 .macro mlkem_absorb_tail input
-    vmovq     0(\input), %xmm31
-    vpxorq  %xmm31, %xmm0, %xmm0
-    vmovq     8(\input), %xmm31
-    vpxorq  %xmm31, %xmm1, %xmm1
-    vmovq    16(\input), %xmm31
-    vpxorq  %xmm31, %xmm2, %xmm2
-    vmovq    24(\input), %xmm31
-    vpxorq  %xmm31, %xmm3, %xmm3
-    vmovq    32(\input), %xmm31
-    vpxorq  %xmm31, %xmm4, %xmm4
-    vmovq    40(\input), %xmm31
-    vpxorq  %xmm31, %xmm5, %xmm5
-    vmovq    48(\input), %xmm31
-    vpxorq  %xmm31, %xmm6, %xmm6
-    vmovq    56(\input), %xmm31
-    vpxorq  %xmm31, %xmm7, %xmm7
-    vmovq    64(\input), %xmm31
-    vpxorq  %xmm31, %xmm8, %xmm8
-    vmovq    72(\input), %xmm31
-    vpxorq  %xmm31, %xmm9, %xmm9
-    vmovq    80(\input), %xmm31
-    vpxorq  %xmm31, %xmm10, %xmm10
-    vmovq    88(\input), %xmm31
-    vpxorq  %xmm31, %xmm11, %xmm11
+    vpxorq    0(\input){1to2}, %xmm0, %xmm0
+    vpxorq    8(\input){1to2}, %xmm1, %xmm1
+    vpxorq   16(\input){1to2}, %xmm2, %xmm2
+    vpxorq   24(\input){1to2}, %xmm3, %xmm3
+    vpxorq   32(\input){1to2}, %xmm4, %xmm4
+    vpxorq   40(\input){1to2}, %xmm5, %xmm5
+    vpxorq   48(\input){1to2}, %xmm6, %xmm6
+    vpxorq   56(\input){1to2}, %xmm7, %xmm7
+    vpxorq   64(\input){1to2}, %xmm8, %xmm8
+    vpxorq   72(\input){1to2}, %xmm9, %xmm9
+    vpxorq   80(\input){1to2}, %xmm10, %xmm10
+    vpxorq   88(\input){1to2}, %xmm11, %xmm11
 .endm
 
 .macro mlkem_copy_load_lane state, offset, input, output
