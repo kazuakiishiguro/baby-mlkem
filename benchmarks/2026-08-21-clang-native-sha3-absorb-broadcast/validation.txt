@@ -1,0 +1,7 @@
+make -B check-ntt-roots test-product product-size CC=clang AVX2_BACKEND=core: PASS
+make -B test-product product-size CC=gcc AVX2_BACKEND=core: PASS in the candidate comparison tree
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f': PASS in the candidate comparison tree
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2': PASS in the candidate comparison tree
+make -B bench-keccak CC=clang AVX2_BACKEND=core: PASS
+fixed H(pk) direct A/B: 15 alternating pairs at 100000 iterations, CPU 0
+product API A/B: 15 alternating pairs at 100000 iterations, CPU 0

@@ -1,0 +1,7 @@
+changed_files=sha3_256_1184_avx512vl.S
+scope=fixed SHA3-256 1184-byte public-key absorb path
+change=replace vmovq plus vpxorq with EVEX qword-broadcast vpxorq memory operands
+invariant=Keccak qword lanes are independent; the low qword output is unchanged
+unchanged=algorithm, API, wire format, fixed input length, cache behavior
+cache=internal caches disabled; no benchmark cache or precomputed KEM result used
+vendor=none; no external cryptographic object or runtime dependency added

@@ -1,0 +1,13 @@
+e5a85d21da1de066530bf30913291a1197c62c41643323e8cc4b5e971cc3a5bc  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/environment.txt
+a0423d32f7a39b59326dc691b46550b284af42220ce123f24ca7dca38a13ec55  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/fixed-h-ab-15x100k.txt
+3d35567827c8a7a22d1f3dc9ea2c68131087143b797801c09da426fa7779eea9  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/fixed-h-summary.txt
+de00f3d3497b3d4cb2b4883e74fc4fcd75152355cbfc342c05fa1d2822a5227c  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/gcc-size-baseline.txt
+5a6da6bcaf0b0cd818d7068347196f1e59cc737c885952c076383cc9609c3b97  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/gcc-size-candidate.txt
+55c01366d874d63f439cf7d694f1a80c2840b4b198fe2d54427497e8ab725926  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/product-ab-15x100k.txt
+ee428608ca5fc3e98676d74be28af03029b17ebd023b2f016b0aab5b6659d84d  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/product-ab-summary.txt
+5d782598b9ac1d98f1f632602cc60cfe1159e2a6534fe0f39d8aad581cff95df  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/profile-identity.txt
+45098e3905e56b81e2e3344a251c5f4bd25506fb62ef06ba2b655bcecd52cf0b  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/README.md
+ad22a4c6ff047e681079a504dbdc2e7e3acfa55847a963df8134b87a1ddebf31  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/size-baseline.txt
+2b7873be5b0711ec65f29423b4ce0143029a546d54da3dc5df5b3d4b50231e73  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/size-candidate.txt
+e92c1e2c028ae5f0f5afc08f814586b9b21898801a24db69f4b4a72fd7bee5a2  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/source-audit.txt
+bccd0a6a577c3e8a4911be08ccdc5a602308f7bdfeaaa40dbab4ad7be5f4db82  benchmarks/2026-08-21-clang-native-sha3-absorb-broadcast/validation.txt
