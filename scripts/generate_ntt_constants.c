@@ -369,14 +369,21 @@ int main(int argc, char **argv) {
   vec512 inv_tail_avx512[15];
   vec512 tail_l3x2[8];
   vec512 tail_l2x2[8];
-  int16_t gamma_mont_lo[128];
+  int16_t gamma_mont_lo[64];
   int16_t gamma_mont_hi[128];
 
   for (int i = 0; i < 128; i++) {
     uint16_t exponent = bitrev7((uint16_t)i);
     zeta[i] = modexp(17, exponent);
     gamma[i] = modexp(17, (uint16_t)(2 * exponent + 1));
-    mont_factor(gamma[i], &gamma_mont_lo[i], &gamma_mont_hi[i]);
+    int16_t gamma_lo;
+    mont_factor(gamma[i], &gamma_lo, &gamma_mont_hi[i]);
+    if ((i & 1) == 0) {
+      gamma_mont_lo[i >> 1] = gamma_lo;
+    } else if ((int32_t)gamma_lo + gamma_mont_lo[i >> 1] != 0) {
+      fprintf(stderr, "gamma low-factor sign-pair invariant failed at %d\n", i);
+      return 1;
+    }
   }
 
   for (int i = 0; i < 15; i++) {
@@ -647,7 +654,7 @@ int main(int argc, char **argv) {
   print_vec512_array("ZETA_NTT_TAIL_L3X2", tail_l3x2, 8);
   print_vec512_array("ZETA_NTT_TAIL_L2X2", tail_l2x2, 8);
   printf("#if defined(__clang__)\n");
-  print_i16_array("GAMMA_MONT_LO_CLANG_AVX512", gamma_mont_lo, 128);
+  print_i16_array("GAMMA_MONT_LO_CLANG_AVX512", gamma_mont_lo, 64);
   print_i16_array("GAMMA_MONT_HI_CLANG_AVX512", gamma_mont_hi, 128);
   printf("#else\n");
   print_i16_array("GAMMA_MONT_HI_GCC_AVX512", gamma_mont_hi, 128);

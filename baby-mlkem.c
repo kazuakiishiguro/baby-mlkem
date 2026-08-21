@@ -5142,6 +5142,19 @@ static MLKEM_ALWAYS_INLINE __m512i ntt_acc4_asym_c0_factor_avx512(
 }
 
 #if defined(__clang__)
+/* Clang stores one value from each adjacent x,-x factor pair. */
+static MLKEM_ALWAYS_INLINE __m512i
+ntt_gamma_mont_expand16_clang_avx512(const int16_t factor[64], int pair) {
+  const __m128i values = _mm_loadu_si128(
+      (const __m128i *)(const void *)(factor + (pair >> 1)));
+  const __m128i neg = _mm_sub_epi16(_mm_setzero_si128(), values);
+  __m256i expanded = _mm256_castsi128_si256(
+      _mm_unpacklo_epi16(values, neg));
+  expanded = _mm256_inserti128_si256(
+      expanded, _mm_unpackhi_epi16(values, neg), 1);
+  return _mm512_slli_epi32(_mm512_cvtepu16_epi32(expanded), 16);
+}
+
 /* Keep the normal residue while allowing a centered Montgomery output. */
 static MLKEM_ALWAYS_INLINE __m512i
 ntt_acc4_asym_c0_factor_mont_clang_avx512(
@@ -5157,11 +5170,8 @@ static MLKEM_ALWAYS_INLINE void
 ntt_acc4_asym_c0_factors3_mont_clang_avx512(
     __m512i y0, __m512i y1, __m512i y2, int pair,
     __m512i *y0_c0, __m512i *y1_c0, __m512i *y2_c0) {
-  __m512i gamma_lo = _mm512_slli_epi32(
-      _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-          (const __m256i *)(const void *)(
-              GAMMA_MONT_LO_CLANG_AVX512 + pair))),
-      16);
+  __m512i gamma_lo = ntt_gamma_mont_expand16_clang_avx512(
+      GAMMA_MONT_LO_CLANG_AVX512, pair);
   __m512i gamma_hi = _mm512_slli_epi32(
       _mm512_cvtepu16_epi32(_mm256_loadu_si256(
           (const __m256i *)(const void *)(
@@ -5456,11 +5466,8 @@ ntt3_mul_acc4_fused_final_lazy512_avx512(
     __m512i y2 = ntt_acc4_reduce_lazy_block32_avx512(
         b[2], offset);
 #if defined(__clang__)
-    __m512i gamma_lo = _mm512_slli_epi32(
-        _mm512_cvtepu16_epi32(_mm256_loadu_si256(
-            (const __m256i *)(const void *)(
-                GAMMA_MONT_LO_CLANG_AVX512 + pair))),
-        16);
+    __m512i gamma_lo = ntt_gamma_mont_expand16_clang_avx512(
+        GAMMA_MONT_LO_CLANG_AVX512, pair);
     __m512i gamma_hi = _mm512_slli_epi32(
         _mm512_cvtepu16_epi32(_mm256_loadu_si256(
             (const __m256i *)(const void *)(
