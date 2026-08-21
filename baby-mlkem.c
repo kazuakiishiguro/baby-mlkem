@@ -6501,7 +6501,13 @@ static inline __m256i sample_ntt_cmpgt_epi16_avx2(__m256i a, __m256i b) {
 #else
 #define MLKEM_SAMPLE_NTT_PARSE_NOINLINE
 #endif
-static MLKEM_SAMPLE_NTT_PARSE_NOINLINE int
+#if defined(__clang__) && defined(__AVX512F__) && \
+    defined(__AVX512VBMI2__) && defined(__AVX512VL__)
+#define MLKEM_SAMPLE_NTT_PARSE_MINSIZE __attribute__((minsize))
+#else
+#define MLKEM_SAMPLE_NTT_PARSE_MINSIZE
+#endif
+static MLKEM_SAMPLE_NTT_PARSE_NOINLINE MLKEM_SAMPLE_NTT_PARSE_MINSIZE int
 sample_ntt_parse_stream_avx2_ready(const uint8_t *stream, size_t stream_len,
                                   poly256 out, int count) {
   size_t pos = 0;
@@ -6676,6 +6682,7 @@ sample_ntt_parse_stream_avx2_ready(const uint8_t *stream, size_t stream_len,
   }
   return (int)(op - out);
 }
+#undef MLKEM_SAMPLE_NTT_PARSE_MINSIZE
 #undef MLKEM_SAMPLE_NTT_PARSE_NOINLINE
 
 static int sample_ntt_parse_stream_avx2(const uint8_t *stream,
