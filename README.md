@@ -1348,16 +1348,20 @@ in-tree core, product, upstream, and PQClean paths described above.
 
 | Gate | Status | Evidence or gap |
 |---|---|---|
-| Correctness | current code-tree pass | `d5e58a8` passes GCC/Clang native, AVX2-only, and scalar KATs and product tests; `make check-ntt-roots` passes, and the five non-native product identity checks remain byte-identical. The detailed candidate evidence is in the [native x4 Keccak report](benchmarks/2026-08-21-clang-native-keccak-round-compact/README.md). |
-| Native aggregate speed | PASS | The [current native report](benchmarks/2026-08-22-goal-native-speed/README.md) passes all 40 rows; the narrowest roundtrip ratio/CI lower bound is 1.5770x/1.5692x against standard-flags Kyber. |
-| Native operation speed | PASS | The current report passes all 40 rows; the narrowest operation ratio/CI lower bound is 1.3328x/1.3196x for Kyber keygen. |
-| AVX2-only speed | PASS | The [current AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed/README.md) passes all 40 rows and the AVX512 audit; the narrowest roundtrip ratio/CI lower bound is 1.3759x/1.3740x, and the narrowest operation ratio/CI lower bound is 1.1079x/1.1015x. |
-| Production size | native FAIL, AVX2 PASS | The [current size report](benchmarks/2026-08-22-goal-size-current/README.md) compares the same latest mlkem-native commit: native is 53,163 B versus 51,186 B (`+1,977 B`, FAIL); AVX2-only is 45,032 B versus 51,267 B (`-6,235 B`, PASS). |
-| Maximum stack | current measurements reported | The current size report measures 8,056 B native and 4,512 B AVX2-only locally. Stack is reported separately and does not satisfy the remaining native primary-size gate. |
-| Clean final revision | open | Correctness and both same-code speed profiles pass. The remaining hard gate is native primary size against the current mlkem-native comparator; a full ten-comparator size matrix at the current comparator revisions is also not yet rerun. |
+| Correctness | PASS | Source commit `400dbe4` passes Clang/GCC native, AVX2-only, and scalar KAT/product tests, native and AVX2 stage validation, Clang native ASan+UBSan, GCC native UBSan, `make check-ntt-roots`, and the 16-path deterministic corpus check. See the [c8 validation report](benchmarks/2026-08-22-goal-c8-validation/README.md). |
+| Native aggregate speed | PASS | The [c8 native report](benchmarks/2026-08-22-goal-native-speed-c8/README.md) passes all 40 rows; the narrowest roundtrip ratio/CI lower bound is 1.5709x/1.5563x against fair-flags Kyber. |
+| Native operation speed | PASS | The c8 native report passes all 40 rows; the narrowest operation ratio/CI lower bound is 1.3282x/1.3209x for Kyber keygen. |
+| AVX2-only speed | PASS | The [c8 AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed-c8/README.md) passes all 40 rows and the AVX512 audit; the narrowest roundtrip ratio/CI lower bound is 1.3754x/1.3388x, and the narrowest operation ratio/CI lower bound is 1.1062x/1.1002x for libjade keygen. |
+| Production size | PASS | The [c8 size matrix](benchmarks/2026-08-22-goal-size-c8/README.md) passes all 20 rows: native is 51,171 B versus 51,200 B for mlkem-native (`-29 B`), and AVX2-only is 45,032 B versus 45,049 B for OpenSSL (`-17 B`). |
+| Maximum stack | PASS | The c8 size matrix measures 8,056 B native and 4,512 B AVX2-only locally; stack is reported separately from primary size. |
+| Clean final revision | PASS for source commit | The completion gates use the same committed product source `400dbe4`; the benchmark and validation evidence is recorded separately, and documentation-only commits do not alter the measured product inputs. |
 
-Therefore baby-mlkem does not currently claim that this completion contract has
-been met.
+The completion contract is satisfied for source commit `400dbe4`: it is faster
+than every pinned comparator under both measured profiles, smaller in primary
+production footprint across the full matrix, and covered by the correctness and
+reproducibility evidence above. This is a measured milestone, not a claim that
+no future compiler, CPU, or implementation can ever produce a faster or smaller
+artifact.
 
 ## Current Core Optimization Frontier (2026-08-22)
 
@@ -1376,15 +1380,14 @@ against `b955d0b`. The candidate is correct under native, AVX2-only, and GCC
 native builds, and Clang ASan+UBSan plus GCC UBSan stage checks pass.
 
 The current Clang native product is 42,493 B code, 8,678 B read-only data,
-and 51,171 B primary, which is 15 B below the 51,186 B `mlkem-native`
-comparator. AVX2-only and GCC/scalar paths remain on their established
-profiles. This is an internal b955d0b improvement, not a claim that the
-current ten-comparator speed reports still describe this exact revision; the
-formal native/AVX2 reruns and full size matrix remain open. See the
+and 51,171 B primary, which is 29 B below the 51,200 B `mlkem-native`
+comparator in the c8 matrix. AVX2-only and GCC/scalar paths remain on their
+established profiles. The c8 source commit now has completion-qualifying
+native/AVX2 speed, full size, and correctness evidence. See the
 [keygen NTT pair report](benchmarks/2026-08-22-clang-native-keygen-ntt-pair/README.md),
-[native speed report](benchmarks/2026-08-22-goal-native-speed/README.md),
-[AVX2-only speed report](benchmarks/2026-08-22-goal-avx2-speed/README.md), and
-[current size report](benchmarks/2026-08-22-goal-size-current/README.md).
+[c8 native speed report](benchmarks/2026-08-22-goal-native-speed-c8/README.md),
+[c8 AVX2-only speed report](benchmarks/2026-08-22-goal-avx2-speed-c8/README.md),
+and [c8 size matrix](benchmarks/2026-08-22-goal-size-c8/README.md).
 
 The broad frontier table below is the last full snapshot before the focused
 K=3 and inverse-add follow-ups. The post-change A/B data is recorded in
