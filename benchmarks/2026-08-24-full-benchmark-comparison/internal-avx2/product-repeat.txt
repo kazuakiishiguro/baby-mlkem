@@ -1,0 +1,21 @@
+--- avx2 repeated product ---
+run1 mlkem_keygen_ns_per_op=5561.07
+run1 mlkem_encaps_ns_per_op=4432.22
+run1 mlkem_decaps_ns_per_op=4404.78
+run1 mlkem_roundtrip_ns_per_op=14700.48
+run2 mlkem_keygen_ns_per_op=5568.24
+run2 mlkem_encaps_ns_per_op=4427.72
+run2 mlkem_decaps_ns_per_op=4397.00
+run2 mlkem_roundtrip_ns_per_op=14718.69
+run3 mlkem_keygen_ns_per_op=5695.06
+run3 mlkem_encaps_ns_per_op=4589.79
+run3 mlkem_decaps_ns_per_op=4395.83
+run3 mlkem_roundtrip_ns_per_op=14930.49
+run4 mlkem_keygen_ns_per_op=5553.91
+run4 mlkem_encaps_ns_per_op=4425.54
+run4 mlkem_decaps_ns_per_op=4407.20
+run4 mlkem_roundtrip_ns_per_op=14711.16
+run5 mlkem_keygen_ns_per_op=5565.15
+run5 mlkem_encaps_ns_per_op=4429.88
+run5 mlkem_decaps_ns_per_op=4737.21
+run5 mlkem_roundtrip_ns_per_op=15056.31

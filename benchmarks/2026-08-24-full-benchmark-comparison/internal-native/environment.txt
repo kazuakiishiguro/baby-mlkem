@@ -1,0 +1,9 @@
+source_commit=6d30aafa16d981addffe7181b78d377cbab838d5
+profile=native
+compiler=clang
+arch_cflags=-march=native
+kem_iterations=100000
+ntt_iterations=20000
+keccak_iterations=50000
+stage_iterations=1000
+cpu_pin=0

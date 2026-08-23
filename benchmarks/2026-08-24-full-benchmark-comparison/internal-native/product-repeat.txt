@@ -1,0 +1,21 @@
+--- native repeated product ---
+run1 mlkem_keygen_ns_per_op=5547.41
+run1 mlkem_encaps_ns_per_op=4404.20
+run1 mlkem_decaps_ns_per_op=4400.01
+run1 mlkem_roundtrip_ns_per_op=14729.27
+run2 mlkem_keygen_ns_per_op=5785.15
+run2 mlkem_encaps_ns_per_op=4433.02
+run2 mlkem_decaps_ns_per_op=4412.08
+run2 mlkem_roundtrip_ns_per_op=14924.88
+run3 mlkem_keygen_ns_per_op=5822.20
+run3 mlkem_encaps_ns_per_op=4470.68
+run3 mlkem_decaps_ns_per_op=4477.31
+run3 mlkem_roundtrip_ns_per_op=15094.22
+run4 mlkem_keygen_ns_per_op=5965.79
+run4 mlkem_encaps_ns_per_op=4558.24
+run4 mlkem_decaps_ns_per_op=4903.62
+run4 mlkem_roundtrip_ns_per_op=15730.72
+run5 mlkem_keygen_ns_per_op=5555.55
+run5 mlkem_encaps_ns_per_op=4435.76
+run5 mlkem_decaps_ns_per_op=4426.48
+run5 mlkem_roundtrip_ns_per_op=14752.44

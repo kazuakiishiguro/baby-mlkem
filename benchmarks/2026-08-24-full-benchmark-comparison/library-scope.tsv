@@ -1,0 +1,11 @@
+library	role	source_or_revision	runtime_dependency_of_baby_mlkem
+baby-mlkem	candidate independent core	400dbe4	no
+Kyber upstream	AVX2 reference	3edd5af5991927164edd4aacebfcbee00b8064e7	no
+PQClean	C AVX2 comparator	0586a824fc0d49df0b6b6e9179d8d15d06d0974f	no
+mlkem-native	native C comparator	0457037e74ec8f93d35333890740f61032b515cc	no
+liboqs	library comparator	4e1183aaa34b0d0d52413c49f269f909b505e0cf	no
+BoringSSL	library comparator	a204be272595867e7069221050f19697a0cf66ad	no
+libcrux Rust	Rust comparator	crate 0.0.10 lock f5ba14023113fc34c5ee11ea83c9633ecbccb2adc8bd18786f3096bfe67b972a	no
+libjade	AVX2 comparator	assembly 358736656400f28f75db858c1be703a3140c8f6fac17b99279abc857112cf5d1	no
+Botan	C++ library comparator	7ffae689f89286ecddf5ffecb17803403ad96fde	no
+OpenSSL	library comparator	1a3455e2ce3989530015d72e8fa98f5741e5da1f	no

@@ -1,0 +1,43 @@
+make: Entering directory '/tmp/baby-mlkem-20260824.uaBeUn/product'
+clang -c bench.c -o bench.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Wno-unused-function -DBENCH_CT_STRIDE=1088  -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack
+clang bench.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o benchc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+clang -c bench.c -o bench_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -DBENCH_CT_STRIDE=1088 -DUSE_BABY_MLKEM_PRODUCT_API -Wno-unused-function -march=native
+clang -c baby_mlkem_api.c -o baby_mlkem_api.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -ffunction-sections -fdata-sections -DBABY_MLKEM_DISABLE_INTERNAL_CACHES -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -Wno-unused-function
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -r -nostdlib baby_mlkem_api.product.o sha3_256_1184_avx512vl.product.o keccakf8_matrix_avx512.product.o -o baby_mlkem768_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native  -Wl,--undefined=baby_mlkem768_keypair_derand -Wl,--undefined=baby_mlkem768_encaps_derand -Wl,--undefined=baby_mlkem768_decaps -Wl,--gc-sections
+clang bench_product.o baby_mlkem768_product.o -o bench_productc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+clang -c bench_ntt.c -o bench_ntt.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Wno-unused-function -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+clang bench_ntt.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o bench_nttc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+clang -c bench_keccak.c -o bench_keccak.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Wno-unused-function -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+clang bench_keccak.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o bench_keccakc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+clang -c bench_keccak.c -o bench_keccak_vendor.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Wno-unused-function -DMLKEM_BENCH_VENDOR_KECCAKP -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+clang -c include/pqclean_avx2/keccak4x/KeccakP-1600-times4-SIMD256.c -o include/pqclean_avx2/keccak4x/KeccakP-1600-times4-SIMD256.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Iinclude/pqclean_avx2/keccak4x -mavx2 -mbmi2 -mpopcnt -march=native
+clang bench_keccak_vendor.o include/pqclean_avx2/keccak4x/KeccakP-1600-times4-SIMD256.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o bench_keccak_vendorc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+clang -c bench_core_stages.c -o bench_core_stages.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -Wno-unused-function -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+bench_core_stages.c:155:16: warning: unused variable 'stage_tmp_sample_stream_pair' [-Wunused-variable]
+  155 | static uint8_t stage_tmp_sample_stream_pair[STAGE_BENCH_LANES][4][504];
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+clang -c bench_keccakf4_avx2.S -o bench_keccakf4_avx2.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack
+clang bench_core_stages.o bench_keccakf4_avx2.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o bench_core_stagesc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native
+compiler=clang
+arch_cflags=-march=native
+./scripts/measure_product_size.sh baby_mlkem768_product.o
+artifact=/tmp/baby-mlkem-20260824.uaBeUn/product/baby_mlkem768_product.o
+artifact_sha256=c47cad9cc0e62351c14ee1e84e07cecdaabc3d0a8af622f6325fa0e04204feea
+artifact_file_bytes=77016
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=42493
+readonly_data_bytes=8678
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=51171
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
+make: Leaving directory '/tmp/baby-mlkem-20260824.uaBeUn/product'
