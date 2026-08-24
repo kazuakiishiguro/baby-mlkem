@@ -6,6 +6,18 @@ It is primarily written in C, with optional repository-local x86 assembly fast
 paths, and is inspired by the blog post [Enough Polynomials and Linear Algebra
 to Implement Kyber](https://words.filippo.io/dispatches/kyber-math/).
 
+For a commit-independent Japanese book that builds scalar ML-KEM-768 from
+scratch and then progresses through speed optimization and size minimization,
+see [docs/implementation-book.md](docs/implementation-book.md). Runnable
+chapter tests and the readable final scalar implementation are under
+[tutorial/](tutorial/README.md). The same book is available as a
+browser-friendly [HTML page](docs/learning-journey.html).
+From a Tailscale-connected host, run docs/serve-learning-journey.sh 8000 to serve it
+on the host's Tailscale address.
+The guide explains the purpose, measurement method, acceptance criteria, and
+rejection reason for each stage; the detailed raw experiment log remains in
+note.md.
+
 ## Implementation Status
 
 The repository contains a toy ML-KEM implementation. The default benchmark and
