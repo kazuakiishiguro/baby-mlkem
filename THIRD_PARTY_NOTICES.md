@@ -1,5 +1,16 @@
 # Third-Party Notices
 
+## Educational scalar ML-KEM-768 tutorial
+
+The independent teaching implementation under `tutorial/scalar-mlkem/` follows
+the algorithms and constants specified by NIST FIPS 203. Its compact scalar
+Keccak permutation uses the conventional 25-lane rho/pi cycle form described
+by public-domain Keccak implementations retained in this repository, including
+`include/kyber_upstream/ref/fips202.c`; the tutorial code is separately written
+and does not link that object. The scalar NTT is a direct ordinary-residue
+rendering of FIPS 203 Algorithms 9 through 11 rather than a copy of the
+Montgomery implementation used by the product path.
+
 ## AVX2 16-bit Montgomery forward and inverse NTTs
 
 The repository-local AVX2 forward and inverse NTTs in `baby-mlkem.c` use C

@@ -1,0 +1,5 @@
+00-scratch/scratchc
+scalar-mlkem/chapter-*
+scalar-mlkem/test_scalar
+scalar-mlkem/test_oracle
+scalar-mlkem/bench_scalar
