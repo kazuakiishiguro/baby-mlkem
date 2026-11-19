@@ -64,7 +64,7 @@ labels=(
   "liboqs"
   "boringssl"
   "libcrux_rust"
-  "libjade_kyber768_avx2"
+  "libjade_mlkem768_avx2"
   "botan_mlkem"
   "openssl_mlkem"
 )

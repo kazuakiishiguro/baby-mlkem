@@ -13,7 +13,7 @@ REPORT_FILE="${REPORT_FILE:-/tmp/baby-mlkem-goal-${PROFILE}-speed.txt}"
 PRINT_PROFILE="${PRINT_PROFILE:-0}"
 EXPECTED_SUITES="kyber_upstream_avx2,kyber_upstream_avx2_fair,mlkem_native,"
 EXPECTED_SUITES+="pqclean_avx2,liboqs,boringssl,libcrux_rust,"
-EXPECTED_SUITES+="libjade_kyber768_avx2,botan_mlkem,openssl_mlkem"
+EXPECTED_SUITES+="libjade_mlkem768_avx2,botan_mlkem,openssl_mlkem"
 
 case "$PROFILE" in
   native|avx2) ;;
@@ -83,13 +83,18 @@ LIBOQS_DIR="${LIBOQS_DIR:-/tmp/liboqs}"
 BORINGSSL_DIR="${BORINGSSL_DIR:-/tmp/boringssl}"
 LIBCRUX_BENCH_DIR="${LIBCRUX_BENCH_DIR:-/tmp/libcrux-mlkem-bench}"
 LIBCRUX_CRATE_VERSION="${LIBCRUX_CRATE_VERSION:-0.0.10}"
-DEFAULT_LIBJADE_DIST_URL="https://github.com/formosa-crypto/libjade/releases/"
-DEFAULT_LIBJADE_DIST_URL+="download/release/2023.05-2/libjade-dist-src-amd64.tar.gz"
+# The historical libjade release distribution is gone (repository replaced by
+# formosa-crypto/formosa-libjade); the comparator is pinned to that repository's
+# ML-KEM-768 AVX2 sources at a fixed commit.
+DEFAULT_LIBJADE_DIST_URL="https://github.com/formosa-crypto/formosa-libjade.git"
+LIBJADE_REPO_URL="${LIBJADE_REPO_URL:-$DEFAULT_LIBJADE_DIST_URL}"
 LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-$DEFAULT_LIBJADE_DIST_URL}"
-LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
-DEFAULT_LIBJADE_KEM_DIR="$LIBJADE_DIST_ROOT/libjade/crypto_kem/"
-DEFAULT_LIBJADE_KEM_DIR+="kyber_kyber768_avx2"
+LIBJADE_LATEST_API="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/formosa-libjade/tags}"
+LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-src-amd64}"
+DEFAULT_LIBJADE_KEM_DIR="$LIBJADE_DIST_ROOT/asm/mlkem/avx2"
 LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$DEFAULT_LIBJADE_KEM_DIR}"
+LIBJADE_HEADER_DIR="${LIBJADE_HEADER_DIR:-$LIBJADE_DIST_ROOT/src/include}"
+LIBJADE_ASSEMBLY_NAME="${LIBJADE_ASSEMBLY_NAME:-mlkem768_avx2_sct.s}"
 BOTAN_DIR="${BOTAN_DIR:-/tmp/botan-mlkem}"
 OPENSSL_DIR="${OPENSSL_DIR:-/tmp/openssl-mlkem-$BUILD_TAG}"
 
@@ -231,8 +236,8 @@ if [ ! -f "$LIBCRUX_BENCH_DIR/Cargo.lock" ]; then
   echo "missing libcrux Cargo.lock: $LIBCRUX_BENCH_DIR/Cargo.lock" >&2
   exit 2
 fi
-if [ ! -f "$LIBJADE_KEM_DIR/kyber_kyber768_avx2.s" ]; then
-  echo "missing libjade assembly: $LIBJADE_KEM_DIR" >&2
+if [ ! -f "$LIBJADE_KEM_DIR/$LIBJADE_ASSEMBLY_NAME" ]; then
+  echo "missing libjade assembly: $LIBJADE_KEM_DIR/$LIBJADE_ASSEMBLY_NAME" >&2
   exit 2
 fi
 printf "comparator_libcrux_crate_version=%s\n" "$LIBCRUX_CRATE_VERSION" \
@@ -242,7 +247,7 @@ printf "comparator_libcrux_lock_sha256=%s\n" \
   >> "$revision_report"
 printf "comparator_libjade_url=%s\n" "$LIBJADE_DIST_URL" >> "$revision_report"
 printf "comparator_libjade_asm_sha256=%s\n" \
-  "$(sha256sum "$LIBJADE_KEM_DIR/kyber_kyber768_avx2.s" | awk '{print $1}')" \
+  "$(sha256sum "$LIBJADE_KEM_DIR/$LIBJADE_ASSEMBLY_NAME" | awk '{print $1}')" \
   >> "$revision_report"
 
 host_cpu="$(lscpu | awk -F: '/Model name/ && !seen {

@@ -1,0 +1,167 @@
+[partial] suite=libcrux_rust profile=native iters=100000 runs=15 warmups=3
+iters=100000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=libcrux_rust
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[libcrux_rust] warmup=1/3 order=local-first
+[libcrux_rust] warmup=2/3 order=competitor-first
+[libcrux_rust] warmup=3/3 order=local-first
+[libcrux_rust] run=1/15 order=local-first
+[libcrux_rust] run=1 keygen=3937.46/6313.73 encaps=3493.09/6811.13 decaps=2935.82/7489.69 roundtrip=10490.74/20680.87
+[libcrux_rust] run=2/15 order=competitor-first
+[libcrux_rust] run=2 keygen=3922.21/6315.42 encaps=3493.79/6847.42 decaps=2771.54/7449.30 roundtrip=10303.61/20695.14
+[libcrux_rust] run=3/15 order=local-first
+[libcrux_rust] run=3 keygen=3938.11/6313.74 encaps=3501.34/6831.60 decaps=2788.73/7453.06 roundtrip=10347.71/20679.21
+[libcrux_rust] run=4/15 order=competitor-first
+[libcrux_rust] run=4 keygen=3938.33/6319.78 encaps=3493.79/6826.77 decaps=2946.50/7488.20 roundtrip=10503.53/20721.16
+[libcrux_rust] run=5/15 order=local-first
+[libcrux_rust] run=5 keygen=3965.42/6314.61 encaps=3514.30/6814.23 decaps=2808.76/7454.88 roundtrip=10428.96/20639.46
+[libcrux_rust] run=6/15 order=competitor-first
+[libcrux_rust] run=6 keygen=4032.91/6317.07 encaps=3499.99/6811.47 decaps=2935.75/7480.51 roundtrip=10451.37/20727.55
+[libcrux_rust] run=7/15 order=local-first
+[libcrux_rust] run=7 keygen=3922.69/6312.20 encaps=3496.21/6853.33 decaps=2773.67/7523.21 roundtrip=10319.82/20763.47
+[libcrux_rust] run=8/15 order=competitor-first
+[libcrux_rust] run=8 keygen=4078.71/6391.93 encaps=3620.82/6792.26 decaps=2793.32/7428.86 roundtrip=10625.10/20720.69
+[libcrux_rust] run=9/15 order=local-first
+[libcrux_rust] run=9 keygen=4004.58/6323.26 encaps=3651.56/6828.28 decaps=2789.33/7439.64 roundtrip=10552.26/20677.56
+[libcrux_rust] run=10/15 order=competitor-first
+[libcrux_rust] run=10 keygen=3928.99/6317.80 encaps=3504.92/6933.89 decaps=2928.28/7608.40 roundtrip=10467.63/20859.52
+[libcrux_rust] run=11/15 order=local-first
+[libcrux_rust] run=11 keygen=3976.28/6322.43 encaps=3563.65/6811.39 decaps=2827.28/7470.08 roundtrip=10509.04/20695.26
+[libcrux_rust] run=12/15 order=competitor-first
+[libcrux_rust] run=12 keygen=3929.85/6294.52 encaps=3495.96/6838.64 decaps=2787.60/7480.28 roundtrip=10329.54/20709.36
+[libcrux_rust] run=13/15 order=local-first
+[libcrux_rust] run=13 keygen=4107.49/6310.93 encaps=3757.81/6816.01 decaps=2785.49/7493.27 roundtrip=10851.15/20743.77
+[libcrux_rust] run=14/15 order=competitor-first
+[libcrux_rust] run=14 keygen=3925.19/6314.36 encaps=3489.44/6840.51 decaps=2790.60/7451.13 roundtrip=10318.53/20680.18
+[libcrux_rust] run=15/15 order=local-first
+[libcrux_rust] run=15 keygen=4031.85/6323.00 encaps=3645.05/6798.17 decaps=2793.53/7444.76 roundtrip=10563.49/20640.50
+[libcrux_rust]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10470.83
+local_roundtrip_sd_ns=145.85
+local_roundtrip_median_ns=10467.63
+local_roundtrip_trimmed_ns=10454.44
+competitor_roundtrip_mean_ns=20708.91
+competitor_roundtrip_sd_ns=54.03
+competitor_roundtrip_median_ns=20695.26
+competitor_roundtrip_trimmed_ns=20702.67
+selected_local_roundtrip_ns=10467.63
+selected_competitor_roundtrip_ns=20695.26
+local_ns_div_competitor_ns=0.506x
+local_speedup_vs_competitor=1.977x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=3976.00
+keygen_local_median_ns=3938.33
+keygen_competitor_mean_ns=6320.32
+keygen_competitor_median_ns=6315.42
+keygen_speedup_ratio_of_medians=1.6036x
+keygen_speedup_gmean=1.5898x
+keygen_speedup_ci95_low=1.5783x
+keygen_speedup_ci95_high=1.5998x
+keygen_speedup_median=1.6017x
+keygen_wins=15/15
+keygen_local_first_median=1.5912x
+keygen_competitor_first_median=1.6047x
+encaps_runs=15
+encaps_local_mean_ns=3548.11
+encaps_local_median_ns=3501.34
+encaps_competitor_mean_ns=6830.34
+encaps_competitor_median_ns=6826.77
+encaps_speedup_ratio_of_medians=1.9498x
+encaps_speedup_gmean=1.9255x
+encaps_speedup_ci95_low=1.9009x
+encaps_speedup_ci95_high=1.9475x
+encaps_speedup_median=1.9499x
+encaps_wins=15/15
+encaps_local_first_median=1.9252x
+encaps_competitor_first_median=1.9562x
+decaps_runs=15
+decaps_local_mean_ns=2830.41
+decaps_local_median_ns=2793.32
+decaps_competitor_mean_ns=7477.02
+decaps_competitor_median_ns=7470.08
+decaps_speedup_ratio_of_medians=2.6743x
+decaps_speedup_gmean=2.6423x
+decaps_speedup_ci95_low=2.6129x
+decaps_speedup_ci95_high=2.6681x
+decaps_speedup_median=2.6650x
+decaps_wins=15/15
+decaps_local_first_median=2.6661x
+decaps_competitor_first_median=2.6595x
+roundtrip_runs=15
+roundtrip_local_mean_ns=10470.83
+roundtrip_local_median_ns=10467.63
+roundtrip_competitor_mean_ns=20708.91
+roundtrip_competitor_median_ns=20695.26
+roundtrip_speedup_ratio_of_medians=1.9771x
+roundtrip_speedup_gmean=1.9779x
+roundtrip_speedup_ci95_low=1.9641x
+roundtrip_speedup_ci95_high=1.9906x
+roundtrip_speedup_median=1.9791x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.9703x
+roundtrip_competitor_first_median=1.9928x
+
+[partial] suite=libcrux_rust exit=0

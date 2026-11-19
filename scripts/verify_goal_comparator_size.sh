@@ -62,12 +62,12 @@ case "$COMPARATOR" in
     comparator_label="libjade Kyber768 AVX2"
     comparator_dir="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
     comparator_kem_dir="${LIBJADE_KEM_DIR:-$comparator_dir/libjade/crypto_kem/kyber_kyber768_avx2}"
-    comparator_version="${LIBJADE_RELEASE_TAG:-release/2023.05-2}"
-    comparator_dist_url="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz}"
-    comparator_latest_api="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/libjade/releases/latest}"
-    comparator_assembly_sha="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-358736656400f28f75db858c1be703a3140c8f6fac17b99279abc857112cf5d1}"
-    comparator_header_sha="${LIBJADE_EXPECTED_HEADER_SHA256:-e4ee2af96ac4c4f3184764c4e8565eb52d58670d4b58ef98b9635415162f9ca7}"
-    comparator_jazz_sha="${LIBJADE_EXPECTED_JAZZ_SHA256:-ef7b8c32a0ef5d52150decbeea34161b986c3c580122c459c69fa28265a84f5f}"
+    comparator_version="${LIBJADE_RELEASE_TAG:-90ba5dc4d9da2b6950589c58a52282caa1dbfdfd}"
+    comparator_dist_url="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/formosa-libjade.git}"
+    comparator_latest_api="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/formosa-libjade/tags}"
+    comparator_assembly_sha="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-13ef94bf0deb36cfc2418c5885ac3adade0c3858098e7af75711e5be9ec80605}"
+    comparator_header_sha="${LIBJADE_EXPECTED_HEADER_SHA256:-80ed6a45310c3e6b6e5a8fded50c8470ce9641d2adadf8c44b879f1f9b764681}"
+    comparator_jazz_sha="${LIBJADE_EXPECTED_JAZZ_SHA256:-be5b05bfc31a13f82d5d34b0949579c768d505c53b2a7aeacd721cbca80cd51f}"
     ;;
   botan)
     comparator_key=botan
@@ -314,6 +314,10 @@ case "$COMPARATOR" in
     LIBJADE_KEM_DIR="$comparator_kem_dir" \
     LIBJADE_RELEASE_TAG="$comparator_version" \
     LIBJADE_DIST_URL="$comparator_dist_url" \
+    LIBJADE_REPO_URL="${LIBJADE_REPO_URL:-https://github.com/formosa-crypto/formosa-libjade.git}" \
+    LIBJADE_HEADER_DIR="${LIBJADE_HEADER_DIR:-$LIBJADE_DIST_ROOT/src/include}" \
+    LIBJADE_JAZZ_PATH="${LIBJADE_JAZZ_PATH:-src/mlkem/avx2/sct/768/jmlkem.jazz}" \
+    LIBJADE_ASSEMBLY_NAME="${LIBJADE_ASSEMBLY_NAME:-mlkem768_avx2_sct.s}" \
     LIBJADE_LATEST_API="$comparator_latest_api" \
     LIBJADE_EXPECTED_ASSEMBLY_SHA256="$comparator_assembly_sha" \
     LIBJADE_EXPECTED_HEADER_SHA256="$comparator_header_sha" \

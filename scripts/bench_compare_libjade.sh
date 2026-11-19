@@ -4,14 +4,20 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/scripts/bench_pair_order.sh"
 ITERS="${1:-2000}"
-LIBJADE_RELEASE_TAG="${LIBJADE_RELEASE_TAG:-release/2023.05-2}"
-LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz}"
-LIBJADE_LATEST_API="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/libjade/releases/latest}"
-LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
-LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/libjade/crypto_kem/kyber_kyber768_avx2}"
-LIBJADE_EXPECTED_ASSEMBLY_SHA256="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-358736656400f28f75db858c1be703a3140c8f6fac17b99279abc857112cf5d1}"
-LIBJADE_EXPECTED_HEADER_SHA256="${LIBJADE_EXPECTED_HEADER_SHA256:-e4ee2af96ac4c4f3184764c4e8565eb52d58670d4b58ef98b9635415162f9ca7}"
-LIBJADE_EXPECTED_JAZZ_SHA256="${LIBJADE_EXPECTED_JAZZ_SHA256:-ef7b8c32a0ef5d52150decbeea34161b986c3c580122c459c69fa28265a84f5f}"
+# formosa-crypto/libjade was replaced by formosa-crypto/formosa-libjade and its
+# release/2023.05-2 assets return HTTP 404; pin the successor ML-KEM sources.
+LIBJADE_RELEASE_TAG="${LIBJADE_RELEASE_TAG:-90ba5dc4d9da2b6950589c58a52282caa1dbfdfd}"
+LIBJADE_REPO_URL="${LIBJADE_REPO_URL:-https://github.com/formosa-crypto/formosa-libjade.git}"
+LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-$LIBJADE_REPO_URL}"
+LIBJADE_LATEST_API="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/formosa-libjade/tags}"
+LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-src-amd64}"
+LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/asm/mlkem/avx2}"
+LIBJADE_HEADER_DIR="${LIBJADE_HEADER_DIR:-$LIBJADE_DIST_ROOT/src/include}"
+LIBJADE_JAZZ_PATH="${LIBJADE_JAZZ_PATH:-src/mlkem/avx2/sct/768/jmlkem.jazz}"
+LIBJADE_ASSEMBLY_NAME="${LIBJADE_ASSEMBLY_NAME:-mlkem768_avx2_sct.s}"
+LIBJADE_EXPECTED_ASSEMBLY_SHA256="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-13ef94bf0deb36cfc2418c5885ac3adade0c3858098e7af75711e5be9ec80605}"
+LIBJADE_EXPECTED_HEADER_SHA256="${LIBJADE_EXPECTED_HEADER_SHA256:-80ed6a45310c3e6b6e5a8fded50c8470ce9641d2adadf8c44b879f1f9b764681}"
+LIBJADE_EXPECTED_JAZZ_SHA256="${LIBJADE_EXPECTED_JAZZ_SHA256:-be5b05bfc31a13f82d5d34b0949579c768d505c53b2a7aeacd721cbca80cd51f}"
 UPDATE_REPOS="${UPDATE_REPOS:-0}"
 PIN_CPU="${PIN_CPU:-}"
 BENCH_ISA_PROFILE="${BENCH_ISA_PROFILE:-native}"
@@ -144,6 +150,7 @@ echo "libjade_dist_url=$LIBJADE_DIST_URL"
 echo "libjade_dist_root=$LIBJADE_DIST_ROOT"
 echo "libjade_kem_dir=$LIBJADE_KEM_DIR"
 echo "libjade_product_profile=$BENCH_ISA_PROFILE"
+echo "libjade_semantics=FIPS-203-ML-KEM-768"
 echo "libjade_harness_cflags=$LIBJADE_HARNESS_CFLAGS"
 echo "skip_local_build=$SKIP_LOCAL_BUILD"
 if [ "$SKIP_LOCAL_BUILD" = "0" ]; then
@@ -155,7 +162,7 @@ elif [ ! -x "$LOCAL_BENCH_BIN" ]; then
   exit 1
 fi
 
-echo "[2/4] Building normalized libjade Kyber768 product"
+echo "[2/4] Building normalized libjade ML-KEM-768 product"
 LIBJADE_PRODUCT="$WORK_DIR/libjade_product.o"
 LIBJADE_PRODUCT_METADATA="$WORK_DIR/libjade_product.txt"
 PROFILE="$BENCH_ISA_PROFILE" \
@@ -165,6 +172,10 @@ LIBJADE_DIST_URL="$LIBJADE_DIST_URL" \
 LIBJADE_LATEST_API="$LIBJADE_LATEST_API" \
 LIBJADE_DIST_ROOT="$LIBJADE_DIST_ROOT" \
 LIBJADE_KEM_DIR="$LIBJADE_KEM_DIR" \
+LIBJADE_REPO_URL="$LIBJADE_REPO_URL" \
+LIBJADE_HEADER_DIR="$LIBJADE_HEADER_DIR" \
+LIBJADE_JAZZ_PATH="$LIBJADE_JAZZ_PATH" \
+LIBJADE_ASSEMBLY_NAME="$LIBJADE_ASSEMBLY_NAME" \
 LIBJADE_EXPECTED_ASSEMBLY_SHA256="$LIBJADE_EXPECTED_ASSEMBLY_SHA256" \
 LIBJADE_EXPECTED_HEADER_SHA256="$LIBJADE_EXPECTED_HEADER_SHA256" \
 LIBJADE_EXPECTED_JAZZ_SHA256="$LIBJADE_EXPECTED_JAZZ_SHA256" \
@@ -179,7 +190,7 @@ echo "[3/4] Building normalized libjade benchmark harness"
 LIBJADE_BIN="$WORK_DIR/libjade_bench"
 read -r -a libjade_harness_cflags_arr <<< "$LIBJADE_HARNESS_CFLAGS"
 "$C_COMPILER" "${libjade_harness_cflags_arr[@]}" \
-  '-DGOAL_BENCH_METRIC_PREFIX="libjade_kyber768_avx2_"' \
+  '-DGOAL_BENCH_METRIC_PREFIX="libjade_mlkem768_avx2_"' \
   -I"$ROOT_DIR/scripts" \
   "$ROOT_DIR/scripts/goal_size_adapter_bench.c" "$LIBJADE_PRODUCT" \
   -Wl,-z,noexecstack -o "$LIBJADE_BIN"
@@ -191,13 +202,13 @@ LIBJADE_OUT="$BENCH_COMPETITOR_OUT"
 echo "[4/4] Results"
 echo "--- local (baby-mlkem) ---"
 echo "$LOCAL_OUT"
-echo "--- libjade Kyber768 AVX2 (normalized product) ---"
+echo "--- libjade ML-KEM-768 AVX2 (normalized product) ---"
 echo "$LIBJADE_OUT"
 
 local_rt="$(echo "$LOCAL_OUT" |
   awk -F= -v metric="$LOCAL_ROUNDTRIP_METRIC" '$1 == metric {print $2; exit}')"
 libjade_rt="$(echo "$LIBJADE_OUT" |
-  awk -F= '$1 == "libjade_kyber768_avx2_roundtrip_ns_per_op" {print $2; exit}')"
+  awk -F= '$1 == "libjade_mlkem768_avx2_roundtrip_ns_per_op" {print $2; exit}')"
 if [ -n "$local_rt" ] && [ -n "$libjade_rt" ]; then
   awk -v local="$local_rt" -v libjade="$libjade_rt" 'BEGIN {
     printf("local_vs_libjade_speedup=%.3fx\n", libjade / local);

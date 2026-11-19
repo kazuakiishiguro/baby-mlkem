@@ -16,7 +16,7 @@ GIT_REPOS_PREUPDATED="${GIT_REPOS_PREUPDATED:-0}"
 OPERATIONS=(keygen encaps decaps roundtrip)
 DEFAULT_BENCH_SUITES="kyber_upstream_avx2,kyber_upstream_avx2_fair,"
 DEFAULT_BENCH_SUITES+="mlkem_native,pqclean_avx2,liboqs,boringssl,"
-DEFAULT_BENCH_SUITES+="libcrux_rust,libjade_kyber768_avx2,botan_mlkem,openssl_mlkem"
+DEFAULT_BENCH_SUITES+="libcrux_rust,libjade_mlkem768_avx2,botan_mlkem,openssl_mlkem"
 BENCH_SUITES="${BENCH_SUITES:-$DEFAULT_BENCH_SUITES}"
 if [ -n "${C_COMPILER:-}" ]; then
   C_COMPILER="$C_COMPILER"
@@ -224,8 +224,8 @@ competitor_metric_prefix() {
     libcrux_rust)
       printf "libcrux_mlkem768_\n"
       ;;
-    libjade_kyber768_avx2)
-      printf "libjade_kyber768_avx2_\n"
+    libjade_mlkem768_avx2)
+      printf "libjade_mlkem768_avx2_\n"
       ;;
     botan_mlkem)
       printf "botan_mlkem768_\n"
@@ -279,7 +279,7 @@ run_suite() {
 
   if [ "$GIT_REPOS_PREUPDATED" = "1" ]; then
     case "$label" in
-      libcrux_rust|libjade_kyber768_avx2) ;;
+      libcrux_rust|libjade_mlkem768_avx2) ;;
       *) update_repos_once=0 ;;
     esac
   fi
@@ -503,7 +503,7 @@ for suite in "${selected_suites[@]}"; do
     libcrux_rust)
       run_suite "$suite" "scripts/bench_compare_libcrux.sh"
       ;;
-    libjade_kyber768_avx2)
+    libjade_mlkem768_avx2)
       run_suite "$suite" "scripts/bench_compare_libjade.sh"
       ;;
     botan_mlkem)

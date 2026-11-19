@@ -447,7 +447,9 @@ C_EOF
 echo "[3/4] Building OpenSSL benchmark harness"
 OPENSSL_BIN="$WORK_DIR/openssl_mlkem_bench"
 read -r -a openssl_harness_cflags_arr <<< "$OPENSSL_HARNESS_CFLAGS"
-"$C_COMPILER" "${openssl_harness_cflags_arr[@]}" -I"$OPENSSL_DIR/include" \
+# libcrypto.a is built with the goal profile flags (-fno-pic/-fno-PIE), which a
+# default-PIE harness link cannot absorb; link this harness non-PIE as well.
+"$C_COMPILER" "${openssl_harness_cflags_arr[@]}" -no-pie -I"$OPENSSL_DIR/include" \
   "$WORK_DIR/openssl_mlkem_bench.c" "$OPENSSL_DIR/libcrypto.a" \
   -ldl -lpthread -o "$OPENSSL_BIN"
 if [ -n "$OPENSSL_IA32CAP" ]; then

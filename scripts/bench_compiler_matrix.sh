@@ -29,7 +29,7 @@ labels=(
   "liboqs"
   "boringssl"
   "libcrux_rust"
-  "libjade_kyber768_avx2"
+  "libjade_mlkem768_avx2"
   "botan_mlkem"
   "openssl_mlkem"
 )
@@ -89,7 +89,7 @@ for cc in $COMPILERS; do
   vs_liboqs="$(extract_speedup "$out_file" "liboqs")"
   vs_boringssl="$(extract_speedup "$out_file" "boringssl")"
   vs_libcrux="$(extract_speedup "$out_file" "libcrux_rust")"
-  vs_libjade="$(extract_speedup "$out_file" "libjade_kyber768_avx2")"
+  vs_libjade="$(extract_speedup "$out_file" "libjade_mlkem768_avx2")"
   vs_botan="$(extract_speedup "$out_file" "botan_mlkem")"
   vs_openssl="$(extract_speedup "$out_file" "openssl_mlkem")"
 

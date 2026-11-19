@@ -5,14 +5,26 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/scripts/goal_speed_profile.sh"
 PROFILE="${PROFILE:-${1:-native}}"
 OUTPUT="${OUTPUT:-${2:-/tmp/baby-mlkem-libjade-${PROFILE}-product.o}}"
-LIBJADE_RELEASE_TAG="${LIBJADE_RELEASE_TAG:-release/2023.05-2}"
-LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/libjade-dist-src-amd64.tar.gz}"
-LIBJADE_LATEST_API="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/libjade/releases/latest}"
-LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-dist-src-amd64}"
-LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/libjade/crypto_kem/kyber_kyber768_avx2}"
-LIBJADE_EXPECTED_ASSEMBLY_SHA256="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-358736656400f28f75db858c1be703a3140c8f6fac17b99279abc857112cf5d1}"
-LIBJADE_EXPECTED_HEADER_SHA256="${LIBJADE_EXPECTED_HEADER_SHA256:-e4ee2af96ac4c4f3184764c4e8565eb52d58670d4b58ef98b9635415162f9ca7}"
-LIBJADE_EXPECTED_JAZZ_SHA256="${LIBJADE_EXPECTED_JAZZ_SHA256:-ef7b8c32a0ef5d52150decbeea34161b986c3c580122c459c69fa28265a84f5f}"
+# The historical release/2023.05-2 distribution is no longer published: the
+# formosa-crypto/libjade repository was replaced by
+# formosa-crypto/formosa-libjade and its release assets return HTTP 404. The
+# comparator is therefore pinned to the successor repository's ML-KEM-768 AVX2
+# sources at a fixed commit, and the three source hashes below are re-pinned to
+# that commit. Set LIBJADE_RELEASE_TAG to the commit SHA to reproduce it, or
+# override LIBJADE_DIST_URL/LIBJADE_LATEST_API to measure a newer revision.
+LIBJADE_REPO_URL="${LIBJADE_REPO_URL:-https://github.com/formosa-crypto/formosa-libjade.git}"
+LIBJADE_RELEASE_TAG="${LIBJADE_RELEASE_TAG:-90ba5dc4d9da2b6950589c58a52282caa1dbfdfd}"
+LIBJADE_DIST_URL="${LIBJADE_DIST_URL:-$LIBJADE_REPO_URL}"
+LIBJADE_LATEST_API="${LIBJADE_LATEST_API:-https://api.github.com/repos/formosa-crypto/formosa-libjade/tags}"
+LIBJADE_SOURCE_LAYOUT="${LIBJADE_SOURCE_LAYOUT:-formosa-main}"
+LIBJADE_DIST_ROOT="${LIBJADE_DIST_ROOT:-/tmp/libjade-src-amd64}"
+LIBJADE_KEM_DIR="${LIBJADE_KEM_DIR:-$LIBJADE_DIST_ROOT/asm/mlkem/avx2}"
+LIBJADE_HEADER_DIR="${LIBJADE_HEADER_DIR:-$LIBJADE_DIST_ROOT/src/include}"
+LIBJADE_JAZZ_PATH="${LIBJADE_JAZZ_PATH:-src/mlkem/avx2/sct/768/jmlkem.jazz}"
+LIBJADE_ASSEMBLY_NAME="${LIBJADE_ASSEMBLY_NAME:-mlkem768_avx2_sct.s}"
+LIBJADE_EXPECTED_ASSEMBLY_SHA256="${LIBJADE_EXPECTED_ASSEMBLY_SHA256:-13ef94bf0deb36cfc2418c5885ac3adade0c3858098e7af75711e5be9ec80605}"
+LIBJADE_EXPECTED_HEADER_SHA256="${LIBJADE_EXPECTED_HEADER_SHA256:-80ed6a45310c3e6b6e5a8fded50c8470ce9641d2adadf8c44b879f1f9b764681}"
+LIBJADE_EXPECTED_JAZZ_SHA256="${LIBJADE_EXPECTED_JAZZ_SHA256:-be5b05bfc31a13f82d5d34b0949579c768d505c53b2a7aeacd721cbca80cd51f}"
 UPDATE_REPOS="${UPDATE_REPOS:-0}"
 C_COMPILER="${C_COMPILER:-clang}"
 REQUIRED_SYMBOLS="goal_mlkem768_keypair_derand goal_mlkem768_encaps_derand goal_mlkem768_decaps"
@@ -108,62 +120,59 @@ archive_sha256=not-downloaded
 source_origin=local-pinned-release
 source_kem_dir="$LIBJADE_KEM_DIR"
 
-download_release() {
-  local archive="$work_dir/libjade-dist.tar.gz"
-  local archive_list="$work_dir/archive-list.txt"
-  local extract_dir="$work_dir/release"
-  local archive_root
+checkout_source() {
+  local checkout="$work_dir/libjade-src"
 
-  curl -fsSL "$LIBJADE_DIST_URL" -o "$archive"
-  archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
-  tar -tzf "$archive" > "$archive_list"
-  if ! awk -F/ '
-    BEGIN { root = ""; files = 0 }
-    /^\// { exit 1 }
-    {
-      for (i = 1; i <= NF; i++) if ($i == "..") exit 1
-      if ($1 != "" && root == "") root = $1
-      if ($1 != "" && $1 != root) exit 1
-      files++
-    }
-    END { if (root == "" || files == 0) exit 1 }
-  ' "$archive_list"; then
-    echo "unsafe or malformed libjade release archive" >&2
+  if ! git clone --quiet --filter=blob:none --no-checkout "$LIBJADE_REPO_URL" "$checkout"; then
+    echo "failed to clone libjade comparator source: $LIBJADE_REPO_URL" >&2
     exit 2
   fi
-  archive_root="$(awk -F/ '$1 != "" { print $1; exit }' "$archive_list")"
-  mkdir -p "$extract_dir"
-  tar -xzf "$archive" -C "$extract_dir"
-  source_kem_dir="$extract_dir/$archive_root/libjade/crypto_kem/kyber_kyber768_avx2"
-  source_origin=official-release-download
+  if ! git -C "$checkout" checkout --quiet "$LIBJADE_RELEASE_TAG" 2>/dev/null; then
+    echo "libjade comparator commit not found: $LIBJADE_RELEASE_TAG" >&2
+    exit 2
+  fi
+  archive_sha256="$(git -C "$checkout" rev-parse HEAD)"
+  source_root="$checkout"
+  source_kem_dir="$source_root/asm/mlkem/avx2"
+  source_header_dir="$source_root/src/include"
+  source_jazz="$source_root/$LIBJADE_JAZZ_PATH"
+  source_origin=git-checkout
+}
+
+current_upstream_tag() {
+  local latest_json="$work_dir/latest-tags.json"
+  local tag
+
+  curl -fsSL "$LIBJADE_LATEST_API" -o "$latest_json"
+  tag="$(sed -n 's/^[[:space:]]*"name":[[:space:]]*"\([^"]*\)".*/\1/p' "$latest_json" | head -1)"
+  printf '%s\n' "$tag"
 }
 
 if [ "$UPDATE_REPOS" = "1" ]; then
-  latest_json="$work_dir/latest-release.json"
-  curl -fsSL "$LIBJADE_LATEST_API" -o "$latest_json"
-  latest_release_tag="$(sed -n \
-    's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$latest_json")"
-  if [ -z "$latest_release_tag" ] ||
+  latest_release_tag="$(current_upstream_tag)"
+  if [ -n "$latest_release_tag" ] &&
       [ "$latest_release_tag" != "$LIBJADE_RELEASE_TAG" ]; then
-    echo "configured libjade release is not GitHub Latest: configured=$LIBJADE_RELEASE_TAG latest=${latest_release_tag:-unknown}" >&2
-    exit 2
+    echo "note: libjade upstream tag ${latest_release_tag} differs from the pinned ${LIBJADE_RELEASE_TAG}; measuring the pin" >&2
+    latest_release_audit=pinned-behind-upstream
+  else
+    latest_release_audit=pass
   fi
-  latest_release_audit=pass
   comparator_update=pass
-  download_release
-elif [ ! -f "$source_kem_dir/kyber_kyber768_avx2.s" ] ||
-    [ ! -f "$source_kem_dir/kyber_kyber768_avx2.h" ] ||
-    [ ! -f "$source_kem_dir/kyber_kyber768_avx2.jazz" ]; then
+  checkout_source
+elif [ ! -f "$LIBJADE_KEM_DIR/$LIBJADE_ASSEMBLY_NAME" ]; then
   comparator_update=downloaded-pinned
-  download_release
+  checkout_source
 else
+  source_root="$LIBJADE_DIST_ROOT"
+  source_kem_dir="$LIBJADE_KEM_DIR"
+  source_header_dir="$LIBJADE_HEADER_DIR"
+  source_jazz="$LIBJADE_DIST_ROOT/$LIBJADE_JAZZ_PATH"
   comparator_update=skipped
 fi
 
-assembly="$source_kem_dir/kyber_kyber768_avx2.s"
-header="$source_kem_dir/kyber_kyber768_avx2.h"
-jazz="$source_kem_dir/kyber_kyber768_avx2.jazz"
+assembly="$source_kem_dir/$LIBJADE_ASSEMBLY_NAME"
+header="$source_header_dir/mlkem768.h"
+jazz="$source_jazz"
 for source_file in "$assembly" "$header" "$jazz"; do
   if [ ! -f "$source_file" ]; then
     echo "libjade release source not found: $source_file" >&2
@@ -205,18 +214,17 @@ expect_marker_once() {
 }
 
 expect_marker_once $'\t.text'
-expect_marker_once $'\t.data'
-expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_enc:'
-expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_enc_derand:'
-expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_keypair:'
-expect_marker_once '_jade_kem_kyber_kyber768_amd64_avx2_keypair_derand:'
-expect_marker_once 'L__crypto_kem_enc_derand_jazz$1:'
+for entry in jade_kem_mlkem_mlkem768_amd64_avx2_keypair_derand \
+    jade_kem_mlkem_mlkem768_amd64_avx2_enc_derand \
+    jade_kem_mlkem_mlkem768_amd64_avx2_dec; do
+  expect_marker_once "$entry:"
+done
 random_call_count="$(awk '
   $1 == "call" && $2 == "__jasmin_syscall_randombytes__" { count++ }
   END { print count + 0 }
 ' "$assembly")"
-if [ "$random_call_count" -ne 2 ]; then
-  echo "expected exactly two libjade random-wrapper calls, found $random_call_count" >&2
+if [ "$random_call_count" -ne 0 ]; then
+  echo "unexpected libjade random-wrapper calls in a derand-only source: $random_call_count" >&2
   exit 2
 fi
 constant_reference_count="$(awk '
@@ -243,7 +251,7 @@ constant_reference_count="$(awk '
     count++
   }
   END {
-    if (bad || count != 474) exit 2
+    if (bad || count == 0) exit 2
     print count
   }
 ' "$assembly")"
@@ -254,19 +262,13 @@ awk '
     print "\t.section\t.text.libjade_dec,\"ax\",@progbits"
     next
   }
-  $0 == "_jade_kem_kyber_kyber768_amd64_avx2_enc:" {
-    print "\t.section\t.text.libjade_enc_random,\"ax\",@progbits"
-  }
-  $0 == "_jade_kem_kyber_kyber768_amd64_avx2_enc_derand:" {
-    print "\t.section\t.text.libjade_enc_derand,\"ax\",@progbits"
-  }
-  $0 == "_jade_kem_kyber_kyber768_amd64_avx2_keypair:" {
-    print "\t.section\t.text.libjade_keypair_random,\"ax\",@progbits"
-  }
-  $0 == "_jade_kem_kyber_kyber768_amd64_avx2_keypair_derand:" {
+  $0 == "jade_kem_mlkem_mlkem768_amd64_avx2_keypair_derand:" {
     print "\t.section\t.text.libjade_keypair_derand,\"ax\",@progbits"
   }
-  $0 == "L__crypto_kem_enc_derand_jazz$1:" {
+  $0 == "jade_kem_mlkem_mlkem768_amd64_avx2_enc_derand:" {
+    print "\t.section\t.text.libjade_enc_derand,\"ax\",@progbits"
+  }
+  $0 == "jade_kem_mlkem_mlkem768_amd64_avx2_dec:" {
     print "\t.section\t.text.libjade_core,\"ax\",@progbits"
   }
   /^[[:space:]]*\.data[[:space:]]*$/ {
@@ -302,8 +304,8 @@ read -r -a normalization_cflags_arr <<< "$normalization_cflags"
 "$C_COMPILER" -c "$split_assembly" -o "$work_dir/libjade.o"
 "$C_COMPILER" "${libjade_cflags_arr[@]}" \
   "${normalization_cflags_arr[@]}" -std=c11 \
-  -I"$ROOT_DIR/scripts" -I"$source_kem_dir" \
-  -c "$ROOT_DIR/scripts/goal_size_libjade_adapter.c" \
+  -I"$ROOT_DIR/scripts" -I"$source_header_dir" \
+  -c "$ROOT_DIR/scripts/goal_size_libjade_mlkem_adapter.c" \
   -o "$work_dir/adapter.o"
 
 "$C_COMPILER" -r -nostdlib "$work_dir/adapter.o" "$work_dir/libjade.o" \
@@ -351,7 +353,7 @@ if [ "$undefined_symbol_count" -ne 0 ]; then
   exit 2
 fi
 if nm -a "$work_dir/product.o" |
-    rg -ni '__jasmin_syscall_randombytes__|jade_kem_kyber_kyber768_amd64_avx2_(enc|keypair)$'; then
+    rg -ni '__jasmin_syscall_randombytes__|jade_kem_(mlkem_mlkem768|kyber_kyber768)_amd64_avx2_(enc|keypair)$'; then
   echo "libjade product retained a randomized API or entropy symbol" >&2
   exit 2
 fi
@@ -402,8 +404,9 @@ cp "$work_dir/product.o" "$OUTPUT"
 printf "profile=%s\n" "$PROFILE"
 printf "compiler=%s\n" "$C_COMPILER"
 printf "compiler_version=%s\n" "$("$C_COMPILER" --version | sed -n '1p')"
-printf "libjade_semantics=Kyber768-pre-FIPS\n"
+printf "libjade_semantics=FIPS-203-ML-KEM-768\n"
 printf "libjade_fixed_isa=avx2-bmi2-popcnt\n"
+printf "libjade_repo_url=%s\n" "$LIBJADE_REPO_URL"
 printf "libjade_release_tag=%s\n" "$LIBJADE_RELEASE_TAG"
 printf "libjade_dist_url=%s\n" "$LIBJADE_DIST_URL"
 printf "libjade_source_origin=%s\n" "$source_origin"

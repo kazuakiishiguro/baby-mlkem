@@ -6,17 +6,19 @@ It is primarily written in C, with optional repository-local x86 assembly fast
 paths, and is inspired by the blog post [Enough Polynomials and Linear Algebra
 to Implement Kyber](https://words.filippo.io/dispatches/kyber-math/).
 
-For a commit-independent Japanese book that builds scalar ML-KEM-768 from
-scratch and then progresses through speed optimization and size minimization,
-see [docs/implementation-book.md](docs/implementation-book.md). Runnable
-chapter tests and the readable final scalar implementation are under
-[tutorial/](tutorial/README.md). The same book is available as a
-browser-friendly [HTML page](docs/learning-journey.html).
+For a commit-independent Japanese book that introduces KEMs, polynomial rings,
+Module-LWE noise, encoding, and hash/XOF fundamentals, then grows one
+`baby-mlkem.c` from an empty file into scalar ML-KEM-768 and optimizes that same
+design for speed and size, see [docs/implementation-book.md](docs/implementation-book.md). Its
+self-contained final teaching source is
+[tutorial/one-file/baby-mlkem.c](tutorial/one-file/baby-mlkem.c); modular
+diagnostic material is under [tutorial/](tutorial/README.md). The same book is
+available as a browser-friendly [HTML page](docs/learning-journey.html).
 From a Tailscale-connected host, run docs/serve-learning-journey.sh 8000 to serve it
 on the host's Tailscale address.
-The guide explains the purpose, measurement method, acceptance criteria, and
-rejection reason for each stage; the detailed raw experiment log remains in
-note.md.
+The main text follows the cumulative implementation itself. Build checks and
+cross-implementation verification are collected in an appendix; the detailed
+raw optimization experiment log remains in note.md.
 
 ## Implementation Status
 
@@ -1362,9 +1364,35 @@ in-tree core, product, upstream, and PQClean paths described above.
 | Native aggregate speed | PASS | The [c8 native report](benchmarks/2026-08-22-goal-native-speed-c8/README.md) passes all 40 rows; the narrowest roundtrip ratio/CI lower bound is 1.5709x/1.5563x against fair-flags Kyber. |
 | Native operation speed | PASS | The c8 native report passes all 40 rows; the narrowest operation ratio/CI lower bound is 1.3282x/1.3209x for Kyber keygen. |
 | AVX2-only speed | PASS | The [c8 AVX2-only report](benchmarks/2026-08-22-goal-avx2-speed-c8/README.md) passes all 40 rows and the AVX512 audit; the narrowest roundtrip ratio/CI lower bound is 1.3754x/1.3388x, and the narrowest operation ratio/CI lower bound is 1.1062x/1.1002x for libjade keygen. |
-| Production size | PASS | The [c8 size matrix](benchmarks/2026-08-22-goal-size-c8/README.md) passes all 20 rows: native is 51,171 B versus 51,200 B for mlkem-native (`-29 B`), and AVX2-only is 45,032 B versus 45,049 B for OpenSSL (`-17 B`). |
+| Production size | PASS | The [c8 size matrix](benchmarks/2026-08-22-goal-size-c8/README.md) passes all 20 rows: native is 51,171 B versus 51,200 B for mlkem-native (`-29 B`), and AVX2-only is 45,032 B versus 45,049 B for OpenSSL (`-17 B`). The [2026-11-18 refresh](benchmarks/2026-11-18-current-comparator-refresh/README.md) re-passes all 18 re-buildable rows against current upstreams; the closest is mlkem-native at `-73 B` native. |
 | Maximum stack | PASS | The c8 size matrix measures 8,056 B native and 4,512 B AVX2-only locally; stack is reported separately from primary size. |
 | Clean final revision | PASS for source commit | The completion gates use the same committed product source `400dbe4`; the benchmark and validation evidence is recorded separately, and documentation-only commits do not alter the measured product inputs. |
+
+### Current-Comparator Ratio Refresh (2026-11-18)
+
+Three of the c8 ratios above are stale because the comparator itself changed
+after that measurement, or because the pinned comparator could no longer be
+fetched. All three were re-measured on 2026-11-18 against upstream sources with
+the same method (paired runs, three warmups, alternating order, CPU 0, paired
+bootstrap intervals):
+
+| Comparator | c8 roundtrip ratio | Refreshed ratio | Why it moved |
+|---|---:|---:|---|
+| Botan ML-KEM | 8.0501x | **7.3761x** | Botan 3.14 added an AVX2 ML-KEM NTT/mul codepath (`68b331466`); keygen and encaps now sit at `4.70x`/`4.98x` instead of `7.73x`/`6.59x` |
+| BoringSSL | 3.5729x | **2.8623x** | BoringSSL's lazy-reduction and vartime-Keccak commits (`cf44c6429`, `e9b9cf004`, `76bc63d96`) did not reproduce their claimed 1.08-1.17x gain on this host |
+| libjade (Kyber768 → FIPS 203 ML-KEM-768, successor repository) | 2.0392x | **1.9960x** | The pinned comparator moved from the unpublishable Kyber768 release to `formosa-crypto/formosa-libjade`'s FIPS 203 ML-KEM-768 AVX2 sources at commit `90ba5dc`; AVX2-only is `1.391x` with a `1.110x` keygen floor |
+| OpenSSL ML-KEM (4.2.0-dev master) | 4.6173x | **2.6120x** | OpenSSL added AVX2 ML-KEM NTT/inverse-NTT and base multiplication (`8ce96d5b15`, `809b8180c1`, 2026-10-21, not in 4.1.0); native keygen is still `3.955x` but encaps tightens to `1.145x` |
+
+The other native rows reproduce c8 within run noise, and every refreshed native
+row still clears the `1.00x` operation bound and the `1.05x` aggregate margin,
+so the native completion verdict is unchanged. One AVX2-only comparison is now
+a measured loss and is disclosed as such: OpenSSL master encapsulates at
+`0.895x` of the local AVX2-only artifact (paired CI low `0.889x`), because
+OpenSSL's October AVX2 ML-KEM kernels benefit an AVX2-only build while the
+local AVX2-only path loses its AVX-512 advantage. The local artifact still wins
+that comparator's keygen (`2.783x`), decaps (`1.688x`) and aggregate (`1.842x`). The refresh also re-measured all twenty size
+rows and pins the libjade comparator to a fetchable source. See
+[`benchmarks/2026-11-18-current-comparator-refresh/`](benchmarks/2026-11-18-current-comparator-refresh/README.md).
 
 The completion contract is satisfied for source commit `400dbe4`: it is faster
 than every pinned comparator under both measured profiles, smaller in primary
@@ -1372,6 +1400,24 @@ production footprint across the full matrix, and covered by the correctness and
 reproducibility evidence above. This is a measured milestone, not a claim that
 no future compiler, CPU, or implementation can ever produce a faster or smaller
 artifact.
+
+The claim is re-checked against current comparator upstreams in the
+[2026-11-18 comparator refresh](benchmarks/2026-11-18-current-comparator-refresh/README.md).
+That pass re-measures all twenty size rows and sixteen speed rows from fresh
+clones and finds the candidate unchanged (`51,171 B` native, `45,032 B`
+AVX2-only primary) with every size margin still passing — the closest is
+mlkem-native at `-73 B` native — and every re-measured speed bound above
+`1.00x`. Three items it records are not local regressions: Botan's refreshed
+ratio drops from `8.05x` to `7.38x` because it gained an AVX2 codepath, the
+BoringSSL ratio should come down on this host even though its upstream work
+claims a gain, and the pinned libjade `release/2023.05-2` comparator archive is
+no longer downloadable because that repository was replaced, so that comparator
+row cannot currently be rebuilt from scratch. A follow-up on 2026-11-19
+resolves the AVX2-only local figure that pass could not explain: alternating
+single-profile passes show the AVX2-only artifact paying a stable `1.41x`
+local penalty against native (aggregate AVX2-only margin `1.39x` versus
+`1.56x` native), while its per-comparator ratios still agree with the c8
+AVX2-only run within `0.02x`.
 
 ## Current Core Optimization Frontier (2026-08-22)
 

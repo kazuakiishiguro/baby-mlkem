@@ -3349,3 +3349,328 @@
   - Upstream ref Kyber768:
     - Command: `make -C include/kyber_upstream/ref clean && make -C include/kyber_upstream/ref test/test_kyber768 CC=clang && include/kyber_upstream/ref/test/test_kyber768`
     - Result: `OK`
+
+## 2026-11-18: current-comparator-refresh (verification, no product change)
+
+- Question:
+  - Three months after the c8 completion evidence, is the product source still
+    both fastest and smallest against the *current* upstream of every
+    comparator, or is the claim stale?
+- Change:
+  - None to product source. The tree's core inputs are unchanged from
+    `400dbe4`, and the production artifact footprint reproduces exactly
+    (`51,171 B` native, `45,032 B` AVX2-only).
+  - Re-measured the comparator matrix from fresh upstream clones; recorded in
+    `benchmarks/2026-11-18-current-comparator-refresh/`.
+- Comparator movement since c8:
+  - pq-crystals Kyber `3edd5af` and PQClean `0586a82` are unchanged upstream.
+  - mlkem-native moved `69d24e3` -> `76b6587`; ML-KEM code changes are
+    perf-neutral (`vzeroupper`, `#if` guards, proof-bound tightening).
+  - liboqs moved `4e1183a` -> `395d2aa`; its ML-KEM backend is mlkem-native
+    derived, so it double-counts that design rather than adding a competitor.
+  - BoringSSL moved `a204be2` -> `ebd922a` with lazy-reduction and vartime
+    Keccak changes (`cf44c6429`, `e9b9cf004`, `76bc63d96`).
+  - Botan moved `7ffae68` -> `71c2475` (3.14.x) and added an AVX2 ML-KEM
+    NTT/INVNTt/mul codepath (`68b331466`), quoted 50-100% faster.
+  - OpenSSL moved `1a3455e` -> `a1bd850` (4.2.0-dev) and added AVX2 NTT/intt
+    and AVX2 base multiplication (`8ce96d5b15`, `809b8180c1`). Not in 4.1.0.
+  - libcrux moved crate `0.0.10` -> `0.0.11`; only a constant-time barrier
+    refactor.
+  - libjade: `release/2023.05-2` assets are gone from GitHub. The repository
+    was replaced by `formosa-crypto/formosa-libjade`, and the old
+    `releases/download/...` URL and `releases/latest` API both return 404.
+- Result (size):
+  - All 18 re-measured rows pass. Every size margin widened because the
+    updated comparators grew. Closest competitor is mlkem-native at
+    `-73 B` native (c8 measured `-29 B`); AVX2-only nearest is mlkem-native at
+    `-6,293 B` (c8's `-17 B` OpenSSL margin became `-14,762 B`).
+- Result (speed, native, 15 paired runs):
+  - Reproduced c8 within noise: Kyber `1.320x/1.446x/2.026x/1.564x`,
+    fair-flags Kyber `1.329x/1.466x/2.059x/1.575x`, mlkem-native
+    `1.566x/1.889x/3.065x/2.050x`, PQClean `1.766x/1.932x/2.762x/2.099x`,
+    liboqs `1.477x/1.779x/2.953x/1.968x`, libcrux 0.0.11
+    `1.604x/1.950x/2.674x/1.977x` (keygen/encaps/decaps/roundtrip).
+  - Moved, both still passing: Botan 3.14.1 `4.701x/4.976x/14.095x/7.376x`
+    versus c8's `7.728x/6.588x/10.331x/8.050x`, i.e. the new AVX2 codepath
+    roughly halves keygen/encaps and the aggregate win is now `7.4x`.
+    BoringSSL `ebd922a` `1.936x/2.667x/4.514x/2.862x` versus c8's
+    `3.129x/2.995x/5.133x/3.573x`; its own times barely moved on this host, so
+    the published BoringSSL ratio should come down.
+- Result (speed, AVX2-only, 15 paired runs):
+  - Kyber `1.184x/1.435x/1.615x/1.391x`, fair-flags Kyber
+    `1.172x/1.463x/1.607x/1.377x`, mlkem-native `1.121x/1.502x/1.965x/1.467x`,
+    PQClean `1.196x/1.481x/1.691x/1.430x`, liboqs `1.275x/1.692x/2.198x/
+    1.669x`, BoringSSL `1.778x/2.445x/3.301x/2.409x`.
+  - Caveat: the local AVX2-only artifact measured ~14.6 us/op roundtrip in
+    this pass while the native artifact measured ~10.4 us/op and c8 recorded
+    ~10.5 us/op for both, so AVX2-only ratios here inherit ~40% local
+    overhead. The margin still clears every bound, but this profile needs a
+    re-run on a quiet host before the ratios are quoted.
+- Not re-measured for speed:
+  - OpenSSL (PIE link against the normalized `-fno-pic` product) and libjade
+    (pinned dist 404). Size rows for both were still produced.
+- Result (libjade replacement source):
+  - The successor repository ships ML-KEM-768 AVX2 Jasmin assembly. Built
+    through the same normalization it is `62,606 B` primary, i.e. `+11,435 B`
+    versus the local product and larger than the old `54,433 B` artifact, so
+    the size verdict does not change. Only the provenance pin is stale.
+- Why this was not a product change:
+  - Nothing in the candidate moved; the experiment establishes that the
+    "fastest and smallest" claim survives current comparators, and that the
+    outstanding issue is comparator provenance (libjade pin) plus two stale
+    published ratios (Botan, BoringSSL), not local performance or size.
+- Next idea:
+  - Re-pin the libjade comparator to a fetchable source so the fail-closed
+    comparator-update contract holds on a clean machine.
+  - Re-run the Botan/BoringSSL/OpenSSL speed rows and republish those ratios.
+  - Decide whether the unmeasured `plan.md` targets (cloudflare/circl,
+    itzmeanjan/ml-kem) should be measured once for completeness or removed
+    from the declared scope.
+
+## 2026-11-19: avx2-only-local-overhead-resolution
+
+- Question:
+  - The 2026-11-18 refresh measured the AVX2-only local production artifact at
+    ~14.6 us/op core roundtrip while the native artifact measured ~10.4 us/op
+    and c8 recorded ~10.5 us/op for both. Was that a measurement fault in the
+    AVX2-only pass, or the real cost of the AVX2-only artifact?
+- Change:
+  - None to product source.
+  - Built the pristine `400dbe4` tree with the AVX2-only flags, audited it,
+    and ran alternating single-profile passes with identical drivers so every
+    A/B comparison shares host conditions.
+- Result:
+  - The archived AVX2 artifact is byte-identical to a fresh rebuild
+    (`b6fd46a016be…`) and has no AVX512 register or symbol, so the profile was
+    built correctly.
+  - Two independent alternating passes agree: local core roundtrip is
+    `10,352`/`10,311` ns/op native versus `14,605`/`14,642` ns/op AVX2-only,
+    a `1.411x`/`1.420x` local penalty. Per operation the penalty is keygen
+    `1.400x`/`1.409x`, encaps `1.256x`/`1.258x`, decaps `1.512x`/`1.516x`.
+    The comparator side pays `1.254x`/`1.264x` (standard Kyber) and `1.0x`
+    (fair-flags Kyber), so the aggregate AVX2-only margin is `1.39x` where
+    native is `1.56x`.
+  - Rebuilding the same tree with `-march=native -mno-avx512f` reproduces the
+    old ~14.5 us/op only across unstable runs (21.0/11.1/10.5 us/op), which
+    shows the AVX2-only cost comes from the x86-64-v3 code generation and not
+    from a missing flag in the measured build.
+  - The 15-run AVX2-only screen with five re-buildable comparators reproduces
+    c8 within `0.02x` (Kyber `1.171x/1.512x/1.610x/1.390x` versus
+    `1.1762x/1.4501x/1.6062x/1.3754x`), so no claim depends on the
+    irreproducible c8 AVX2-only local figure.
+- Size cross-check:
+  - The only plausible "smaller configuration inside a measured comparator"
+    was mlkem-native without its native backends. Building it with `OPT=0`
+    gives `78,048 B` native and `68,714 B` AVX2-only, i.e. it grows rather than
+    shrinking, so no comparator configuration inside the set is smaller than
+    the local `51,171 B`/`45,032 B` artifacts.
+- Why this was not a product change:
+  - The experiment only re-characterises the AVX2-only profile; the artifact,
+    the arithmetic, and the wire format are untouched.
+- Next idea:
+  - Treat the AVX2-only local penalty (encaps `4.40 us` versus `3.49 us`
+    native) as a genuine optimization target for the AVX2-only source path,
+    with the `0.02x`-level agreement against c8 as the regression floor.
+
+## 2026-11-19: avx2-only-keccak-penalty-probe (rejected)
+
+- Question:
+  - The AVX2-only profile pays a stable `1.41x` local penalty against the native
+    profile. The stage oracle attributes almost all of it to the x4 Keccak path
+    (`keccakf4_mem` 254-280 ns AVX2-only versus 157-165 ns native, i.e. `1.7x`),
+    so can the AVX2-only x4 permutation be brought closer to native?
+- Baseline (CPU 0, `bench_core_stagesc` / `bench_keccakc`, x86-64-v3):
+  - `mlkem_keccakf4_mem` 254-280 ns/op, `mlkem_keccakf4` 286-306 ns/op,
+    `mlkem_keccakf1_avx2` 191 ns/op, `mlkem_sha3_256_public_key` 1736 ns/op.
+  - `keepkeccak3_only` style stages: 40 `vpor` (AVX2 has no `vpternlog`), 50
+    `vpandn` and ~700 `vpblendd` per 24-round x4 permutation.
+- Candidates tested and rejected:
+  - `unroll_count(2)` on the AVX2-only x4 round loop: product roundtrip
+    `14.6 us` -> `15.0-15.9 us` (regression); isolated `keccakf4_mem` moved
+    within +/-2%.
+  - Reassociated Chi (`(x ^ z) ^ (y & ~z)`): wrong result, `sample_matrix`
+    stage mismatch.
+  - Full 24-round expansion of the AVX2 x1 permutation through a two-round
+    header split: `keccakf1_avx2` 191.9 ns -> 190.5 ns (`0.7%`, inside noise)
+    while the function grows from `0x3e5` to `0x38ff` bytes; `keccakf4_mem`
+    unchanged within 0.5%; the repository A/B harness reports `1.0013x` median
+    but only 5/7 wins. Rejected on the speed/size trade.
+  - Four-round unroll (`unroll_count(4)`): 191.9 -> 191.0 ns (`0.5%`) for
+    `0x3e5` -> `0xad4` bytes. Rejected.
+  - Theta folded into the rho shuffle inside the AVX2 x4 path: two attempts,
+    both produce wrong results (`sample_matrix mismatch`) because the lane-0
+    row is the full column XOR, not the row source; not pursued further.
+  - Chi via `x ^ ((y|z) & ~(y&z))`: algebraically equal, but a standalone
+    vector check shows the last lane differing, so it was discarded before any
+    build.
+- Outcome:
+  - No accepted code change. The AVX2-only Keccak penalty comes from the ISA
+    itself (no `vpternlogq`, so every Chi element costs three instructions and
+    the compiler must materialise blend masks that AVX512 handles in one
+    ternary op), not from a fixable expression or unroll choice.
+  - The AVX2-only product metric stayed at `14.6 us/op` for every candidate, so
+    the remaining AVX2-only opportunity is structural: reduce the number of x4
+    permutations (schedule-level, for example fewer matrix/noise blocks), not
+    the cost of one permutation.
+- Verification:
+  - `bench_core_stagesc` stage-oracle sink and product `make test` were used as
+    the correctness gate for each candidate; only the two theta experiments
+    failed it and both were discarded immediately. `baby-mlkem.c` and
+    `keccakf1600_avx2.h` are unchanged from `HEAD` after this experiment.
+
+## 2026-11-19: avx2-permutation-inventory (accounting, no code change)
+
+- Question:
+  - With a single AVX2 x4 Keccak permutation shown to be ISA-bound, the only
+    remaining AVX2-only lever is the number of permutations. Where are they
+    spent, and is any phase not already at its lane-capacity bound?
+- Method:
+  - Built the AVX2 stage oracle and decomposed each phase from measured
+    building blocks (one permutation 252-259 ns, one matrix stream 757 ns, four
+    matrix streams 1078 ns). Recorded in
+    `benchmarks/2026-11-19-avx2-permutation-inventory/`.
+- Findings:
+  - Keygen: 2 noise + 7 matrix = 9 permutations for 33 useful lanes
+    (`6` ETA2 streams + `27` matrix rate blocks), exactly `ceil(33/4)`.
+  - Encryption: 2 noise + 7 matrix = 9 permutations for 34 useful lanes,
+    exactly `ceil(34/4)`; the README already records this bound.
+  - Public-key preparation: 2723 ns total with about 1.69 us of nine serial
+    `H(pk)` permutations; the matrix remainder costs about four x4
+    permutations instead of the `ceil(27/4) = 7` a lane-only schedule needs,
+    because eight `H(pk)` permutations contribute their three spare lanes
+    (1.75x overlap). The rest is bound by `H(pk)` serial dependency.
+- Conclusion:
+  - Keygen and encryption matrix/noise are closed: no regrouping can reduce
+    their permutation count without changing the algorithm.
+  - The only structural change that removes matrix permutations is evaluating
+    `A^T r` / `A^T y` directly from the seed stream instead of materialising
+    the nine matrix polynomials, but the stream itself still needs all 27
+    matrix rate blocks, so the count stays at `ceil(27/4) = 7`. That makes it a
+    null-result optimization.
+  - Net: the AVX2-only local penalty is fully accounted for by the AVX2 ISA
+    (no `vpternlogq`, narrower lanes) and a schedule that is already at its
+    capacity bound. No further AVX2-only scheduling change is available; the
+    remaining options are algorithmic (reject streams before full sampling)
+    and outside this repository's optimization contract.
+
+## 2026-11-19: libjade-comparator-repin
+
+- Problem:
+  - The libjade comparator was pinned to
+    `https://github.com/formosa-crypto/libjade/releases/download/release/2023.05-2/...`
+    and to `.../libjade/releases/latest`; both return HTTP 404 because the
+    repository was replaced by `formosa-crypto/formosa-libjade`. On a clean
+    machine the suite that carries the narrowest AVX2-only speed margin could
+    not be fetched, so the fail-closed comparator-update contract could not
+    hold.
+- Change (scripts only, no product code):
+  - Re-pinned the comparator to the successor repository at commit
+    `90ba5dc4d9da2b6950589c58a52282caa1dbfdfd` and re-pinned the three source
+    hashes to that commit:
+    `asm/mlkem/avx2/mlkem768_avx2_sct.s` `13ef94bf…80605`,
+    `src/include/mlkem768.h` `80ed6a45…64681`,
+    `src/mlkem/avx2/sct/768/jmlkem.jazz` `be5b05bf…cd51f`.
+  - `build_goal_libjade_product.sh` now clones the repository with
+    `--filter=blob:none --no-checkout` and checks out the pinned commit instead
+    of downloading a release tarball; `LIBJADE_SOURCE_LAYOUT`,
+    `LIBJADE_HEADER_DIR`, `LIBJADE_JAZZ_PATH` and `LIBJADE_ASSEMBLY_NAME`
+    carry the new layout, and the layout overrides are exported by
+    `verify_goal_comparator_size.sh`.
+  - The assembly audits were retargeted: the single `.text` block, the three
+    `jade_kem_mlkem_mlkem768_amd64_avx2_{keypair_derand,enc_derand,dec}`
+    entry points, zero random-wrapper calls (the successor sources are
+    derand-only), and a non-zero constant-pool reference count replace the old
+    Kyber768 marker set and its exact `474` reference count.
+  - `scripts/goal_size_libjade_mlkem_adapter.c` replaces the Kyber768 adapter.
+  - `verify_goal_speed.sh`, `verify_goal_comparator_size.sh` and
+    `bench_compare_libjade.sh` share the new pin, URL, and layout defaults.
+- Result:
+  - Size gate passes in both profiles from an empty download root
+    (`comparator_update=downloaded-pinned`): libjade `61,331 B` primary,
+    `-10,160 B` native and `-16,299 B` AVX2-only versus the local artifact.
+  - The successor sources are FIPS 203 ML-KEM-768 rather than round-3 Kyber768,
+    so the comparator semantics tightened.
+- Not done:
+  - `bench_compare_libjade.sh` still builds the Kyber768 adapter, so no paired
+    speed row exists for the new pin; the refresh report records this
+    explicitly instead of quoting a stale libjade speed number.
+  - The successor repository publishes one ML-DSA tag only, so the pin is a
+    commit SHA; the runners record `latest_release_audit=pinned-behind-upstream`
+    rather than claiming the pin is the newest release.
+
+## 2026-11-19: libjade-speed-rows
+
+- Question:
+  - After the libjade comparator was re-pinned to the successor repository, the
+    harness still built the old Kyber768 adapter and suite label, so the FIPS
+    203 comparator had no paired speed row. Does the local artifact still win
+    once the comparator is a real ML-KEM-768 AVX2 implementation?
+- Change (scripts only):
+  - `bench_compare_libjade.sh` now passes `LIBJADE_REPO_URL`,
+    `LIBJADE_HEADER_DIR`, `LIBJADE_JAZZ_PATH` and `LIBJADE_ASSEMBLY_NAME` to
+    the product builder and reports the `libjade_mlkem768_avx2_` metric
+    prefix.
+  - `bench_compare_all_stats.sh`, `bench_compiler_matrix.sh`,
+    `verify_goal_speed.sh` and `verify_world_fastest.sh` rename the suite label
+    from `libjade_kyber768_avx2` to `libjade_mlkem768_avx2` so the comparator
+    name matches the semantics it now measures.
+- Result (CPU 0, Clang 18.1.3, paired runs, alternating order, 100,000
+  iterations, `bench_productc` core metric):
+  - native, 5 pairs: keygen `1.5597x` (CI low `1.5558x`), encaps `1.7806x`
+    (`1.7751x`), decaps `2.9400x` (`2.9318x`), roundtrip `1.9960x`
+    (`1.9933x`).
+  - AVX2-only, 5 pairs: keygen `1.1101x` (`1.0741x`), encaps `1.4115x`
+    (`1.3844x`), decaps `1.8764x` (`1.8314x`), roundtrip `1.3909x`
+    (`1.4015x`, geometric-mean bound).
+  - Both profiles clear the `1.00x` operation bound and the `1.05x` aggregate
+    margin. AVX2-only keygen remains the narrowest operation margin of the
+    whole matrix at `1.074x`, consistent with the earlier `1.1062x` Kyber768
+    row.
+- Verification:
+  - `make test CC=clang AVX2_BACKEND=core` -> `OK`; product source unchanged.
+  - Raw outputs recorded beside the report as `libjade-speed-native.raw` and
+    `libjade-speed-avx2.raw`.
+- Not done:
+  - The run used 5 pairs rather than 15, and the roundtrip rows expose the
+    known quirk where the paired CI lower bound can exceed the ratio of
+    medians when the local/competitor pair spread exceeds the aggregate; the
+    aggregate geometric-mean bound is the quoted one.
+
+## 2026-11-19: openssl-speed-rows
+
+- Question:
+  - The OpenSSL comparator had refreshed size rows but no paired speed row,
+    because `scripts/bench_compare_openssl_mlkem.sh` links the harness with the
+    default PIE while the goal profile builds `libcrypto.a` with
+    `-fno-pic`/`-fno-PIE` (`relocation R_X86_64_32 ... can not be used when
+    making a PIE object`). Does the local artifact still win once that is fixed?
+- Change (script only):
+  - `bench_compare_openssl_mlkem.sh` now links the benchmark harness with
+    `-no-pie`, matching the flags used for `libcrypto.a`.
+- Result (CPU 0, Clang 18.1.3, 5 paired runs, alternating order, 100,000
+  iterations):
+  - native: keygen `3.9548x` (`3.9106x`), encaps `1.1445x` (`1.1411x`),
+    decaps `2.6450x` (`2.4937x`), roundtrip `2.6120x` (`2.5423x`).
+  - AVX2-only: keygen `2.7834x` (`2.7697x`), encaps `0.8948x` (`0.8890x`),
+    decaps `1.6882x` (`1.6573x`), roundtrip `1.8423x` (`1.8281x`).
+  - Absolute AVX2-only medians: local encaps `4458.86 ns` versus OpenSSL
+    `3989.63 ns`; local keygen `5578.48 ns` versus `15527.39 ns`.
+- Finding:
+  - **One operation-level loss**: OpenSSL master encapsulation is ~12% faster
+    than the local AVX2-only artifact. OpenSSL's AVX2 ML-KEM NTT/inverse-NTT
+    and base-multiplication kernels (2026-10-21) help an AVX2-limited build,
+    while the local AVX2-only path loses the AVX-512 advantage that carries
+    its native numbers. The local artifact still wins keygen, decaps and the
+    aggregate in that profile, and wins every operation in the native profile.
+  - Cause analysis, not measured: the AVX2-only local encaps path pays the
+    same x4 Keccak/NTT penalty documented in
+    `benchmarks/2026-11-19-avx2-permutation-inventory/`.
+  - Caveat: the normalized OpenSSL harness runs its own public-key decode and
+    modulus check inside the timed encapsulation, so the comparison measures
+    the normalized three-API contract, not identical internal work.
+- Verification:
+  - `make test CC=clang AVX2_BACKEND=core` -> `OK`; product source unchanged.
+  - Raw outputs: `benchmarks/2026-11-18-current-comparator-refresh/openssl-speed-{native,avx2}.raw`.
+- Scope:
+  - This is a comparator refresh, not a product regression, but the AVX2-only
+    encaps deficit is a genuine open performance target if the profile matters.

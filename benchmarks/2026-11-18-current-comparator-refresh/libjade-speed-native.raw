@@ -1,0 +1,143 @@
+iters=100000 runs=5
+warmup_runs=1
+bootstrap_samples=5000
+bench_suites=libjade_mlkem768_avx2
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[libjade_mlkem768_avx2] warmup=1/1 order=local-first
+[libjade_mlkem768_avx2] run=1/5 order=local-first
+[libjade_mlkem768_avx2] run=1 keygen=3914.59/6191.13 encaps=3534.05/6279.00 decaps=2802.93/8222.44 roundtrip=10374.62/20752.33
+[libjade_mlkem768_avx2] run=2/5 order=competitor-first
+[libjade_mlkem768_avx2] run=2 keygen=3931.00/6123.68 encaps=3502.87/6235.17 decaps=2796.79/8510.25 roundtrip=10472.90/21557.25
+[libjade_mlkem768_avx2] run=3/5 order=local-first
+[libjade_mlkem768_avx2] run=3 keygen=3912.92/6152.95 encaps=3494.25/6244.26 decaps=2795.70/8226.50 roundtrip=10333.29/20649.83
+[libjade_mlkem768_avx2] run=4/5 order=competitor-first
+[libjade_mlkem768_avx2] run=4 keygen=3931.41/6101.53 encaps=3501.78/6207.43 decaps=2773.74/8185.41 roundtrip=10332.32/20604.70
+[libjade_mlkem768_avx2] run=5/5 order=local-first
+[libjade_mlkem768_avx2] run=5 keygen=3926.23/6122.00 encaps=3492.36/6210.70 decaps=2797.99/8183.80 roundtrip=10345.80/20586.83
+[libjade_mlkem768_avx2]
+runs=5
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10371.79
+local_roundtrip_sd_ns=59.05
+local_roundtrip_median_ns=10345.80
+local_roundtrip_trimmed_ns=10351.24
+competitor_roundtrip_mean_ns=20830.19
+competitor_roundtrip_sd_ns=411.48
+competitor_roundtrip_median_ns=20649.83
+competitor_roundtrip_trimmed_ns=20668.95
+selected_local_roundtrip_ns=10345.80
+selected_competitor_roundtrip_ns=20649.83
+local_ns_div_competitor_ns=0.501x
+local_speedup_vs_competitor=1.996x
+paired_bootstrap_samples=5000
+keygen_runs=5
+keygen_local_mean_ns=3923.23
+keygen_local_median_ns=3926.23
+keygen_competitor_mean_ns=6138.26
+keygen_competitor_median_ns=6123.68
+keygen_speedup_ratio_of_medians=1.5597x
+keygen_speedup_gmean=1.5646x
+keygen_speedup_ci95_low=1.5558x
+keygen_speedup_ci95_high=1.5738x
+keygen_speedup_median=1.5593x
+keygen_wins=5/5
+keygen_local_first_median=1.5725x
+keygen_competitor_first_median=1.5549x
+encaps_runs=5
+encaps_local_mean_ns=3505.06
+encaps_local_median_ns=3501.78
+encaps_competitor_mean_ns=6235.31
+encaps_competitor_median_ns=6235.17
+encaps_speedup_ratio_of_medians=1.7806x
+encaps_speedup_gmean=1.7789x
+encaps_speedup_ci95_low=1.7751x
+encaps_speedup_ci95_high=1.7832x
+encaps_speedup_median=1.7784x
+encaps_wins=5/5
+encaps_local_first_median=1.7784x
+encaps_competitor_first_median=1.7763x
+decaps_runs=5
+decaps_local_mean_ns=2793.43
+decaps_local_median_ns=2796.79
+decaps_competitor_mean_ns=8265.68
+decaps_competitor_median_ns=8222.44
+decaps_speedup_ratio_of_medians=2.9400x
+decaps_speedup_gmean=2.9587x
+decaps_speedup_ci95_low=2.9318x
+decaps_speedup_ci95_high=3.0022x
+decaps_speedup_median=2.9426x
+decaps_wins=5/5
+decaps_local_first_median=2.9335x
+decaps_competitor_first_median=2.9970x
+roundtrip_runs=5
+roundtrip_local_mean_ns=10371.79
+roundtrip_local_median_ns=10345.80
+roundtrip_competitor_mean_ns=20830.19
+roundtrip_competitor_median_ns=20649.83
+roundtrip_speedup_ratio_of_medians=1.9960x
+roundtrip_speedup_gmean=2.0081x
+roundtrip_speedup_ci95_low=1.9933x
+roundtrip_speedup_ci95_high=2.0337x
+roundtrip_speedup_median=1.9984x
+roundtrip_wins=5/5
+roundtrip_local_first_median=1.9984x
+roundtrip_competitor_first_median=2.0263x
+
