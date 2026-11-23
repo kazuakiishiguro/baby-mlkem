@@ -1,0 +1,16 @@
+# Final state (after rounds 1-3): product core metric, no caches, CPU 0
+# benchc *_core columns, 3 runs each, AVX2-only and native profiles
+AVX2   clang 14649.78   fil-c 31024.47
+AVX2   clang 14657.05   fil-c 31380.49
+AVX2   clang 14743.67   fil-c 31092.13
+NATIVE clang 11081.68   fil-c 18021.69
+NATIVE clang 10760.08   fil-c 18156.60
+NATIVE clang 10771.38   fil-c 18187.14
+
+# Round-by-round progress (default benchc columns, roundtrip ns/op)
+#                  clang   fil-c
+# round 0  AVX2     9610   26354
+# round 1  AVX2     9562   22541   (matching-form basemul kernel, decaps routing, poly256_sub)
+# round 2  AVX2     9562   22412   (native-only change; AVX2 unaffected)
+# round 0  native   6737   16330
+# round 2  native   6736   14992   (vectorized native fused decrypt kernel)

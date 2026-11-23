@@ -3674,3 +3674,269 @@
 - Scope:
   - This is a comparator refresh, not a product regression, but the AVX2-only
     encaps deficit is a genuine open performance target if the profile matters.
+
+## 2026-11-23: fil-c-portability
+
+- Question:
+  - Can the implementation be compiled with Fil-C (memory-safe C), and how much
+    performance does that cost?
+- Toolchain:
+  - Fil-C 0.687, `filc-0.687-linux-x86_64.tar.xz` (musl, run-in-place), clang
+    20.1.8 fork. Setup only rewrites rpath/interpreter relative to its own
+    directory, so no root or `/opt/fil` install was needed.
+- Result (portability):
+  - Builds and passes `make test` in scalar and AVX2-only profiles, and builds
+    and runs in the native AVX-512 profile (3,248 `%zmm` instructions in the
+    output). One source guard was needed: Fil-C rejects module-level inline asm
+    (`Invalid directive: .local`), so the AVX2 `mlkem_keygen_keccakf4_mem_parity`
+    alias is replaced by an ordinary call under `__FILC__`. The repository's
+    `.S` files cannot be assembled by Fil-C, so the C fallbacks for the NTT root
+    tables and AVX2 rotate masks are used, and `-Wa,--noexecstack` must be
+    dropped.
+- Result (cost, median of 5 alternating runs, same flags for both compilers):
+  - scalar: keygen `1.86x`, encaps `2.58x`, decaps `2.69x`, roundtrip `2.31x`
+    slower than clang.
+  - AVX2-only: keygen `2.83x`, encaps `2.47x`, decaps `3.40x`, roundtrip
+    `2.73x` slower.
+  - native AVX-512: keygen `1.65x`, encaps `3.06x`, decaps `5.15x`, roundtrip
+    `2.42x` slower.
+  - Fil-C `-O3` equals `-O2` on the AVX2 profile, so the overhead is in the
+    capability checks, not code generation. Compile time is only `1.25x`
+    slower (`make test` from clean: 6.43 s -> 8.01 s) and binaries grow
+    `1.6x`-`2.2x`.
+- Interpretation:
+  - Decapsulation degrades most in the wider-ISA profiles because the faster
+    the arithmetic, the larger the share of time taken by per-access checks;
+    key generation degrades least because it is dominated by dense register
+    Keccak arithmetic.
+- Recorded in `benchmarks/2026-11-23-fil-c-portability/` with the patch and raw
+  timings. No change to the default or product builds.
+
+## 2026-11-23: fil-c-slowdown-cause
+
+- Question:
+  - Fil-C costs 1.65x-5.15x depending on profile and operation; what is the
+    actual mechanism?
+- Method:
+  - Ran the repository's stage harness under both compilers in the scalar and
+    AVX2 profiles (571 stage rows), and wrote a synthetic microbenchmark that
+    separates register work, array access, SIMD loads, and call overhead.
+- Result (microbenchmark, 256-iteration kernels, `-O2`):
+  - register-only loop: clang 94 ns, Fil-C 106 ns -> `1.13x`, i.e. arithmetic is
+    essentially free.
+  - 256 `int16_t` loads: clang 14 ns (vectorized) / 32 ns (`-fno-vectorize`),
+    Fil-C 150 ns -> `11.1x` over vectorized clang and `4.6x` over scalar clang.
+  - So lost auto-vectorization is `2.4x` of the `11x`; the remaining `4.6x` is
+    the per-access check itself, about `0.45 ns` (~1.5 cycles) per checked load.
+- Mechanism (from the generated code):
+  - every array access emits null-check plus lower-bound plus upper-bound
+    compares, and the upper bound needs an **extra dependent load** of the object
+    size from `-0x10(base)` (the capability header);
+  - every access also tests a thread-state flag (`testb $0xe,0x8(%rdi)`), and the
+    pointer is spilled to and popped from an access pseudo-stack;
+  - each function entry additionally emits a stack-overflow guard against the
+    thread pointer.
+  - Net: one `movzwl` becomes roughly seven instructions plus two extra memory
+    references.
+- Why the loss is profile-shaped:
+  - hand-written intrinsics over already-checked pointers stay cheap because the
+    checks hoist out of the vector loop: `ntt_mul_acc3_madd_avx2` `1.22x`,
+    `ntt_mul_acc4_madd_avx2` `1.11x`;
+  - scalar array loops pay per element: `ntt_mul_acc3_canonical_scalar` `5.50x`,
+    byte pack `3.93x`;
+  - decapsulation degrades most in the fast profiles because its time is then
+    dominated by byte-level memory traffic (ciphertext decode, constant-time
+    compare, key copy) rather than arithmetic.
+- Consequence:
+  - `-O3` and `-O2` measure identically because no optimization level removes the
+    checks. The 2.3x-2.7x aggregate is intrinsic to Fil-C's capability model for
+    this memory-access-dense workload, not a build-configuration mistake.
+- Recorded in `benchmarks/2026-11-23-fil-c-portability/` with the microbenchmark,
+  the disassembly evidence, and per-stage tables.
+
+## 2026-11-23: fil-c-both-compiler-feasibility
+
+- Question:
+  - Given that Fil-C's cost is per checked memory access, can the same source be
+    fast under both plain clang and Fil-C?
+- Finding (per-stage, AVX2 profile):
+  - the remaining Fil-C cost is concentrated exactly where the product still
+    uses scalar C array loops while an intrinsic kernel exists or could exist:
+    `keygen_accum_only` 439 -> 3,924 ns (8.94x),
+    `encrypt_accum_inv` 850 -> 5,884 (6.92x),
+    `encrypt_accum_u_only` 447 -> 3,969 (8.88x);
+  - the intrinsic kernels are already fine: `ntt_mul_acc3_madd_avx2` 232 -> 283
+    (1.22x), `ntt_mul_acc4_madd_avx2` 673 -> 745 (1.11x).
+- Probe (speed only, reverted immediately):
+  - replacing keygen's scalar `ntt_mul_acc3_factored_gamma` with the existing
+    AVX2 kernel `ntt_mul_acc3_avx2` gives Fil-C `15,700 -> 12,100 ns` (`-23%`)
+    but clang `5,598 -> 5,862 ns` (`+4.7%`).
+  - Reason for the split: under clang the auto-vectorized scalar loop (275 ns)
+    already beats this AVX2 kernel (352 ns), while `ntt_mul_acc3_madd_avx2`
+    (232 ns) beats both.
+- Conclusion:
+  - A single kernel per hot loop can serve both compilers, but it must be the
+    *fastest* kernel, not merely *an* intrinsic kernel. The repository already
+    has the right shape in `madd_avx2`; routing keygen and no-cache encryption
+    basemul through a matching-form madd kernel is the concrete work item.
+  - Projected effect: AVX2-only Fil-C aggregate from 2.79x towards `1.5x`-`1.8x`,
+    with plain C unchanged or slightly faster.
+  - A residual 1.3x-1.6x for Fil-C is irreducible here because byte-level packing
+    and constant-time compares remain memory-access-dense.
+- Recorded in `benchmarks/2026-11-23-fil-c-portability/` with the probe numbers;
+  the worktree was restored to the committed source afterwards.
+
+## 2026-11-23: both-compiler-basemul-kernel
+
+- Question:
+  - Can one kernel make the basemul hot path fast under both clang and Fil-C,
+    instead of trading one for the other?
+- Change (experiment worktree `.verify-work/wt-filc`, not committed):
+  - Added `ntt_mul_acc3_gamma_avx2()`, an AVX2 implementation of the scalar
+    `ntt_mul_acc3()` formula (the body is identical to
+    `ntt_mul_acc3_factored_gamma()`), and dispatched both entry points to it
+    under `__AVX2__` for the non-AVX512 configuration.
+  - The point is the reduction schedule: the scalar code reduces three times per
+    output pair, while the pre-existing `ntt_mul_acc3_avx2()` reduces every
+    product (12+ reductions), which is why that kernel was slow. A new exact
+    32-bit reducer (`q = mulhi64(x, ceil(2^32/Q))` plus one conditional
+    add/sub, exhaustively verified over `0..7.0e7`) makes the three-reduction
+    form safe for the `6.6e7` worst case.
+  - Patch: `benchmarks/2026-11-23-fil-c-portability/both-fast-kernel-final.patch`.
+- Result (AVX2-only, `-O2`, four alternating runs):
+  - Fil-C: keygen `15,570 -> 11,780 ns` (`-24%`), aggregate
+    `26,330 -> 22,610 ns` (`-14%`); clang unchanged within noise
+    (`9,615 -> 9,620 ns`).
+  - Targeted stage `keygen_accum_only`: Fil-C `3,924 -> 591 ns`, i.e. the ratio
+    against clang falls from `8.94x` to `1.25x`; `encrypt_accum_inv` from
+    `6.92x` to `1.70x`; `encrypt_accum_u_only` from `8.88x` to `1.23x`.
+  - The kernel is ~7% slower than clang's auto-vectorized scalar on that single
+    primitive (`439 -> 473 ns`), so clang sees no end-to-end gain; a
+    `vpmaddwd` form (like the existing `ntt_mul_acc3_madd_avx2`) would be needed
+    to also beat clang there.
+- Remaining Fil-C gap after the change:
+  - `kpke_keygen_full` `2.27x`, `kpke_encrypt_uncached` `2.01x`,
+    `kpke_prepare_public_no_cache` `1.88x`, `sample_matrix` `1.69x`; these are
+    load/store-heavy intrinsic kernels (`ntt_mont_lazy_avx2`, x4 Keccak samplers)
+    where the checks cannot be hoisted further.
+- Verification:
+  - `make test` passes under clang and Fil-C in the AVX2-only profile; the
+    reducer was unit-tested against `%` over 1.6M random values plus an
+    exhaustive 70M-value scan.
+
+## 2026-11-23: fil-c-push-to-floor (round 1)
+
+- Goal: push the Fil-C build as close to plain clang as possible.
+- Changes (experiment worktree, patch `round1-final.patch`):
+  - decapsulation secret basemul now uses the new matching-form kernel instead of
+    the per-product-reduction `ntt_mul_acc3_avx2()`;
+  - `poly256_sub()` vectorized for AVX2 (it was scalar in every configuration);
+  - enabling the kernel for AVX-512 builds was measured, showed no gain (the
+    native production paths use different fused kernels) and was reverted.
+- Result (AVX2-only, `-O2`, three alternating runs, medians):
+  - Fil-C: keygen `15,803 -> 11,936 ns` (`1.32x`), decaps `7,658 -> 7,489`,
+    roundtrip `26,354 -> 22,541` (`1.17x`);
+  - clang: keygen `5,662 -> 5,618`, decaps `2,252 -> 2,173` (`1.04x`),
+    roundtrip `9,610 -> 9,562`;
+  - aggregate Fil-C/clang gap `2.74x -> 2.36x`.
+- Floor analysis (AVX2-only):
+  - `ntt_head_mont_lazy_raw_avx2()` already moves 16 coefficients per iteration
+    as two 32-byte loads and two 32-byte stores, i.e. the widest AVX2 access;
+  - the measured NTT penalty (`+447 ns` per polynomial) is fully predicted by
+    ~1,100 checked accesses at the measured `~1.5 cycles` per check
+    (`~0.47 us`), so the gap is access count times per-access cost with no
+    residual scheduling headroom;
+  - Fil-C has no per-file "no checks" switch (`filcc` offers only
+    `-yolo-assembler` for `.s` inputs), so the charge cannot be waived without
+    giving up memory safety.
+- Next target: the native profile's fused kernels still use genuinely scalar
+  per-pair helpers (`ntt_mul_acc3_pair_values`, `ntt_final_l1_pair_values`,
+  `encrypt_*_scalar_avx512`), which explains `kpke_decrypt_uncached 5.4x` and
+  `encrypt_accum_u_only 11x` under Fil-C; vectorising them to 16-coefficient
+  AVX-512 blocks is the next structural win and should help clang too.
+
+- Rejected in the same pass:
+  - enabling the new kernel for AVX-512 builds: no gain, native production uses
+    different fused kernels;
+  - widening `byte_decode_d12_x3_avx2` to AVX-512 builds: the cached path never
+    re-decodes and the uncached decrypt stage measured `2,282 -> 2,527 ns`, so
+    it was reverted. The fact that native builds fall back to the scalar d12
+    decoder (`#if defined(__clang__) && !defined(__AVX512F__)`) is real but is
+    not where the time goes.
+- Delivered patch: `benchmarks/2026-11-23-fil-c-portability/round1-final.patch`;
+  worktree `.verify-work/wt-filc` holds it applied, `make test` passes for
+  AVX2-only (clang and Fil-C) and native.
+
+## 2026-11-23: fil-c-push-to-floor (round 2)
+
+- Change (experiment worktree, patch `round2-final.patch`):
+  - added `ntt_final_l1_avx512()`: vectorized final NTT level (16 coefficients
+    per block, one `permutexvar` pair plus a masked blend and one wide
+    reduction), matching `ntt_final_l1_pair_values()` exactly;
+  - `ntt3_mul_acc3_fused_final_avx512()` now uses that plus the round-1 basemul
+    kernel instead of the scalar per-pair helpers, selected with `__FILC__`
+    because plain clang is slower with the vectorized form (it auto-vectorizes
+    the scalar pair form better: `decaps 1,460 -> 1,576 ns` when unconditional);
+  - the round-1 basemul kernel is now compiled for AVX-512 builds as well (it is
+    pure AVX2), which the fused path needs.
+- Result (native profile, `-march=native`, `-O2`, three alternating runs):
+  - Fil-C: decaps `7,549 -> 6,185 ns` (`1.22x`), roundtrip `16,344 -> 14,992`
+    (`1.09x`), keygen `7,429 -> 7,093`;
+  - clang: unchanged within noise (`6,784 -> 6,736` aggregate);
+  - native gap `2.41x -> 2.23x`; product no-cache core gap `1.82x -> 1.69x`
+    (Fil-C `19,616 -> 18,303 ns`);
+  - AVX2-only profile unaffected (`22,523 ns`).
+- Verification:
+  - `make test` passes for clang and Fil-C in native and AVX2-only profiles.
+
+## 2026-11-23: fil-c-push-to-floor (round 3, floor confirmation)
+
+- Rejected candidate: fuse `ntt_canonicalize_signed_*` into the NTT tail's final
+  store (it accounts for 64 of the NTT's ~352 checked accesses per polynomial).
+  - Measured: AVX2-only roundtrip `9,600 -> 9,673 ns` (clang) and
+    `22,378 -> 22,483 ns` (Fil-C), i.e. worse. The fused form must use the strong
+    Barrett sequence inside the tail loop, which lengthens its dependency chain
+    by more than the saved accesses are worth. Reverted; round-2 state kept.
+- Final product numbers (`benchc *_core`, no caches, CPU 0, three runs):
+  - native: clang `10,760-11,082 ns`, Fil-C `18,022-18,187 ns`, gap `1.68x`;
+  - AVX2-only: clang `14,650-14,744 ns`, Fil-C `31,024-31,380 ns`, gap `2.12x`.
+- Floor model (consistent within measurement error):
+  - a checked access costs about `0.45 ns` (`micro-overhead.c`);
+  - native extra `~7,400 ns` -> ~16,400 accesses, AVX2 extra `~16,400 ns` ->
+    ~36,400 accesses; the AVX2 kernels move 32 B per access and the AVX-512 ones
+    64 B, so native needs about half the accesses, which is exactly the ratio of
+    the two gaps (`1.68x` versus `2.12x`);
+  - all production kernels are at the widest access their ISA allows (NTT head:
+    two 32-byte loads plus two 32-byte stores per 16 coefficients; matrix sampler
+    at the `ceil(34/4)` permutation bound), and no scalar array loop remains on a
+    production hot path after rounds 1 and 2.
+  - Fil-C has no switch to waive checks (`filcc` only offers `-yolo-assembler` for
+    `.s` inputs), so the residual charge cannot be removed while keeping memory
+    safety.
+- Conclusion: the remaining gap is irreducible by implementation tuning. Going
+  lower would need an algorithmic redesign that reduces the number of memory
+  accesses (fewer NTT passes or fewer matrix streams), which changes ML-KEM's
+  structure rather than its implementation.
+
+## 2026-11-23: fil-c-work-integration
+
+- Applied the three rounds of Fil-C work to the repository:
+  - `ntt_mul_acc3_gamma_avx2()` (matching-form basemul, exact wide reducer) now
+    serves `ntt_mul_acc3()` and `ntt_mul_acc3_factored_gamma()` in AVX2-only
+    builds, and `kpke_decrypt`'s secret basemul uses it instead of
+    `ntt_mul_acc3_avx2()`;
+  - `poly256_sub()` vectorized for AVX2;
+  - the native fused decrypt kernel uses a vectorized final NTT level plus the
+    new basemul under `__FILC__` (plain clang keeps its faster scalar pair form);
+  - Fil-C portability: module-level asm alias replaced by a plain function under
+    `__FILC__`, and the stage harness can substitute a C implementation of the
+    benchmark-only asm helper (`__FILC__` or `-DBENCH_NO_ASM_HELPER`).
+- Side effect on the production artifacts (`make product` +
+  `measure_product_size.sh`, clang 18.1.3):
+  - native `51,171 B` unchanged;
+  - AVX2-only `45,032 -> 43,966 B` (-1,066 B): the two scalar basemul bodies are
+    unreachable in that configuration and section GC removes them.
+- clang performance is unchanged: `benchc` core columns give AVX2
+  `14,564-14,590 ns` and native `10,283-10,299 ns` roundtrip.
+- Verification: `make test` passes for clang native, clang AVX2-only, gcc native
+  and the scalar profile; `make check-ntt-roots` passes.

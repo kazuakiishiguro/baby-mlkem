@@ -1,0 +1,15 @@
+# Round 1 (goal round): matching-form basemul kernel + decaps call site + poly256_sub
+# AVX2-only profile, -O2, CPU 0, benchc default columns (keygen encaps decaps roundtrip)
+# base = committed source, k2 = round-1 patch. 3 alternating runs.
+clang base  5574.21 1739.08 2252.11 9590.05
+clang k2    5604.66 1748.71 2170.04 9561.56
+clang base  5662.20 1740.11 2239.14 9610.01
+clang k2    5617.79 1746.18 2187.07 9577.67
+clang base  5697.05 1741.93 2255.30 9647.77
+clang k2    5658.17 1753.00 2172.78 9551.44
+fil-c base  15638.60 4317.96 7641.82 26318.61
+fil-c k2    11936.23 4298.63 7441.33 22413.13
+fil-c base  15802.65 4323.46 7658.47 26354.12
+fil-c k2    11775.75 4333.54 7489.17 23493.19
+fil-c base  16338.15 4677.65 8199.79 28389.07
+fil-c k2    12012.12 4372.06 7514.28 22540.65

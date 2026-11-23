@@ -3882,9 +3882,21 @@ static void poly256_add(const poly256 a, const poly256 b, poly256 out) {
  * stores the result in a output polynomial.
  */
 static void poly256_sub(const poly256 a, const poly256 b, poly256 out) {
+#if defined(__AVX2__)
+  const __m256i q = MLKEM_AVX2_SET1_Q_I16();
+  for (int i = 0; i < N; i += 16) {
+    __m256i va = _mm256_loadu_si256((const __m256i *)(a + i));
+    __m256i vb = _mm256_loadu_si256((const __m256i *)(b + i));
+    __m256i diff = _mm256_sub_epi16(va, vb);
+    __m256i neg = _mm256_srai_epi16(diff, 15);
+    _mm256_storeu_si256((__m256i *)(void *)(out + i),
+                        _mm256_add_epi16(diff, _mm256_and_si256(neg, q)));
+  }
+#else
   for (int i = 0; i < N; i++) {
     out[i] = mod_q_sub_i16(a[i], b[i]);
   }
+#endif
 }
 
 #if defined(__AVX2__)
@@ -4933,10 +4945,21 @@ static void ntt_mul_add(const poly256 a, const poly256 b, poly256 accum) {
   }
 }
 
+#if defined(__AVX2__)
+static void ntt_mul_acc3_gamma_avx2(const poly256 a0, const poly256 b0,
+                                    const poly256 a1, const poly256 b1,
+                                    const poly256 a2, const poly256 b2,
+                                    poly256 out);
+#endif
+
 static void ntt_mul_acc3(const poly256 a0, const poly256 b0,
                          const poly256 a1, const poly256 b1,
                          const poly256 a2, const poly256 b2,
                          poly256 out) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_mul_acc3_gamma_avx2(a0, b0, a1, b1, a2, b2, out);
+  return;
+#endif
   for (int i = 0; i < 128; i++) {
     int idx0 = 2 * i, idx1 = idx0 + 1;
     uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
@@ -5014,6 +5037,88 @@ static void ntt_mul_acc3_avx2(
         c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x20, y21)));
     c1 = mod_q_add_i32x8(
         c1, mod_q_reduce_ntt_u32x8(_mm256_mullo_epi32(x21, y20)));
+
+    __m128i c0_16 = pack_i32x8_to_i16x8(c0);
+    __m128i c1_16 = pack_i32x8_to_i16x8(c1);
+    _mm_storeu_si128((__m128i *)(void *)(out + 2 * i),
+                     _mm_unpacklo_epi16(c0_16, c1_16));
+    _mm_storeu_si128((__m128i *)(void *)(out + 2 * i + 8),
+                     _mm_unpackhi_epi16(c0_16, c1_16));
+  }
+}
+#endif
+
+#if defined(__AVX2__)
+/* Exact x mod Q for x < 8.0e7: q = (x * ceil(2^32/Q)) >> 32, verified
+   exhaustively over that range. Products and three-term sums of canonical
+   coefficients stay below 6.6e7, so one reduction per output suffices, unlike
+   ntt_mul_acc3_avx2() which reduces every product. */
+static inline __m256i mod_q_reduce_u32x8_wide(__m256i x) {
+  const __m256i mul = _mm256_set1_epi64x(1290168);
+  const __m256i q = _mm256_set1_epi32(Q);
+#define MLKEM_RED_LO(y) _mm256_srli_epi64(_mm256_mul_epu32((y), mul), 32)
+  __m256i qe = MLKEM_RED_LO(x);
+  __m256i qo = MLKEM_RED_LO(_mm256_srli_epi64(x, 32));
+#undef MLKEM_RED_LO
+  __m256i quot = _mm256_blend_epi32(qe, _mm256_slli_epi64(qo, 32), 0xaa);
+  /* The truncated reciprocal can be off by one in either direction. */
+  __m256i r = _mm256_sub_epi32(x, _mm256_mullo_epi32(quot, q));
+  __m256i neg = _mm256_cmpgt_epi32(_mm256_setzero_si256(), r);
+  r = _mm256_add_epi32(r, _mm256_and_si256(neg, q));
+  __m256i ge = _mm256_cmpgt_epi32(r, _mm256_set1_epi32(Q - 1));
+  return _mm256_sub_epi32(r, _mm256_and_si256(ge, q));
+}
+
+/* Vectorized form of ntt_mul_acc3()/ntt_mul_acc3_factored_gamma(): one wide
+   reduction for c0_hi, c0 and c1 instead of one per product. */
+static void ntt_mul_acc3_gamma_avx2(const poly256 a0, const poly256 b0,
+                                    const poly256 a1, const poly256 b1,
+                                    const poly256 a2, const poly256 b2,
+                                    poly256 out) {
+  const __m256i mask16 = _mm256_set1_epi32(0xffff);
+  for (int i = 0; i < 128; i += 8) {
+    __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + 2 * i));
+    __m256i vb0 = _mm256_loadu_si256((const __m256i *)(const void *)(b0 + 2 * i));
+    __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + 2 * i));
+    __m256i vb1 = _mm256_loadu_si256((const __m256i *)(const void *)(b1 + 2 * i));
+    __m256i va2 = _mm256_loadu_si256((const __m256i *)(const void *)(a2 + 2 * i));
+    __m256i vb2 = _mm256_loadu_si256((const __m256i *)(const void *)(b2 + 2 * i));
+
+    __m256i x00 = _mm256_and_si256(va0, mask16);
+    __m256i x01 = _mm256_srli_epi32(va0, 16);
+    __m256i y00 = _mm256_and_si256(vb0, mask16);
+    __m256i y01 = _mm256_srli_epi32(vb0, 16);
+    __m256i x10 = _mm256_and_si256(va1, mask16);
+    __m256i x11 = _mm256_srli_epi32(va1, 16);
+    __m256i y10 = _mm256_and_si256(vb1, mask16);
+    __m256i y11 = _mm256_srli_epi32(vb1, 16);
+    __m256i x20 = _mm256_and_si256(va2, mask16);
+    __m256i x21 = _mm256_srli_epi32(va2, 16);
+    __m256i y20 = _mm256_and_si256(vb2, mask16);
+    __m256i y21 = _mm256_srli_epi32(vb2, 16);
+
+    __m256i c0_lo = _mm256_add_epi32(
+        _mm256_add_epi32(_mm256_mullo_epi32(x00, y00),
+                         _mm256_mullo_epi32(x10, y10)),
+        _mm256_mullo_epi32(x20, y20));
+    __m256i c0_hi = _mm256_add_epi32(
+        _mm256_add_epi32(_mm256_mullo_epi32(x01, y01),
+                         _mm256_mullo_epi32(x11, y11)),
+        _mm256_mullo_epi32(x21, y21));
+    __m256i gamma = _mm256_cvtepu16_epi32(
+        _mm_loadu_si128((const __m128i *)(const void *)(GAMMA + i)));
+    __m256i c0 = _mm256_add_epi32(
+        c0_lo, _mm256_mullo_epi32(mod_q_reduce_u32x8_wide(c0_hi), gamma));
+    c0 = mod_q_reduce_u32x8_wide(c0);
+
+    __m256i c1 = _mm256_add_epi32(
+        _mm256_add_epi32(_mm256_add_epi32(_mm256_mullo_epi32(x00, y01),
+                                          _mm256_mullo_epi32(x01, y00)),
+                         _mm256_add_epi32(_mm256_mullo_epi32(x10, y11),
+                                          _mm256_mullo_epi32(x11, y10))),
+        _mm256_add_epi32(_mm256_mullo_epi32(x20, y21),
+                         _mm256_mullo_epi32(x21, y20)));
+    c1 = mod_q_reduce_u32x8_wide(c1);
 
     __m128i c0_16 = pack_i32x8_to_i16x8(c0);
     __m128i c1_16 = pack_i32x8_to_i16x8(c1);
@@ -5822,6 +5927,37 @@ static inline void ntt_final_l1_pair_values(poly256 f, int start,
   out[3] = (uint16_t)mod_q_sub_i16(a1, (int16_t)t1);
 }
 
+#if defined(__FILC__) && defined(__AVX2__) && defined(__AVX512F__) && \
+    defined(__AVX512BW__)
+/* Final NTT level (length 2) over 16 coefficients at a time:
+   y = [a0+t0, a1+t1, a0-t0, a1-t1] per group of four with one zeta per group,
+   matching ntt_final_l1_pair_values() exactly. */
+static void ntt_final_l1_avx512(poly256 f) {
+  const __m512i idx_a = _mm512_setr_epi32(0, 1, 0, 1, 4, 5, 4, 5,
+                                          8, 9, 8, 9, 12, 13, 12, 13);
+  const __m512i idx_t = _mm512_setr_epi32(2, 3, 2, 3, 6, 7, 6, 7,
+                                          10, 11, 10, 11, 14, 15, 14, 15);
+  const __mmask16 diff_mask = (__mmask16)0xcccc;
+  int k = 64;
+  for (int offset = 0; offset < N; offset += 16) {
+    __m512i zeta = _mm512_setr_epi32(0, 0, ZETA[k + 0], ZETA[k + 0],
+                                     0, 0, ZETA[k + 1], ZETA[k + 1],
+                                     0, 0, ZETA[k + 2], ZETA[k + 2],
+                                     0, 0, ZETA[k + 3], ZETA[k + 3]);
+    k += 4;
+    __m512i v = _mm512_cvtepu16_epi32(
+        _mm256_loadu_si256((const __m256i *)(const void *)(f + offset)));
+    __m512i t = mod_q_reduce_ntt_u32x16(_mm512_mullo_epi32(v, zeta));
+    __m512i a = _mm512_permutexvar_epi32(idx_a, v);
+    __m512i u = _mm512_permutexvar_epi32(idx_t, t);
+    __m512i r = _mm512_mask_blend_epi32(diff_mask, mod_q_add_i32x16(a, u),
+                                        mod_q_sub_i32x16(a, u));
+    _mm256_storeu_si256((__m256i *)(void *)(f + offset),
+                        _mm512_cvtusepi32_epi16(r));
+  }
+}
+#endif
+
 static void ntt3_mul_acc3_fused_final_avx512(
     const poly256 a0, poly256 b0, const poly256 a1, poly256 b1,
     const poly256 a2, poly256 b2, poly256 out) {
@@ -5829,6 +5965,14 @@ static void ntt3_mul_acc3_fused_final_avx512(
   ntt_before_final_l1_avx512(b1);
   ntt_before_final_l1_avx512(b2);
 
+#if defined(__FILC__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  /* Fil-C charges a check per memory access, so the scalar per-pair helpers
+     below cost it an order of magnitude more than the vectorized form. */
+  ntt_final_l1_avx512(b0);
+  ntt_final_l1_avx512(b1);
+  ntt_final_l1_avx512(b2);
+  ntt_mul_acc3_gamma_avx2(a0, b0, a1, b1, a2, b2, out);
+#else
   int pair_idx = 0;
   for (int start = 0, k = 64; start < N; start += 4, k++, pair_idx += 2) {
     uint16_t zeta = ZETA[k];
@@ -5841,6 +5985,7 @@ static void ntt3_mul_acc3_fused_final_avx512(
     ntt_mul_acc3_pair_values(a0, y0[2], y0[3], a1, y1[2], y1[3], a2,
                              y2[2], y2[3], pair_idx + 1, out);
   }
+#endif
 }
 
 static void ntt3_mul_acc4_fused_final_avx512(
@@ -5885,6 +6030,10 @@ static void ntt_mul_acc3_factored_gamma(const poly256 a0, const poly256 b0,
                                         const poly256 a1, const poly256 b1,
                                         const poly256 a2, const poly256 b2,
                                         poly256 out) {
+#if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
+  ntt_mul_acc3_gamma_avx2(a0, b0, a1, b1, a2, b2, out);
+  return;
+#endif
   for (int i = 0; i < 128; i++) {
     int idx0 = 2 * i, idx1 = idx0 + 1;
     uint32_t x00 = (uint16_t)a0[idx0], x01 = (uint16_t)a0[idx1];
@@ -9772,9 +9921,9 @@ static void kpke_decrypt(const uint8_t *dk_pke, const uint8_t *c, size_t clen,
 #endif
   }
 #if defined(__AVX2__) && !(defined(__AVX512F__) && defined(__AVX512BW__))
-  ntt_mul_acc3_avx2(kpke_secret_cache_shat[0], u[0],
-                    kpke_secret_cache_shat[1], u[1],
-                    kpke_secret_cache_shat[2], u[2], w);
+  ntt_mul_acc3_gamma_avx2(kpke_secret_cache_shat[0], u[0],
+                          kpke_secret_cache_shat[1], u[1],
+                          kpke_secret_cache_shat[2], u[2], w);
 #else
   ntt_mul_acc3(kpke_secret_cache_shat[0], u[0],
                kpke_secret_cache_shat[1], u[1],
@@ -10201,7 +10350,14 @@ static MLKEM_NOINLINE void mlkem_encrypt_keccakf4_mem_parity_avx2(
 #endif
 }
 
-#if defined(__clang__) && defined(__ELF__)
+#if defined(__FILC__)
+/* Fil-C rejects module-level asm, so bind the keygen edge to the same
+ * out-of-line helper through an ordinary call. */
+static void mlkem_keygen_keccakf4_mem_parity_avx2(__m256i st[25],
+                                                 __m256i parity[5]) {
+  mlkem_encrypt_keccakf4_mem_parity_avx2(st, parity);
+}
+#elif defined(__clang__) && defined(__ELF__)
 extern void mlkem_keygen_keccakf4_mem_parity_avx2(
     __m256i st[25], __m256i parity[5]);
 /* Keep the keygen edge opaque to Clang's optimizer so the decapsulation helper
@@ -10209,6 +10365,9 @@ extern void mlkem_keygen_keccakf4_mem_parity_avx2(
 __asm__(".local mlkem_keygen_keccakf4_mem_parity_avx2\n"
         ".set mlkem_keygen_keccakf4_mem_parity_avx2, "
         "mlkem_encrypt_keccakf4_mem_parity_avx2");
+#endif
+
+#if defined(__FILC__) || (defined(__clang__) && defined(__ELF__))
 static MLKEM_ALWAYS_INLINE void
 mlkem_keygen_keccakf4_mem_shared_avx2(__m256i st[25]) {
   __m256i parity[5];

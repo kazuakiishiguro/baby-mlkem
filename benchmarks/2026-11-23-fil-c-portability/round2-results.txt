@@ -1,0 +1,25 @@
+# Round 2: vectorized native (AVX-512) fused decrypt kernel, compiler-dispatched
+# native profile (-march=native), -O2, CPU 0, no .S asm for either compiler
+# benchc default columns (keygen encaps decaps roundtrip)
+clang base  4197.54 1047.48 1460.78 6743.26
+clang k5    4272.76 1043.22 1470.26 6736.14
+clang base  4261.88 1056.47 1504.46 6783.98
+clang k5    4181.67 1152.70 1459.52 6732.69
+clang base  4224.89 1051.24 1509.08 6790.46
+clang k5    4270.23 1047.33 1456.70 6774.40
+fil-c base  7428.88 3192.81 7532.86 16340.21
+fil-c k5    6954.37 3232.36 6142.32 14987.00
+fil-c base  7363.11 3291.84 7548.79 16420.00
+fil-c k5    7597.07 3482.71 6693.68 16343.42
+fil-c base  7464.82 3167.62 7550.76 16344.25
+fil-c k5    7092.80 3175.92 6184.88 14991.56
+
+# product no-cache core columns (benchc *_core_ns_per_op), same runs
+# fil-c core base  5972.94 5654.28 7739.36 19560.47
+# fil-c core k5    5872.41 5676.03 6421.20 18227.93
+# fil-c core base  5912.27 5689.86 7781.16 19672.24
+# fil-c core k5    5967.22 5723.73 6471.73 18377.35
+# clang core base  4174.45 3593.19 2814.05 10764.14
+# clang core k5    4175.54 3712.77 2801.74 10865.83
+# clang core base  4157.62 3633.48 2815.16 10804.37
+# clang core k5    4174.22 3606.82 2807.43 10760.63

@@ -483,8 +483,15 @@ static void validate_sample_ntt4_lane03_carry_avx2(void);
 #if defined(__AVX512F__)
 static void validate_sample_ntt8_sparse_first_avx512(void);
 #endif
+#if defined(__FILC__) || defined(BENCH_NO_ASM_HELPER)
+void mlkem_bench_keccakf4_mem_parity_avx2_asm(__m256i st[25],
+                                              __m256i parity[5]) {
+  keccakf4_mem_parity_mode(st, parity, 1);
+}
+#else
 void mlkem_bench_keccakf4_mem_parity_avx2_asm(__m256i st[25],
                                               __m256i parity[5]);
+#endif
 static void validate_sample_ntt4_asm16_avx2(void);
 static void validate_sample_ntt4_inplace_lane01_avx2(void);
 static void validate_sample_ntt4_final_store_fused_split_avx2(void);
