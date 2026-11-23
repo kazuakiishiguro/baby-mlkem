@@ -1,0 +1,7 @@
+changed_files=baby-mlkem.c
+scope=native Clang AVX512VBMI2 rejection parser
+change=apply __attribute__((minsize)) to sample_ntt_parse_stream_avx2_ready
+condition=__clang__ && __AVX512F__ && __AVX512VBMI2__ && __AVX512VL__
+unchanged=noinline boundary, parser instructions, rejection sampling, API, algorithm, wire format
+cache=internal caches disabled; no benchmark cache or precomputed KEM result used
+vendor=none; no external cryptographic object or runtime dependency added

@@ -1,0 +1,16 @@
+candidate: Clang native compact shared d10 x3 encode
+baseline: 21a68fd
+protocol: 5 independent batches x 16 paired runs x 100000 iterations
+combination: geometric mean of five equal-size rounded batch gmeans
+metric                       batch1     batch2     batch3     batch4     batch5     combined decision
+mlkem_decaps                1.0051x    1.0013x    1.0037x    1.0029x    1.0061x    1.003819x PASS
+mlkem_decaps_core           0.9916x    1.0138x    1.0005x    1.0110x    0.9973x    1.002805x PASS
+mlkem_encaps                1.0104x    1.0065x    1.0067x    1.0034x    1.0053x    1.006457x PASS
+mlkem_encaps_core           0.9966x    0.9995x    0.9960x    0.9936x    0.9938x    0.995898x PASS
+mlkem_keygen                1.0082x    1.0010x    0.9984x    0.9982x    1.0015x    1.001453x PASS
+mlkem_keygen_core           1.0049x    0.9986x    0.9978x    0.9975x    1.0025x    1.000256x PASS
+mlkem_roundtrip             1.0041x    1.0004x    0.9992x    0.9998x    1.0028x    1.001258x PASS
+mlkem_roundtrip_core        1.0001x    1.0033x    0.9982x    1.0010x    0.9991x    1.000338x PASS
+minimum_combined_ratio=mlkem_encaps_core 0.995898
+operation_regression_floor=0.995000
+formal_gate=PASS

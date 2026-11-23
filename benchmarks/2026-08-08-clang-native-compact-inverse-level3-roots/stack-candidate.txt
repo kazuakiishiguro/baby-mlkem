@@ -1,0 +1,17 @@
+artifact=/tmp/baby-mlkem-inverse-scalar-mirrors-clang-final-product.o
+artifact_sha256=83fe2ee3d41348b47e8d0ce87ad404f45776324b15ea5cd005f986837baf26ff
+api_kind=local
+compiler=clang
+stack_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=6648
+encaps_stack_bytes=6776
+decaps_valid_stack_bytes=8056
+decaps_invalid_stack_bytes=8056
+max_stack_bytes=8056
+correctness_smoke=pass

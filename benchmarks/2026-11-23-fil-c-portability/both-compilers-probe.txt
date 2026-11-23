@@ -1,0 +1,10 @@
+# Speed probe: replace keygen's scalar ntt_mul_acc3_factored_gamma with the
+# existing AVX2 kernel ntt_mul_acc3_avx2 (same call shape, different rounding
+# path), AVX2-only profile, -O2, benchc, CPU 0.
+# column 1 = unmodified, column 2 = probe (keygen ns/op)
+clang  5598.0  5862.0
+clang  5578.3  5863.6
+clang  5609.1  5799.8
+fil-c  15505.3 12068.1
+fil-c  15699.8 12177.3
+fil-c  16664.9 11903.3

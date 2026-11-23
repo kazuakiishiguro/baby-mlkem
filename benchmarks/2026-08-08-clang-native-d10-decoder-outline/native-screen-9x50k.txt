@@ -1,0 +1,26 @@
+base_ref=1989ac5
+candidate_root=/home/kishiguro/fun/baby-mlkem
+compiler=clang avx2_backend=core suites=kem runs=9 warmup_runs=3 pin_cpu=0 run_order=alternating
+arch_cflags=<make default>
+iters: kem=50000 stage=10000 ntt=200000 keccak=200000
+
+[kem]
+metric base_avg cand_avg avg_speedup base_median cand_median median_speedup
+mlkem_decaps 1479.51 1484.19 0.9968x 1477.29 1480.69 0.9977x
+mlkem_decaps_core 2895.60 2891.70 1.0013x 2857.41 2856.26 1.0004x
+mlkem_encaps 1049.79 1048.11 1.0016x 1049.52 1049.01 1.0005x
+mlkem_encaps_core 3665.80 3620.86 1.0124x 3581.50 3579.43 1.0006x
+mlkem_keygen 4185.33 4099.70 1.0209x 4150.51 4084.24 1.0162x
+mlkem_keygen_core 4159.63 4094.42 1.0159x 4125.13 4061.28 1.0157x
+mlkem_roundtrip 6755.87 6669.84 1.0129x 6727.00 6656.58 1.0106x
+mlkem_roundtrip_core 10862.15 10729.69 1.0123x 10761.66 10648.01 1.0107x
+
+paired_metric gmean median wins base_first_median cand_first_median
+mlkem_decaps 0.9969x 0.9966x 2/9 0.9949x 0.9985x
+mlkem_decaps_core 1.0017x 0.9979x 4/9 1.0054x 0.9953x
+mlkem_encaps 1.0016x 1.0029x 7/9 1.0032x 1.0015x
+mlkem_encaps_core 1.0123x 1.0019x 5/9 0.9974x 1.0210x
+mlkem_keygen 1.0206x 1.0168x 8/9 1.0025x 1.0230x
+mlkem_keygen_core 1.0157x 1.0019x 6/9 0.9989x 1.0242x
+mlkem_roundtrip 1.0128x 1.0108x 7/9 1.0108x 1.0144x
+mlkem_roundtrip_core 1.0122x 1.0071x 6/9 1.0071x 1.0038x

@@ -1,0 +1,19 @@
+# Matching-form AVX2 basemul kernel (ntt_mul_acc3_gamma_avx2)
+# AVX2-only profile, -O2, CPU 0, benchc default columns (keygen encaps decaps roundtrip)
+# "before" = committed source, "after" = kernel applied. 4 alternating runs.
+clang before  5666.99 1738.03 2310.06 9620.87
+clang after   5599.21 1742.64 2235.54 9615.53
+clang before  5575.59 1740.66 2246.17 9612.35
+clang after   5626.60 1747.51 2244.34 9634.54
+clang before  5592.95 1746.87 2401.19 9775.29
+clang after   5642.59 1746.32 2241.91 9619.76
+clang before  5648.70 1741.32 2238.45 10371.39
+clang after   5672.94 1743.62 2352.15 9742.81
+fil-c before  15387.98 4366.62 7676.17 26335.49
+fil-c after   11617.66 4313.39 7666.60 22499.41
+fil-c before  15773.10 4318.54 7676.14 26291.22
+fil-c after   11954.40 4329.09 7674.89 22568.33
+fil-c before  15450.33 4339.11 7677.59 26329.73
+fil-c after   11770.65 4319.36 7640.14 22689.04
+fil-c before  15637.52 4357.41 7717.10 26357.03
+fil-c after   11590.32 4324.77 7694.39 22587.30

@@ -1,0 +1,193 @@
+goal_profile=native
+driver_mode=external-local-baseline (clean-worktree precondition bypassed)
+goal_report_utc=2026-11-18T05:23:11Z
+local_baseline_commit=400dbe4f4f87a0c950914235e779139f61f8e4b7
+current_head_commit=ef8003dba4811aa159cb26ecdaad45481fb96757
+host_kernel=Linux 6.8.0-124-generic
+host_cpu=AMD Ryzen Threadripper 7980X 64-Cores
+compiler_version=Ubuntu clang version 18.1.3 (1ubuntu1)
+cxx_compiler_version=Ubuntu clang version 18.1.3 (1ubuntu1)
+local_avx512_instruction_audit=not-applicable
+comparator_kyber_commit=3edd5af5991927164edd4aacebfcbee00b8064e7
+comparator_kyber_remote=https://github.com/pq-crystals/kyber.git
+comparator_PQClean_commit=0586a824fc0d49df0b6b6e9179d8d15d06d0974f
+comparator_PQClean_remote=https://github.com/PQClean/PQClean.git
+comparator_mlkem-native_commit=76b6587fd061b05a01d43928fe9c33a138aa23b1
+comparator_mlkem-native_remote=https://github.com/pq-code-package/mlkem-native.git
+comparator_liboqs_commit=395d2aa8c7a0cf578b8086c6853baca9df56be5b
+comparator_liboqs_remote=https://github.com/open-quantum-safe/liboqs.git
+comparator_boringssl_commit=ebd922adc708a48b0cccfcdf81e854a3fdc1b7b6
+comparator_boringssl_remote=https://github.com/google/boringssl.git
+comparator_botan_commit=71c2475bbd03cd08fa3402590a2f6dcfbb1a19ae
+comparator_botan_remote=https://github.com/randombit/botan.git
+comparator_openssl_commit=a1bd8501eb5d3d265285f62206742e72c7410895
+comparator_openssl_remote=https://github.com/openssl/openssl.git
+comparator_libcrux_crate_version=0.0.11
+comparator_libcrux_lock_sha256=
+comparator_libjade_url=unavailable: github.com/formosa-crypto/libjade archived with zero releases/tags; pinned dist URL returns HTTP 404
+comparator_libjade_asm_sha256=unavailable
+iters=1000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=kyber_upstream_avx2
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[kyber_upstream_avx2] warmup=1/3 order=local-first
+[kyber_upstream_avx2] warmup=2/3 order=competitor-first
+[kyber_upstream_avx2] warmup=3/3 order=local-first
+[kyber_upstream_avx2] run=1/15 order=local-first
+[kyber_upstream_avx2] run=1 keygen=3949.12/5163.25 encaps=3483.08/5060.47 decaps=2725.71/5602.62 roundtrip=10261.27/16046.67
+[kyber_upstream_avx2] run=2/15 order=competitor-first
+[kyber_upstream_avx2] run=2 keygen=3934.11/5252.81 encaps=3494.32/5058.69 decaps=2772.91/5523.60 roundtrip=10303.89/15980.39
+[kyber_upstream_avx2] run=3/15 order=local-first
+[kyber_upstream_avx2] run=3 keygen=3950.80/5641.93 encaps=3500.54/5535.25 decaps=3112.81/6118.18 roundtrip=11508.16/17565.10
+[kyber_upstream_avx2] run=4/15 order=competitor-first
+[kyber_upstream_avx2] run=4 keygen=3926.59/5202.98 encaps=3480.73/5054.26 decaps=2717.10/5774.83 roundtrip=10271.68/15985.11
+[kyber_upstream_avx2] run=5/15 order=local-first
+[kyber_upstream_avx2] run=5 keygen=3931.40/5164.68 encaps=3511.47/5049.36 decaps=2759.46/5572.10 roundtrip=10318.17/16001.73
+[kyber_upstream_avx2] run=6/15 order=competitor-first
+[kyber_upstream_avx2] run=6 keygen=4370.48/5210.43 encaps=3899.05/5196.01 decaps=3038.32/5543.08 roundtrip=11484.67/17136.18
+[kyber_upstream_avx2] run=7/15 order=local-first
+[kyber_upstream_avx2] run=7 keygen=4145.82/5286.93 encaps=3486.30/5058.84 decaps=2722.32/5616.76 roundtrip=10269.68/16159.35
+[kyber_upstream_avx2] run=8/15 order=competitor-first
+[kyber_upstream_avx2] run=8 keygen=4025.75/5262.77 encaps=3545.16/5057.33 decaps=2779.21/5551.64 roundtrip=11401.88/16033.89
+[kyber_upstream_avx2] run=9/15 order=local-first
+[kyber_upstream_avx2] run=9 keygen=4395.08/5637.18 encaps=3880.78/5524.63 decaps=3072.07/6168.23 roundtrip=11501.32/17527.87
+[kyber_upstream_avx2] run=10/15 order=competitor-first
+[kyber_upstream_avx2] run=10 keygen=3953.14/5178.03 encaps=3492.11/5057.23 decaps=2727.24/5625.98 roundtrip=10273.59/15959.96
+[kyber_upstream_avx2] run=11/15 order=local-first
+[kyber_upstream_avx2] run=11 keygen=3985.74/5212.48 encaps=3554.87/5040.43 decaps=2770.43/5587.72 roundtrip=10391.70/16043.24
+[kyber_upstream_avx2] run=12/15 order=competitor-first
+[kyber_upstream_avx2] run=12 keygen=4076.42/5178.64 encaps=3684.80/5072.39 decaps=2842.34/5511.15 roundtrip=10686.74/15973.39
+[kyber_upstream_avx2] run=13/15 order=local-first
+[kyber_upstream_avx2] run=13 keygen=4412.52/5168.94 encaps=3889.93/5021.05 decaps=2722.50/5593.69 roundtrip=10291.57/16067.83
+[kyber_upstream_avx2] run=14/15 order=competitor-first
+[kyber_upstream_avx2] run=14 keygen=3925.16/5536.48 encaps=3503.53/5068.82 decaps=2741.79/5522.89 roundtrip=10303.21/15994.74
+[kyber_upstream_avx2] run=15/15 order=local-first
+[kyber_upstream_avx2] run=15 keygen=4414.11/5159.93 encaps=3940.75/5001.63 decaps=3069.04/5570.17 roundtrip=11046.77/15999.95
+[kyber_upstream_avx2]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10687.62
+local_roundtrip_sd_ns=533.63
+local_roundtrip_median_ns=10318.17
+local_roundtrip_trimmed_ns=10657.30
+competitor_roundtrip_mean_ns=16298.36
+competitor_roundtrip_sd_ns=584.18
+competitor_roundtrip_median_ns=16033.89
+competitor_roundtrip_trimmed_ns=16226.95
+selected_local_roundtrip_ns=10318.17
+selected_competitor_roundtrip_ns=16033.89
+local_ns_div_competitor_ns=0.644x
+local_speedup_vs_competitor=1.554x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=4093.08
+keygen_local_median_ns=3985.74
+keygen_competitor_mean_ns=5283.83
+keygen_competitor_median_ns=5210.43
+keygen_speedup_ratio_of_medians=1.3073x
+keygen_speedup_gmean=1.2917x
+keygen_speedup_ci95_low=1.2550x
+keygen_speedup_ci95_high=1.3281x
+keygen_speedup_median=1.3074x
+keygen_wins=15/15
+keygen_local_first_median=1.2950x
+keygen_competitor_first_median=1.3099x
+encaps_runs=15
+encaps_local_mean_ns=3623.16
+encaps_local_median_ns=3511.47
+encaps_competitor_mean_ns=5123.76
+encaps_competitor_median_ns=5058.69
+encaps_speedup_ratio_of_medians=1.4406x
+encaps_speedup_gmean=1.4151x
+encaps_speedup_ci95_low=1.3768x
+encaps_speedup_ci95_high=1.4521x
+encaps_speedup_median=1.4380x
+encaps_wins=15/15
+encaps_local_first_median=1.4308x
+encaps_competitor_first_median=1.4468x
+decaps_runs=15
+decaps_local_mean_ns=2838.22
+decaps_local_median_ns=2770.43
+decaps_competitor_mean_ns=5658.84
+decaps_competitor_median_ns=5587.72
+decaps_speedup_ratio_of_medians=2.0169x
+decaps_speedup_gmean=1.9952x
+decaps_speedup_ci95_low=1.9501x
+decaps_speedup_ci95_high=2.0348x
+decaps_speedup_median=2.0143x
+decaps_wins=15/15
+decaps_local_first_median=2.0181x
+decaps_competitor_first_median=1.9976x
+roundtrip_runs=15
+roundtrip_local_mean_ns=10687.62
+roundtrip_local_median_ns=10318.17
+roundtrip_competitor_mean_ns=16298.36
+roundtrip_competitor_median_ns=16033.89
+roundtrip_speedup_ratio_of_medians=1.5539x
+roundtrip_speedup_gmean=1.5258x
+roundtrip_speedup_ci95_low=1.5004x
+roundtrip_speedup_ci95_high=1.5474x
+roundtrip_speedup_median=1.5508x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.5473x
+roundtrip_competitor_first_median=1.5509x
+

@@ -1,0 +1,10 @@
+e2f63d2b49d3f2a2ae508b36c01b01bbe5ee734199e504cd65f451c642977ae3  benchmarks/2026-08-21-clang-native-gamma-low-pair/environment.txt
+b86fdcb0c9d3aa30fc7aada85da0b9b1c31fb5f7f6a433eb47273813070e85f0  benchmarks/2026-08-21-clang-native-gamma-low-pair/instruction-audit.txt
+b7de7f7090e208cdb7b9b2c592ff4da93fe158e3433a2a5af27e6fb055e7ac15  benchmarks/2026-08-21-clang-native-gamma-low-pair/product-ab-15x100k.txt
+fbc93b8c68cf34d387b32b21ff066f34b688f0cd0fe9ca84404318bea17e1bb5  benchmarks/2026-08-21-clang-native-gamma-low-pair/product-ab-summary.txt
+5009a3357e74056770130405ebe72df4beb7d4b42ee382a5ae282ec98c9361bc  benchmarks/2026-08-21-clang-native-gamma-low-pair/profile-identity.txt
+9feabfedd05c5cd76821be33261eb111d802c47ec5fc756a36fb8e2d6b696b37  benchmarks/2026-08-21-clang-native-gamma-low-pair/README.md
+ad22a4c6ff047e681079a504dbdc2e7e3acfa55847a963df8134b87a1ddebf31  benchmarks/2026-08-21-clang-native-gamma-low-pair/size-baseline.txt
+25dbfc77ccf7a4fcc82a61ff9e845cd3911801c8b9e3ec171874649bb5334b58  benchmarks/2026-08-21-clang-native-gamma-low-pair/size-candidate.txt
+a11cf95440a37b5a4934ead2bcc58d575e85600c11608376cd3fa292ff2d0e29  benchmarks/2026-08-21-clang-native-gamma-low-pair/source-audit.txt
+9feef718593c7a46b4fb3df874abfd0010ff11c3ca58ed6ed0d96d8b5fb07bb0  benchmarks/2026-08-21-clang-native-gamma-low-pair/validation.txt

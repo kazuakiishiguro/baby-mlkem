@@ -1,0 +1,13 @@
+candidate_ref=149b3d59f2a6043e8a21f4a411b4400a9bfbfdbc
+baseline_ref=ae12e77be733f9adc59bb94262d5c770782cd3e6
+operation baseline_bytes candidate_bytes delta
+keygen 8760 6712 -2048
+encaps 6776 6776 0
+decaps_valid 8056 8056 0
+decaps_invalid 8056 8056 0
+maximum 8760 8056 -704
+method=guarded_alternate_stack_touched_high_water
+runs=8
+usable_bytes=1048576
+markers=0xa5,0x5a
+correctness_smoke=pass

@@ -1,0 +1,12 @@
+candidate_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+baseline_ref=f56750f97f262abfa8a9ca43d2890f1461474fae
+harness_sha256=37fba96457936bcf190646a61a2bae283747b4c1cbd93b04728a5df7077625cb
+runner_sha256=d6127165ef63731e4a741c9a010303ed5b684eb392becb13f8e3257904b843e1
+fixtures=64
+mutation_schedule=byte:(17+109*fixture)%1088,bit:fixture%8
+native_paired_gmean=1.013610x
+native_paired_median=1.011558x
+native_wins=14/16
+avx2_paired_gmean=1.012231x
+avx2_paired_median=1.006947x
+avx2_wins=15/16

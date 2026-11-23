@@ -1,0 +1,12 @@
+== Clang native ASan+UBSan ==
+flags=-O1 -g -fsanitize=address,undefined -march=native
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+clang_native_asan_ubsan=PASS
+== GCC native UBSan ==
+flags=-O1 -g -fsanitize=undefined -march=native
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+gcc_native_ubsan=PASS

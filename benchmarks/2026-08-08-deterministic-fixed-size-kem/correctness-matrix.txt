@@ -1,0 +1,27 @@
+candidate_ref=c2ae4e21cf2b1cdce3f456f39472add63be34054
+stage_iterations=1000
+[clang-native]
+kat=pass
+product=pass
+stage=pass sink=12134279420840345582
+[clang-avx2]
+kat=pass
+product=pass
+stage=pass sink=4297556503821386549
+[clang-scalar]
+kat=pass
+product=pass
+stage=pass sink=5836653274444122727
+[gcc-native]
+kat=pass
+product=pass
+stage=pass sink=12134279420840348911
+[gcc-avx2]
+kat=pass
+product=pass
+stage=pass sink=4297556503821386549
+[gcc-scalar]
+kat=pass
+product=pass
+stage=pass sink=5836653274444122727
+correctness_matrix=PASS

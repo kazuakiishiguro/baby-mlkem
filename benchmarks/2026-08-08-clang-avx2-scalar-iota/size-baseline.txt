@@ -1,0 +1,14 @@
+artifact=/tmp/keccak-scalar-iota/baseline.o
+artifact_sha256=8219abeb783e39b6ba0e40ee80ea715ac004332720c321a404ccae53bbe9361d
+artifact_file_bytes=81736
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=44701
+readonly_data_bytes=8937
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=53638
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

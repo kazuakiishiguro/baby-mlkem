@@ -1,0 +1,7 @@
+changed_files=baby-mlkem.c,ntt_roots_generated.h,scripts/generate_ntt_constants.c
+scope=Clang native AVX512 low Montgomery gamma factor table and its two consumers
+representation=store one value from each adjacent x,-x pair; reconstruct 16 factors at use
+unchanged=gamma high table, GCC path, AVX2-only path, scalar path, API, algorithm, wire format
+cache=internal caches disabled; no benchmark cache or precomputed KEM result used
+vendor=none; no external cryptographic object or runtime dependency added
+invariant=generator rejects any low-factor pair that is not x,-x modulo int16

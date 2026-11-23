@@ -1,0 +1,17 @@
+baseline_ref=626da41
+candidate_ref=13b3ea1227ce2892e8ac89dd967d888628affa40
+ratios=baseline_time/candidate_time
+batch1_pairs=16 batch2_pairs=16 combined_pairs=32
+metric batch1_gmean batch2_gmean combined_equal_batch_gmean
+mlkem_decaps 0.9996x 0.9933x 0.996445x
+mlkem_decaps_core 1.0026x 0.9965x 0.999545x
+mlkem_encaps 0.9961x 0.9982x 0.997149x
+mlkem_encaps_core 1.0064x 1.0070x 1.006700x
+mlkem_keygen 1.0015x 0.9991x 1.000299x
+mlkem_keygen_core 0.9984x 0.9982x 0.998300x
+mlkem_roundtrip 0.9987x 0.9967x 0.997699x
+mlkem_roundtrip_core 1.0002x 0.9977x 0.998949x
+internal_operation_floor=0.995x
+minimum_combined_gmean=0.996445x metric=mlkem_decaps
+gate=PASS
+speed_claim=none

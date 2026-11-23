@@ -1,0 +1,8 @@
+candidate_ref=7f03bcce40c3b5ee80c9292730d0d21aa454883c
+baseline_ref=8c221d8f6d46ac83611618fc8f94bae55365936b
+keygen_stack_bytes baseline=6712 candidate=6712 delta=+0
+encaps_stack_bytes baseline=6776 candidate=6776 delta=+0
+decaps_valid_stack_bytes baseline=8056 candidate=8056 delta=+0
+decaps_invalid_stack_bytes baseline=8056 candidate=8056 delta=+0
+max_stack_bytes baseline=8056 candidate=8056 delta=+0
+stack_identity=PASS

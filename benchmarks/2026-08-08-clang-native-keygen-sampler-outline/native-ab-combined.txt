@@ -1,0 +1,22 @@
+candidate_ref=149b3d59f2a6043e8a21f4a411b4400a9bfbfdbc
+baseline_ref=ae12e77be733f9adc59bb94262d5c770782cd3e6
+compiler=clang
+profile=native
+batches=2
+pairs_per_batch=16
+warmup_pairs_per_batch=4
+iterations=100000
+run_order=alternating
+metric batch1_gmean batch2_gmean combined_32_pair_gmean gate
+mlkem_decaps 0.9989x 0.9992x 0.999049989x PASS
+mlkem_decaps_core 1.0022x 0.9981x 1.000147899x PASS
+mlkem_encaps 1.0006x 1.0075x 1.004044073x PASS
+mlkem_encaps_core 1.0076x 1.0054x 1.006499399x PASS
+mlkem_keygen 0.9980x 0.9995x 0.998749718x PASS
+mlkem_keygen_core 0.9984x 0.9987x 0.998549989x PASS
+mlkem_roundtrip 0.9989x 1.0009x 0.999899500x PASS
+mlkem_roundtrip_core 1.0040x 1.0012x 1.002599023x PASS
+minimum_combined_gmean=0.998549989x
+regression_floor=0.995x
+speed_gain_credited=no
+internal_ab_gate=PASS

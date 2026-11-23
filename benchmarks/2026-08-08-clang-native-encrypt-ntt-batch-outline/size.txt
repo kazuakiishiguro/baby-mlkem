@@ -1,0 +1,25 @@
+baseline_ref=b0f4d0f3b5c824ad1fe3ead76e62267e6c9af8d5
+candidate_ref=d6eada53621ffc1dc907e4a5ae7a83b922df1042
+metric=allocatable executable + allocatable read-only + runtime unwind/exception
+
+profile       compiler baseline_primary candidate_primary delta_primary candidate_code candidate_readonly candidate_writable
+native        clang     82687            79361             -3326         59882          19479              18001
+avx2-only     clang     59307            59307                 0         47242          12065              26593
+scalar        clang     62193            62193                 0         60160           2033              18944
+native        gcc       59571            59571                 0         56006           3565              33728
+avx2-only     gcc       53614            53614                 0         49829           3785              34920
+scalar        gcc       23267            23267                 0         21530           1737              19488
+
+clang_native_code_delta=-3454
+clang_native_readonly_delta=+128
+clang_native_writable_delta=0
+baseline_fused_function_bytes=6418
+candidate_fused_function_bytes=1102
+candidate_shared_ntt3_function_bytes=1862
+candidate_combined_target_bytes=2964
+combined_target_delta=-3454
+size_gate_vs_pinned_mlkem_native=FAIL
+pinned_mlkem_native_primary_bytes=51186
+remaining_native_gap_bytes=28175
+size_gate_vs_pinned_openssl_avx2=FAIL
+remaining_avx2_gap_bytes=14258

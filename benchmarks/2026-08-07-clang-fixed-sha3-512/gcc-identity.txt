@@ -1,0 +1,15 @@
+candidate_ref=1cf6605259682402d9733d452ee1ae5d39875d4a
+baseline_ref=d059bf9a780eb5fe2658ece2e82f044c211db7a6
+[gcc-native]
+sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+primary_bytes=59571
+artifact_identity=PASS
+[gcc-avx2]
+sha256=b73dcab0e87e6bf0938c4ea3c864d5734ab0e433c823ede01e10c860c8a25c5a
+primary_bytes=55238
+artifact_identity=PASS
+[gcc-scalar]
+sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+primary_bytes=23267
+artifact_identity=PASS
+all_gcc_artifacts_byte_identical=PASS

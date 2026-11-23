@@ -1,0 +1,6 @@
+clang_check_ntt_roots=PASS
+gcc_check_ntt_roots=PASS
+generated_header_sha256=3717a63003ee9b5554971b368d1470d4fe8d25cc19f66fc1e1fff1c05309b6c9
+generator_clang_asan_ubsan=PASS
+generator_asan_options=detect_leaks=0
+generator_output_identity=PASS

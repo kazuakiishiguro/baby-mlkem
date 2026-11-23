@@ -1,0 +1,26 @@
+baseline_commit=8555ff28b0bcabc81797265b67325e4e1d773277
+candidate_commit=cb4bfe98be1bac6378a82442cd6bdebf68ec2875
+changed_files=baby-mlkem.c ntt_roots_generated.h scripts/generate_ntt_constants.c
+
+The generator retains the source lanes needed to reconstruct the repeated
+Clang AVX512 inverse-Montgomery factors:
+- ZETA_NTT_INV_MONT_LO_AVX512_COMPACT[24][8]
+- ZETA_NTT_INV_MONT_HI_AVX512_COMPACT[24][8]
+- levels 0..2 use generated source-lane layouts
+- level 3 uses the existing scalar mirror factors
+
+The Clang AVX512 path reconstructs levels 0..2 with a 128-bit load,
+_mm512_broadcast_i32x4, and _mm512_permutexvar_epi16. It uses
+_mm512_set1_epi16 for the level-3 scalar mirrors. The fallback macro path
+for non-Clang or narrower profiles remains unchanged.
+
+The candidate product is a relocatable no-stdlib object. Its only undefined
+symbols are the pre-existing C-library interfaces bcmp and memcpy. No
+cryptographic external object, vendored AVX2 backend, runtime crypto library,
+persistent key/result cache, API change, algorithm change, or wire-format
+change is introduced.
+
+The dense inverse-factor source declarations remain available for fallback
+profiles, but the Clang native linker garbage-collects the old dense factor
+sections. The compact candidate's linked native product has no old native L12
+factor symbols.

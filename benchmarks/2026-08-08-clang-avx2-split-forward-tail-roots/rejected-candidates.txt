@@ -1,0 +1,26 @@
+All experiments used the Clang AVX2-only profile and baseline 753961b.
+
+1. Full forward-tail table in the existing generated assembly object
+
+Externalizing all three low/high forward-tail levels made the product 61 bytes
+larger than the accepted split layout: code grew from 44,701 to 44,762 bytes,
+while read-only data remained 8,937 bytes. Primary size was 53,699 bytes.
+
+A direct NTT diagnostic looked favorable in one three-way run, but a 16-pair
+100,000-iteration KEM gate against the accepted split layout reported:
+
+  keygen gmean=0.9944x
+  keygen_core gmean=0.9943x
+  roundtrip gmean=0.9961x
+  roundtrip_core gmean=0.9982x
+
+It therefore failed the 0.995 operation floor and increased primary size. The
+candidate was removed. Its KEM report is retained in
+rejected-external-vs-split-kem-16x100k.txt.
+
+2. Accepted level-0 / level-1-and-2 split
+
+Keeping levels 1 and 2 contiguous avoids another base-address calculation.
+The two level-0 arrays are folded into existing cst32 operands and discarded
+by section GC. This reduces primary size by 512 bytes without changing code
+size and passes the combined 32-pair KEM gate.

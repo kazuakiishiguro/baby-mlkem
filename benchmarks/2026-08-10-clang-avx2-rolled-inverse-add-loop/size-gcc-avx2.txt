@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-inv-add-loop-matrix.1NX8ni/gcc-avx2/baby_mlkem768_product.o
+artifact_sha256=45773f61e1930ea2817e11bb9c080b498b583a685c4dc49cb6a386f26ff115cf
+artifact_file_bytes=68272
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=49687
+readonly_data_bytes=3756
+unwind_bytes=1452
+exception_table_bytes=0
+primary_bytes=53443
+initialized_writable_bytes=8
+zero_fill_bytes=34912
+writable_bytes=34920
+max_stack_bytes=unmeasured

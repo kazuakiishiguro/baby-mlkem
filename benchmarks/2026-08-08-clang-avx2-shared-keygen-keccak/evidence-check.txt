@@ -1,0 +1,14 @@
+candidate_ref=6ba81de0903437ae09d6f0ce000617997fe1f712
+correctness_profiles=6
+correctness_kat_product_stage=PASS
+cross_path_corpus_files=16
+cross_path_corpus=PASS
+sanitizers=PASS
+ntt_roots=PASS
+avx512_audit=PASS
+undefined_symbol_identity=PASS
+non_elf_fallback=PASS
+internal_ab_gate=PASS
+artifact_identity=PASS
+report_links=PASS
+evidence_check=PASS

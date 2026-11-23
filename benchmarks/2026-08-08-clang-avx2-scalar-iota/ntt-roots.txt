@@ -1,0 +1,5 @@
+candidate_ref=b181d8f6d50f91ae701003c8f2f3d9b8c5b11bdf
+clang_reproducibility=PASS
+gcc_reproducibility=PASS
+ntt_source_change=none
+ntt_roots=PASS

@@ -1,0 +1,25 @@
+profile=Clang AVX2-only
+baseline_artifact=/tmp/baby-mlkem-flag-size-matrix/O3/baby_mlkem768_product.o
+candidate_artifact=baby_mlkem768_product.o
+baseline_sha256=be587561d931491003ecbcbe8575fb3ee031ca7a045a2ac08de05d58f0e4002f
+candidate_sha256=f7805de3d2cc0edb4ae8371329cb56370ba4e3783ed144a9f595ee00efeeb557
+baseline_code_bytes=41539
+candidate_code_bytes=41423
+delta_code_bytes=-116
+baseline_readonly_data_bytes=5921
+candidate_readonly_data_bytes=5349
+delta_readonly_data_bytes=-572
+baseline_primary_bytes=47460
+candidate_primary_bytes=46772
+delta_primary_bytes=-688
+baseline_writable_bytes=26593
+candidate_writable_bytes=26593
+delta_writable_bytes=0
+baseline_file_bytes=73048
+candidate_file_bytes=72408
+delta_file_bytes=-640
+
+section=.rodata.cst32 baseline=2880 candidate=2272 delta=-608
+section=.rodata.cst16 baseline=304 candidate=288 delta=-16
+section=.rodata baseline=113 candidate=69 delta=-44
+section=.rodata.MLKEM_AVX2_SHARED_CONSTANTS baseline=0 candidate=160 delta=+160

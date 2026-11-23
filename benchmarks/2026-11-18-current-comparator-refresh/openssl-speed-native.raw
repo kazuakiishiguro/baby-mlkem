@@ -1,0 +1,143 @@
+iters=100000 runs=5
+warmup_runs=1
+bootstrap_samples=5000
+bench_suites=openssl_mlkem
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[openssl_mlkem] warmup=1/1 order=local-first
+[openssl_mlkem] run=1/5 order=local-first
+[openssl_mlkem] run=1 keygen=3940.62/15560.98 encaps=3512.69/4016.30 decaps=2795.68/7441.88 roundtrip=10418.46/27146.12
+[openssl_mlkem] run=2/5 order=competitor-first
+[openssl_mlkem] run=2 keygen=3937.09/15584.48 encaps=3508.84/4129.80 decaps=2815.64/7447.23 roundtrip=10416.64/27295.98
+[openssl_mlkem] run=3/5 order=local-first
+[openssl_mlkem] run=3 keygen=4000.96/15532.47 encaps=3537.50/4056.53 decaps=3112.23/7445.09 roundtrip=10900.81/27181.95
+[openssl_mlkem] run=4/5 order=competitor-first
+[openssl_mlkem] run=4 keygen=3937.40/15632.57 encaps=3507.19/4008.82 decaps=2786.93/7487.78 roundtrip=10354.83/27223.81
+[openssl_mlkem] run=5/5 order=local-first
+[openssl_mlkem] run=5 keygen=3944.57/15591.11 encaps=3509.09/3994.93 decaps=2816.79/7475.91 roundtrip=10391.66/27208.40
+[openssl_mlkem]
+runs=5
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10496.48
+local_roundtrip_sd_ns=227.48
+local_roundtrip_median_ns=10416.64
+local_roundtrip_trimmed_ns=10408.92
+competitor_roundtrip_mean_ns=27211.25
+competitor_roundtrip_sd_ns=55.78
+competitor_roundtrip_median_ns=27208.40
+competitor_roundtrip_trimmed_ns=27204.72
+selected_local_roundtrip_ns=10416.64
+selected_competitor_roundtrip_ns=27208.40
+local_ns_div_competitor_ns=0.383x
+local_speedup_vs_competitor=2.612x
+paired_bootstrap_samples=5000
+keygen_runs=5
+keygen_local_mean_ns=3952.13
+keygen_local_median_ns=3940.62
+keygen_competitor_mean_ns=15580.32
+keygen_competitor_median_ns=15584.48
+keygen_speedup_ratio_of_medians=3.9548x
+keygen_speedup_gmean=3.9423x
+keygen_speedup_ci95_low=3.9106x
+keygen_speedup_ci95_high=3.9632x
+keygen_speedup_median=3.9525x
+keygen_wins=5/5
+keygen_local_first_median=3.9489x
+keygen_competitor_first_median=3.9643x
+encaps_runs=5
+encaps_local_mean_ns=3515.06
+encaps_local_median_ns=3509.09
+encaps_competitor_mean_ns=4041.28
+encaps_competitor_median_ns=4016.30
+encaps_speedup_ratio_of_medians=1.1445x
+encaps_speedup_gmean=1.1496x
+encaps_speedup_ci95_low=1.1411x
+encaps_speedup_ci95_high=1.1633x
+encaps_speedup_median=1.1434x
+encaps_wins=5/5
+encaps_local_first_median=1.1434x
+encaps_competitor_first_median=1.1600x
+decaps_runs=5
+decaps_local_mean_ns=2865.45
+decaps_local_median_ns=2815.64
+decaps_competitor_mean_ns=7459.58
+decaps_competitor_median_ns=7447.23
+decaps_speedup_ratio_of_medians=2.6450x
+decaps_speedup_gmean=2.6056x
+decaps_speedup_ci95_low=2.4937x
+decaps_speedup_ci95_high=2.6734x
+decaps_speedup_median=2.6541x
+decaps_wins=5/5
+decaps_local_first_median=2.6541x
+decaps_competitor_first_median=2.6658x
+roundtrip_runs=5
+roundtrip_local_mean_ns=10496.48
+roundtrip_local_median_ns=10416.64
+roundtrip_competitor_mean_ns=27211.25
+roundtrip_competitor_median_ns=27208.40
+roundtrip_speedup_ratio_of_medians=2.6120x
+roundtrip_speedup_gmean=2.5929x
+roundtrip_speedup_ci95_low=2.5423x
+roundtrip_speedup_ci95_high=2.6235x
+roundtrip_speedup_median=2.6183x
+roundtrip_wins=5/5
+roundtrip_local_first_median=2.6056x
+roundtrip_competitor_first_median=2.6248x
+

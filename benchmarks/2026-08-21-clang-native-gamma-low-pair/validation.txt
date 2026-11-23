@@ -1,0 +1,10 @@
+make check-ntt-roots: PASS
+make -B test-product product-size test CC=clang AVX2_BACKEND=core: PASS
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f': PASS
+make -B test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS='-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2': PASS
+make -B test-product product-size CC=gcc AVX2_BACKEND=core: PASS
+native_candidate_primary=57424
+clang_avx2_candidate_primary=45032
+clang_scalar_candidate_primary=62098
+gcc_native_candidate_primary=59148
+non-native_profile_artifacts=byte-identical-to-baseline

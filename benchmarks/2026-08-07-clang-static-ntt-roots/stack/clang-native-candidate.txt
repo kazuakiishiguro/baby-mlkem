@@ -1,0 +1,17 @@
+artifact=/tmp/baby-roots-compact-native-product.o
+artifact_sha256=e1d33f3360d21207fb7197d0ab1c6d7e98013b93c70b60b2cfa57ff170d47d30
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=8696
+encaps_stack_bytes=8568
+decaps_valid_stack_bytes=10040
+decaps_invalid_stack_bytes=10040
+max_stack_bytes=10040
+correctness_smoke=pass

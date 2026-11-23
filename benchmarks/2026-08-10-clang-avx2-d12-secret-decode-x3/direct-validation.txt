@@ -1,0 +1,9 @@
+validation=PASS
+exhaustive_d12_values=4096
+random_secret_keys=16384
+boundary_patterns=4
+validated_cases=20484
+baseline_function_bytes=589
+candidate_function_bytes=205
+decoded_coefficients_per_implementation=15731712
+direct_validation=PASS

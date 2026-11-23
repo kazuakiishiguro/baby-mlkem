@@ -1,0 +1,6 @@
+candidate_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+product_sha256=7cc168832d6f820e7ae1cd0e1d8fc01a80aa0a503042635ac574db1c7c2fd0d8
+primary_bytes=50480
+stage_iterations=1000
+stage_sink=4297556503821386549
+postcommit_reproduction=PASS

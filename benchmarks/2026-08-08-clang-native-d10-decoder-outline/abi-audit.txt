@@ -1,0 +1,15 @@
+candidate_ref=f8019f88969f3a321c05fe7ae15775bb3db8c423
+baseline_ref=1989ac5b37cf03a0ce833883ee9aff74d95ff3c4
+baseline_kem_symbols=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+baseline_undefined_symbols=bcmp exit memcpy perror syscall
+candidate_kem_symbols=baby_mlkem768_decaps baby_mlkem768_encaps_derand baby_mlkem768_keypair_derand
+candidate_undefined_symbols=bcmp exit memcpy perror syscall
+d10_helper_binding=LOCAL visibility=DEFAULT
+public_api_change=none
+new_external_dependency=none
+persistent_cache_change=none
+wire_format_change=none
+algorithm_change=none
+new_table=none
+new_runtime_dispatch=none
+abi_audit=PASS

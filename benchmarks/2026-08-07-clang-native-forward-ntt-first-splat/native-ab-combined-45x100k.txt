@@ -1,0 +1,19 @@
+base_ref=d36b685e55f3da84a61a1c8baaadc8a80525f6cf
+candidate_ref=a207a8fdbd50ce6ada9346a784785b8cdb2c5e3d
+combined_pairs=45 batches=3 runs_per_batch=15 warmups_per_batch=3 iterations=100000 pin_cpu=0 order=alternating
+candidate_to_final_text_identity=pass
+final_ref=2420c08aa35c1f44bed8b70a110e6fe7c2a180bf
+
+metric base_avg cand_avg gmean median wins min max gate
+mlkem_keygen 4103.65 4090.13 1.003259674x 1.002373103x 25/45 0.972890048x 1.042342195x PASS
+mlkem_encaps 1050.97 1050.50 1.000445134x 1.000105056x 24/45 0.962348805x 1.031842392x PASS
+mlkem_decaps 1493.36 1492.01 1.000887941x 1.001682626x 23/45 0.973144835x 1.033157330x PASS
+mlkem_roundtrip 6659.81 6659.06 1.000114425x 0.999519476x 22/45 0.966276014x 1.026194813x PASS
+mlkem_keygen_core 4070.70 4056.40 1.003455862x 0.999384886x 21/45 0.971932648x 1.046099827x PASS
+mlkem_encaps_core 3585.15 3596.11 0.997032685x 1.000906089x 27/45 0.951100036x 1.033596344x PASS
+mlkem_decaps_core 2877.27 2877.64 0.999936805x 1.001139314x 26/45 0.938741608x 1.047874329x PASS
+mlkem_roundtrip_core 10667.91 10669.61 0.999835795x 1.000205637x 24/45 0.969412479x 1.029483320x PASS
+minimum_metric=mlkem_encaps_core
+minimum_combined_gmean=0.997032685x
+regression_floor=0.995000000x
+overall=PASS

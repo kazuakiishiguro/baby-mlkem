@@ -1,0 +1,14 @@
+artifact=/tmp/d10-current-clang-native.o
+artifact_sha256=46d22deee6f7452b6397d2e0a224b1b0db4e03764f64817d29677ebf6c32df0f
+artifact_file_bytes=120680
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=66370
+readonly_data_bytes=19319
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=85689
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

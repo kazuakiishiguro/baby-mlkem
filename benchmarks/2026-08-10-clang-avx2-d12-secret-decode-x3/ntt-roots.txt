@@ -1,0 +1,3 @@
+clang_ntt_roots=PASS
+gcc_ntt_roots=PASS
+ntt_root_reproducibility=PASS

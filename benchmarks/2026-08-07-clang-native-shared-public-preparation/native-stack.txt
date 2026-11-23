@@ -1,0 +1,18 @@
+candidate_ref=13b3ea1227ce2892e8ac89dd967d888628affa40
+artifact=/tmp/shared-public-prep-candidate.o
+artifact_sha256=15153b7e9d0c6c0d440637029c5156260a790ee4605fd3824cd1d258c8d2165b
+api_kind=local
+compiler=clang
+stack_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=8760
+encaps_stack_bytes=6904
+decaps_valid_stack_bytes=9400
+decaps_invalid_stack_bytes=9400
+max_stack_bytes=9400
+correctness_smoke=pass

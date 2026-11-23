@@ -1,0 +1,14 @@
+artifact=candidate-clean-build/clang-native.o
+artifact_sha256=345d507a054d8196b342ec88ad6e3b946473f60a423d5abe33ee9dd30cd6468e
+artifact_file_bytes=117752
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=63336
+readonly_data_bytes=19351
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=82687
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

@@ -1,0 +1,12 @@
+revision=0d79d92
+compiler=clang
+arch=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+extra_flags=-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+artifact_sha256=f7805de3d2cc0edb4ae8371329cb56370ba4e3783ed144a9f595ee00efeeb557
+artifact_file_bytes=72408
+code_bytes=41423
+readonly_data_bytes=5349
+primary_bytes=46772
+initialized_writable_bytes=0
+writable_bytes=26593
+undefined_symbol_count=3

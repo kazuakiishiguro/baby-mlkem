@@ -1,0 +1,14 @@
+artifact=/tmp/fixed-rejection-postcommit-clang-native.o
+artifact_sha256=2064f0446a04720df937dc176da088e377eedb59647a06b5af247ceacb49d26a
+artifact_file_bytes=125344
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=70574
+readonly_data_bytes=19287
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=89861
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

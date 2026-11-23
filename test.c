@@ -1,7 +1,4 @@
 #include "baby-mlkem.c"
-#include "ntt.h"
-#include "poly.h"
-#include "random.h"
 
 void test_randombytes() {
   size_t outlen = 16;
@@ -16,7 +13,6 @@ void test_randombytes() {
   }
 
   assert(!(memcmp(buffer1, buffer2, outlen) == 0));
-  printf("[PASS]: randombytes\n");
 }
 
 typedef void (*sha3_func)(const uint8_t*, size_t, uint8_t*);
@@ -332,20 +328,34 @@ void test_shake256() {
   run_large_input_test(shake256, SHAKE, 200, 0xa3, expected, 64);
 }
 
-void test_bitrev7() {
-  assert(bitrev7(0) == 0);
-  assert(bitrev7(1) == 64);
-  assert(bitrev7(2) == 32);
-  assert(bitrev7(4) == 16);
-  assert(bitrev7(127) == 127);  // edge case: full 7-bit
+static uint16_t test_bitrev7_value(uint16_t value) {
+  uint16_t reversed = 0;
+  for (int bit = 0; bit < 7; bit++) {
+    reversed = (uint16_t)((reversed << 1) | ((value >> bit) & 1u));
+  }
+  return reversed;
 }
 
-void test_modexp() {
-  assert(modexp(17, 0) == 1);
-  assert(modexp(17, 1) == 17);
-  assert(modexp(17, 2) == (17 * 17) % Q);
-  assert(modexp(17, 3) == ((17 * 17) % Q * 17) % Q);
-  assert(modexp(2, 4) == 16 % Q);
+static uint16_t test_modexp_value(uint16_t base, uint16_t exponent) {
+  uint32_t result = 1;
+  uint32_t current = base;
+  while (exponent != 0) {
+    if ((exponent & 1u) != 0) {
+      result = (result * current) % Q;
+    }
+    current = (current * current) % Q;
+    exponent >>= 1;
+  }
+  return (uint16_t)result;
+}
+
+void test_ntt_roots() {
+  ensure_ntt_roots();
+  for (uint16_t i = 0; i < 128; i++) {
+    uint16_t exponent = test_bitrev7_value(i);
+    assert(ZETA[i] == test_modexp_value(17, exponent));
+    assert(GAMMA[i] == test_modexp_value(17, (uint16_t)(2 * exponent + 1)));
+  }
 }
 
 void test_poly256_add() {
@@ -394,6 +404,224 @@ void test_poly256_add() {
   }
 }
 
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    !defined(__clang__)
+static MLKEM_NOINLINE void
+test_ntt_head_mont_lazy_raw_avx512_reference(poly256 f) {
+  int k = 0;
+  for (int log2len = 7; log2len > 4; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      __m512i zeta_lo = ZETA_NTT_HEAD_MONT_LO_AVX512[k];
+      __m512i zeta_hi = ZETA_NTT_HEAD_MONT_HI_AVX512[k++];
+      for (int j = 0; j < length; j += 32) {
+        __m512i a = _mm512_loadu_si512((const void *)(f + start + j));
+        __m512i b =
+            _mm512_loadu_si512((const void *)(f + start + length + j));
+        __m512i t =
+            ntt_mont_mul_precomp_i16x32_avx512(b, zeta_lo, zeta_hi);
+        _mm512_storeu_si512((void *)(f + start + j),
+                            _mm512_add_epi16(a, t));
+        _mm512_storeu_si512((void *)(f + start + length + j),
+                            _mm512_sub_epi16(a, t));
+      }
+    }
+  }
+
+  for (int start = 0; start < N; start += 32) {
+    __m256i zeta_lo =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_LO_AVX512[k]);
+    __m256i zeta_hi =
+        _mm512_castsi512_si256(ZETA_NTT_HEAD_MONT_HI_AVX512[k++]);
+    __m256i a = _mm256_loadu_si256((const __m256i *)(f + start));
+    __m256i b = _mm256_loadu_si256((const __m256i *)(f + start + 16));
+    __m256i t = ntt_mont_mul_precomp_i16x16(b, zeta_lo, zeta_hi);
+    _mm256_storeu_si256((__m256i *)(f + start), _mm256_add_epi16(a, t));
+    _mm256_storeu_si256((__m256i *)(f + start + 16),
+                        _mm256_sub_epi16(a, t));
+  }
+}
+
+static uint64_t test_ntt_head_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_gcc_avx512_ntt_head_fusion(void) {
+  poly256 expected;
+  poly256 actual;
+  uint64_t state = UINT64_C(0x6e74742d68656164);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (int i = 0; i < N; i++) {
+      int16_t value;
+      switch (fixture) {
+        case 0:
+          value = 0;
+          break;
+        case 1:
+          value = Q - 1;
+          break;
+        case 2:
+          value = (int16_t)(i % Q);
+          break;
+        case 3:
+          value = (i & 1) ? Q - 1 : 0;
+          break;
+        case 4:
+          value = (int16_t)(i % 5 - 2);
+          break;
+        case 5:
+          value = (i & 1) ? 2 : -2;
+          break;
+        default: {
+          uint64_t random = test_ntt_head_next_u64(&state);
+          value = (fixture & 1)
+              ? (int16_t)((int)(random % 5) - 2)
+              : (int16_t)(random % Q);
+          break;
+        }
+      }
+      expected[i] = value;
+      actual[i] = value;
+    }
+
+    test_ntt_head_mont_lazy_raw_avx512_reference(expected);
+    ntt_head_mont_lazy_raw_avx512(actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] > -5 * Q);
+      assert(actual[i] < 5 * Q);
+    }
+  }
+}
+#endif
+
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+static uint64_t test_ntt_tail_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static MLKEM_NOINLINE void test_ntt_scalar_reference(const poly256 in,
+                                                     poly256 out) {
+  memcpy(out, in, sizeof(poly256));
+  int k = 1;
+  for (int log2len = 7; log2len > 0; log2len--) {
+    int length = 1 << log2len;
+    for (int start = 0; start < N; start += 2 * length) {
+      uint16_t zeta = ZETA[k++];
+      for (int j = 0; j < length; j++) {
+        int idx = start + j;
+        int16_t t = mod_q_reduce_ntt_u32(
+            (uint32_t)zeta * (uint32_t)(uint16_t)out[idx + length]);
+        int16_t a = out[idx];
+        out[idx + length] = mod_q_sub_i16(a, t);
+        out[idx] = mod_q_add_i16(a, t);
+      }
+    }
+  }
+}
+
+static void test_avx512_ntt_tail_fusion(void) {
+  poly256 source;
+  poly256 expected;
+  poly256 actual;
+  uint64_t state = UINT64_C(0x6e74742d7461696c);
+
+  ensure_ntt_roots();
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (int i = 0; i < N; i++) {
+      int16_t value;
+      switch (fixture) {
+        case 0:
+          value = 0;
+          break;
+        case 1:
+          value = Q - 1;
+          break;
+        case 2:
+          value = (int16_t)(i % Q);
+          break;
+        case 3:
+          value = (i & 1) ? Q - 1 : 0;
+          break;
+        case 4:
+          value = (int16_t)(i % 5 - 2);
+          break;
+        case 5:
+          value = (i & 1) ? 2 : -2;
+          break;
+        default: {
+          uint64_t random = test_ntt_tail_next_u64(&state);
+          value = (fixture & 1)
+              ? (int16_t)((int)(random % 5) - 2)
+              : (int16_t)(random % Q);
+          break;
+        }
+      }
+      source[i] = value;
+    }
+
+    ntt_head_mont_lazy_raw_avx512(source);
+    memcpy(expected, source, sizeof(poly256));
+    memcpy(actual, source, sizeof(poly256));
+    ntt_tail_mont_lazy_raw_avx2(expected);
+    ntt_tail_mont_lazy_raw_avx512(actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] > -8 * Q);
+      assert(actual[i] < 8 * Q);
+    }
+  }
+
+  state = UINT64_C(0x6e74742d66756c6c);
+  for (unsigned fixture = 0; fixture < 1024; fixture++) {
+    for (int i = 0; i < N; i++) {
+      switch (fixture) {
+        case 0:
+          source[i] = 0;
+          break;
+        case 1:
+          source[i] = Q - 1;
+          break;
+        case 2:
+          source[i] = (int16_t)(i % Q);
+          break;
+        case 3:
+          source[i] = (i & 1) ? Q - 1 : 0;
+          break;
+        default:
+          source[i] = (int16_t)(test_ntt_tail_next_u64(&state) % Q);
+          break;
+      }
+    }
+
+    test_ntt_scalar_reference(source, expected);
+    ntt(source, actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+      assert(actual[i] >= 0);
+      assert(actual[i] < Q);
+    }
+
+    memcpy(actual, source, sizeof(poly256));
+    ntt(actual, actual);
+    for (int i = 0; i < N; i++) {
+      assert(actual[i] == expected[i]);
+    }
+  }
+}
+#endif
+
 void test_ntts() {
   poly256 a,b, ntt_res, poly_res;
   for (int i = 0; i < N; i++){
@@ -412,6 +640,76 @@ void test_ntts() {
   }
 }
 
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+static void test_sha3_256_1184_avx512vl(void) {
+  uint8_t input[1184];
+  uint8_t copied[1184];
+  uint8_t reference[32];
+  uint8_t actual[32];
+  uint8_t copy_hash[32];
+#if defined(__GNUC__) && !defined(__clang__)
+  uint8_t suffix_hash[32];
+  __m256i suffix_state4[25];
+#endif
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    if (fixture == 0) {
+      memset(input, 0, sizeof(input));
+    } else if (fixture == 1) {
+      memset(input, 0xff, sizeof(input));
+    } else if (fixture == 2) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (uint8_t)i;
+      }
+    } else if (fixture == 3) {
+      for (size_t i = 0; i < sizeof(input); i++) {
+        input[i] = (i & 1u) ? 0xff : 0x00;
+      }
+    } else {
+      uint64_t x = UINT64_C(0x1184000000000000) + fixture;
+      for (size_t i = 0; i < sizeof(input); i++) {
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        x *= UINT64_C(0x2545f4914f6cdd1d);
+        input[i] = (uint8_t)(x >> 56);
+      }
+    }
+
+    keccak_ctx ctx;
+    keccak_init(&ctx, 136);
+    keccak_absorb(&ctx, input, sizeof(input));
+    keccak_finalize(&ctx, 0x06);
+    keccak_squeeze(&ctx, reference, sizeof(reference));
+    mlkem_sha3_256_1184_avx512vl(input, actual);
+    assert(memcmp(reference, actual, sizeof(reference)) == 0);
+    memset(copied, 0xa5, sizeof(copied));
+    memset(copy_hash, 0xa5, sizeof(copy_hash));
+    sha3_256_copy_1184(copied, input, copy_hash);
+    assert(memcmp(input, copied, sizeof(input)) == 0);
+    assert(memcmp(reference, copy_hash, sizeof(reference)) == 0);
+#if defined(__GNUC__) && !defined(__clang__)
+    uint64_t prefix_state[25] = {0};
+    for (int block = 0; block < 3; block++) {
+      const uint8_t *p = input + (size_t)block * 136;
+      for (int lane = 0; lane < 17; lane++) {
+        prefix_state[lane] ^= load64_le(p + 8 * lane);
+      }
+      keccakf(prefix_state);
+    }
+    for (int lane = 0; lane < 25; lane++) {
+      suffix_state4[lane] = _mm256_set_epi64x(
+          (long long)~prefix_state[lane], (long long)fixture,
+          (long long)lane, (long long)prefix_state[lane]);
+    }
+    mlkem_sha3_256_1184_suffix6_avx512vl(
+        suffix_state4, input + 3 * 136, suffix_hash);
+    assert(memcmp(reference, suffix_hash, sizeof(reference)) == 0);
+#endif
+  }
+}
+#endif
+
 static void test_sample_ntt() {
   for (int idx = 0; idx < 5; idx++) {
     uint8_t seed[35];
@@ -429,6 +727,303 @@ static void test_sample_ntt() {
     }
   }
 }
+
+#if defined(__AVX2__)
+static uint64_t test_sample_ntt_parse_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_sample_ntt_pack_pair(uint8_t out[3], unsigned d0,
+                                      unsigned d1) {
+  out[0] = (uint8_t)d0;
+  out[1] = (uint8_t)((d0 >> 8) | (d1 << 4));
+  out[2] = (uint8_t)(d1 >> 4);
+}
+
+static int test_sample_ntt_parse_scalar(const uint8_t *stream,
+                                        size_t stream_len, poly256 out,
+                                        int count) {
+  for (size_t pos = 0; pos + 3 <= stream_len && count < N; pos += 3) {
+    unsigned d0 = (unsigned)stream[pos] |
+                  (((unsigned)stream[pos + 1] & 0x0fu) << 8);
+    unsigned d1 = ((unsigned)stream[pos + 1] >> 4) |
+                  ((unsigned)stream[pos + 2] << 4);
+    if (d0 < Q) out[count++] = (int16_t)d0;
+    if (d1 < Q && count < N) out[count++] = (int16_t)d1;
+  }
+  return count;
+}
+
+typedef struct {
+  uint64_t before[4];
+  poly256 values;
+  uint64_t after[4];
+} test_sample_ntt_parse_buffer;
+
+static void test_sample_ntt_parse_case(const uint8_t stream[504],
+                                       size_t stream_len, int initial_count) {
+  test_sample_ntt_parse_buffer expected;
+  test_sample_ntt_parse_buffer actual;
+  memset(&expected, 0xa5, sizeof(expected));
+  memset(&actual, 0xa5, sizeof(actual));
+
+  int expected_count = test_sample_ntt_parse_scalar(
+      stream, stream_len, expected.values, initial_count);
+  int actual_count = sample_ntt_parse_stream_avx2(
+      stream, stream_len, actual.values, initial_count);
+
+  assert(actual_count == expected_count);
+  assert(memcmp(actual.before, expected.before, sizeof(actual.before)) == 0);
+  assert(memcmp(actual.after, expected.after, sizeof(actual.after)) == 0);
+  assert(memcmp(actual.values, expected.values,
+                (size_t)actual_count * sizeof(actual.values[0])) == 0);
+}
+
+static void test_sample_ntt_parse_stream_avx2(void) {
+  static const size_t stream_lengths[] = {
+      0, 1, 2, 3, 5, 6, 11, 12, 15, 16, 47, 48, 55, 56, 59, 60, 503, 504};
+  static const int initial_counts[] = {
+      0, 1, 7, 8, 223, 224, 225, 247, 248, 249, 255, 256};
+  uint8_t stream[504];
+  uint64_t state = UINT64_C(0x72656a656374696f);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    if (fixture == 0) {
+      memset(stream, 0, sizeof(stream));
+    } else if (fixture == 1) {
+      memset(stream, 0xff, sizeof(stream));
+    } else if (fixture == 2) {
+      for (size_t pair = 0; pair < sizeof(stream) / 3; pair++) {
+        static const unsigned boundary[] = {Q - 1, Q, 0, 0xfff};
+        test_sample_ntt_pack_pair(stream + 3 * pair,
+                                  boundary[pair & 3u],
+                                  boundary[(pair + 1) & 3u]);
+      }
+    } else if (fixture == 3) {
+      for (size_t pair = 0; pair < sizeof(stream) / 3; pair++) {
+        test_sample_ntt_pack_pair(stream + 3 * pair,
+                                  (unsigned)(pair * 73u) & 0xfffu,
+                                  (unsigned)(pair * 151u + 1u) & 0xfffu);
+      }
+    } else {
+      for (size_t i = 0; i < sizeof(stream); i++) {
+        stream[i] = (uint8_t)test_sample_ntt_parse_next_u64(&state);
+      }
+    }
+
+    test_sample_ntt_parse_case(stream, sizeof(stream), 0);
+    if (fixture < 1024) {
+      for (size_t len = 0;
+           len < sizeof(stream_lengths) / sizeof(stream_lengths[0]); len++) {
+        for (size_t count = 0;
+             count < sizeof(initial_counts) / sizeof(initial_counts[0]);
+             count++) {
+          test_sample_ntt_parse_case(
+              stream, stream_lengths[len], initial_counts[count]);
+        }
+      }
+    }
+  }
+}
+#endif
+
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+static void test_keccakf8_matrix_asm(void) {
+  int saw_refill = 0;
+
+  for (unsigned fixture = 0; fixture < 64; fixture++) {
+    uint8_t seed[32];
+    __m512i want_st[25];
+    __m512i got_st[25];
+    uint8_t want_stream[8][504];
+    uint8_t got_stream[8][504];
+    poly256 got_matrix[K][K];
+    poly256 want_poly;
+
+    for (unsigned i = 0; i < sizeof(seed); i++) {
+      seed[i] = (uint8_t)(fixture * 73u + i * 29u + (i >> 1));
+    }
+    for (int lane = 0; lane < 25; lane++) {
+      want_st[lane] = _mm512_setzero_si512();
+    }
+    want_st[0] = _mm512_set1_epi64((long long)load64_le(seed + 0));
+    want_st[1] = _mm512_set1_epi64((long long)load64_le(seed + 8));
+    want_st[2] = _mm512_set1_epi64((long long)load64_le(seed + 16));
+    want_st[3] = _mm512_set1_epi64((long long)load64_le(seed + 24));
+    want_st[4] = _mm512_set_epi64(
+        0x1f0102LL, 0x1f0002LL, 0x1f0201LL, 0x1f0101LL,
+        0x1f0001LL, 0x1f0200LL, 0x1f0100LL, 0x1f0000LL);
+    want_st[20] = _mm512_set1_epi64((long long)(0x80ULL << 56));
+    for (int block = 0; block < 3; block++) {
+      keccakf8(want_st);
+      sample_ntt8_store_block(want_stream, (size_t)block * 168, want_st);
+    }
+
+    mlkem_keccakf8_sparse_matrix_3_store_blocks_avx512(
+        seed, got_st, got_stream);
+    assert(memcmp(got_st + 21, want_st + 21,
+                  4 * sizeof(got_st[0])) == 0);
+    assert(memcmp(got_stream, want_stream, sizeof(got_stream)) == 0);
+    for (int lane = 0; lane < 8; lane++) {
+      if (sample_ntt_parse_stream(got_stream[lane], sizeof(got_stream[lane]),
+                                  want_poly, 0) < N) {
+        saw_refill = 1;
+      }
+    }
+
+    sample_matrix(seed, got_matrix);
+    for (int row = 0; row < K; row++) {
+      for (int col = 0; col < K; col++) {
+        sample_ntt(seed, row, col, want_poly);
+        assert(memcmp(got_matrix[row][col], want_poly,
+                      sizeof(want_poly)) == 0);
+      }
+    }
+  }
+  assert(saw_refill);
+}
+#endif
+
+#if defined(__AVX2__)
+static void test_sample_ntt_cmpgt_epi16_avx2(void) {
+  int16_t input[16];
+  int16_t got[16];
+  const __m256i bound = _mm256_set1_epi16(Q);
+
+  for (int base = 0; base < 4096; base += 16) {
+    for (int lane = 0; lane < 16; lane++) {
+      input[lane] = (int16_t)(base + lane);
+    }
+    __m256i values = _mm256_loadu_si256((const __m256i *)(const void *)input);
+    __m256i result = sample_ntt_cmpgt_epi16_avx2(bound, values);
+    _mm256_storeu_si256((__m256i *)(void *)got, result);
+    for (int lane = 0; lane < 16; lane++) {
+      assert(got[lane] == (input[lane] < Q ? -1 : 0));
+    }
+  }
+}
+#endif
+
+#if defined(__AVX2__) && defined(__AVX512F__)
+static uint64_t test_eta2x7_next_u64(uint64_t *state) {
+  uint64_t x = *state;
+  x ^= x >> 12;
+  x ^= x << 25;
+  x ^= x >> 27;
+  *state = x;
+  return x * UINT64_C(0x2545f4914f6cdd1d);
+}
+
+static void test_sample_poly_cbd_eta2_scalar(const uint8_t data[128],
+                                             poly256 out) {
+  for (int i = 0; i < N / 8; i++) {
+    uint32_t t = load32_le(data + 4 * i);
+    uint32_t d = t & UINT32_C(0x55555555);
+    d += (t >> 1) & UINT32_C(0x55555555);
+    for (int j = 0; j < 8; j++) {
+      int a = (int)((d >> (4 * j)) & 3u);
+      int b = (int)((d >> (4 * j + 2)) & 3u);
+      int value = a - b;
+      out[8 * i + j] = (int16_t)(value < 0 ? value + Q : value);
+    }
+  }
+}
+
+static void test_avx512_encrypt_prf_cbd_eta2x7(void) {
+  uint8_t seed[32];
+  uint8_t stream[64 * ETA2];
+  poly256 got[7];
+  poly256 expected;
+  uint64_t state = UINT64_C(0x6574613278372d32);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      switch (fixture) {
+        case 0:
+          seed[i] = 0;
+          break;
+        case 1:
+          seed[i] = UINT8_MAX;
+          break;
+        case 2:
+          seed[i] = (uint8_t)i;
+          break;
+        case 3:
+          seed[i] = (uint8_t)(UINT8_MAX - i);
+          break;
+        default:
+          seed[i] = (uint8_t)test_eta2x7_next_u64(&state);
+          break;
+      }
+    }
+
+    mlkem_encrypt_prf_cbd_eta2_32(seed, got[0], got[1], got[2], got[3],
+                                  got[4], got[5], got[6]);
+    for (int output = 0; output < 7; output++) {
+      mlkem_prf(ETA2, seed, sizeof(seed), (uint8_t)output, stream);
+      test_sample_poly_cbd_eta2_scalar(stream, expected);
+      if (memcmp(got[output], expected, sizeof(expected)) != 0) {
+        fprintf(stderr,
+                "AVX-512 x7 PRF/CBD mismatch at fixture %u output %d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#if defined(__clang__)
+static void test_keccakf8_sparse_eta2x7_final16(void) {
+  const uint64_t final_pad = UINT64_C(0x80) << 56;
+  uint64_t rng = UINT64_C(0x78372d66696e616c);
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32];
+    uint8_t nonce[8];
+    uint64_t expected[8][25] = {{0}};
+    __m512i got[16];
+
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      if (fixture == 0) {
+        seed[i] = 0;
+      } else if (fixture == 1) {
+        seed[i] = UINT8_MAX;
+      } else {
+        seed[i] = (uint8_t)test_eta2x7_next_u64(&rng);
+      }
+    }
+    for (size_t lane = 0; lane < sizeof(nonce); lane++) {
+      nonce[lane] = (uint8_t)(fixture * 29u + lane * 71u);
+      for (int word = 0; word < 4; word++) {
+        expected[lane][word] = load64_le(seed + 8 * word);
+      }
+      expected[lane][4] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+      expected[lane][16] = final_pad;
+      keccakf(expected[lane]);
+    }
+
+    keccakf8_sparse_eta2x7_32(seed, nonce, got);
+    for (int word = 0; word < 16; word++) {
+      uint64_t lanes[8];
+      _mm512_storeu_si512((void *)lanes, got[word]);
+      for (int lane = 0; lane < 8; lane++) {
+        if (lanes[lane] != expected[lane][word]) {
+          fprintf(stderr,
+                  "Clang sparse x7 final16 mismatch at fixture %u word %d lane %d\n",
+                  fixture, word, lane);
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+}
+#endif
+
+#endif
 
 static void test_byte_encode() {
   {
@@ -496,8 +1091,8 @@ void test_kpke() {
 
   /* Encrypt */
   uint8_t ct[4096];
-  size_t ct_len = 0;
-  kpke_encrypt(ek_pke, msg, 32, r, 32, ct, &ct_len);
+  size_t ct_len = (size_t)(K * ((N * DU) / 8) + (N * DV) / 8);
+  kpke_encrypt(ek_pke, msg, 32, r, 32, ct, 0);
 
   /* Decrypt */
   uint8_t decrypted[64];
@@ -533,20 +1128,290 @@ void test_mlkem() {
   assert(memcmp(k1,k2,32)==0);
 }
 
+/* NIST ACVP ML-KEM-768 keyGen internalProjection vector. */
+static void test_mlkem_fips203_keygen(void) {
+  static const uint8_t d[32] = {
+    0xe3, 0x4a, 0x70, 0x1c, 0x4c, 0x87, 0x58, 0x2f,
+    0x42, 0x26, 0x4e, 0xe4, 0x22, 0xd3, 0xc6, 0x84,
+    0xd9, 0x76, 0x11, 0xf2, 0x52, 0x3e, 0xfe, 0x0c,
+    0x99, 0x8a, 0xf0, 0x50, 0x56, 0xd6, 0x93, 0xdc,
+  };
+  static const uint8_t z[32] = {
+    0xa8, 0x57, 0x68, 0xf3, 0x48, 0x6b, 0xd3, 0x2a,
+    0x01, 0xbf, 0x9a, 0x8f, 0x21, 0xea, 0x93, 0x8e,
+    0x64, 0x8e, 0xae, 0x4e, 0x54, 0x48, 0xc3, 0x4c,
+    0x3e, 0xb8, 0x88, 0x20, 0xb1, 0x59, 0xee, 0xdd,
+  };
+  static const uint8_t expected_ek_digest[16] = {
+    0x4d, 0x7f, 0x73, 0x25, 0x50, 0x3c, 0x06, 0xf0,
+    0xcb, 0xfa, 0xc8, 0xcd, 0x87, 0x44, 0x89, 0x4f,
+  };
+  uint8_t coins[64];
+  uint8_t ek[K * 384 + 32];
+  uint8_t dk[768 * K + 96];
+  uint8_t ek_digest[16];
+  uint8_t h[32];
+
+  memcpy(coins, d, sizeof(d));
+  memcpy(coins + sizeof(d), z, sizeof(z));
+  mlkem_keygen_derand(coins, ek, dk);
+  shake256(ek, sizeof(ek), ek_digest, sizeof(ek_digest));
+  assert(memcmp(ek_digest, expected_ek_digest, sizeof(ek_digest)) == 0);
+
+  assert(memcmp(dk + K * 384, ek, sizeof(ek)) == 0);
+  pq_sha3_256(h, ek, sizeof(ek));
+  assert(memcmp(dk + K * 384 + sizeof(ek), h, sizeof(h)) == 0);
+  assert(memcmp(dk + sizeof(dk) - sizeof(z), z, sizeof(z)) == 0);
+}
+
+#if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
+static void test_keccakf8_sparse_32(void) {
+  const uint64_t final_pad = UINT64_C(0x80) << 56;
+
+  for (unsigned fixture = 0; fixture < 256; fixture++) {
+    uint8_t seed[32];
+    uint8_t mixed_seed[32];
+    uint8_t nonce[8];
+
+    for (size_t i = 0; i < sizeof(seed); i++) {
+      seed[i] = (uint8_t)(fixture * 73u + i * 29u + (i >> 1));
+      mixed_seed[i] = (uint8_t)(fixture * 37u + i * 61u + (i >> 2));
+    }
+    for (size_t i = 0; i < sizeof(nonce); i++) {
+      nonce[i] = (uint8_t)(fixture + 17u * i);
+    }
+
+    for (int mode = 0; mode < 4; mode++) {
+      uint64_t state[25][8] = {{0}};
+      __m512i want[25];
+      __m512i got[25];
+      const uint8_t *nonce_arg = NULL;
+      const uint8_t *mixed_arg = NULL;
+      int output_words = 25;
+
+      if (mode == 0) {
+        for (int lane = 0; lane < 8; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        nonce_arg = nonce;
+        output_words = 16;
+      } else if (mode == 1) {
+        for (int lane = 0; lane < 7; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)nonce[lane] | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        for (int word = 0; word < 4; word++) {
+          state[word][7] = load64_le(mixed_seed + 8 * word);
+        }
+        state[4][7] = UINT64_C(0x1f0202);
+        state[20][7] = final_pad;
+        nonce_arg = nonce;
+        mixed_arg = mixed_seed;
+      } else if (mode == 2) {
+        for (int lane = 0; lane < 6; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)lane | (UINT64_C(0x1f) << 8);
+          state[16][lane] = final_pad;
+        }
+        for (int word = 0; word < 4; word++) {
+          state[word][6] = load64_le(mixed_seed + 8 * word);
+        }
+        state[4][6] = UINT64_C(0x1f0202);
+        state[20][6] = final_pad;
+        mixed_arg = mixed_seed;
+      } else {
+        for (int lane = 0; lane < 8; lane++) {
+          for (int word = 0; word < 4; word++) {
+            state[word][lane] = load64_le(seed + 8 * word);
+          }
+          state[4][lane] = (uint64_t)(lane / 3) |
+                           ((uint64_t)(lane % 3) << 8) |
+                           (UINT64_C(0x1f) << 16);
+          state[20][lane] = final_pad;
+        }
+      }
+
+      for (int word = 0; word < 25; word++) {
+        want[word] = _mm512_loadu_si512((const void *)state[word]);
+        got[word] = _mm512_set1_epi64((long long)UINT64_C(0xa5a5a5a5a5a5a5a5));
+      }
+      keccakf8(want);
+      keccakf8_sparse_32(seed, nonce_arg, mixed_arg, got);
+      if (memcmp(got, want, (size_t)output_words * sizeof(got[0])) != 0) {
+        fprintf(stderr, "GCC sparse x8 mismatch at fixture %u mode %d\n",
+                fixture, mode);
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+#endif
+
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+static void test_decaps_hash_tail_noise6_gcc_avx512(void) {
+  const uint8_t nonce[8] = {0, 1, 2, 3, 4, 5, 6, 0};
+  int saw_refill = 0;
+  uint64_t fixture_state = UINT64_C(0x6465636170737834);
+
+  for (unsigned fixture = 0; fixture < 4096; fixture++) {
+    uint8_t in0[32];
+    uint8_t in1[32];
+    uint8_t rho[32];
+    uint8_t input[64];
+    uint8_t got_hash[64];
+    uint8_t want_hash[64];
+    poly256 got_tail;
+    poly256 want_tail;
+    poly256 got_r[3];
+    poly256 want_r[3];
+    poly256 canonical_r[3];
+    poly256 producer_r[3];
+    int8_t got_e[4][N];
+    int8_t want_e[4][N];
+    int8_t producer_e[4][N];
+
+    for (size_t i = 0; i < 32; i++) {
+      in0[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+      in1[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+      rho[i] = (uint8_t)test_eta2x7_next_u64(&fixture_state);
+    }
+    memcpy(input, in0, 32);
+    memcpy(input + 32, in1, 32);
+    sha3_512(input, sizeof(input), want_hash);
+    sample_ntt(rho, 2, 2, want_tail);
+
+    for (int output = 0; output < 7; output++) {
+      uint8_t stream[64 * ETA2];
+      poly256 canonical;
+
+      mlkem_prf(ETA2, want_hash + 32, 32, (uint8_t)output, stream);
+      test_sample_poly_cbd_eta2_scalar(stream, canonical);
+      for (int coeff = 0; coeff < N; coeff++) {
+        int centered = canonical[coeff];
+        if (centered > Q / 2) centered -= Q;
+        assert(centered >= -ETA2 && centered <= ETA2);
+        if (output < 3) {
+          canonical_r[output][coeff] = canonical[coeff];
+          want_r[output][coeff] = (int16_t)centered;
+        } else {
+          want_e[output - 3][coeff] = (int8_t)centered;
+        }
+      }
+    }
+
+    mlkem_prf_cbd_eta2x3x4_i8_32(
+        want_hash + 32, nonce, producer_r[0], producer_r[1], producer_r[2],
+        producer_e[0], producer_e[1], producer_e[2], producer_e[3]);
+
+    if (memcmp(producer_r, want_r, sizeof(producer_r)) != 0 ||
+        memcmp(producer_e, want_e, sizeof(producer_e)) != 0) {
+      fprintf(stderr, "GCC signed x7 PRF/CBD mismatch at fixture %u\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+
+    for (int output = 0; output < 3; output++) {
+      poly256 signed_ntt;
+      poly256 canonical_ntt;
+
+      ntt(want_r[output], signed_ntt);
+      ntt(canonical_r[output], canonical_ntt);
+      if (memcmp(signed_ntt, canonical_ntt, sizeof(signed_ntt)) != 0) {
+        fprintf(stderr, "GCC signed NTT mismatch at fixture %u output %d\n",
+                fixture, output);
+        exit(EXIT_FAILURE);
+      }
+    }
+
+    sha3_512_sample_ntt_tail_noise6_gcc_avx512(
+        in0, in1, rho, got_tail, got_hash, got_r[0], got_r[1], got_r[2],
+        got_e[0], got_e[1], got_e[2], got_e[3]);
+
+    if (memcmp(got_hash, want_hash, sizeof(got_hash)) != 0 ||
+        memcmp(got_tail, want_tail, sizeof(got_tail)) != 0 ||
+        memcmp(got_r, want_r, sizeof(got_r)) != 0 ||
+        memcmp(got_e, want_e, sizeof(got_e)) != 0) {
+      fprintf(stderr, "GCC decaps hash/tail/noise mismatch at fixture %u\n",
+              fixture);
+      exit(EXIT_FAILURE);
+    }
+
+    uint64_t tail_state[25] = {0};
+    uint64_t first_rates[63];
+    poly256 first_output;
+    tail_state[0] = load64_le(rho + 0);
+    tail_state[1] = load64_le(rho + 8);
+    tail_state[2] = load64_le(rho + 16);
+    tail_state[3] = load64_le(rho + 24);
+    tail_state[4] = UINT64_C(0x1f0202);
+    tail_state[20] = UINT64_C(0x80) << 56;
+    for (int block = 0; block < 3; block++) {
+      keccakf(tail_state);
+      memcpy(first_rates + 21 * block, tail_state,
+             21 * sizeof(tail_state[0]));
+    }
+    if (sample_ntt_parse_stream((const uint8_t *)first_rates,
+                                sizeof(first_rates), first_output, 0) < N) {
+      saw_refill = 1;
+    }
+  }
+  assert(saw_refill);
+}
+#endif
+
 int main(void) {
   test_randombytes();
   test_sha3_256();
+#if defined(MLKEM_HAVE_SHA3_256_1184_AVX512VL)
+  test_sha3_256_1184_avx512vl();
+#endif
   test_sha3_512();
   test_shake128();
   test_shake256();
-  test_bitrev7();
-  test_modexp();
+  test_ntt_roots();
   test_poly256_add();
   test_sample_ntt();
+#if defined(MLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM)
+  test_keccakf8_matrix_asm();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && !defined(__clang__)
+  test_keccakf8_sparse_32();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__clang__)
+  test_keccakf8_sparse_eta2x7_final16();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    defined(__GNUC__) && !defined(__clang__)
+  test_decaps_hash_tail_noise6_gcc_avx512();
+#endif
+#if defined(__AVX2__)
+  test_sample_ntt_parse_stream_avx2();
+  test_sample_ntt_cmpgt_epi16_avx2();
+#if defined(__AVX512F__)
+  test_avx512_encrypt_prf_cbd_eta2x7();
+#endif
+#endif
   test_byte_encode();
   test_kpke();
   test_mlkem();
-  test_init_ntt_roots();
+  test_mlkem_fips203_keygen();
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
+    !defined(__clang__)
+  test_gcc_avx512_ntt_head_fusion();
+#endif
+#if defined(__AVX2__) && defined(__AVX512F__) && defined(__AVX512BW__)
+  test_avx512_ntt_tail_fusion();
+#endif
   test_ntts();
   printf("OK\n");
 }

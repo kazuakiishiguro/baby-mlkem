@@ -1,0 +1,16 @@
+compiler=clang
+profile=AVX2-only
+sanitizers=address,undefined
+product_method=direct-link-without-relocatable-clang-r
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+leak_sanitizer=disabled_due_to_ptrace_environment
+kat=PASS
+product=PASS
+product_output_bytes=0
+stage=PASS
+stage_iterations=100
+stage_sink=5682381251832549115
+generator_header_cmp=PASS
+generator_avx2_asm_cmp=PASS
+sanitizer_diagnostics=none
+sanitizer_gate=PASS

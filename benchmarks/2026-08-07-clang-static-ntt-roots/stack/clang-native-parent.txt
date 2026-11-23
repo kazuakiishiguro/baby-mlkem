@@ -1,0 +1,17 @@
+artifact=/tmp/baby-roots-baseline-native-product.o
+artifact_sha256=a0dca1b194f82022263a956ea2e7df302b6f0b9aa6a55ffc0a476d2e1918b8e1
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=11640
+encaps_stack_bytes=8568
+decaps_valid_stack_bytes=10040
+decaps_invalid_stack_bytes=10040
+max_stack_bytes=11640
+correctness_smoke=pass

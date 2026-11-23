@@ -1,0 +1,73 @@
+baseline_ref=50b54e5d6fabf345779b93f65c7bf1b3025e58d3
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+candidate_source_sha256=16a1cce136e847efa5265d4445fae5db484643701e5c7b4e0ad48b5416b4bd93
+
+[clang-native]
+flags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=0bdc8790a1f44a2f1e20244155dffe07930547a15a708d88d799770d512c0f9e
+code_bytes=53409
+readonly_bytes=16567
+primary_bytes=69976
+writable_bytes=18001
+
+[clang-avx2]
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=311a344ff02756a4fad0ca936d4ff0f9baf3dd4a03e40308c7a4c1845363ab03
+code_bytes=44705
+readonly_bytes=8169
+primary_bytes=52874
+writable_bytes=26593
+
+[clang-scalar]
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c
+code_bytes=60160
+readonly_bytes=2033
+primary_bytes=62193
+writable_bytes=18944
+
+[gcc-native]
+flags=-march=native
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+code_bytes=56006
+readonly_bytes=3565
+primary_bytes=59571
+writable_bytes=33728
+
+[gcc-avx2]
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+product_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+code_bytes=49829
+readonly_bytes=3785
+primary_bytes=53614
+writable_bytes=34920
+
+[gcc-scalar]
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+product_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+code_bytes=21530
+readonly_bytes=1737
+primary_bytes=23267
+writable_bytes=19488
+
+postcommit_clang_native_product_identity=PASS
+non_target_products_byte_identical=clang-avx2 clang-scalar gcc-native gcc-avx2 gcc-scalar
+correctness_matrix=PASS

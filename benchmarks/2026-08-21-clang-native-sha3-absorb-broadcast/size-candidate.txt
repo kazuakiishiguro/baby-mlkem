@@ -1,0 +1,21 @@
+clang -c baby_mlkem_api.c -o baby_mlkem_api.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -ffunction-sections -fdata-sections -DBABY_MLKEM_DISABLE_INTERNAL_CACHES -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -Wno-unused-function
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -r -nostdlib baby_mlkem_api.product.o sha3_256_1184_avx512vl.product.o keccakf8_matrix_avx512.product.o -o baby_mlkem768_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -falign-loops=32 -march=native  -Wl,--undefined=baby_mlkem768_keypair_derand -Wl,--undefined=baby_mlkem768_encaps_derand -Wl,--undefined=baby_mlkem768_decaps -Wl,--gc-sections
+compiler=clang
+arch_cflags=-march=native
+./scripts/measure_product_size.sh baby_mlkem768_product.o
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=830a73b5954571913d73b592c44c0d068dfc55aefba6dc4c9f4e95e5ef73a570
+artifact_file_bytes=84216
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=46410
+readonly_data_bytes=10854
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=57264
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

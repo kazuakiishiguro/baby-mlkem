@@ -1,0 +1,13 @@
+candidate_ref=149b3d59f2a6043e8a21f4a411b4400a9bfbfdbc
+baseline_ref=ae12e77be733f9adc59bb94262d5c770782cd3e6
+compiler=clang
+profile=native
+pairs=16
+iterations=500000
+run_order=alternating
+metric gmean median wins base_first_median candidate_first_median
+sparse_x7_control 1.005165910x 1.000452500x 8/16 1.000952500x 0.999599500x
+mixed_keygen_helper 1.014007914x 1.016125000x 15/16 1.017905000x 1.013170000x
+sparse_x7_section_sha256=bd60460032d06489e87979ee4d93a18f450118166ebeb92d7141d458ca25c3af
+sparse_x7_section_identity=PASS
+interpretation=sparse x7 is a byte-identical layout control; mixed helper improves directly, but integrated KEM timing is treated only as no-regression evidence

@@ -1,0 +1,4 @@
+profile=Clang native
+artifact_sha256=c65269e0cad402632c8f861093b703bd277933ebafcbc69d53e6dca557f23cf5
+result=PASS
+note=Native AVX512 instructions are expected and remain within the -march=native target; no external code object or runtime crypto library is linked.

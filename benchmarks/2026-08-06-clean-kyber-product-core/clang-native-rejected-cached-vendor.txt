@@ -1,0 +1,128 @@
+iters=100000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=kyber_upstream_avx2
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+UPDATE_REPOS=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=1
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/bench_productc
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+local_OPT_CFLAGS=<Makefile default>
+local_EXTRA_CFLAGS=<Makefile default>
+local_ASFLAGS=<Makefile default>
+mlkem_native_auto=1
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[kyber_upstream_avx2] warmup=1/3 order=local-first
+[kyber_upstream_avx2] warmup=2/3 order=competitor-first
+[kyber_upstream_avx2] warmup=3/3 order=local-first
+[kyber_upstream_avx2] run=1/15 order=local-first
+[kyber_upstream_avx2] run=1 keygen=3942.87/5297.57 encaps=3490.75/1267.89 decaps=2793.99/3199.35 roundtrip=10389.43/12114.42
+[kyber_upstream_avx2] run=2/15 order=competitor-first
+[kyber_upstream_avx2] run=2 keygen=3934.16/5210.46 encaps=3539.00/1272.57 decaps=2808.10/3176.28 roundtrip=10366.32/11985.68
+[kyber_upstream_avx2] run=3/15 order=local-first
+[kyber_upstream_avx2] run=3 keygen=3935.29/5269.09 encaps=3487.14/1276.65 decaps=2792.37/3175.96 roundtrip=10335.70/12104.36
+[kyber_upstream_avx2] run=4/15 order=competitor-first
+[kyber_upstream_avx2] run=4 keygen=3949.37/5320.89 encaps=3490.96/1267.85 decaps=2850.98/3172.39 roundtrip=10385.93/12048.28
+[kyber_upstream_avx2] run=5/15 order=local-first
+[kyber_upstream_avx2] run=5 keygen=3960.38/5216.93 encaps=3519.68/1266.90 decaps=2807.22/3184.43 roundtrip=10350.56/11983.64
+[kyber_upstream_avx2] run=6/15 order=competitor-first
+[kyber_upstream_avx2] run=6 keygen=3944.72/5225.94 encaps=3492.51/1264.15 decaps=2799.10/3165.56 roundtrip=10321.66/11999.75
+[kyber_upstream_avx2] run=7/15 order=local-first
+[kyber_upstream_avx2] run=7 keygen=3937.02/5247.63 encaps=3536.95/1277.58 decaps=2786.98/3185.28 roundtrip=10362.66/11994.77
+[kyber_upstream_avx2] run=8/15 order=competitor-first
+[kyber_upstream_avx2] run=8 keygen=3990.54/5205.58 encaps=3814.78/1263.19 decaps=2897.56/3178.05 roundtrip=10732.74/12196.56
+[kyber_upstream_avx2] run=9/15 order=local-first
+[kyber_upstream_avx2] run=9 keygen=3938.60/5199.88 encaps=3484.22/1266.22 decaps=2818.33/3171.53 roundtrip=10338.54/11973.78
+[kyber_upstream_avx2] run=10/15 order=competitor-first
+[kyber_upstream_avx2] run=10 keygen=3950.08/5192.87 encaps=3511.79/1300.96 decaps=2847.31/3179.04 roundtrip=10400.31/12021.25
+[kyber_upstream_avx2] run=11/15 order=local-first
+[kyber_upstream_avx2] run=11 keygen=3931.91/5219.56 encaps=3481.75/1264.11 decaps=2785.21/3173.03 roundtrip=10301.06/11953.34
+[kyber_upstream_avx2] run=12/15 order=competitor-first
+[kyber_upstream_avx2] run=12 keygen=3986.44/5194.06 encaps=3546.72/1265.04 decaps=2858.83/3177.85 roundtrip=10515.29/12009.74
+[kyber_upstream_avx2] run=13/15 order=local-first
+[kyber_upstream_avx2] run=13 keygen=3925.40/5210.54 encaps=3479.15/1267.13 decaps=2812.00/3171.01 roundtrip=10318.02/11986.08
+[kyber_upstream_avx2] run=14/15 order=competitor-first
+[kyber_upstream_avx2] run=14 keygen=3943.75/5196.81 encaps=3487.29/1265.58 decaps=2791.01/3181.90 roundtrip=10306.56/11984.29
+[kyber_upstream_avx2] run=15/15 order=local-first
+[kyber_upstream_avx2] run=15 keygen=3993.10/5267.27 encaps=3490.91/1277.76 decaps=2798.01/3177.41 roundtrip=10383.93/12066.70
+[kyber_upstream_avx2]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10387.25
+local_roundtrip_sd_ns=109.02
+local_roundtrip_median_ns=10362.66
+local_roundtrip_trimmed_ns=10367.30
+competitor_roundtrip_mean_ns=12028.18
+competitor_roundtrip_sd_ns=66.46
+competitor_roundtrip_median_ns=11999.75
+competitor_roundtrip_trimmed_ns=12020.98
+selected_local_roundtrip_ns=10362.66
+selected_competitor_roundtrip_ns=11999.75
+local_ns_div_competitor_ns=0.864x
+local_speedup_vs_competitor=1.158x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=3950.91
+keygen_local_median_ns=3943.75
+keygen_competitor_mean_ns=5231.67
+keygen_competitor_median_ns=5216.93
+keygen_speedup_ratio_of_medians=1.3228x
+keygen_speedup_gmean=1.3242x
+keygen_speedup_ci95_low=1.3180x
+keygen_speedup_ci95_high=1.3304x
+keygen_speedup_median=1.3244x
+keygen_wins=15/15
+keygen_local_first_median=1.3274x
+keygen_competitor_first_median=1.3177x
+encaps_runs=15
+encaps_local_mean_ns=3523.57
+encaps_local_median_ns=3490.96
+encaps_competitor_mean_ns=1270.91
+encaps_competitor_median_ns=1267.13
+encaps_speedup_ratio_of_medians=0.3630x
+encaps_speedup_gmean=0.3608x
+encaps_speedup_ci95_low=0.3557x
+encaps_speedup_ci95_high=0.3642x
+encaps_speedup_median=0.3631x
+encaps_wins=0/15
+encaps_local_first_median=0.3633x
+encaps_competitor_first_median=0.3620x
+decaps_runs=15
+decaps_local_mean_ns=2816.47
+decaps_local_median_ns=2807.22
+decaps_competitor_mean_ns=3177.94
+decaps_competitor_median_ns=3177.41
+decaps_speedup_ratio_of_medians=1.1319x
+decaps_speedup_gmean=1.1284x
+decaps_speedup_ci95_low=1.1215x
+decaps_speedup_ci95_high=1.1348x
+decaps_speedup_median=1.1311x
+decaps_wins=15/15
+decaps_local_first_median=1.1365x
+decaps_competitor_first_median=1.1165x
+roundtrip_runs=15
+roundtrip_local_mean_ns=10387.25
+roundtrip_local_median_ns=10362.66
+roundtrip_competitor_mean_ns=12028.18
+roundtrip_competitor_median_ns=11999.75
+roundtrip_speedup_ratio_of_medians=1.1580x
+roundtrip_speedup_gmean=1.1580x
+roundtrip_speedup_ci95_low=1.1534x
+roundtrip_speedup_ci95_high=1.1619x
+roundtrip_speedup_median=1.1601x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.1610x
+roundtrip_competitor_first_median=1.1562x
+

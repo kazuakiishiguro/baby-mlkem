@@ -1,0 +1,6 @@
+hostcc=clang
+clang_reproducibility=PASS
+hostcc=gcc
+gcc_reproducibility=PASS
+generator_asan_ubsan=PASS
+header_sha256=4cdc937bbfe2ff61c41b9ba8727c8dcd2baa7f3b71f40172a1e56d8745c49cac

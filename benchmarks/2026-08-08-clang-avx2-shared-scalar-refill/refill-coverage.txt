@@ -1,0 +1,12 @@
+candidate_ref=36cbd84354ef47d12141474a9de71bc8400a1ae8
+compiler=clang
+profile=AVX2-only
+helper=sample_ntt_scalar_refill_shared_clang_avx2
+kat_helper_calls=5
+kat_refill_loop_body=0
+stage_helper_calls=845
+stage_refill_loop_body=140
+stage_sink=8086079251842987743
+common_no_refill_return_covered=yes
+rare_refill_body_covered=yes
+coverage=PASS

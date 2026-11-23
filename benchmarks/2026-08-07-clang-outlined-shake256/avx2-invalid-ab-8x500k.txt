@@ -1,0 +1,18 @@
+profile=avx2-high-iteration runs=8 warmup_runs=2 iterations=500000 pin_cpu=0 run_order=alternating
+run order base_ns cand_ns speedup
+1 base-first 6657.61 6681.95 0.996357x
+2 candidate-first 6683.04 6702.67 0.997071x
+3 base-first 6681.12 6754.23 0.989176x
+4 candidate-first 6655.84 6661.54 0.999144x
+5 base-first 6800.89 6657.20 1.021584x
+6 candidate-first 6645.02 6648.29 0.999508x
+7 base-first 6659.31 6673.78 0.997832x
+8 candidate-first 6677.11 6655.95 1.003179x
+base_avg_ns=6682.49
+candidate_avg_ns=6679.45
+average_speedup=1.000455x
+paired_gmean=1.000443x
+paired_median=0.998488x
+wins=2/8
+base_first_median=0.997095x
+candidate_first_median=0.999326x

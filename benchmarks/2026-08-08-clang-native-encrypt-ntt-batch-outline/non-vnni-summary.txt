@@ -1,0 +1,13 @@
+baseline_ref=b0f4d0f3b5c824ad1fe3ead76e62267e6c9af8d5
+candidate_ref=d6eada53621ffc1dc907e4a5ae7a83b922df1042
+flags=-march=native -mno-avx512vnni
+kat=pass
+product=pass
+stage_oracle=pass
+product_sha256=00aed10ba93330acd8d17b1cf04ab377b683b6b4c382075a1c5436dcef933321
+primary_bytes=80496
+stage_protocol=9 pairs, 3 warmup pairs, alternating order, 30000 iterations, CPU 0
+target_fused_paired_gmean=0.9998
+kpke_encrypt_cached_paired_gmean=1.0028
+kpke_encrypt_uncached_paired_gmean=1.0175
+non_vnni_validation=PASS

@@ -1,0 +1,35 @@
+baseline_ref=5f39ccef9b16e723d5a504eae83a8b8a24cc5a23
+candidate_ref=c2ae4e21cf2b1cdce3f456f39472add63be34054
+artifact_baseline_sha256=83fe2ee3d41348b47e8d0ce87ad404f45776324b15ea5cd005f986837baf26ff
+artifact_candidate_sha256=9b534f8f47a282baeb9eeed8916f4648800d05854c72d9e2e729ba3739478ec2
+compiler=clang
+flags=-O3 -march=native -fomit-frame-pointer -fno-stack-protector
+method=guarded alternate stack touched high-water
+runs=8
+usable_bytes=1048576
+
+operation baseline candidate delta
+keygen 6648 6648 0
+encaps 6776 6712 -64
+decaps_valid 8056 8056 0
+decaps_invalid 8056 8056 0
+maximum 8056 8056 0
+
+correctness_smoke=pass
+maximum_stack_nonincrease=PASS
+
+[avx2]
+artifact_baseline_sha256=311a344ff02756a4fad0ca936d4ff0f9baf3dd4a03e40308c7a4c1845363ab03
+artifact_candidate_sha256=760ff0cac1954f5bb63d72fa1962910d338a57a9d276be5ea0a82798b0aa4d78
+compiler=clang
+flags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+runs=8
+usable_bytes=1048576
+operation baseline candidate delta
+keygen 4544 4512 -32
+encaps 4176 4144 -32
+decaps_valid 4512 4512 0
+decaps_invalid 4512 4512 0
+maximum 4544 4512 -32
+correctness_smoke=pass
+maximum_stack_nonincrease=PASS

@@ -1,0 +1,17 @@
+artifact=/tmp/d10-outline-native-noinline.o
+artifact_sha256=46d22deee6f7452b6397d2e0a224b1b0db4e03764f64817d29677ebf6c32df0f
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=6712
+encaps_stack_bytes=6776
+decaps_valid_stack_bytes=8056
+decaps_invalid_stack_bytes=8056
+max_stack_bytes=8056
+correctness_smoke=pass

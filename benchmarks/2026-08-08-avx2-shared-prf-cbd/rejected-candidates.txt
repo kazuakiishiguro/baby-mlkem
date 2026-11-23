@@ -1,0 +1,18 @@
+baseline_ref=4c0780b348f3856c827555e46e15dae991a97ab8
+accepted_candidate_ref=58858b8a5224d4e9c3f928f71cd3ea8defa9e440
+
+rejected=fourth-lane-store
+implementation=pass e2 as both x4 outputs 2 and 3 with nonce vector 4,5,6,6
+screen_runs=7x50000
+encaps_gmean=0.9949x
+acceptance_floor=0.995x
+reason=decoding and storing the dummy fourth lane erased the size-only candidate's regression margin
+raw_report=rejected-fourth-lane-store-screen-7x50k.txt
+
+accepted=null-fourth-output
+implementation=skip fourth-lane CBD decode and store when out3 is null
+clang_avx2_primary_bytes=59307
+clang_avx2_primary_delta=-1689
+gcc_avx2_primary_bytes=53614
+gcc_avx2_primary_delta=-1624
+reason=removes the production x3 body while avoiding dummy-lane decode and aliasing stores

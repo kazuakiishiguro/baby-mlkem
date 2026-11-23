@@ -1,0 +1,26 @@
+[clang-native]
+base_sha256=6e2e0d031e3af16a8b90c6cf1b33b250ab1f0cf3e654487b062e0e767b157fd4
+candidate_sha256=d65195d40e7640c67dbe6850efc1e4a318e49472318db6d5f08e6795c97cae2b
+artifact_identity=expected-different
+base_code_bytes=74366
+base_readonly_data_bytes=20341
+base_primary_bytes=94707
+candidate_code_bytes=74366
+candidate_readonly_data_bytes=19597
+candidate_primary_bytes=93963
+
+[clang-avx2]
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+base_sha256=444e4b7e99fcef956dfe7655ff66de308f3e32a134848868e810ab90d4d82584
+candidate_sha256=444e4b7e99fcef956dfe7655ff66de308f3e32a134848868e810ab90d4d82584
+artifact_identity=PASS
+base_primary_bytes=65019
+candidate_primary_bytes=65019
+
+[gcc-native]
+arch_cflags=-march=native
+base_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+candidate_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+artifact_identity=PASS
+base_primary_bytes=59571
+candidate_primary_bytes=59571

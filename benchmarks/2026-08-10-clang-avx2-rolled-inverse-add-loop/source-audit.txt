@@ -1,0 +1,15 @@
+candidate_ref=8fab80d9cd14556fd5514f56fd1d8b7bdeca98e8
+changed_files=baby-mlkem.c
+insertions=1
+deletions=0
+change=pragma_clang_loop_unroll_disable
+target_function=kpke_encrypt_finish_avx2
+row_order=u0,u1,u2
+arithmetic_change=none
+representation_change=none
+new_external_crypto_dependency=none
+new_runtime_library_dependency=none
+new_persistent_cache=none
+new_table=none
+new_api_or_wire_format_change=none
+source_isolation=PASS

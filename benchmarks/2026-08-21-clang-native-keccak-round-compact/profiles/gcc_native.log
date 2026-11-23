@@ -1,0 +1,18 @@
+profile=gcc_native
+revision=14f85e4
+compiler=gcc
+arch_cflags=-march=native
+artifact=/tmp/baby-mlkem-final-native-gcc.YCM5iq/baby_mlkem768_product.o
+artifact_sha256=9853f4f93572cc2c872d696a14bdf2308d47b65a1f9b606d3e03fef55d679012
+artifact_file_bytes=73096
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=55306
+readonly_data_bytes=3508
+unwind_bytes=1188
+exception_table_bytes=0
+primary_bytes=58814
+initialized_writable_bytes=0
+zero_fill_bytes=33728
+writable_bytes=33728
+max_stack_bytes=unmeasured

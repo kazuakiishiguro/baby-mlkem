@@ -1,0 +1,21 @@
+baseline_ref=f1dc83021bbc2e76162a0cbe5ff866b849740cea
+candidate_ref=54ea49d534e2375c1da99e9de00eadb57edfbbff
+section baseline candidate delta
+code_total 53409 53432 +23
+readonly_total 16567 16343 -224
+primary_total 69976 69775 -201
+inverse_lo_dense_named 2048 1536 -512
+inverse_level3_lo_ymm_named 0 256 +256
+compiler_cst16_total 144 176 +32
+inverse_level3_lo_hi_scalar_mirrors_in_cst16 0 32 +32
+inverse_hi_dense_named 2048 2048 +0
+writable_total 18001 18001 +0
+artifact_file_bytes 100144 100328 +184
+function baseline candidate delta
+baby_mlkem768_decaps 8830 8852 +22
+ntt_inv_add4_eta2_i8_mont_final_shared_avx512 4621 4622 +1
+focused_recover_target 4194 4283 +89
+focused_shared_add4_target 4567 4567 +0
+native_mlkem_native_pinned_bytes=51186
+baseline_native_gap_bytes=18790
+candidate_native_gap_bytes=18589

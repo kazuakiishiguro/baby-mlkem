@@ -1,0 +1,17 @@
+artifact=/tmp/d12-public-validation.toZEe6/clang-avx2/baby_mlkem768_product.o
+artifact_sha256=827f362023df33ba047637df373b28eee9349448e9becc419b882570fabb792a
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4512
+encaps_stack_bytes=4144
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4512
+correctness_smoke=pass

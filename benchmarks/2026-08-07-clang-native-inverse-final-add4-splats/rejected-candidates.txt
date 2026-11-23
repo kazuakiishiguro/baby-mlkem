@@ -1,0 +1,31 @@
+baseline_ref=01c14d4a87286985fc7efde84ded9c1225370bf4
+ratios=baseline_time/candidate_time
+full_scalar_product_artifact=/tmp/inv-final-scalars-candidate-product.o
+full_scalar_product_artifact_sha256=e176358e3e31ceb9ed5bbab5c3038192a5aa5bc4dc249ae1db46e656e52bd39e
+full_scalar_product_artifact_file_bytes=130024
+full_scalar_product_required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+full_scalar_product_undefined_symbol_count=5
+full_scalar_product_code_bytes=74358
+full_scalar_product_readonly_data_bytes=19095
+full_scalar_product_unwind_bytes=0
+full_scalar_product_exception_table_bytes=0
+full_scalar_product_primary_bytes=93453
+full_scalar_product_initialized_writable_bytes=0
+full_scalar_product_zero_fill_bytes=18001
+full_scalar_product_writable_bytes=18001
+full_scalar_product_max_stack_bytes=unmeasured
+[full_add4_and_recover_scalars]
+metric gmean median wins pairs
+inv_add4_ring 0.995319272 0.996820857 0/15
+inv_add4_copy 0.994659752 0.996136599 3/15
+inv_recover_ring 0.969528535 0.967496318 0/15
+inv_recover_copy 0.966759777 0.970663441 0/15
+full_scalar_kem_gate=FAIL mlkem_decaps_core_gmean=0.9927x
+[fixed_zmm15_preload]
+metric gmean median wins pairs
+inv_add4_ring 0.988722092 0.990203324 2/15
+inv_add4_copy 0.996060788 0.989263804 1/15
+inv_recover_ring 0.946749350 0.948695668 1/15
+inv_recover_copy 0.943219294 0.941883590 0/15
+fixed_zmm15_gate=FAIL
+decision=retain scalar factors only in inverse add4; restore recover to baseline vector constants

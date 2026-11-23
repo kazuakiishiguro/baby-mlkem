@@ -1,0 +1,6 @@
+candidate_ref=66bfaaa
+command_clang=make check-ntt-roots HOSTCC=clang
+clang_result=pass
+command_gcc=make check-ntt-roots HOSTCC=gcc
+gcc_result=pass
+ntt_root_reproducibility=PASS

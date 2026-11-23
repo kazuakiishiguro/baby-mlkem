@@ -1,0 +1,26 @@
+profile=avx2-align32 runs=16 warmup_runs=4 iterations=100000 pin_cpu=0 run_order=alternating
+run order base_ns cand_ns speedup
+1 base-first 6688.29 6686.27 1.000302x
+2 candidate-first 6691.95 6646.31 1.006867x
+3 base-first 6821.38 6680.60 1.021073x
+4 candidate-first 6699.25 6657.30 1.006301x
+5 base-first 6687.46 6640.80 1.007026x
+6 candidate-first 6686.46 6650.35 1.005430x
+7 base-first 6689.66 6640.95 1.007335x
+8 candidate-first 6814.32 6685.73 1.019234x
+9 base-first 6701.81 6634.30 1.010176x
+10 candidate-first 6683.46 6642.27 1.006201x
+11 base-first 6674.80 6638.21 1.005512x
+12 candidate-first 6680.21 6714.20 0.994938x
+13 base-first 6693.10 6636.69 1.008500x
+14 candidate-first 7258.90 6683.96 1.086018x
+15 base-first 6806.78 6740.77 1.009793x
+16 candidate-first 6674.89 6648.22 1.004012x
+base_avg_ns=6747.05
+candidate_avg_ns=6664.18
+average_speedup=1.012435x
+paired_gmean=1.012231x
+paired_median=1.006947x
+wins=15/16
+base_first_median=1.007917x
+candidate_first_median=1.006251x

@@ -1,0 +1,32 @@
+clang -c test.c -o test.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing  -Wno-unused-function -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -march=native
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack
+clang -c baby_mlkem_api.c -o baby_mlkem_api.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -ffunction-sections -fdata-sections -DBABY_MLKEM_DISABLE_INTERNAL_CACHES -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM -Wno-unused-function
+clang -c sha3_256_1184_avx512vl.S -o sha3_256_1184_avx512vl.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c keccakf8_matrix_avx512.S -o keccakf8_matrix_avx512.product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c test_product.c -o test_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native
+clang -r -nostdlib baby_mlkem_api.product.o sha3_256_1184_avx512vl.product.o keccakf8_matrix_avx512.product.o -o baby_mlkem768_product.o -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native  -Wl,--undefined=baby_mlkem768_keypair_derand -Wl,--undefined=baby_mlkem768_encaps_derand -Wl,--undefined=baby_mlkem768_decaps -Wl,--gc-sections
+clang test_product.o baby_mlkem768_product.o -o product_testc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native
+./product_testc
+clang test.o sha3_256_1184_avx512vl.o keccakf8_matrix_avx512.o -o testc -D_GNU_SOURCE -O3 -fno-semantic-interposition -fvisibility=hidden -Wall -Wextra -std=c99 -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=native
+./testc
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: d68cf6a5a6576518ab4794845fb8499d9ba104292c65c399158ab81fc2ce4216
+Decapsulated k2: d68cf6a5a6576518ab4794845fb8499d9ba104292c65c399158ab81fc2ce4216
+OK
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e
+artifact_file_bytes=102848
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=53409
+readonly_data_bytes=19639
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=73048
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured
+7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e  baby_mlkem768_product.o

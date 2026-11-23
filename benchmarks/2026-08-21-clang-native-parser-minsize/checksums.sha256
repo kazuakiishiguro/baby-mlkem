@@ -1,0 +1,11 @@
+d593b69e099756ea798656ce65fadf23af51803713d7fb97087b6e5e436f6314  benchmarks/2026-08-21-clang-native-parser-minsize/environment.txt
+faa75996238c5599c5ace08bd82b589f220d1212e98947da2cdce4c59a94effd  benchmarks/2026-08-21-clang-native-parser-minsize/product-ab-15x100k.txt
+b87fc2e5a4b5164117acfa5b8c92ed9568c1427396e57b6934b8624f0d621b34  benchmarks/2026-08-21-clang-native-parser-minsize/product-ab-summary.txt
+4d134f20ba4442f276d0ca4e8cfaa1404c4c5d0c2fbd66e4c2704ea0bfd543b8  benchmarks/2026-08-21-clang-native-parser-minsize/profile-identity.txt
+653cc480b326fa9051442b088af4d47ee76b9c9fa5949344b55625786ed7f2b0  benchmarks/2026-08-21-clang-native-parser-minsize/README.md
+fe8638260cffc82d75901163204d1a7bdc4e122479d10fd30e9191c09fa82771  benchmarks/2026-08-21-clang-native-parser-minsize/size-baseline.txt
+e96f55ba4cd16e82c4ffbab98fe6513333ae15e279c4e7fd1f973f16bc94b763  benchmarks/2026-08-21-clang-native-parser-minsize/size-candidate.txt
+de668a1aa51d12adf7eb1071bc147c516b42bb1d635e2f256a8f6bc5ed73e809  benchmarks/2026-08-21-clang-native-parser-minsize/source-audit.txt
+5de8d987a113897098e510ffd00c2e1155921f74d3ed7449caac156370afd2ce  benchmarks/2026-08-21-clang-native-parser-minsize/stage-ab-9x30000.txt
+a3b54bef5895af0cba5d3f9bb2214ad068f3c65376985868cb30b7f1d5698f80  benchmarks/2026-08-21-clang-native-parser-minsize/stage-ab-summary.txt
+6b5636743791fab6afd61d9f3b9e596fc340fc69053395d6cb90d6284e118dd4  benchmarks/2026-08-21-clang-native-parser-minsize/validation.txt

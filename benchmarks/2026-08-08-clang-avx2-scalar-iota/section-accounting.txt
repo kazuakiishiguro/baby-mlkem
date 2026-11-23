@@ -1,0 +1,18 @@
+baseline_ref=7bdb3bbb43a504539003bdd2ab7c8594568f3fa8
+candidate_ref=b181d8f6d50f91ae701003c8f2f3d9b8c5b11bdf
+section baseline candidate delta
+code_total 44701 44705 +4
+readonly_total 8937 8169 -768
+primary_total 53638 52874 -764
+mlkem_keccakf1600_avx2_text 1000 1004 +4
+sha3_256_1184_avx2_text 1770 1770 +0
+mlkem_keccakf1_iota4 768 0 -768
+rc 192 192 +0
+writable_total 26593 26593 +0
+artifact_file_bytes 81736 80800 -936
+
+The baseline stores the same 24 Keccak Iota values as both rc[24] and a
+four-lane mlkem_keccakf1_iota4[24][4] table. The candidate Clang AVX2-only
+path broadcasts rc[round]. This adds one instruction and four text bytes to
+the canonical wrapper, removes the 768-byte duplicate table, and leaves all
+other section sizes unchanged.

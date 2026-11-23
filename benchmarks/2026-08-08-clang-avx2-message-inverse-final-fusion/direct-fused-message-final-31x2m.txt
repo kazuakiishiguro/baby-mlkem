@@ -1,0 +1,64 @@
+baseline_ref=3d435b70434b4c5dba10a7c5cd240c2a1936d7c8
+candidate_ref=3a93975f17001c03f3a3671d57b6c9ea531803e3
+profile=clang-avx2-only
+flags=-O3 -fno-semantic-interposition -fvisibility=hidden -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+reduction_domain=all integers 0..8321
+transform_validation=16384 deterministic random canonical cases plus four boundary patterns
+validation_result=byte-identical
+sink=8953b09f7432c551
+lanes=16
+warmup_iterations_per_process=10000
+measured_runs=31
+iterations_per_run=2000000
+pin_cpu=0
+run_order=odd baseline-first, even candidate-first
+speedup_direction=baseline_time/candidate_time
+
+run baseline_ns_per_op candidate_ns_per_op speedup order
+01 114.610035 109.668521 1.045058636 baseline-first
+02 116.062800 108.624020 1.068481907 candidate-first
+03 116.775314 109.945002 1.062124807 baseline-first
+04 114.958769 109.205772 1.052680338 candidate-first
+05 117.683898 109.228642 1.077408781 baseline-first
+06 116.391583 109.551161 1.062440434 candidate-first
+07 115.347953 109.194755 1.056350674 baseline-first
+08 116.999892 108.989808 1.073493881 candidate-first
+09 115.518264 108.921696 1.060562480 baseline-first
+10 115.391188 109.074941 1.057907407 candidate-first
+11 115.523556 109.689483 1.053187168 baseline-first
+12 115.936937 109.859883 1.055316407 candidate-first
+13 116.220662 109.089493 1.065369898 baseline-first
+14 115.968023 109.162492 1.062343126 candidate-first
+15 116.067643 109.554981 1.059446517 baseline-first
+16 115.597562 109.098501 1.059570580 candidate-first
+17 116.256426 110.176559 1.055182945 baseline-first
+18 115.500717 110.610475 1.044211382 candidate-first
+19 116.092340 109.543840 1.059779719 baseline-first
+20 116.078869 110.046033 1.054821022 candidate-first
+21 115.484743 109.674846 1.052973833 baseline-first
+22 116.391844 109.772222 1.060303252 candidate-first
+23 115.455279 109.030469 1.058926739 baseline-first
+24 115.915324 109.455817 1.059014744 candidate-first
+25 115.687242 109.406344 1.057408901 baseline-first
+26 116.538865 109.316218 1.066071139 candidate-first
+27 116.062971 109.824381 1.056805146 baseline-first
+28 116.550312 109.926404 1.060257661 candidate-first
+29 116.051263 110.246329 1.052654216 baseline-first
+30 116.603993 111.284456 1.047801258 candidate-first
+31 116.304783 110.438457 1.053118507 baseline-first
+
+fused_msg_final_runs=31
+fused_msg_final_local_mean_ns=109.60
+fused_msg_final_local_median_ns=109.55
+fused_msg_final_competitor_mean_ns=116.00
+fused_msg_final_competitor_median_ns=116.06
+fused_msg_final_speedup_ratio_of_medians=1.0594x
+fused_msg_final_speedup_gmean=1.0584x
+fused_msg_final_speedup_ci95_low=1.0560x
+fused_msg_final_speedup_ci95_high=1.0609x
+fused_msg_final_speedup_median=1.0589x
+fused_msg_final_wins=31/31
+fused_msg_final_local_first_median=1.0571x
+fused_msg_final_competitor_first_median=1.0596x
+direct_oracle=PASS
+direct_helper_gate=PASS

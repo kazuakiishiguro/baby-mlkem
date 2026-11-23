@@ -1,0 +1,5 @@
+baseline_ref=3a3e9d021069b92daaead7890935852f584235d1
+candidate primary_bytes delta_vs_baseline decisive_result
+clang_native_secret_d12_x3_minsize 72175 -873 stage_decrypt_cached=0.9769x_0/9; stage_decrypt_uncached=0.9766x_0/9; removed
+clang_avx2_shared_scalar_refill_accepted 56328 -2979 formal_32_pair_minimum=1.000696x
+selection=The native d12 outline failed direct decrypt regression screening. The AVX2 rare-refill outline is smaller and clears the formal 0.995 operation floor.

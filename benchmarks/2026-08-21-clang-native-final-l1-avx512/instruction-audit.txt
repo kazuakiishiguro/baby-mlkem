@@ -1,0 +1,9 @@
+profile=Clang native
+artifact_sha256=d98dd32e1a1a3ff66fa0fc9db49a0be3e964acf7189aaf732c58407cef39d936
+defined_symbols=ntt_before_final_l1_avx512 ntt_tail_before_l1_mont_lazy_raw_avx512
+avx512_instruction_sample=vmovdqu64,vpermutexvar,vpmulhw,vpmullw,vpsraw,vpaddw
+native_l12_table_symbols=none in linked product
+undefined_symbols=bcmp memcpy
+external_backend_symbol_matches=none
+cache_audit=product built with BABY_MLKEM_DISABLE_INTERNAL_CACHES; no benchmark cache is used
+non_target_profile_change=none

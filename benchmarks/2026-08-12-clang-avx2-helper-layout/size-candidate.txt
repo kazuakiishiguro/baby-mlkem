@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-avx2-final-stage.2/baby_mlkem768_product.o
+artifact_sha256=b6fd46a016be510d9bd343ecdfc83f599e9a149f8adee160e39525dca9408329
+artifact_file_bytes=70464
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=39762
+readonly_data_bytes=5270
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=45032
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=4512

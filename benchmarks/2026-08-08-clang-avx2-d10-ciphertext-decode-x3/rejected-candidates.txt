@@ -1,0 +1,40 @@
+baseline_ref=ed3b9dc73b9ed7ccd2fda4b63bb985e1fc3c7a46
+accepted_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+
+[single-decoder-three-calls]
+shape=one normal-optimization helper called once per polynomial
+helper_bytes=137
+decapsulation_bytes=4013
+primary_bytes=50542
+primary_delta_vs_baseline=-248
+direct_d10_gmean=0.9875x
+product_screen_pairs=9
+product_decaps_gmean=0.9940x
+product_floor=0.9950x
+decision=rejected_and_removed
+reason=direct decoder and product decapsulation both regressed
+
+[nested-x3-helper]
+shape=one helper with non-unrolled outer K loop and inner coefficient loop
+helper_bytes=228
+decapsulation_bytes=3949
+primary_bytes=50569
+primary_delta_vs_baseline=-221
+product_screen_pairs=15
+product_minimum_gmean=0.9970x
+decision=superseded_and_removed
+reason=the complete-array linear loop retained the product result while removing another 89 primary bytes
+
+[linear-x3-helper]
+shape=one helper over the complete K-polynomial array object
+helper_bytes=139
+decapsulation_bytes=3949
+primary_bytes=50480
+primary_delta_vs_baseline=-310
+direct_gmean=1.001924793x
+direct_ci95_low=0.998669572x
+product_pairs=48
+product_minimum_gmean=0.998716209x
+decision=accepted
+
+selection=The linear x3 helper is the smallest form, keeps direct timing above the 0.995 confidence lower-bound floor, and keeps every combined product operation above the 0.995 point-estimate floor.

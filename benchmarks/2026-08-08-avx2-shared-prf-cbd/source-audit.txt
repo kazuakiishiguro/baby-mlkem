@@ -1,0 +1,16 @@
+candidate_ref=58858b8a5224d4e9c3f928f71cd3ea8defa9e440
+baseline_ref=4c0780b348f3856c827555e46e15dae991a97ab8
+implementation_file=baby-mlkem.c
+implementation_commit_files=1
+implementation_insertions=11
+implementation_deletions=1
+target_scope=clang,gcc-avx2-without-avx512
+native_artifact_identity=PASS
+scalar_artifact_identity=PASS
+new_external_dependency=none
+persistent_cache_change=none
+public_api_change=none
+wire_format_change=none
+algorithm_change=none
+new_table=none
+new_runtime_dispatch=none

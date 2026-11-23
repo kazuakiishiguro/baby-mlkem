@@ -1,0 +1,17 @@
+artifact=/tmp/keygen-outline-clang-native-product.o
+artifact_sha256=c9120218ea041db43fe4b776f1e1a1d43a0bdef546d44d2e5f077c9bf78c7737
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=6712
+encaps_stack_bytes=6776
+decaps_valid_stack_bytes=8056
+decaps_invalid_stack_bytes=8056
+max_stack_bytes=8056
+correctness_smoke=pass

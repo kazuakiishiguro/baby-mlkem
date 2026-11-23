@@ -1,0 +1,54 @@
+commit=8dde3e5
+baseline=parent e87b66c
+compiler=clang 18.1.3 / gcc 13.3.0
+flags=AVX2_BACKEND=core -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+host_pin=CPU 0
+
+$ git diff --check
+result=pass
+
+$ /tmp/baby-mlkem-invadd/test-candidate
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: 22841c9d4967980cb94ee0f6436174924dbdf76c6a120bb6bb72d21b47b85041
+Decapsulated k2: 22841c9d4967980cb94ee0f6436174924dbdf76c6a120bb6bb72d21b47b85041
+OK
+
+$ /tmp/baby-mlkem-invadd/product-test-candidate
+
+$ /tmp/baby-mlkem-invadd/test-gcc-avx2
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: fd30327e0a9f103ccb699d5f1903ea014d1aaabafd02d39a25bdc2d56810cb16
+Decapsulated k2: fd30327e0a9f103ccb699d5f1903ea014d1aaabafd02d39a25bdc2d56810cb16
+OK
+
+$ /tmp/baby-mlkem-invadd/test-gcc-scalar
+Original:  This is a demonstration message.
+Decrypted: This is a demonstration message.
+Encapsulated k1: 87bc71cd8b33ad806dd7868cf0bc61cbe39a66842db3a3b02d2f98c307474f13
+Decapsulated k2: 87bc71cd8b33ad806dd7868cf0bc61cbe39a66842db3a3b02d2f98c307474f13
+OK
+
+$ taskset -c 0 /tmp/baby-mlkem-invadd/stage-candidate 1000
+mlkem_core_range_cbd_eta2_i16_min=0
+mlkem_core_range_cbd_eta2_i16_max=3328
+mlkem_core_range_cbd_eta2_u16_min=0
+mlkem_core_range_cbd_eta2_u16_max=3328
+mlkem_core_range_cbd_eta2_centered_min=-2
+mlkem_core_range_cbd_eta2_centered_max=2
+mlkem_core_range_cbd_eta2_ge_q=0
+mlkem_core_range_cbd_eta2_centered_negative=4207
+mlkem_core_range_inverse_output_i16_min=0
+mlkem_core_range_inverse_output_i16_max=3328
+mlkem_core_range_inverse_output_u16_min=0
+mlkem_core_range_inverse_output_u16_max=3328
+mlkem_core_range_inverse_output_centered_min=-1664
+mlkem_core_range_inverse_output_centered_max=1664
+mlkem_core_range_inverse_output_ge_q=0
+mlkem_core_range_inverse_output_centered_negative=2551
+mlkem_core_stage_kpke_encrypt_cached_ns_per_op=1514.77
+mlkem_core_stage_kpke_encrypt_cached_ops_per_s=660165.36
+mlkem_core_stage_encrypt_inv_add_u_raw_ns_per_op=266.21
+mlkem_core_stage_encrypt_inv_add_u_raw_ops_per_s=3756390.56
+result=pass (stage process completed without validation mismatch)

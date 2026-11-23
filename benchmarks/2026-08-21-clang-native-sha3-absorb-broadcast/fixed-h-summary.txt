@@ -1,0 +1,15 @@
+measurement=direct fixed H(pk) SHA3-256 benchmark
+baseline_commit=e73b71d
+candidate_commit=c05f714
+pairs=15
+iterations=100000
+cpu=0
+ratio=baseline_time/candidate_time
+interpretation=values above 1.0x favor candidate
+metric=mlkem_sha3_256_public_key_ns_per_op
+speedup_gmean=0.999258x
+speedup_median=0.999122x
+wins=1/15
+
+The candidate is neutral-to-slightly-slower in this direct probe. No speed gain
+is credited for fixed H(pk) or for the product API.

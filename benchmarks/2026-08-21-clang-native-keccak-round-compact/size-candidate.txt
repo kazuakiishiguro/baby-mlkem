@@ -1,0 +1,18 @@
+profile=clang_native
+revision=14f85e4
+compiler=clang
+arch_cflags=-march=native
+artifact=/tmp/baby-mlkem-final-native-clang.KyosRP/baby_mlkem768_product.o
+artifact_sha256=ab224b425bc0689e4d3a9768a7c2698443b39c34f498ba7e6553f382cf79781a
+artifact_file_bytes=79312
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=42405
+readonly_data_bytes=10758
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=53163
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

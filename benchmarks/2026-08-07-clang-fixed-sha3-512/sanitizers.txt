@@ -1,0 +1,14 @@
+candidate_ref=1cf6605259682402d9733d452ee1ae5d39875d4a
+compiler=clang
+flags=-D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -fno-semantic-interposition -fno-omit-frame-pointer -fno-stack-protector -std=c99 -march=native -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+clang_native_asan_ubsan=PASS
+
+compiler=gcc
+flags=-D_GNU_SOURCE -O1 -g -fsanitize=undefined -fno-semantic-interposition -fno-omit-frame-pointer -fno-stack-protector -std=c99 -march=native -DMLKEM_ENABLE_KECCAK_AVX512VL_ASM -DMLKEM_ENABLE_KECCAKF8_MATRIX_AVX512_ASM
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+gcc_native_ubsan=PASS

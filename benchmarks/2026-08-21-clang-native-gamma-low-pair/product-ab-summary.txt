@@ -1,0 +1,17 @@
+measurement=cache-free product API
+baseline_commit=7171440
+candidate_commit=e73b71d
+pairs=15
+iterations=100000
+cpu=0
+warmups=3
+ratio=baseline_time/candidate_time
+interpretation=values above 1.0x favor candidate
+ci_method=paired geometric-mean 95% bootstrap interval from the recorded 15 pairs
+mlkem_keygen speedup_gmean=0.999251x speedup_ci95=0.993492x..1.005366x speedup_median=0.996261x wins=4/15 base_first=0.999108x candidate_first=0.999414x
+mlkem_encaps speedup_gmean=0.998652x speedup_ci95=0.991365x..1.005228x speedup_median=1.000054x wins=8/15 base_first=0.995449x candidate_first=1.002325x
+mlkem_decaps speedup_gmean=1.000013x speedup_ci95=0.986110x..1.012185x speedup_median=0.998392x wins=5/15 base_first=0.996425x candidate_first=1.004128x
+mlkem_roundtrip speedup_gmean=0.999739x speedup_ci95=0.994613x..1.004375x speedup_median=1.000161x wins=8/15 base_first=1.000037x candidate_first=0.999399x
+
+All four operation geometric means clear the 0.995x no-regression floor.
+This is recorded as a size improvement; no broad formal speed claim is made.

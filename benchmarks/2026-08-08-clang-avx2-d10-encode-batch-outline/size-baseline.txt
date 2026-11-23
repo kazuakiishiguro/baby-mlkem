@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-d10x3-avx2-baseline-ed903ae/baby_mlkem768_product.o
+artifact_sha256=86f0f636e8cf18b7db4e8c74fb4b8f3ae258a0450eead10f3c683bcd1d655d45
+artifact_file_bytes=79224
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=44459
+readonly_data_bytes=7736
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=52195
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

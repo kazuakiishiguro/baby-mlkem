@@ -1,0 +1,21 @@
+measurement=cache-free product API
+baseline_commit=8555ff2
+candidate_commit=cb4bfe9
+pairs=15
+iterations=100000
+cpu=0
+warmups=3
+ratio=baseline_time/candidate_time
+interpretation=values above 1.0x favor candidate
+ci_method=paired geometric-mean 95% interval from the recorded 15 pairs
+
+operation speedup_gmean speedup_ci95 speedup_median wins base_first candidate_first
+mlkem_keygen 1.084343x 1.078885x..1.089980x 1.081214x 15/15 1.082279x 1.080904x
+mlkem_encaps 1.050244x 1.044762x..1.056430x 1.046448x 15/15 1.051460x 1.045876x
+mlkem_decaps 1.012762x 0.999768x..1.029343x 0.998974x 6/15 0.997320x 0.999772x
+mlkem_roundtrip 1.051205x 1.044173x..1.059002x 1.046528x 15/15 1.047168x 1.044124x
+
+All four operation geometric means clear the 0.995x no-regression floor.
+The decapsulation interval crosses 1.0x, so this measurement is recorded as
+a size improvement with no broad formal speed claim. Keygen, encapsulation,
+and roundtrip intervals have lower bounds above 1.0x.

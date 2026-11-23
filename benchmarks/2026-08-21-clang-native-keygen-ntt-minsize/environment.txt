@@ -1,0 +1,11 @@
+date=2026-08-21
+cpu=AMD Ryzen Threadripper 7980X 64-Cores
+cpu_pin=0
+clang=18.1.3
+gcc=13.3.0
+linker=GNU ld 2.42
+backend=AVX2_BACKEND=core
+native_flags=ARCH_CFLAGS=-march=native
+avx2_flags=ARCH_CFLAGS='-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f'
+scalar_flags=ARCH_CFLAGS='-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2'
+cache_mode=BABY_MLKEM_DISABLE_INTERNAL_CACHES

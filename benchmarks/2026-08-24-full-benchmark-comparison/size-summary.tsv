@@ -1,0 +1,11 @@
+comparator	native_primary	native_delta_vs_local	avx2_primary	avx2_delta_vs_local
+Kyber upstream AVX2	61032	-9861	62970	-17938
+Kyber fair flags	61371	-10200	63373	-18341
+mlkem-native	51200	-29	51279	-6247
+PQClean AVX2	60950	-9779	61827	-16795
+liboqs	70206	-19035	81316	-36284
+BoringSSL	208736	-157565	134969	-89937
+libcrux Rust	137086	-85915	142302	-97270
+libjade Kyber768 AVX2	109633	-58462	109633	-64601
+Botan ML-KEM	183712	-132541	146600	-101568
+OpenSSL ML-KEM	103552	-52381	45049	-17

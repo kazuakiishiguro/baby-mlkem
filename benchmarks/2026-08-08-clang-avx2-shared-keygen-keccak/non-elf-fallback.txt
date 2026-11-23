@@ -1,0 +1,6 @@
+compiler=clang
+profile=avx2-fake-non-elf
+preprocessor_flag=-U__ELF__
+kat=pass
+product=pass
+non_elf_fallback=PASS

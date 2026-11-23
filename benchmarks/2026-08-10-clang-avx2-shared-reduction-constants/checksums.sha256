@@ -1,0 +1,7 @@
+ae7792788e8baae75f5cd33dd32e877777073bb80732ad46afb788d950fb39f3  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/cross-profile-identity.txt
+5db8598892841f1d3da05868162725cee6b61213d4f31ab7e291dd4a19b13f1a  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/environment.txt
+e91e9abdbec365e3611541c503de0fdf06b9b103be626e4ed27f578ccbebb3a0  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/product-ab-15x100k.txt
+a9842d111f4ee0ca4bc69630c7d32b144428001080ff011cbccfbe8218d83115  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/product-ab-summary.txt
+7a6689a807614e7b7c1da10b2a104b28b2f14e831a69cf63b94547995f459d3e  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/section-accounting.txt
+83b7333497d814ff69725d8587d6d8be26c5c7e47c96ab9f5f730c2e40057fe4  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/size-baseline.txt
+4fb8971253560c42ad6faf5e7a4ec4d9cae6a78dc714d4154fef785faaac03fc  benchmarks/2026-08-10-clang-avx2-shared-reduction-constants/size-candidate.txt

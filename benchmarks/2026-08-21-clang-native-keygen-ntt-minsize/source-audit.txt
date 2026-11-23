@@ -1,0 +1,9 @@
+source=baby-mlkem.c
+function=keygen_ntt6_mixed_shared_clang_avx512
+change=minsize plus clang loop unroll_count(2)
+scope=Clang AVX512 keygen path under the existing preprocessor guard
+unchanged=GCC native, AVX2-only, scalar preprocessor paths
+new_external_crypto_object=none
+new_runtime_dependency=none
+cache_or_precomputation=none
+algorithm_or_wire_format_change=none

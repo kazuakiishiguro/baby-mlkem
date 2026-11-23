@@ -1,0 +1,30 @@
+diff --git a/baby-mlkem.c b/baby-mlkem.c
+index 2b42a27..cefe4de 100644
+--- a/baby-mlkem.c
++++ b/baby-mlkem.c
+@@ -10201,7 +10201,14 @@ static MLKEM_NOINLINE void mlkem_encrypt_keccakf4_mem_parity_avx2(
+ #endif
+ }
+ 
+-#if defined(__clang__) && defined(__ELF__)
++#if defined(__FILC__)
++/* Fil-C rejects module-level asm, so bind the keygen edge to the same
++ * out-of-line helper through an ordinary call. */
++static void mlkem_keygen_keccakf4_mem_parity_avx2(__m256i st[25],
++                                                 __m256i parity[5]) {
++  mlkem_encrypt_keccakf4_mem_parity_avx2(st, parity);
++}
++#elif defined(__clang__) && defined(__ELF__)
+ extern void mlkem_keygen_keccakf4_mem_parity_avx2(
+     __m256i st[25], __m256i parity[5]);
+ /* Keep the keygen edge opaque to Clang's optimizer so the decapsulation helper
+@@ -10209,6 +10216,9 @@ extern void mlkem_keygen_keccakf4_mem_parity_avx2(
+ __asm__(".local mlkem_keygen_keccakf4_mem_parity_avx2\n"
+         ".set mlkem_keygen_keccakf4_mem_parity_avx2, "
+         "mlkem_encrypt_keccakf4_mem_parity_avx2");
++#endif
++
++#if defined(__FILC__) || (defined(__clang__) && defined(__ELF__))
+ static MLKEM_ALWAYS_INLINE void
+ mlkem_keygen_keccakf4_mem_shared_avx2(__m256i st[25]) {
+   __m256i parity[5];

@@ -1,0 +1,22 @@
+baseline_ref=f1dc83021bbc2e76162a0cbe5ff866b849740cea
+candidate_ref=54ea49d534e2375c1da99e9de00eadb57edfbbff
+sanitizer_product_method=direct-link-without-relocatable-compiler-r
+
+== Clang native ASan+UBSan ==
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=native
+asan_options=detect_leaks=0:halt_on_error=1
+kat=pass
+product_direct=pass
+stage=pass sink=12134279420840345582
+generated_header_matches=pass
+generated_avx2_assembly_matches=pass
+clang_native_asan_ubsan=PASS
+
+== GCC native UBSan ==
+flags=-O1 -g -fsanitize=undefined -fno-omit-frame-pointer -march=native
+kat=pass
+product_direct=pass
+stage=pass sink=12134279420840348911
+generated_header_matches=pass
+generated_avx2_assembly_matches=pass
+gcc_native_ubsan=PASS

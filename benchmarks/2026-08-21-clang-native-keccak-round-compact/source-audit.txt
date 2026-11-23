@@ -1,0 +1,25 @@
+commit 14f85e4d836d602ea16c4f31c89227ac5f462287
+Author:     Kazuaki Ishiguro <kazuakiishiguro@protonmail.com>
+AuthorDate: Fri Aug 21 22:56:53 2026 +0900
+Commit:     Kazuaki Ishiguro <kazuakiishiguro@protonmail.com>
+CommitDate: Fri Aug 21 22:56:53 2026 +0900
+
+    perf: compact native x4 Keccak round loop
+
+ baby-mlkem.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+diff --git a/baby-mlkem.c b/baby-mlkem.c
+index ca4c303..f94efa7 100644
+--- a/baby-mlkem.c
++++ b/baby-mlkem.c
+@@ -531,6 +531,10 @@ static MLKEM_ALWAYS_INLINE void keccakf4(__m256i st[25]) {
+   __m256i a18 = st[18], a19 = st[19], a20 = st[20], a21 = st[21];
+   __m256i a22 = st[22], a23 = st[23], a24 = st[24];
+ 
++#if defined(__clang__) && defined(__AVX512F__)
++/* Keep native x4 callers compact without changing the AVX2-only layout. */
++#pragma clang loop unroll(disable)
++#endif
+   for (int round = 0; round < 24; round++) {
+     __m256i c0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a0, a5), _mm256_xor_si256(a10, a15)), a20);
+     __m256i c1 = _mm256_xor_si256(_mm256_xor_si256(_mm256_xor_si256(a1, a6), _mm256_xor_si256(a11, a16)), a21);

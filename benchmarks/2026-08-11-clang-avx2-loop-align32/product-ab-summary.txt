@@ -1,0 +1,24 @@
+ratio=baseline_ns_per_op/candidate_ns_per_op
+iterations=100000
+pairs_per_batch=16
+
+[batch1]
+metric base_mean_ns_per_op candidate_mean_ns_per_op paired_gmean wins
+mlkem_keygen_core 5729.14 5678.17 1.008853x 12/16
+mlkem_encaps_core 4562.03 4565.47 0.999262x 9/16
+mlkem_decaps_core 4565.92 4601.30 0.992588x 7/16
+mlkem_roundtrip_core 15150.61 15138.74 1.000800x 9/16
+
+[batch2]
+metric base_mean_ns_per_op candidate_mean_ns_per_op paired_gmean wins
+mlkem_keygen_core 5682.42 5681.84 1.000102x 7/16
+mlkem_encaps_core 4570.66 4560.08 1.002212x 7/16
+mlkem_decaps_core 4544.34 4551.34 0.998477x 10/16
+mlkem_roundtrip_core 15089.77 15078.47 1.000741x 9/16
+
+[combined]
+metric base_mean_ns_per_op candidate_mean_ns_per_op paired_gmean wins
+mlkem_keygen_core 5705.78 5680.00 1.004468x 19/32
+mlkem_encaps_core 4566.34 4562.77 1.000736x 16/32
+mlkem_decaps_core 4555.13 4576.32 0.995528x 17/32
+mlkem_roundtrip_core 15120.19 15108.60 1.000771x 18/32

@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-ntt6-products/gcc-native.o
+artifact_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+artifact_file_bytes=74408
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=56006
+readonly_data_bytes=3565
+unwind_bytes=1228
+exception_table_bytes=0
+primary_bytes=59571
+initialized_writable_bytes=0
+zero_fill_bytes=33728
+writable_bytes=33728
+max_stack_bytes=unmeasured

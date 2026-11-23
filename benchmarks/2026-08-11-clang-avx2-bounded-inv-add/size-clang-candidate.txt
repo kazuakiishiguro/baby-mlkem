@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-invadd/product-candidate.o
+artifact_sha256=7bda31c8ff2982286c48da6f50b433d65ece2b3b6ebe25b848b7d34a600ef0d1
+artifact_file_bytes=70600
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=39720
+readonly_data_bytes=5349
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=45069
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

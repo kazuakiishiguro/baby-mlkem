@@ -1,0 +1,12 @@
+relation=forward[level][vector][lane] == inverse[2-level][7-vector][15-lane]
+level=0 half=LO vectors=8 lanes_per_vector=16 status=PASS
+level=0 half=HI vectors=8 lanes_per_vector=16 status=PASS
+level=1 half=LO vectors=8 lanes_per_vector=16 status=PASS
+level=1 half=HI vectors=8 lanes_per_vector=16 status=PASS
+level=2 half=LO vectors=8 lanes_per_vector=16 status=PASS
+level=2 half=HI vectors=8 lanes_per_vector=16 status=PASS
+level0_lane_realization=swap-existing-eight-lane-gather-and-store-pairs
+levels1_2_lane_realization=reverse-existing-sixteen-lane-gather-and-store-order
+generator_assertion=PASS
+generated_outputs_unchanged=PASS
+root_relation=PASS

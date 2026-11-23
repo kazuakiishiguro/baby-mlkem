@@ -1,0 +1,71 @@
+baseline_ref=8c221d8f6d46ac83611618fc8f94bae55365936b
+baseline_primary_bytes=85689
+acceptance_floor=0.9950x
+
+[rejected-d12-vbmi-pair2]
+artifact_sha256=32d8136152b24d9fff78edb8f04ebb4e44c6e5c919327f36cad3f79b0e708225
+code_bytes=64470
+readonly_bytes=19319
+primary_bytes=83789
+primary_delta=-1900
+public_key_decode_d12_gmean=0.8335x
+decaps_core_gmean=0.9942x
+encaps_core_gmean=0.9869x
+roundtrip_core_gmean=0.9933x
+status=rejected_and_removed
+reason=direct decoder and three KEM core metrics fail the operation floor
+
+[rejected-d12-vbmi-oneblock-masked]
+artifact_sha256=5974e97f0b6fb0f79f29c8001ff17627b30b03a3ef2bd5f4a3e5e4ae530caa58
+code_bytes=64375
+readonly_bytes=19447
+primary_bytes=83822
+primary_delta=-1867
+short_screen_minimum=0.9984x
+formal_batch1_encaps=0.9929x
+formal_batch1_encaps_core=0.9907x
+formal_batch2_decaps_core=0.9822x
+formal_batch2_roundtrip_core=0.9956x
+status=rejected_and_removed
+reason=formal KEM batches fail the operation floor
+
+[rejected-d12-vbmi-unroll2]
+artifact_sha256=2a9e5d651e7d2d10d278205830f873685545a78492d57ee8a4b4aa7bffa14633
+code_bytes=64471
+readonly_bytes=19319
+primary_bytes=83790
+primary_delta=-1899
+public_key_decode_d12_gmean=0.7376x
+kpke_decrypt_uncached_gmean=0.9865x
+status=rejected_and_removed
+reason=direct decoder and integrated decrypt fail the operation floor
+
+[rejected-d12-vbmi-load7-tailmask]
+artifact_sha256=35b7bd7a1da8c5643e5485349fb449693eb59b1c0f0d6901ca36d6d66438c4fc
+code_bytes=64496
+readonly_bytes=19447
+primary_bytes=83943
+primary_delta=-1746
+public_key_decode_d12_gmean=0.9855x
+kpke_decrypt_uncached_gmean=0.9920x
+status=rejected_and_removed
+reason=direct decoder and integrated decrypt fail the operation floor
+
+[rejected-d12-vbmi-unmasked-tail]
+artifact_sha256=7f67d7104b1afed5347ea50cb21695823b46dd367841b2700a34da76b292c749
+code_bytes=64408
+readonly_bytes=19575
+primary_bytes=83983
+primary_delta=-1706
+decaps_core_gmean=0.9886x
+encaps_core_gmean=0.9946x
+status=rejected_and_removed
+reason=decapsulation and encapsulation core fail the operation floor
+
+[previously-rejected-shared-three-poly-d12]
+evidence=../2026-08-07-clang-native-shared-public-preparation/rejected-candidates.txt
+primary_delta_at_original_baseline=-2829
+decaps_core_gmean=0.9929x
+encaps_core_gmean=0.9928x
+status=not_repeated
+reason=existing formal evidence already fails the operation floor

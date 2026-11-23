@@ -1,0 +1,43 @@
+baseline_ref=f28743a0dd228bbadd38d23adc4fdd3d63a7ebc5
+candidate_ref=df1501ffb2efb6cfbc8563b4a7e0d8d93960feec
+baseline_product_sha256=6d2f660ef7a830827b5e35aa8cbde0d13f90aebda481a1f69ac94f8df949bb91
+candidate_product_sha256=a75152c5f4502528809633747b2502a4b0cfeadc83daa428f92ddb4e3f86738f
+common_benchmark_object_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+baseline_benchmark_sha256=e051f06d413b2d644aa550659aa2be0d1dfa4b0bbbbd714c472dce1063b2f5e6
+candidate_benchmark_sha256=a5cdb23c6fb786ffaf8b7edcdcd3031808d4f81808abb614f06b1da0d438309c
+compiler=clang
+profile=avx2-only
+avx2_backend=core
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+product_core=BABY_MLKEM_DISABLE_INTERNAL_CACHES
+iterations=100000
+pin_cpu=0
+speedup_direction=baseline_time/candidate_time
+normal_core_alias_check=PASS
+batch=1
+warmup_pairs=3
+measured_pairs=16
+run_order=alternating, odd candidate-first
+
+run order base_keygen candidate_keygen base_encaps candidate_encaps base_decaps candidate_decaps base_roundtrip candidate_roundtrip
+01 candidate-first 5786.76 5717.12 4632.59 4549.57 4859.05 4549.98 15518.77 15092.28
+02 baseline-first 5684.88 5677.93 4546.33 4555.11 4525.07 4575.59 15055.84 15059.39
+03 candidate-first 5699.08 5685.15 4581.18 4550.50 4548.24 4535.61 15121.08 15081.97
+04 baseline-first 5706.78 5789.78 4563.27 4537.90 4542.80 4541.40 15080.81 15131.34
+05 candidate-first 5690.81 5679.90 4547.93 4541.86 4539.28 4540.47 15134.13 15057.89
+06 baseline-first 5686.54 5741.30 4544.60 4566.78 4536.74 4581.31 15115.48 15200.76
+07 candidate-first 5687.23 5690.67 4552.23 4566.93 4545.88 4547.31 15130.37 15154.75
+08 baseline-first 5687.21 5709.13 4570.97 4561.38 4573.02 4555.92 15182.04 15129.68
+09 candidate-first 5691.15 5989.41 4564.95 4567.67 4570.96 4559.05 15061.31 15470.97
+10 baseline-first 5735.44 5681.53 4543.79 4535.74 4525.69 4651.85 15029.66 15182.54
+11 candidate-first 5727.29 5667.49 4536.49 4533.02 4566.41 4861.73 15121.77 15446.01
+12 baseline-first 5672.45 5668.91 4534.96 4543.76 4529.48 4539.88 15040.50 15019.98
+13 candidate-first 5704.48 5685.83 4543.95 4556.95 4526.60 4547.39 15101.08 15096.90
+14 baseline-first 5749.22 5902.88 4535.79 4567.20 4535.63 4531.65 15212.56 15296.57
+15 candidate-first 5671.77 5668.73 4542.49 4539.90 4523.20 4538.39 15053.05 15041.53
+16 baseline-first 5702.07 5669.30 4536.72 4566.05 4526.62 4538.94 15028.36 15044.47
+
+keygen_gmean=0.996375603x
+encaps_gmean=1.000510389x
+decaps_gmean=0.996971996x
+roundtrip_gmean=0.997864913x

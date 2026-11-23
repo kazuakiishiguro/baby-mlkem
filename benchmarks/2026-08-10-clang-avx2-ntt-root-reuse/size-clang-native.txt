@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-ntt-lane-validation.0whIHt/clang-native/baby_mlkem768_product.o
+artifact_sha256=9b534f8f47a282baeb9eeed8916f4648800d05854c72d9e2e729ba3739478ec2
+artifact_file_bytes=99720
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=53285
+readonly_data_bytes=16326
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=69611
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

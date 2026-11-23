@@ -1,0 +1,16 @@
+candidate=cb4bfe98be1bac6378a82442cd6bdebf68ec2875
+
+Passed on the candidate revision:
+- make -B -j2 product-size test-product check-ntt-roots CC=clang ARCH_CFLAGS=-march=native
+- make -B test CC=clang ARCH_CFLAGS=-march=native
+- Clang native product KAT and product roundtrip/implicit-rejection smoke
+- Clang AVX2-only product test with -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+- Clang scalar product test with AVX/AVX2/AVX512/BMI2 disabled
+- GCC native product test
+- GCC AVX2-only product test
+- generated NTT header and AVX2 assembly reproducibility check
+
+The five non-native product artifacts are byte-identical to the parent
+revision; their hashes and primary sizes are recorded in profile-identity.txt.
+This report does not claim a new ASan/UBSan or complete stage-harness rerun;
+those gates remain separate evidence in the historical reports.

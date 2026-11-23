@@ -1,0 +1,19 @@
+candidate: Clang AVX2 shared scalar matrix refill
+baseline: 3a3e9d0
+protocol: 2 independent batches x 9 paired runs x 30000 iterations
+combination: geometric mean of two equal-size rounded batch gmeans
+metric                                             batch1     batch2     combined
+mlkem_core_stage_sample_matrix                    0.9934x    1.0014x    0.997392x
+mlkem_core_stage_sample_matrix_scalar_refill      0.9969x    0.9986x    0.997750x
+mlkem_core_stage_keygen_matrix_noise_current      0.9998x    1.0069x    1.003344x
+mlkem_core_stage_kpke_keygen_full                 0.9998x    1.0034x    1.001598x
+mlkem_core_stage_kpke_prepare_public_no_cache     1.0017x    1.0064x    1.004047x
+mlkem_core_stage_kpke_encrypt_cached              1.0004x    0.9999x    1.000150x
+mlkem_core_stage_kpke_encrypt_uncached            1.0004x    1.0015x    1.000950x
+mlkem_core_stage_kpke_decrypt_cached              1.0025x    0.9748x    0.988553x
+mlkem_core_stage_kpke_decrypt_uncached            1.0002x    0.9717x    0.985847x
+batch2_decrypt_cached_median=0.9992x
+batch2_decrypt_uncached_median=0.9981x
+decrypt_sections_changed=no
+authoritative_followup=32-pair KEM decaps 1.003744x; decaps_core 1.007035x
+stage_screen=PASS_WITH_RETAINED_UNCHANGED_PATH_NOISE

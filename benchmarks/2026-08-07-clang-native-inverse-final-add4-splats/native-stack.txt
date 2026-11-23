@@ -1,0 +1,18 @@
+candidate_ref=626da41d4fbfa165e17e11aad86d2dcc87ebbdf9
+artifact=/tmp/inv-final-add4-only-product.o
+artifact_sha256=8ca9abbab594a7a3a76270c59bba0f5d16304ca8d98b2bc01b19bd54a3f6ccd8
+api_kind=local
+compiler=clang
+stack_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=8760
+encaps_stack_bytes=6904
+decaps_valid_stack_bytes=9400
+decaps_invalid_stack_bytes=9400
+max_stack_bytes=9400
+correctness_smoke=pass

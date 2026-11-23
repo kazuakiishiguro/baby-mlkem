@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-ntt-level0-postcommit.A98Pvs/baby_mlkem768_product.o
+artifact_sha256=a75152c5f4502528809633747b2502a4b0cfeadc83daa428f92ddb4e3f86738f
+artifact_file_bytes=74248
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=3
+code_bytes=42191
+readonly_data_bytes=6019
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=48210
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

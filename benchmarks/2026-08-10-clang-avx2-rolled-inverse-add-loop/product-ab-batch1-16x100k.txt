@@ -1,0 +1,61 @@
+baseline_product_sha256=668bc7877907af53e849dcf85693f15600142c9f6a7ed965d39a094548bcf98c
+candidate_product_sha256=bdf2c0a541ff857137991666d08f904e9952664fdf192ad75053aa60502f3a8d
+common_benchmark_object_sha256=dbb898fba2eaea946e24274382339f6622b8234918377e085850d8ef84f49985
+baseline_benchmark_sha256=262cbf7cddde38a99732e64eb1dca12c3fb5b2b29f941bc5f632f9ebd2763453
+candidate_benchmark_sha256=1b6e51f5ccfbd32d79962937040817046e27761c55d4325a8bb4ae30d57387cb
+compiler=clang
+profile=avx2-only
+arch_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+product_core=BABY_MLKEM_DISABLE_INTERNAL_CACHES
+iterations=100000
+pin_cpu=0
+speedup_direction=baseline_time/candidate_time
+normal_core_alias_check=PASS
+batch=1
+warmup_pairs=3
+measured_pairs=16
+run_order=alternating, odd candidate-first
+sample_policy=all_16_pairs_retained_no_filtering
+
+run order base_keygen candidate_keygen base_encaps candidate_encaps base_decaps candidate_decaps base_roundtrip candidate_roundtrip
+01 candidate-first 5671.85 5690.97 4524.61 4537.16 4528.14 4533.30 15050.35 15055.50
+02 baseline-first 5660.86 5646.22 4551.41 4543.90 4525.70 4510.54 15024.03 15038.53
+03 candidate-first 5713.19 5667.35 4534.62 4559.71 4525.26 4541.97 15021.81 15080.03
+04 baseline-first 5668.88 5667.56 4532.85 4563.31 4665.61 4525.78 15168.77 15038.50
+05 candidate-first 5656.60 5709.33 4530.96 4573.18 4512.41 4521.24 15021.76 15093.82
+06 baseline-first 5668.55 5653.52 4544.94 4539.67 4851.70 4519.02 15351.67 15084.63
+07 candidate-first 5649.60 5669.55 4530.15 4556.96 4570.64 4517.06 15037.40 15028.58
+08 baseline-first 5661.18 5650.11 4538.41 4549.91 4534.85 4858.91 15038.69 15406.97
+09 candidate-first 5656.72 5661.31 4533.38 4537.78 4519.67 4537.31 15015.03 15105.31
+10 baseline-first 5664.09 5660.15 4536.98 4537.06 4835.16 4571.51 15339.19 15069.18
+11 candidate-first 5647.68 5671.93 4528.19 4535.65 4519.09 4557.38 15008.58 15025.00
+12 baseline-first 5662.66 5650.08 4529.70 4555.71 4514.49 4515.13 14996.96 15010.50
+13 candidate-first 5671.31 5691.84 4526.11 4536.38 4518.20 4524.50 15025.89 15035.89
+14 baseline-first 5660.86 5647.27 4542.80 4540.53 4525.62 4523.25 15044.45 15030.52
+15 candidate-first 5703.11 5701.91 4669.31 4547.61 4628.51 4523.18 15249.84 15060.08
+16 baseline-first 5684.71 5683.23 4539.84 4540.88 4527.96 4517.14 15092.98 15106.27
+
+keygen_gmean=0.999775447x
+keygen_ci95=0.997831416x..1.001617111x
+keygen_wins=10/16
+keygen_candidate_first_median=0.996560747x
+keygen_baseline_first_median=1.002092886x
+encaps_gmean=0.999136279x
+encaps_ci95=0.996123985x..1.003473475x
+encaps_wins=4/16
+encaps_candidate_first_median=0.997485016x
+encaps_baseline_first_median=0.999876668x
+decaps_gmean=1.006832429x
+decaps_ci95=0.992434015x..1.021295915x
+decaps_wins=8/16
+decaps_candidate_first_median=0.998327288x
+decaps_baseline_first_median=1.002878169x
+roundtrip_gmean=1.000892689x
+roundtrip_ci95=0.995957039x..1.005600301x
+roundtrip_wins=6/16
+roundtrip_candidate_first_median=0.999121040x
+roundtrip_baseline_first_median=1.000023507x
+minimum_operation=encaps
+minimum_ratio=0.999136279x
+regression_floor=0.995000000x
+regression_gate=PASS

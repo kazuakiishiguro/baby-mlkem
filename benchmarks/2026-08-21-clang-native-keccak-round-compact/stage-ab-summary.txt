@@ -1,0 +1,14 @@
+compiler=clang
+arch_cflags=-march=native
+cpu=0
+warmup_runs=3
+runs=9
+iterations=30000
+run_order=alternating
+ratio=baseline_ns_per_op/candidate_ns_per_op
+mlkem_core_stage_kpke_keygen_full gmean=1.019965x median=1.005408x wins=7/9
+mlkem_core_stage_kpke_encrypt_uncached gmean=0.996812x median=0.998447x wins=4/9
+mlkem_core_stage_kpke_prepare_public_no_cache gmean=1.003387x median=1.003460x wins=6/9
+mlkem_core_stage_sample_matrix gmean=1.011122x median=1.014313x wins=5/9
+mlkem_core_stage_sample_matrix_sparse_first_x8 gmean=1.025045x median=1.020754x wins=7/9
+mlkem_core_stage_sample_ntt8_full_raw gmean=0.987430x median=0.997672x wins=4/9

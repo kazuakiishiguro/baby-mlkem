@@ -1,0 +1,96 @@
+There are 87 section headers, starting at offset 0x10800:
+
+Section Headers:
+  [Nr] Name              Type            Address          Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            0000000000000000 000000 000000 00      0   0  0
+  [ 1] .note.gnu.build-id NOTE            0000000000000000 000040 000024 00   A  0   0  4
+  [ 2] .text.baby_mlkem768_keypair_derand PROGBITS        0000000000000000 000080 000c27 00  AX  0   0 64
+  [ 3] .rela.text.baby_mlkem768_keypair_derand RELA            0000000000000000 00d6c8 000318 18   I 84   2  8
+  [ 4] .text.baby_mlkem768_encaps_derand PROGBITS        0000000000000000 000cb0 0000e7 00  AX  0   0 16
+  [ 5] .rela.text.baby_mlkem768_encaps_derand RELA            0000000000000000 00d9e0 000120 18   I 84   4  8
+  [ 6] .text.baby_mlkem768_decaps PROGBITS        0000000000000000 000dc0 000ded 00  AX  0   0 64
+  [ 7] .rela.text.baby_mlkem768_decaps RELA            0000000000000000 00db00 000720 18   I 84   6  8
+  [ 8] .text.sha3_512_mlkem_fixed PROGBITS        0000000000000000 001bc0 000097 00  AX  0   0 32
+  [ 9] .rela.text.sha3_512_mlkem_fixed RELA            0000000000000000 00e220 000018 18   I 84   8  8
+  [10] .text.mlkem_keccakf1600_avx2 PROGBITS        0000000000000000 001c80 0003f5 00  AX  0   0 64
+  [11] .rela.text.mlkem_keccakf1600_avx2 RELA            0000000000000000 00e238 000138 18   I 84  10  8
+  [12] .text.sample_ntt4 PROGBITS        0000000000000000 002080 000ca7 00  AX  0   0 64
+  [13] .rela.text.sample_ntt4 RELA            0000000000000000 00e370 000198 18   I 84  12  8
+  [14] .text.mlkem_keygen_noise2_sample_matrix2_avx2 PROGBITS        0000000000000000 002d40 000ad8 00  AX  0   0 64
+  [15] .rela.text.mlkem_keygen_noise2_sample_matrix2_avx2 RELA            0000000000000000 00e508 000240 18   I 84  14  8
+  [16] .text.mlkem_sample_ntt3_row2_mem_parity_avx2 PROGBITS        0000000000000000 003840 00056a 00  AX  0   0 64
+  [17] .rela.text.mlkem_sample_ntt3_row2_mem_parity_avx2 RELA            0000000000000000 00e748 000108 18   I 84  16  8
+  [18] .text.sample_ntt_parse_init_avx2 PROGBITS        0000000000000000 003dc0 00016d 00  AX  0   0 64
+  [19] .rela.text.sample_ntt_parse_init_avx2 RELA            0000000000000000 00e850 000060 18   I 84  18  8
+  [20] .text.sample_ntt_parse_stream_avx2_ready PROGBITS        0000000000000000 003f40 0002ed 00  AX  0   0 64
+  [21] .rela.text.sample_ntt_parse_stream_avx2_ready RELA            0000000000000000 00e8b0 0000c0 18   I 84  20  8
+  [22] .text.sample_ntt_scalar_refill_shared_clang_avx2 PROGBITS        0000000000000000 004230 00003c 00  AX  0   0 16
+  [23] .rela.text.sample_ntt_scalar_refill_shared_clang_avx2 RELA            0000000000000000 00e970 000030 18   I 84  22  8
+  [24] .text.hash_matrix_x3_parse_group PROGBITS        0000000000000000 004280 00031f 00  AX  0   0 64
+  [25] .rela.text.hash_matrix_x3_parse_group RELA            0000000000000000 00e9a0 000030 18   I 84  24  8
+  [26] .text.ntt_mont_lazy_avx2 PROGBITS        0000000000000000 0045c0 000e22 00  AX  0   0 64
+  [27] .rela.text.ntt_mont_lazy_avx2 RELA            0000000000000000 00e9d0 0004c8 18   I 84  26  8
+  [28] .text.sha3_256_1184_avx2 PROGBITS        0000000000000000 005400 0006b9 00  AX  0   0 64
+  [29] .rela.text.sha3_256_1184_avx2 RELA            0000000000000000 00ee98 000288 18   I 84  28  8
+  [30] .text.kpke_prepare_public_no_cache PROGBITS        0000000000000000 005ac0 000e08 00  AX  0   0 64
+  [31] .rela.text.kpke_prepare_public_no_cache RELA            0000000000000000 00f120 000198 18   I 84  30  8
+  [32] .text.kpke_encrypt_finish_avx2 PROGBITS        0000000000000000 006900 000c7c 00  AX  0   0 64
+  [33] .rela.text.kpke_encrypt_finish_avx2 RELA            0000000000000000 00f2b8 0003a8 18   I 84  32  8
+  [34] .text.mlkem_prf_cbd_eta2x4_32 PROGBITS        0000000000000000 007580 00080d 00  AX  0   0 64
+  [35] .rela.text.mlkem_prf_cbd_eta2x4_32 RELA            0000000000000000 00f660 0000f0 18   I 84  34  8
+  [36] .text.compress_encode_poly_d10x3_shared_clang_avx2 PROGBITS        0000000000000000 007d90 0000ee 00  AX  0   0 16
+  [37] .rela.text.compress_encode_poly_d10x3_shared_clang_avx2 RELA            0000000000000000 00f750 0000f0 18   I 84  36  8
+  [38] .text.ntt_inv_mont_before_final_avx2 PROGBITS        0000000000000000 007e80 000db6 00  AX  0   0 64
+  [39] .rela.text.ntt_inv_mont_before_final_avx2 RELA            0000000000000000 00f840 000498 18   I 84  38  8
+  [40] .text.mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2 PROGBITS        0000000000000000 008c40 0010fa 00  AX  0   0 64
+  [41] .rela.text.mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2 RELA            0000000000000000 00fcd8 0002b8 18   I 84  40  8
+  [42] .text.mlkem_encrypt_keccakf4_mem_parity_avx2 PROGBITS        0000000000000000 009d40 0005b1 00  AX  0   0 64
+  [43] .rela.text.mlkem_encrypt_keccakf4_mem_parity_avx2 RELA            0000000000000000 00ff90 000048 18   I 84  42  8
+  [44] .text.shake256_mlkem768_rejection PROGBITS        0000000000000000 00a300 0000df 00  AX  0   0 16
+  [45] .rela.text.shake256_mlkem768_rejection RELA            0000000000000000 00ffd8 000048 18   I 84  44  8
+  [46] .text.decompress_decode_poly_d10_ct_x3_avx2 PROGBITS        0000000000000000 00a400 00008b 00  AX  0   0 64
+  [47] .rela.text.decompress_decode_poly_d10_ct_x3_avx2 RELA            0000000000000000 010020 000078 18   I 84  46  8
+  [48] .rodata           PROGBITS        0000000000000000 00a48c 000073 00   A  0   0  2
+  [49] .rodata.cst4      PROGBITS        0000000000000000 00a500 000040 04  AM  0   0  4
+  [50] .rodata.cst32     PROGBITS        0000000000000000 00a540 000b60 20  AM  0   0 32
+  [51] .rodata.cst16     PROGBITS        0000000000000000 00b0a0 000130 10  AM  0   0 16
+  [52] .rodata.cst8      PROGBITS        0000000000000000 00b1d0 000048 08  AM  0   0  8
+  [53] .rodata.mlkem_keccakf1_rotl_count PROGBITS        0000000000000000 00b220 0000c0 00   A  0   0 32
+  [54] .rodata.mlkem_keccakf1_rotr_count PROGBITS        0000000000000000 00b2e0 0000c0 00   A  0   0 32
+  [55] .rodata.rc        PROGBITS        0000000000000000 00b3a0 0000c0 00   A  0   0 16
+  [56] .rodata.GAMMA     PROGBITS        0000000000000000 00b460 000100 00   A  0   0 16
+  [57] .rodata.ZETA_NTT_INV_MONT_LO PROGBITS        0000000000000000 00b560 000300 00   A  0   0 32
+  [58] .rodata.ZETA_NTT_INV_MONT_HI PROGBITS        0000000000000000 00b860 000300 00   A  0   0 32
+  [59] .rodata.ZETA_NTT_INV_MONT_LO_SCALAR PROGBITS        0000000000000000 00bb60 00001c 00   A  0   0  2
+  [60] .rodata.ZETA_NTT_INV_MONT_HI_SCALAR PROGBITS        0000000000000000 00bb7c 00001c 00   A  0   0  2
+  [61] .rodata.MLKEM_AVX2_SHARED_CONSTANTS PROGBITS        0000000000000000 00bba0 000040 00   A  0   0 32
+  [62] .bss.kpke_keygen.shat NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [63] .bss.kpke_keygen.ehat NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [64] .bss.kpke_public_cache_ahat NOBITS          0000000000000000 00bbe0 001200 00  WA  0   0 16
+  [65] .bss.kpke_public_cache_that NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [66] .bss.sample_ntt4.stream NOBITS          0000000000000000 00bbe0 0007e0 00  WA  0   0 16
+  [67] .bss.sample_ntt_parse_idx_ready NOBITS          0000000000000000 00bbe0 000001 00  WA  0   0  4
+  [68] .bss.sample_ntt_parse_idx_avx2 NOBITS          0000000000000000 00bbe0 000800 00  WA  0   0 16
+  [69] .bss.kpke_encrypt_prepared_public.rhat NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [70] .bss.kpke_encrypt_prepared_public.e1 NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [71] .bss.kpke_encrypt_prepared_public.e2 NOBITS          0000000000000000 00bbe0 000200 00  WA  0   0 16
+  [72] .bss.kpke_encrypt_finish_avx2.u NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [73] .bss.kpke_encrypt_finish_avx2.v NOBITS          0000000000000000 00bbe0 000200 00  WA  0   0 16
+  [74] .bss.mlkem_decaps.prepared_rhat NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [75] .bss.mlkem_decaps.prepared_e1 NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [76] .bss.mlkem_decaps.prepared_e2 NOBITS          0000000000000000 00bbe0 000200 00  WA  0   0 16
+  [77] .bss.kpke_decrypt.u NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [78] .bss.kpke_decrypt.v NOBITS          0000000000000000 00bbe0 000200 00  WA  0   0 32
+  [79] .bss.kpke_secret_cache_shat NOBITS          0000000000000000 00bbe0 000600 00  WA  0   0 16
+  [80] .bss.kpke_decrypt.w NOBITS          0000000000000000 00bbe0 000200 00  WA  0   0 16
+  [81] .comment          PROGBITS        0000000000000000 00bbe0 000028 01  MS  0   0  1
+  [82] .note.GNU-stack   PROGBITS        0000000000000000 00bc08 000000 00      0   0  1
+  [83] .llvm_addrsig     LOOS+0xfff4c03  0000000000000000 00bc08 000010 00   E  0   0  1
+  [84] .symtab           SYMTAB          0000000000000000 00bc18 001230 18     85 182  8
+  [85] .strtab           STRTAB          0000000000000000 00ce48 000880 00      0   0  1
+  [86] .shstrtab         STRTAB          0000000000000000 010098 000764 00      0   0  1
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+  L (link order), O (extra OS processing required), G (group), T (TLS),
+  C (compressed), x (unknown), o (OS specific), E (exclude),
+  D (mbind), l (large), p (processor specific)

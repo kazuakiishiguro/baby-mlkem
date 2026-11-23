@@ -1,0 +1,30 @@
+candidate_ref=6ba81de0903437ae09d6f0ce000617997fe1f712
+baseline_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+profile=clang-avx2
+baseline_file_bytes=92960
+candidate_file_bytes=90792
+file_delta_bytes=-2168
+baseline_code_bytes=50689
+candidate_code_bytes=48783
+code_delta_bytes=-1906
+baseline_readonly_data_bytes=12341
+candidate_readonly_data_bytes=12213
+readonly_data_delta_bytes=-128
+baseline_primary_bytes=63030
+candidate_primary_bytes=60996
+primary_delta_bytes=-2034
+baseline_writable_bytes=26593
+candidate_writable_bytes=26593
+writable_delta_bytes=0
+section=.text.mlkem_keygen_noise2_sample_matrix2_avx2 baseline=5056 candidate=3648 delta=-1408
+section=.text.mlkem_sample_ntt3_row2_mem_parity_avx2 baseline=1884 candidate=1386 delta=-498
+section=.rodata.cst32 baseline=6304 candidate=6176 delta=-128
+section=.text.baby_mlkem768_decaps byte_identity=PASS size=4424
+section=.text.mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2 byte_identity=PASS size=4402
+section=.text.mlkem_encrypt_keccakf4_mem_parity_avx2 byte_identity=PASS size=1457
+baseline_helper_section_index=40
+candidate_helper_section_index=40
+baseline_tail_to_helper_file_distance=0x1140
+candidate_tail_to_helper_file_distance=0x1140
+helper_alias_address_identity=PASS
+helper_alias_binding=LOCAL

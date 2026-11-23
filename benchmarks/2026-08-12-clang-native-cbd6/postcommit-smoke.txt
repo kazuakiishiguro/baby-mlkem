@@ -1,0 +1,10 @@
+make -B -j2 CC=clang ARCH_CFLAGS=-march=native product-size test-product test check-ntt-roots
+
+Result: exit 0.
+- Clang native candidate artifact SHA-256: 818a53b95a4fd446cb9d7628abcf99e8741f8923c97dcea5bc92bc21954befb7.
+- Clang native candidate primary: 65,787 bytes.
+- Product API roundtrip and implicit-rejection check: pass.
+- Normal KAT/test: pass.
+- NTT root regeneration check: pass.
+- Stack probe: candidate max_stack_bytes=8056; correctness_smoke=pass.
+- GCC native, Clang AVX2-only, and Clang scalar cross-profile product/KAT checks: pass.

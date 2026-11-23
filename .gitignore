@@ -1,4 +1,6 @@
-bench
 testc
+benchc
+bench_productc
+product_testc
 *.o
-*.out
+.bench-compare.lock

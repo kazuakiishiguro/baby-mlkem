@@ -1,0 +1,15 @@
+candidate_ref=e7094b81d58c7ea492572f08fc41face5ff4cd46
+baseline_ref=f56750f97f262abfa8a9ca43d2890f1461474fae
+unaligned_native_batch1_minimum=0.9950x mlkem_encaps
+unaligned_native_batch2_minimum=0.9863x mlkem_encaps
+unaligned_native_combined_encaps=0.990640x
+unaligned_decision=reject
+cold_primary_delta_vs_unaligned=0
+cold_elf_delta_vs_unaligned=+16
+cold_cached_encaps_gmean=0.995973x
+cold_cached_encaps_wins=0/9
+cold_decision=reject
+align32_cached_encaps_gmean=1.001134x
+align32_cached_encaps_median=0.997798x
+align32_hot_symbol_layout_matches_baseline=PASS
+align32_decision=retain-and-run-full-gates

@@ -1,0 +1,50 @@
+section=.rodata baseline_bytes=115 candidate_bytes=115 delta=+0 status=identical
+section=.rodata.cst16 baseline_bytes=304 candidate_bytes=304 delta=+0 status=identical
+section=.rodata.cst32 baseline_bytes=3552 candidate_bytes=3552 delta=+0 status=identical
+section=.rodata.cst4 baseline_bytes=64 candidate_bytes=64 delta=+0 status=identical
+section=.rodata.cst8 baseline_bytes=72 candidate_bytes=72 delta=+0 status=identical
+section=.rodata.GAMMA baseline_bytes=256 candidate_bytes=256 delta=+0 status=identical
+section=.rodata.mlkem_keccakf1_rotl_count baseline_bytes=192 candidate_bytes=192 delta=+0 status=identical
+section=.rodata.mlkem_keccakf1_rotr_count baseline_bytes=192 candidate_bytes=192 delta=+0 status=identical
+section=.rodata.rc baseline_bytes=192 candidate_bytes=192 delta=+0 status=identical
+section=.rodata.ZETA_NTT_INV_MONT_HI baseline_bytes=768 candidate_bytes=768 delta=+0 status=identical
+section=.rodata.ZETA_NTT_INV_MONT_HI_SCALAR baseline_bytes=28 candidate_bytes=28 delta=+0 status=identical
+section=.rodata.ZETA_NTT_INV_MONT_LO baseline_bytes=768 candidate_bytes=768 delta=+0 status=identical
+section=.rodata.ZETA_NTT_INV_MONT_LO_SCALAR baseline_bytes=28 candidate_bytes=28 delta=+0 status=identical
+section=.rodata.ZETA_NTT_TAIL_MONT_HI_L12 baseline_bytes=512 candidate_bytes=512 delta=+0 status=identical
+section=.rodata.ZETA_NTT_TAIL_MONT_LO_L12 baseline_bytes=512 candidate_bytes=512 delta=+0 status=identical
+section=.text.baby_mlkem768_decaps baseline_bytes=3949 candidate_bytes=3565 delta=-384 status=changed
+section=.text.baby_mlkem768_encaps_derand baseline_bytes=231 candidate_bytes=231 delta=+0 status=identical
+section=.text.baby_mlkem768_keypair_derand baseline_bytes=3111 candidate_bytes=3111 delta=+0 status=identical
+section=.text.compress_encode_poly_d10x3_shared_clang_avx2 baseline_bytes=238 candidate_bytes=238 delta=+0 status=identical
+section=.text.decompress_decode_poly_d10_ct_x3_avx2 baseline_bytes=139 candidate_bytes=139 delta=+0 status=identical
+section=.text.hash_matrix_x3_parse_group baseline_bytes=799 candidate_bytes=799 delta=+0 status=identical
+section=.text.kpke_encrypt_finish_avx2 baseline_bytes=3841 candidate_bytes=3841 delta=+0 status=identical
+section=.text.kpke_prepare_public_no_cache baseline_bytes=3976 candidate_bytes=3976 delta=+0 status=identical
+section=.text.mlkem_encrypt_keccakf4_mem_parity_avx2 baseline_bytes=1457 candidate_bytes=1457 delta=+0 status=identical
+section=.text.mlkem_encrypt_prf_cbd_eta2_32_sample_tail_avx2 baseline_bytes=4346 candidate_bytes=4346 delta=+0 status=identical
+section=.text.mlkem_keccakf1600_avx2 baseline_bytes=1013 candidate_bytes=1013 delta=+0 status=identical
+section=.text.mlkem_keygen_noise2_sample_matrix2_avx2 baseline_bytes=2776 candidate_bytes=2776 delta=+0 status=identical
+section=.text.mlkem_prf_cbd_eta2x4_32 baseline_bytes=2061 candidate_bytes=2061 delta=+0 status=identical
+section=.text.mlkem_sample_ntt3_row2_mem_parity_avx2 baseline_bytes=1386 candidate_bytes=1386 delta=+0 status=identical
+section=.text.ntt_inv_mont_before_final_avx2 baseline_bytes=3510 candidate_bytes=3510 delta=+0 status=identical
+section=.text.ntt_mont_lazy_avx2 baseline_bytes=3584 candidate_bytes=3584 delta=+0 status=identical
+section=.text.sample_ntt4 baseline_bytes=3239 candidate_bytes=3239 delta=+0 status=identical
+section=.text.sample_ntt_parse_init_avx2 baseline_bytes=365 candidate_bytes=365 delta=+0 status=identical
+section=.text.sample_ntt_parse_stream_avx2_ready baseline_bytes=749 candidate_bytes=749 delta=+0 status=identical
+section=.text.sample_ntt_scalar_refill_shared_clang_avx2 baseline_bytes=60 candidate_bytes=60 delta=+0 status=identical
+section=.text.sha3_256_1184_avx2 baseline_bytes=1721 candidate_bytes=1721 delta=+0 status=identical
+section=.text.sha3_512_mlkem_fixed baseline_bytes=151 candidate_bytes=151 delta=+0 status=identical
+section=.text.shake256_mlkem768_rejection baseline_bytes=223 candidate_bytes=223 delta=+0 status=identical
+common_text_sections=23
+changed_common_text_sections=1
+common_readonly_sections=15
+changed_readonly_sections=0
+removed_sections=
+new_sections=
+code_size_delta=-384
+readonly_size_delta=0
+primary_size_delta=-384
+writable_size_delta=0
+unchanged_common_text_sections_outside_decaps=22
+section_isolation=PASS

@@ -1,0 +1,17 @@
+compiler=clang
+arch_cflags=-march=native
+./scripts/measure_product_size.sh baby_mlkem768_product.o
+artifact=/home/kishiguro/fun/baby-mlkem/baby_mlkem768_product.o
+artifact_sha256=83fe2ee3d41348b47e8d0ce87ad404f45776324b15ea5cd005f986837baf26ff
+artifact_file_bytes=100328
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=53432
+readonly_data_bytes=16343
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=69775
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

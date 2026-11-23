@@ -1,0 +1,20 @@
+clang -c test.c -o test.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer  -Wno-unused-function -DMLKEM_AVX2_EXTERNAL_INV_MONT -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang -c ntt_roots_avx2_constants.S -o ntt_roots_avx2_constants.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -Wa,--noexecstack
+clang -c bench_core_stages.c -o bench_core_stages.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -Wno-unused-function -DMLKEM_AVX2_EXTERNAL_INV_MONT -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang -c bench_keccakf4_avx2.S -o bench_keccakf4_avx2.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -Wa,--noexecstack
+clang -c baby_mlkem_api.c -o baby_mlkem_api.product.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -ffunction-sections -fdata-sections -DBABY_MLKEM_DISABLE_INTERNAL_CACHES -DMLKEM_AVX2_EXTERNAL_INV_MONT -Wno-unused-function
+clang -c ntt_roots_avx2_constants.S -o ntt_roots_avx2_constants.product.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -Wa,--noexecstack -ffunction-sections -fdata-sections
+clang -c test_product.c -o test_product.o -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+clang test.o ntt_roots_avx2_constants.o -o testc -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+In file included from bench_core_stages.c:8:
+./baby-mlkem.c:4149:7: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 4149 |       for (int j = 0; j < length; j++) {
+      |       ^
+bench_core_stages.c:11004:9: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 11004 |         for (int j = 0; j < length; j++) {
+       |         ^
+bench_core_stages.c:14224:5: warning: loop not vectorized: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+ 14224 |     for (int j = 0; j < length; j++) {
+       |     ^
+3 warnings generated.
+clang bench_core_stages.o bench_keccakf4_avx2.o ntt_roots_avx2_constants.o -o bench_core_stagesc -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Wall -Wextra -std=c99 -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f

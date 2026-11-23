@@ -1,0 +1,13 @@
+candidate_ref=66bfaaa
+profile=clang-avx2-only
+compiler=clang
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+asan_options=detect_leaks=0:halt_on_error=1
+kat=pass
+product_method=direct-link-without-relocatable-compiler-r
+product=pass
+complete_stage_iterations=1000
+complete_stage=pass
+complete_stage_sink=4297556503821386549
+non_target_products_byte_identical_to_parent=pass
+sanitizer_gate=PASS

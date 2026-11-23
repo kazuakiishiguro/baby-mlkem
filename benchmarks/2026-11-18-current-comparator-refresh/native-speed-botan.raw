@@ -1,0 +1,230 @@
+[partial] suite=botan_mlkem profile=native iters=100000 runs=15 warmups=3
+iters=100000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=botan_mlkem
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[botan_mlkem] warmup=1/3 order=local-first
+[botan_mlkem] warmup=2/3 order=competitor-first
+[botan_mlkem] warmup=3/3 order=local-first
+[botan_mlkem] run=1/15 order=local-first
+[botan_mlkem] run=1 keygen=3925.39/18484.60 encaps=3548.03/17403.97 decaps=2786.39/39412.63 roundtrip=10406.72/76604.45
+[botan_mlkem] run=2/15 order=competitor-first
+[botan_mlkem] run=2 keygen=3973.61/18511.26 encaps=3508.67/17415.41 decaps=2787.53/39367.41 roundtrip=10389.58/76592.19
+[botan_mlkem] run=3/15 order=local-first
+[botan_mlkem] run=3 keygen=3925.46/18543.92 encaps=3514.25/17444.61 decaps=2946.34/39655.10 roundtrip=10522.55/76758.68
+[botan_mlkem] run=4/15 order=competitor-first
+[botan_mlkem] run=4 keygen=3940.08/18654.80 encaps=3495.18/17420.00 decaps=2792.07/39504.67 roundtrip=10354.10/76752.18
+[botan_mlkem] run=5/15 order=local-first
+[botan_mlkem] run=5 keygen=3941.02/18519.02 encaps=3501.33/17458.74 decaps=2949.14/39488.59 roundtrip=10451.05/76675.05
+[botan_mlkem] run=6/15 order=competitor-first
+[botan_mlkem] run=6 keygen=3994.74/18492.09 encaps=3666.92/17466.23 decaps=2800.98/39447.61 roundtrip=10590.21/76760.51
+[botan_mlkem] run=7/15 order=local-first
+[botan_mlkem] run=7 keygen=3969.32/18590.86 encaps=3554.82/17451.43 decaps=2848.68/39478.47 roundtrip=10534.89/76802.79
+[botan_mlkem] run=8/15 order=competitor-first
+[botan_mlkem] run=8 keygen=3924.39/18493.49 encaps=3497.26/17412.22 decaps=2834.24/39466.94 roundtrip=10386.40/76623.40
+[botan_mlkem] run=9/15 order=local-first
+[botan_mlkem] run=9 keygen=3949.95/18526.68 encaps=3528.02/17520.29 decaps=2801.63/39679.87 roundtrip=10405.58/76987.52
+[botan_mlkem] run=10/15 order=competitor-first
+[botan_mlkem] run=10 keygen=3942.03/18664.43 encaps=3506.17/17476.92 decaps=2790.39/39585.77 roundtrip=10386.15/76998.86
+[botan_mlkem] run=11/15 order=local-first
+[botan_mlkem] run=11 keygen=3941.60/18504.44 encaps=3500.27/17490.11 decaps=2778.86/39417.95 roundtrip=10363.60/76563.17
+[botan_mlkem] run=12/15 order=competitor-first
+[botan_mlkem] run=12 keygen=4055.99/18548.12 encaps=3703.61/17459.41 decaps=2799.19/39411.09 roundtrip=10669.93/76701.58
+[botan_mlkem] run=13/15 order=local-first
+[botan_mlkem] run=13 keygen=3998.93/18543.44 encaps=3663.63/17473.17 decaps=2806.24/39479.81 roundtrip=10588.59/76774.69
+[botan_mlkem] run=14/15 order=competitor-first
+[botan_mlkem] run=14 keygen=3936.17/18528.30 encaps=3505.47/17421.83 decaps=2796.68/39413.15 roundtrip=10374.40/76627.57
+[botan_mlkem] run=15/15 order=local-first
+[botan_mlkem] run=15 keygen=3926.12/18561.42 encaps=3500.46/17473.77 decaps=2801.52/39607.96 roundtrip=10375.95/77008.69
+[botan_mlkem]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10453.31
+local_roundtrip_sd_ns=101.07
+local_roundtrip_median_ns=10405.58
+local_roundtrip_trimmed_ns=10444.28
+competitor_roundtrip_mean_ns=76748.76
+competitor_roundtrip_sd_ns=148.52
+competitor_roundtrip_median_ns=76752.18
+competitor_roundtrip_trimmed_ns=76743.04
+selected_local_roundtrip_ns=10405.58
+selected_competitor_roundtrip_ns=76752.18
+local_ns_div_competitor_ns=0.136x
+local_speedup_vs_competitor=7.376x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=3956.32
+keygen_local_median_ns=3941.60
+keygen_competitor_mean_ns=18544.46
+keygen_competitor_median_ns=18528.30
+keygen_speedup_ratio_of_medians=4.7007x
+keygen_speedup_gmean=4.6875x
+keygen_speedup_ci95_low=4.6635x
+keygen_speedup_ci95_high=4.7083x
+keygen_speedup_median=4.6990x
+keygen_wins=15/15
+keygen_local_first_median=4.6968x
+keygen_competitor_first_median=4.7072x
+encaps_runs=15
+encaps_local_mean_ns=3546.27
+encaps_local_median_ns=3508.67
+encaps_competitor_mean_ns=17452.54
+encaps_competitor_median_ns=17458.74
+encaps_speedup_ratio_of_medians=4.9759x
+encaps_speedup_gmean=4.9223x
+encaps_speedup_ci95_low=4.8717x
+encaps_speedup_ci95_high=4.9651x
+encaps_speedup_median=4.9660x
+encaps_wins=15/15
+encaps_local_first_median=4.9650x
+encaps_competitor_first_median=4.9699x
+decaps_runs=15
+decaps_local_mean_ns=2821.33
+decaps_local_median_ns=2800.98
+decaps_competitor_mean_ns=39494.47
+decaps_competitor_median_ns=39478.47
+decaps_speedup_ratio_of_medians=14.0945x
+decaps_speedup_gmean=14.0009x
+decaps_speedup_ci95_low=13.8613x
+decaps_speedup_ci95_high=14.1124x
+decaps_speedup_median=14.0928x
+decaps_wins=15/15
+decaps_local_first_median=14.1033x
+decaps_competitor_first_median=14.0928x
+roundtrip_runs=15
+roundtrip_local_mean_ns=10453.31
+roundtrip_local_median_ns=10405.58
+roundtrip_competitor_mean_ns=76748.76
+roundtrip_competitor_median_ns=76752.18
+roundtrip_speedup_ratio_of_medians=7.3761x
+roundtrip_speedup_gmean=7.3424x
+roundtrip_speedup_ci95_low=7.3059x
+roundtrip_speedup_ci95_high=7.3753x
+roundtrip_speedup_median=7.3720x
+roundtrip_wins=15/15
+roundtrip_local_first_median=7.3488x
+roundtrip_competitor_first_median=7.3773x
+
+[partial] suite=botan_mlkem exit=0
+[partial] suite=openssl_mlkem profile=native iters=100000 runs=15 warmups=3
+iters=100000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=openssl_mlkem
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[openssl_mlkem] warmup=1/3 order=local-first
+[partial] suite=openssl_mlkem exit=1

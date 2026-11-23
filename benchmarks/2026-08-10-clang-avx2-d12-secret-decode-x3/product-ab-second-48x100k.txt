@@ -1,0 +1,15 @@
+baseline_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+candidate_ref=975d2e2d5651c302c895097e9670738582ec8302
+sample_policy=all_second_48_pairs_retained
+product_batches=3
+batch_numbers=4,5,6
+measured_pairs=48
+iterations=100000
+keygen_gmean=1.000929085x
+encaps_gmean=1.001036040x
+decaps_gmean=0.997354018x
+roundtrip_gmean=0.998475389x
+minimum_operation=decaps
+minimum_ratio=0.997354018x
+product_floor=0.995000000x
+product_regression_gate=PASS

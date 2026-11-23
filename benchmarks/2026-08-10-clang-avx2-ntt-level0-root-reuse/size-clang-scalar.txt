@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-ntt-level0-validation.HcbJ96/clang-scalar/baby_mlkem768_product.o
+artifact_sha256=b3d4f765b924692c035e5d8394f638df4d2f1624b1065130089e848fecc4b7d2
+artifact_file_bytes=80096
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=60082
+readonly_data_bytes=2016
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=62098
+initialized_writable_bytes=0
+zero_fill_bytes=18944
+writable_bytes=18944
+max_stack_bytes=unmeasured

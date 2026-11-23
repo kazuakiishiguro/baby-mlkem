@@ -1,0 +1,14 @@
+profile=Clang native
+artifact_sha256=e4e6a73b25ba721a8278025c0b3c99b980b59db76977826551a69799cc969004
+undefined_symbols:
+                   U bcmp
+                   U memcpy
+target_symbol:
+  0000000000000000 000000000000029e t ntt_inv_mont_before_final_avx512
+avx512_disassembly_sample:
+      14df:	62 f2 fd 48 59 07    	vpbroadcastq (%rdi),%zmm0
+      14e5:	62 f2 fd 48 59 4f 01 	vpbroadcastq 0x8(%rdi),%zmm1
+      14ec:	62 f2 fd 48 59 57 02 	vpbroadcastq 0x10(%rdi),%zmm2
+external_backend_symbol_matches:
+  none
+cache_audit=product built with BABY_MLKEM_DISABLE_INTERNAL_CACHES; no benchmark cache is used

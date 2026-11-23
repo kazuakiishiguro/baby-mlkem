@@ -1,0 +1,63 @@
+baseline_ref=ed903ae02e53d14b42f533c24ab7237870d549ff
+candidate_ref=a32efa8e26e1ada223ce126805352774d0d530ba
+profile=clang-avx2-only
+flags=-O3 -fno-semantic-interposition -fvisibility=hidden -fomit-frame-pointer -fno-stack-protector -falign-loops=64 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+validation_inputs=4096 deterministic canonical random batches plus one ramp pattern
+validation_result=byte-identical
+lanes=16
+warmup_iterations_per_process=100000
+measured_runs=31
+iterations_per_run=5000000
+pin_cpu=0
+run_order=odd baseline-first, even candidate-first
+speedup_direction=baseline_time/candidate_time
+direct_baseline_symbol_bytes=495
+direct_candidate_symbol_bytes=232
+production_candidate_helper_bytes=238
+
+run baseline_ns_per_op candidate_ns_per_op speedup order
+01 50.717432 50.413690 1.006024990 baseline-first
+02 52.263862 50.181670 1.041493079 candidate-first
+03 50.436705 50.175315 1.005209534 baseline-first
+04 50.488118 50.164468 1.006451778 candidate-first
+05 50.885957 50.219729 1.013266260 baseline-first
+06 50.544413 50.189959 1.007062249 candidate-first
+07 50.487042 50.229797 1.005121363 baseline-first
+08 50.533933 50.248150 1.005687433 candidate-first
+09 50.471832 50.322460 1.002968297 baseline-first
+10 50.447693 50.244883 1.004036431 candidate-first
+11 50.510315 50.198598 1.006209675 baseline-first
+12 50.539459 50.561528 0.999563522 candidate-first
+13 50.948989 50.222193 1.014471610 baseline-first
+14 50.537010 50.577781 0.999193895 candidate-first
+15 50.911141 50.765735 1.002864255 baseline-first
+16 50.506367 50.267936 1.004743203 candidate-first
+17 50.556703 50.260905 1.005885250 baseline-first
+18 50.703634 50.153915 1.010960640 candidate-first
+19 50.580747 50.138532 1.008819863 baseline-first
+20 50.498824 50.241550 1.005120742 candidate-first
+21 50.546906 50.278309 1.005342204 baseline-first
+22 50.502375 50.227663 1.005469337 candidate-first
+23 50.481051 50.261999 1.004358203 baseline-first
+24 50.465132 50.613640 0.997065850 candidate-first
+25 50.519691 50.827694 0.993940252 baseline-first
+26 50.900391 50.230572 1.013334887 candidate-first
+27 50.522744 50.595395 0.998564079 baseline-first
+28 50.492829 50.154788 1.006739955 candidate-first
+29 50.538317 50.264174 1.005454044 baseline-first
+30 51.596970 50.265286 1.026493115 candidate-first
+31 50.542193 50.276759 1.005279457 baseline-first
+
+baseline_mean_ns=50.667057
+candidate_mean_ns=50.315325
+baseline_median_ns=50.537010
+candidate_median_ns=50.248150
+speedup_gmean=1.006970559
+speedup_ci95_low=1.004323052
+speedup_ci95_high=1.010221509
+speedup_median=1.005454044
+ratio_of_medians=1.005748669
+wins=26/31
+baseline_first_median=1.005310831
+candidate_first_median=1.005687433
+direct_helper_gate=PASS

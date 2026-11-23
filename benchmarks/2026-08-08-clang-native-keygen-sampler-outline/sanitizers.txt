@@ -1,0 +1,23 @@
+== Clang native ASan+UBSan ==
+flags=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -march=native
+asan_options=detect_leaks=0:halt_on_error=1
+bench_core_stages.c:155:16: warning: unused variable 'stage_tmp_sample_stream_pair' [-Wunused-variable]
+  155 | static uint8_t stage_tmp_sample_stream_pair[STAGE_BENCH_LANES][4][504];
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+kat=pass
+mlkem_core_stage_bench_sink=5236638352469415403
+stage=pass
+product_direct=pass
+clang_native_asan_ubsan=PASS
+
+== GCC native UBSan ==
+flags=-O1 -g -fsanitize=undefined -fno-omit-frame-pointer -march=native
+bench_core_stages.c:155:16: warning: ‘stage_tmp_sample_stream_pair’ defined but not used [-Wunused-variable]
+  155 | static uint8_t stage_tmp_sample_stream_pair[STAGE_BENCH_LANES][4][504];
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+kat=pass
+mlkem_core_stage_bench_sink=5236638352469415403
+stage=pass
+product_direct=pass
+gcc_native_ubsan=PASS

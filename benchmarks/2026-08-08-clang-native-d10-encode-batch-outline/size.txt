@@ -1,0 +1,9 @@
+baseline_ref=21a68fdd77d3e2257fbfac4b418f777c524f6983
+candidate_ref=411ce5c2821f796c68cbc9cbbf68a403a68a108e
+profile compiler baseline_primary candidate_primary delta candidate_code candidate_readonly candidate_writable
+native clang 77675 73048 -4627 53409 19639 18001
+avx2 clang 59307 59307 +0 47242 12065 26593
+scalar clang 62193 62193 +0 60160 2033 18944
+native gcc 59571 59571 +0 56006 3565 33728
+avx2 gcc 53614 53614 +0 49829 3785 34920
+scalar gcc 23267 23267 +0 21530 1737 19488

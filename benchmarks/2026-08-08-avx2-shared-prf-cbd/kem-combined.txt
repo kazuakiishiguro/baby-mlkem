@@ -1,0 +1,23 @@
+[clang-avx2]
+metric batch1_gmean batch2_gmean combined_gmean
+mlkem_decaps 0.9999x 1.0010x 1.000450x
+mlkem_decaps_core 0.9926x 1.0048x 0.998681x
+mlkem_encaps 1.0016x 1.0007x 1.001150x
+mlkem_encaps_core 1.0018x 1.0031x 1.002450x
+mlkem_keygen 1.0040x 0.9992x 1.001597x
+mlkem_keygen_core 1.0052x 0.9991x 1.002145x
+mlkem_roundtrip 1.0034x 1.0000x 1.001699x
+mlkem_roundtrip_core 1.0008x 1.0026x 1.001700x
+minimum=mlkem_decaps_core 0.998681x
+
+[gcc-avx2]
+metric batch1_gmean batch2_gmean combined_gmean
+mlkem_decaps 1.0005x 0.9996x 1.000050x
+mlkem_decaps_core 0.9954x 1.0014x 0.998395x
+mlkem_encaps 1.0014x 1.0013x 1.001350x
+mlkem_encaps_core 1.0059x 1.0042x 1.005050x
+mlkem_keygen 0.9937x 0.9975x 0.995598x
+mlkem_keygen_core 0.9961x 0.9968x 0.996450x
+mlkem_roundtrip 0.9968x 0.9977x 0.997250x
+mlkem_roundtrip_core 1.0001x 1.0009x 1.000500x
+minimum=mlkem_keygen 0.995598x

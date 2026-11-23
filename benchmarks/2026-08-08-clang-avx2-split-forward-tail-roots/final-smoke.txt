@@ -1,0 +1,14 @@
+candidate_ref=dc09558236d1141437b1e5f41bd464a026f0b456
+implementation_tree_matches_commit=yes
+profile=Clang AVX2-only
+command=make clean && make product test-product CC=clang ARCH_CFLAGS="-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f"
+product_test=PASS
+artifact_sha256=8219abeb783e39b6ba0e40ee80ea715ac004332720c321a404ccae53bbe9361d
+artifact_file_bytes=81736
+code_bytes=44701
+readonly_data_bytes=8937
+primary_bytes=53638
+writable_bytes=26593
+check_ntt_roots_clang=PASS
+check_ntt_roots_gcc=PASS
+final_smoke=PASS

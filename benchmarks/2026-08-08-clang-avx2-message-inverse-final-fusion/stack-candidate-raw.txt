@@ -1,0 +1,17 @@
+artifact=/tmp/baby-mlkem-fused-msg-validation-matrix/clang-avx2-product.o
+artifact_sha256=b7d3a42108f5442c6a177133b7e1e5357d6f5b0a14d8f107d0baa720a6c5bffa
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4512
+encaps_stack_bytes=4144
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4512
+correctness_smoke=pass

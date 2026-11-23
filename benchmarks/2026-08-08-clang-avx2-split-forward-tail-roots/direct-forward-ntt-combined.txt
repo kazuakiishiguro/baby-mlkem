@@ -1,0 +1,10 @@
+metric batch1 batch2 combined
+paired_gmean 1.009043589x 0.992673088x 1.000824868x
+paired_median 1.002443575x 0.998653425x 1.001313810x
+wins 20/31 14/31 34/62
+iterations_per_run=1000000
+warmup_pairs_per_batch=4
+run_order=alternating
+pin_cpu=0
+speed_gain_credit=none
+note=batch2 also measured a rejected external-table variant; these ratios use only base and candidate rows

@@ -1,0 +1,14 @@
+artifact=/tmp/baby-roots-compact-native-product.o
+artifact_sha256=e1d33f3360d21207fb7197d0ab1c6d7e98013b93c70b60b2cfa57ff170d47d30
+artifact_file_bytes=139248
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=83112
+readonly_data_bytes=20373
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=103485
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

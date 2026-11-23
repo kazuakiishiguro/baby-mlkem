@@ -1,0 +1,1110 @@
+iters=100000 runs=15
+warmup_runs=3
+bootstrap_samples=20000
+bench_suites=kyber_upstream_avx2,kyber_upstream_avx2_fair,mlkem_native,pqclean_avx2,liboqs,boringssl,libcrux_rust,libjade_kyber768_avx2,botan_mlkem,openssl_mlkem
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=1
+skip_local_build=1
+local_bench_bin=/tmp/baby-mlkem-c8-formal-run/product/bench_productc
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=avx2
+bench_profile_tag=goal-avx2
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -maes
+mlkem_native_harness_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -std=c99
+pqclean_avx2_cflags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=x86-64-v3
+liboqs_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+liboqs_harness_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+boringssl_c_flags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+boringssl_cxx_flags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+libcrux_rustflags=-C target-cpu=x86-64-v3 -C codegen-units=1
+libcrux_crate_version=0.0.10
+libcrux_harness_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=keccak_perm_avx512
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+openssl_harness_cflags=-O3 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+openssl_ia32cap=:~0x10000
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[kyber_upstream_avx2] warmup=1/3 order=local-first
+[kyber_upstream_avx2] warmup=2/3 order=competitor-first
+[kyber_upstream_avx2] warmup=3/3 order=local-first
+[kyber_upstream_avx2] run=1/15 order=local-first
+[kyber_upstream_avx2] run=1 keygen=5631.26/6590.03 encaps=4499.77/6552.44 decaps=4474.61/7191.42 roundtrip=14977.97/20560.58
+[kyber_upstream_avx2] run=2/15 order=competitor-first
+[kyber_upstream_avx2] run=2 keygen=5637.81/6549.12 encaps=4517.97/6675.18 decaps=4468.96/7186.31 roundtrip=14959.90/20684.88
+[kyber_upstream_avx2] run=3/15 order=local-first
+[kyber_upstream_avx2] run=3 keygen=5627.87/6624.99 encaps=4550.33/6460.18 decaps=4631.22/7177.85 roundtrip=15141.12/20492.36
+[kyber_upstream_avx2] run=4/15 order=competitor-first
+[kyber_upstream_avx2] run=4 keygen=5645.28/6553.91 encaps=4497.95/6553.30 decaps=4481.51/7199.76 roundtrip=14967.04/20554.94
+[kyber_upstream_avx2] run=5/15 order=local-first
+[kyber_upstream_avx2] run=5 keygen=5624.32/6708.85 encaps=4496.19/6773.86 decaps=4615.73/7169.22 roundtrip=15077.34/20892.97
+[kyber_upstream_avx2] run=6/15 order=competitor-first
+[kyber_upstream_avx2] run=6 keygen=5632.71/6568.98 encaps=4491.64/6931.21 decaps=4469.00/7163.71 roundtrip=14929.37/20870.92
+[kyber_upstream_avx2] run=7/15 order=local-first
+[kyber_upstream_avx2] run=7 keygen=5603.46/6622.47 encaps=4496.88/6455.31 decaps=4468.64/7199.49 roundtrip=14920.61/20523.33
+[kyber_upstream_avx2] run=8/15 order=competitor-first
+[kyber_upstream_avx2] run=8 keygen=5640.83/6820.63 encaps=4816.27/6451.50 decaps=4806.57/7336.44 roundtrip=15645.06/20840.57
+[kyber_upstream_avx2] run=9/15 order=local-first
+[kyber_upstream_avx2] run=9 keygen=5618.70/6825.29 encaps=4489.18/6473.59 decaps=4490.47/7329.42 roundtrip=14987.64/20888.80
+[kyber_upstream_avx2] run=10/15 order=competitor-first
+[kyber_upstream_avx2] run=10 keygen=5627.87/6619.32 encaps=4489.54/6449.23 decaps=4471.17/7225.82 roundtrip=14924.61/20551.54
+[kyber_upstream_avx2] run=11/15 order=local-first
+[kyber_upstream_avx2] run=11 keygen=5616.27/6731.12 encaps=4557.51/6460.77 decaps=4468.91/7185.09 roundtrip=14938.88/20575.38
+[kyber_upstream_avx2] run=12/15 order=competitor-first
+[kyber_upstream_avx2] run=12 keygen=5634.65/6626.63 encaps=4506.12/6611.67 decaps=4518.63/7238.71 roundtrip=14982.71/20765.35
+[kyber_upstream_avx2] run=13/15 order=local-first
+[kyber_upstream_avx2] run=13 keygen=5613.32/6557.89 encaps=4498.59/6522.52 decaps=4477.20/7174.49 roundtrip=14924.00/20539.80
+[kyber_upstream_avx2] run=14/15 order=competitor-first
+[kyber_upstream_avx2] run=14 keygen=5662.45/6612.21 encaps=4491.76/6441.73 decaps=4467.77/7180.59 roundtrip=14955.36/20491.71
+[kyber_upstream_avx2] run=15/15 order=local-first
+[kyber_upstream_avx2] run=15 keygen=5605.57/6581.10 encaps=4489.95/6900.21 decaps=4497.64/7216.45 roundtrip=14935.92/20928.89
+[kyber_upstream_avx2]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15017.84
+local_roundtrip_sd_ns=183.90
+local_roundtrip_median_ns=14959.90
+local_roundtrip_trimmed_ns=14977.07
+competitor_roundtrip_mean_ns=20677.47
+competitor_roundtrip_sd_ns=167.45
+competitor_roundtrip_median_ns=20575.38
+competitor_roundtrip_trimmed_ns=20672.42
+selected_local_roundtrip_ns=14959.90
+selected_competitor_roundtrip_ns=20575.38
+local_ns_div_competitor_ns=0.727x
+local_speedup_vs_competitor=1.375x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5628.16
+keygen_local_median_ns=5627.87
+keygen_competitor_mean_ns=6639.50
+keygen_competitor_median_ns=6619.32
+keygen_speedup_ratio_of_medians=1.1762x
+keygen_speedup_gmean=1.1796x
+keygen_speedup_ci95_low=1.1720x
+keygen_speedup_ci95_high=1.1882x
+keygen_speedup_median=1.1760x
+keygen_wins=15/15
+keygen_local_first_median=1.1795x
+keygen_competitor_first_median=1.1677x
+encaps_runs=15
+encaps_local_mean_ns=4525.98
+encaps_local_median_ns=4497.95
+encaps_competitor_mean_ns=6580.85
+encaps_competitor_median_ns=6522.52
+encaps_speedup_ratio_of_medians=1.4501x
+encaps_speedup_gmean=1.4538x
+encaps_speedup_ci95_low=1.4293x
+encaps_speedup_ci95_high=1.4780x
+encaps_speedup_median=1.4499x
+encaps_wins=15/15
+encaps_local_first_median=1.4460x
+encaps_competitor_first_median=1.4570x
+decaps_runs=15
+decaps_local_mean_ns=4520.54
+decaps_local_median_ns=4477.20
+decaps_competitor_mean_ns=7211.65
+decaps_competitor_median_ns=7191.42
+decaps_speedup_ratio_of_medians=1.6062x
+decaps_speedup_gmean=1.5956x
+decaps_speedup_ci95_low=1.5802x
+decaps_speedup_ci95_high=1.6085x
+decaps_speedup_median=1.6065x
+decaps_wins=15/15
+decaps_local_first_median=1.6058x
+decaps_competitor_first_median=1.6065x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15017.84
+roundtrip_local_median_ns=14959.90
+roundtrip_competitor_mean_ns=20677.47
+roundtrip_competitor_median_ns=20575.38
+roundtrip_speedup_ratio_of_medians=1.3754x
+roundtrip_speedup_gmean=1.3769x
+roundtrip_speedup_ci95_low=1.3680x
+roundtrip_speedup_ci95_high=1.3847x
+roundtrip_speedup_median=1.3770x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.3768x
+roundtrip_competitor_first_median=1.3770x
+
+[kyber_upstream_avx2_fair] warmup=1/3 order=local-first
+[kyber_upstream_avx2_fair] warmup=2/3 order=competitor-first
+[kyber_upstream_avx2_fair] warmup=3/3 order=local-first
+[kyber_upstream_avx2_fair] run=1/15 order=local-first
+[kyber_upstream_avx2_fair] run=1 keygen=6431.35/6630.40 encaps=5428.69/6548.19 decaps=5474.25/7266.51 roundtrip=17637.67/20628.55
+[kyber_upstream_avx2_fair] run=2/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=2 keygen=5621.45/6671.12 encaps=4502.61/6508.51 decaps=4492.37/7229.44 roundtrip=14964.62/20700.49
+[kyber_upstream_avx2_fair] run=3/15 order=local-first
+[kyber_upstream_avx2_fair] run=3 keygen=5602.62/6688.86 encaps=4500.17/6799.84 decaps=4463.76/7178.18 roundtrip=14914.01/20912.14
+[kyber_upstream_avx2_fair] run=4/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=4 keygen=5620.11/6663.67 encaps=4532.71/6520.75 decaps=4467.92/7224.49 roundtrip=14940.07/20633.55
+[kyber_upstream_avx2_fair] run=5/15 order=local-first
+[kyber_upstream_avx2_fair] run=5 keygen=5624.16/6633.51 encaps=4495.25/6865.92 decaps=4475.68/7248.36 roundtrip=14957.17/20878.87
+[kyber_upstream_avx2_fair] run=6/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=6 keygen=5621.25/6930.70 encaps=4493.62/6510.39 decaps=4468.61/7432.92 roundtrip=14900.16/21081.33
+[kyber_upstream_avx2_fair] run=7/15 order=local-first
+[kyber_upstream_avx2_fair] run=7 keygen=5602.29/6671.54 encaps=4497.20/6559.69 decaps=4485.89/7280.27 roundtrip=14922.63/20745.74
+[kyber_upstream_avx2_fair] run=8/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=8 keygen=5623.37/6622.53 encaps=4527.53/6548.01 decaps=4469.51/7277.46 roundtrip=14934.40/20647.96
+[kyber_upstream_avx2_fair] run=9/15 order=local-first
+[kyber_upstream_avx2_fair] run=9 keygen=5633.70/6713.95 encaps=4497.74/6562.74 decaps=4456.90/7225.04 roundtrip=14928.10/20624.14
+[kyber_upstream_avx2_fair] run=10/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=10 keygen=5621.62/6831.10 encaps=4538.60/6516.20 decaps=4463.27/7217.12 roundtrip=14924.14/20785.31
+[kyber_upstream_avx2_fair] run=11/15 order=local-first
+[kyber_upstream_avx2_fair] run=11 keygen=5621.51/6661.78 encaps=4501.10/6528.55 decaps=4804.86/7205.96 roundtrip=15287.04/20561.26
+[kyber_upstream_avx2_fair] run=12/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=12 keygen=5608.60/6855.17 encaps=4489.81/6505.65 decaps=4670.67/7415.97 roundtrip=15141.64/20982.77
+[kyber_upstream_avx2_fair] run=13/15 order=local-first
+[kyber_upstream_avx2_fair] run=13 keygen=5649.27/6767.88 encaps=4489.17/6714.74 decaps=4464.44/7194.14 roundtrip=14900.74/20858.13
+[kyber_upstream_avx2_fair] run=14/15 order=competitor-first
+[kyber_upstream_avx2_fair] run=14 keygen=5771.89/6751.11 encaps=4586.16/6951.82 decaps=4464.56/7163.15 roundtrip=15147.73/21101.64
+[kyber_upstream_avx2_fair] run=15/15 order=local-first
+[kyber_upstream_avx2_fair] run=15 keygen=5624.16/6701.48 encaps=4571.49/6544.51 decaps=4467.84/7624.25 roundtrip=14996.45/21061.34
+[kyber_upstream_avx2_fair]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15166.44
+local_roundtrip_sd_ns=692.88
+local_roundtrip_median_ns=14940.07
+local_roundtrip_trimmed_ns=14996.83
+competitor_roundtrip_mean_ns=20813.55
+competitor_roundtrip_sd_ns=183.70
+competitor_roundtrip_median_ns=20785.31
+competitor_roundtrip_trimmed_ns=20810.79
+selected_local_roundtrip_ns=14940.07
+selected_competitor_roundtrip_ns=20785.31
+local_ns_div_competitor_ns=0.719x
+local_speedup_vs_competitor=1.391x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5685.16
+keygen_local_median_ns=5621.62
+keygen_competitor_mean_ns=6719.65
+keygen_competitor_median_ns=6688.86
+keygen_speedup_ratio_of_medians=1.1898x
+keygen_speedup_gmean=1.1826x
+keygen_speedup_ci95_low=1.1561x
+keygen_speedup_ci95_high=1.2012x
+keygen_speedup_median=1.1909x
+keygen_wins=15/15
+keygen_local_first_median=1.1912x
+keygen_competitor_first_median=1.1867x
+encaps_runs=15
+encaps_local_mean_ns=4576.79
+encaps_local_median_ns=4501.10
+encaps_competitor_mean_ns=6612.37
+encaps_competitor_median_ns=6548.01
+encaps_speedup_ratio_of_medians=1.4548x
+encaps_speedup_gmean=1.4461x
+encaps_speedup_ci95_low=1.4019x
+encaps_speedup_ci95_high=1.4768x
+encaps_speedup_median=1.4490x
+encaps_wins=15/15
+encaps_local_first_median=1.4589x
+encaps_competitor_first_median=1.4463x
+decaps_runs=15
+decaps_local_mean_ns=4572.70
+decaps_local_median_ns=4468.61
+decaps_competitor_mean_ns=7278.88
+decaps_competitor_median_ns=7229.44
+decaps_speedup_ratio_of_medians=1.6178x
+decaps_speedup_gmean=1.5939x
+decaps_speedup_ci95_low=1.5444x
+decaps_speedup_ci95_high=1.6306x
+decaps_speedup_median=1.6170x
+decaps_wins=15/15
+decaps_local_first_median=1.6155x
+decaps_competitor_first_median=1.6170x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15166.44
+roundtrip_local_median_ns=14940.07
+roundtrip_competitor_mean_ns=20813.55
+roundtrip_competitor_median_ns=20785.31
+roundtrip_speedup_ratio_of_medians=1.3912x
+roundtrip_speedup_gmean=1.3735x
+roundtrip_speedup_ci95_low=1.3388x
+roundtrip_speedup_ci95_high=1.3949x
+roundtrip_speedup_median=1.3902x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.3931x
+roundtrip_competitor_first_median=1.3858x
+
+[mlkem_native] warmup=1/3 order=local-first
+[mlkem_native] warmup=2/3 order=competitor-first
+[mlkem_native] warmup=3/3 order=local-first
+[mlkem_native] run=1/15 order=local-first
+[mlkem_native] run=1 keygen=5602.82/6392.43 encaps=4516.97/6803.52 decaps=4466.64/8818.25 roundtrip=14896.35/22099.13
+[mlkem_native] run=2/15 order=competitor-first
+[mlkem_native] run=2 keygen=5656.12/6330.03 encaps=4517.87/6760.84 decaps=4800.98/8800.62 roundtrip=15328.06/22052.98
+[mlkem_native] run=3/15 order=local-first
+[mlkem_native] run=3 keygen=5615.73/6323.83 encaps=4493.14/6784.07 decaps=4463.05/8810.38 roundtrip=14902.81/22028.52
+[mlkem_native] run=4/15 order=competitor-first
+[mlkem_native] run=4 keygen=5831.36/6303.74 encaps=4521.16/6771.52 decaps=4466.05/8811.97 roundtrip=15134.10/21983.65
+[mlkem_native] run=5/15 order=local-first
+[mlkem_native] run=5 keygen=5606.92/6344.16 encaps=4494.70/6777.13 decaps=4459.95/8817.87 roundtrip=14901.97/22025.47
+[mlkem_native] run=6/15 order=competitor-first
+[mlkem_native] run=6 keygen=5626.61/6317.06 encaps=4494.18/6768.68 decaps=4468.53/8830.67 roundtrip=14934.21/22031.10
+[mlkem_native] run=7/15 order=local-first
+[mlkem_native] run=7 keygen=5614.98/6333.64 encaps=4636.06/6842.90 decaps=4799.24/8828.44 roundtrip=15392.57/22051.87
+[mlkem_native] run=8/15 order=competitor-first
+[mlkem_native] run=8 keygen=5617.01/6315.67 encaps=4507.25/6780.50 decaps=4473.45/8822.71 roundtrip=14933.23/22020.79
+[mlkem_native] run=9/15 order=local-first
+[mlkem_native] run=9 keygen=5672.28/6392.87 encaps=4504.79/6778.59 decaps=4494.96/8833.18 roundtrip=14987.93/22097.46
+[mlkem_native] run=10/15 order=competitor-first
+[mlkem_native] run=10 keygen=5639.39/6325.46 encaps=4504.04/6801.96 decaps=4502.94/8810.50 roundtrip=14968.86/22041.76
+[mlkem_native] run=11/15 order=local-first
+[mlkem_native] run=11 keygen=5611.44/6340.58 encaps=4491.56/6775.56 decaps=4467.81/8796.58 roundtrip=15073.82/21998.22
+[mlkem_native] run=12/15 order=competitor-first
+[mlkem_native] run=12 keygen=5728.41/6309.04 encaps=4528.76/6802.51 decaps=4504.19/8790.94 roundtrip=15046.30/22067.02
+[mlkem_native] run=13/15 order=local-first
+[mlkem_native] run=13 keygen=5808.66/6354.63 encaps=4508.78/6776.91 decaps=4802.41/8803.58 roundtrip=15451.29/22019.44
+[mlkem_native] run=14/15 order=competitor-first
+[mlkem_native] run=14 keygen=5619.32/6354.98 encaps=4495.81/6778.73 decaps=5005.34/8839.56 roundtrip=15459.59/22040.81
+[mlkem_native] run=15/15 order=local-first
+[mlkem_native] run=15 keygen=5614.73/6342.99 encaps=4498.49/6783.23 decaps=4478.25/8806.79 roundtrip=14923.46/22025.27
+[mlkem_native]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15088.97
+local_roundtrip_sd_ns=211.97
+local_roundtrip_median_ns=14987.93
+local_roundtrip_trimmed_ns=15075.28
+competitor_roundtrip_mean_ns=22038.90
+competitor_roundtrip_sd_ns=31.82
+competitor_roundtrip_median_ns=22031.10
+competitor_roundtrip_trimmed_ns=22038.52
+selected_local_roundtrip_ns=14987.93
+selected_competitor_roundtrip_ns=22031.10
+local_ns_div_competitor_ns=0.680x
+local_speedup_vs_competitor=1.470x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5657.72
+keygen_local_median_ns=5619.32
+keygen_competitor_mean_ns=6338.74
+keygen_competitor_median_ns=6333.64
+keygen_speedup_ratio_of_medians=1.1271x
+keygen_speedup_gmean=1.1204x
+keygen_speedup_ci95_low=1.1120x
+keygen_speedup_ci95_high=1.1277x
+keygen_speedup_median=1.1261x
+keygen_wins=15/15
+keygen_local_first_median=1.1288x
+keygen_competitor_first_median=1.1217x
+encaps_runs=15
+encaps_local_mean_ns=4514.24
+encaps_local_median_ns=4504.79
+encaps_competitor_mean_ns=6785.78
+encaps_competitor_median_ns=6778.73
+encaps_speedup_ratio_of_medians=1.5048x
+encaps_speedup_gmean=1.5032x
+encaps_speedup_ci95_low=1.4985x
+encaps_speedup_ci95_high=1.5067x
+encaps_speedup_median=1.5061x
+encaps_wins=15/15
+encaps_local_first_median=1.5070x
+encaps_competitor_first_median=1.5044x
+decaps_runs=15
+decaps_local_mean_ns=4576.92
+decaps_local_median_ns=4478.25
+decaps_competitor_mean_ns=8814.80
+decaps_competitor_median_ns=8811.97
+decaps_speedup_ratio_of_medians=1.9677x
+decaps_speedup_gmean=1.9272x
+decaps_speedup_ci95_low=1.8898x
+decaps_speedup_ci95_high=1.9601x
+decaps_speedup_median=1.9666x
+decaps_wins=15/15
+decaps_local_first_median=1.9677x
+decaps_competitor_first_median=1.9566x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15088.97
+roundtrip_local_median_ns=14987.93
+roundtrip_competitor_mean_ns=22038.90
+roundtrip_competitor_median_ns=22031.10
+roundtrip_speedup_ratio_of_medians=1.4699x
+roundtrip_speedup_gmean=1.4607x
+roundtrip_speedup_ci95_low=1.4502x
+roundtrip_speedup_ci95_high=1.4704x
+roundtrip_speedup_median=1.4725x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.4751x
+roundtrip_competitor_first_median=1.4666x
+
+[pqclean_avx2] warmup=1/3 order=local-first
+[pqclean_avx2] warmup=2/3 order=competitor-first
+[pqclean_avx2] warmup=3/3 order=local-first
+[pqclean_avx2] run=1/15 order=local-first
+[pqclean_avx2] run=1 keygen=5608.68/6678.60 encaps=4496.77/6804.90 decaps=4463.43/7615.50 roundtrip=14899.08/21356.07
+[pqclean_avx2] run=2/15 order=competitor-first
+[pqclean_avx2] run=2 keygen=5613.69/6685.07 encaps=4501.78/6729.15 decaps=4461.58/7583.58 roundtrip=14914.39/21207.62
+[pqclean_avx2] run=3/15 order=local-first
+[pqclean_avx2] run=3 keygen=5642.58/6734.51 encaps=4517.22/6557.67 decaps=4483.91/7552.76 roundtrip=14915.40/21049.51
+[pqclean_avx2] run=4/15 order=competitor-first
+[pqclean_avx2] run=4 keygen=5609.51/6666.62 encaps=4495.59/6855.50 decaps=4478.76/7597.55 roundtrip=14911.11/21300.67
+[pqclean_avx2] run=5/15 order=local-first
+[pqclean_avx2] run=5 keygen=5609.74/6666.21 encaps=4485.40/6611.70 decaps=4463.16/7514.46 roundtrip=14888.35/20985.48
+[pqclean_avx2] run=6/15 order=competitor-first
+[pqclean_avx2] run=6 keygen=5795.99/7068.22 encaps=4635.71/6559.37 decaps=4458.19/7869.33 roundtrip=15235.25/21678.53
+[pqclean_avx2] run=7/15 order=local-first
+[pqclean_avx2] run=7 keygen=5609.94/6669.90 encaps=4494.74/6557.23 decaps=4468.75/7939.17 roundtrip=14987.90/21353.33
+[pqclean_avx2] run=8/15 order=competitor-first
+[pqclean_avx2] run=8 keygen=5621.21/6753.97 encaps=4499.34/6702.56 decaps=4815.01/7576.73 roundtrip=15274.00/21227.04
+[pqclean_avx2] run=9/15 order=local-first
+[pqclean_avx2] run=9 keygen=5615.10/6691.31 encaps=4543.99/6548.57 decaps=4517.63/7515.21 roundtrip=14988.24/20943.32
+[pqclean_avx2] run=10/15 order=competitor-first
+[pqclean_avx2] run=10 keygen=5612.97/6664.45 encaps=4494.25/6565.59 decaps=4617.84/7549.55 roundtrip=15063.54/20981.78
+[pqclean_avx2] run=11/15 order=local-first
+[pqclean_avx2] run=11 keygen=5612.24/6667.83 encaps=4486.69/6618.24 decaps=4464.83/7553.54 roundtrip=14896.90/21052.40
+[pqclean_avx2] run=12/15 order=competitor-first
+[pqclean_avx2] run=12 keygen=5677.71/6771.06 encaps=4498.25/6779.96 decaps=4464.19/7605.13 roundtrip=14902.77/21419.52
+[pqclean_avx2] run=13/15 order=local-first
+[pqclean_avx2] run=13 keygen=5636.06/6666.49 encaps=4497.40/6551.87 decaps=4472.45/7522.41 roundtrip=14930.11/20960.51
+[pqclean_avx2] run=14/15 order=competitor-first
+[pqclean_avx2] run=14 keygen=5631.67/7084.40 encaps=4485.92/6534.36 decaps=4486.89/7892.72 roundtrip=14912.71/21710.77
+[pqclean_avx2] run=15/15 order=local-first
+[pqclean_avx2] run=15 keygen=5620.60/6675.47 encaps=4532.29/6624.05 decaps=4492.63/7546.38 roundtrip=14972.86/21101.91
+[pqclean_avx2]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=14979.51
+local_roundtrip_sd_ns=121.54
+local_roundtrip_median_ns=14915.40
+local_roundtrip_trimmed_ns=14963.87
+competitor_roundtrip_mean_ns=21221.90
+competitor_roundtrip_sd_ns=247.93
+competitor_roundtrip_median_ns=21207.62
+competitor_roundtrip_trimmed_ns=21205.72
+selected_local_roundtrip_ns=14915.40
+selected_competitor_roundtrip_ns=21207.62
+local_ns_div_competitor_ns=0.703x
+local_speedup_vs_competitor=1.422x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5634.51
+keygen_local_median_ns=5615.10
+keygen_competitor_mean_ns=6742.94
+keygen_competitor_median_ns=6678.60
+keygen_speedup_ratio_of_medians=1.1894x
+keygen_speedup_gmean=1.1965x
+keygen_speedup_ci95_low=1.1893x
+keygen_speedup_ci95_high=1.2071x
+keygen_speedup_median=1.1908x
+keygen_wins=15/15
+keygen_local_first_median=1.1886x
+keygen_competitor_first_median=1.1926x
+encaps_runs=15
+encaps_local_mean_ns=4511.02
+encaps_local_median_ns=4497.40
+encaps_competitor_mean_ns=6640.05
+encaps_competitor_median_ns=6611.70
+encaps_speedup_ratio_of_medians=1.4701x
+encaps_speedup_gmean=1.4718x
+encaps_speedup_ci95_low=1.4576x
+encaps_speedup_ci95_high=1.4866x
+encaps_speedup_median=1.4615x
+encaps_wins=15/15
+encaps_local_first_median=1.4602x
+encaps_competitor_first_median=1.4897x
+decaps_runs=15
+decaps_local_mean_ns=4507.28
+decaps_local_median_ns=4472.45
+decaps_competitor_mean_ns=7628.93
+decaps_competitor_median_ns=7576.73
+decaps_speedup_ratio_of_medians=1.6941x
+decaps_speedup_gmean=1.6926x
+decaps_speedup_ci95_low=1.6675x
+decaps_speedup_ci95_high=1.7170x
+decaps_speedup_median=1.6918x
+decaps_wins=15/15
+decaps_local_first_median=1.6840x
+decaps_competitor_first_median=1.6998x
+roundtrip_runs=15
+roundtrip_local_mean_ns=14979.51
+roundtrip_local_median_ns=14915.40
+roundtrip_competitor_mean_ns=21221.90
+roundtrip_competitor_median_ns=21207.62
+roundtrip_speedup_ratio_of_medians=1.4219x
+roundtrip_speedup_gmean=1.4167x
+roundtrip_speedup_ci95_low=1.4082x
+roundtrip_speedup_ci95_high=1.4258x
+roundtrip_speedup_median=1.4132x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.4104x
+roundtrip_competitor_first_median=1.4229x
+
+[liboqs] warmup=1/3 order=local-first
+[liboqs] warmup=2/3 order=competitor-first
+[liboqs] warmup=3/3 order=local-first
+[liboqs] run=1/15 order=local-first
+[liboqs] run=1 keygen=5652.09/7303.48 encaps=4494.79/7603.54 decaps=4804.28/9668.10 roundtrip=15305.70/24640.50
+[liboqs] run=2/15 order=competitor-first
+[liboqs] run=2 keygen=5611.43/7434.18 encaps=4487.48/7610.75 decaps=4459.11/9768.03 roundtrip=14883.80/24632.44
+[liboqs] run=3/15 order=local-first
+[liboqs] run=3 keygen=5601.70/7171.69 encaps=4489.02/7592.08 decaps=4466.14/9664.20 roundtrip=14891.93/24513.38
+[liboqs] run=4/15 order=competitor-first
+[liboqs] run=4 keygen=5622.30/7141.13 encaps=4498.20/7584.26 decaps=4466.67/9667.04 roundtrip=14933.13/24512.97
+[liboqs] run=5/15 order=local-first
+[liboqs] run=5 keygen=5611.39/7363.96 encaps=4496.91/7592.51 decaps=4477.55/9668.25 roundtrip=14937.78/24704.93
+[liboqs] run=6/15 order=competitor-first
+[liboqs] run=6 keygen=5614.50/7149.84 encaps=4497.95/7579.80 decaps=4467.83/9676.44 roundtrip=14899.48/24518.12
+[liboqs] run=7/15 order=local-first
+[liboqs] run=7 keygen=5603.37/7170.49 encaps=4490.55/7809.78 decaps=4466.82/9666.72 roundtrip=14899.89/24724.01
+[liboqs] run=8/15 order=competitor-first
+[liboqs] run=8 keygen=5652.24/7174.58 encaps=4517.51/7586.52 decaps=4472.37/9667.21 roundtrip=14964.08/24550.15
+[liboqs] run=9/15 order=local-first
+[liboqs] run=9 keygen=5606.68/7166.24 encaps=4505.83/7613.78 decaps=4467.30/9829.72 roundtrip=14960.43/24673.21
+[liboqs] run=10/15 order=competitor-first
+[liboqs] run=10 keygen=5634.47/7161.24 encaps=4489.66/7797.07 decaps=4483.45/9661.55 roundtrip=14929.45/24736.10
+[liboqs] run=11/15 order=local-first
+[liboqs] run=11 keygen=5622.99/7146.33 encaps=4503.43/7613.36 decaps=4462.10/9716.19 roundtrip=14939.68/24562.80
+[liboqs] run=12/15 order=competitor-first
+[liboqs] run=12 keygen=5778.22/7180.59 encaps=4518.75/7583.34 decaps=4483.88/9915.12 roundtrip=15097.82/24739.05
+[liboqs] run=13/15 order=local-first
+[liboqs] run=13 keygen=5608.29/7168.77 encaps=4489.60/7609.81 decaps=4468.89/9707.50 roundtrip=14915.04/24570.85
+[liboqs] run=14/15 order=competitor-first
+[liboqs] run=14 keygen=5621.20/7167.03 encaps=4490.80/7589.08 decaps=4473.99/9691.08 roundtrip=14898.76/24615.70
+[liboqs] run=15/15 order=local-first
+[liboqs] run=15 keygen=5609.45/7329.84 encaps=4498.96/7593.20 decaps=4538.23/9675.88 roundtrip=14991.52/24658.89
+[liboqs]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=14963.23
+local_roundtrip_sd_ns=108.70
+local_roundtrip_median_ns=14933.13
+local_roundtrip_trimmed_ns=14943.00
+competitor_roundtrip_mean_ns=24623.54
+competitor_roundtrip_sd_ns=82.03
+competitor_roundtrip_median_ns=24632.44
+competitor_roundtrip_trimmed_ns=24623.16
+selected_local_roundtrip_ns=14933.13
+selected_competitor_roundtrip_ns=24632.44
+local_ns_div_competitor_ns=0.606x
+local_speedup_vs_competitor=1.650x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5630.02
+keygen_local_median_ns=5614.50
+keygen_competitor_mean_ns=7215.29
+keygen_competitor_median_ns=7170.49
+keygen_speedup_ratio_of_medians=1.2771x
+keygen_speedup_gmean=1.2815x
+keygen_speedup_ci95_low=1.2720x
+keygen_speedup_ci95_high=1.2917x
+keygen_speedup_median=1.2782x
+keygen_wins=15/15
+keygen_local_first_median=1.2800x
+keygen_competitor_first_median=1.2710x
+encaps_runs=15
+encaps_local_mean_ns=4497.96
+encaps_local_median_ns=4496.91
+encaps_competitor_mean_ns=7623.93
+encaps_competitor_median_ns=7593.20
+encaps_speedup_ratio_of_medians=1.6885x
+encaps_speedup_gmean=1.6949x
+encaps_speedup_ci95_low=1.6873x
+encaps_speedup_ci95_high=1.7047x
+encaps_speedup_median=1.6899x
+encaps_wins=15/15
+encaps_local_first_median=1.6909x
+encaps_competitor_first_median=1.6861x
+decaps_runs=15
+decaps_local_mean_ns=4497.24
+decaps_local_median_ns=4468.89
+decaps_competitor_mean_ns=9709.54
+decaps_competitor_median_ns=9675.88
+decaps_speedup_ratio_of_medians=2.1652x
+decaps_speedup_gmean=2.1593x
+decaps_speedup_ci95_low=2.1339x
+decaps_speedup_ci95_high=2.1777x
+decaps_speedup_median=2.1643x
+decaps_wins=15/15
+decaps_local_first_median=2.1640x
+decaps_competitor_first_median=2.1658x
+roundtrip_runs=15
+roundtrip_local_mean_ns=14963.23
+roundtrip_local_median_ns=14933.13
+roundtrip_competitor_mean_ns=24623.54
+roundtrip_competitor_median_ns=24632.44
+roundtrip_speedup_ratio_of_medians=1.6495x
+roundtrip_speedup_gmean=1.6456x
+roundtrip_speedup_ci95_low=1.6392x
+roundtrip_speedup_ci95_high=1.6505x
+roundtrip_speedup_median=1.6461x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.6467x
+roundtrip_competitor_first_median=1.6456x
+
+[boringssl] warmup=1/3 order=local-first
+[boringssl] warmup=2/3 order=competitor-first
+[boringssl] warmup=3/3 order=local-first
+[boringssl] run=1/15 order=local-first
+[boringssl] run=1 keygen=5650.42/14020.44 encaps=4497.60/12877.75 decaps=4498.90/17320.59 roundtrip=14958.76/44418.10
+[boringssl] run=2/15 order=competitor-first
+[boringssl] run=2 keygen=5643.52/14049.58 encaps=4499.16/12991.91 decaps=4478.30/17430.75 roundtrip=14953.16/44570.98
+[boringssl] run=3/15 order=local-first
+[boringssl] run=3 keygen=5820.24/14057.05 encaps=4510.01/12926.35 decaps=4468.83/17277.89 roundtrip=15158.21/44368.76
+[boringssl] run=4/15 order=competitor-first
+[boringssl] run=4 keygen=5638.12/14046.89 encaps=4532.16/12900.77 decaps=4467.90/17254.34 roundtrip=14934.89/44412.85
+[boringssl] run=5/15 order=local-first
+[boringssl] run=5 keygen=5647.64/14146.87 encaps=4494.28/12901.08 decaps=4466.83/17324.91 roundtrip=14935.60/44516.97
+[boringssl] run=6/15 order=competitor-first
+[boringssl] run=6 keygen=5635.00/14037.65 encaps=4504.96/12937.75 decaps=4831.34/17292.29 roundtrip=15355.38/44466.24
+[boringssl] run=7/15 order=local-first
+[boringssl] run=7 keygen=5622.28/14066.65 encaps=4495.49/12930.55 decaps=4476.10/17309.31 roundtrip=14935.31/44461.52
+[boringssl] run=8/15 order=competitor-first
+[boringssl] run=8 keygen=5636.63/14011.80 encaps=4507.84/12905.07 decaps=4507.69/17414.12 roundtrip=14982.85/44491.80
+[boringssl] run=9/15 order=local-first
+[boringssl] run=9 keygen=5621.27/14071.43 encaps=4498.24/12940.97 decaps=4508.56/17312.43 roundtrip=14973.06/44476.70
+[boringssl] run=10/15 order=competitor-first
+[boringssl] run=10 keygen=5635.94/14033.02 encaps=4499.51/12913.64 decaps=4476.36/17279.95 roundtrip=14947.45/44500.02
+[boringssl] run=11/15 order=local-first
+[boringssl] run=11 keygen=5651.49/14070.92 encaps=4525.38/12921.89 decaps=4516.80/17280.54 roundtrip=15118.85/44322.61
+[boringssl] run=12/15 order=competitor-first
+[boringssl] run=12 keygen=5641.53/14008.73 encaps=4499.49/12888.56 decaps=4469.67/17315.56 roundtrip=14944.81/44347.79
+[boringssl] run=13/15 order=local-first
+[boringssl] run=13 keygen=5630.23/14138.96 encaps=4500.88/12930.49 decaps=4467.85/17312.65 roundtrip=14971.20/44439.17
+[boringssl] run=14/15 order=competitor-first
+[boringssl] run=14 keygen=5805.34/14051.33 encaps=4507.87/13039.95 decaps=4468.43/17317.12 roundtrip=15120.49/44605.40
+[boringssl] run=15/15 order=local-first
+[boringssl] run=15 keygen=5991.11/14082.77 encaps=4614.14/12984.34 decaps=4899.50/17366.09 roundtrip=15868.47/44502.81
+[boringssl]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15077.23
+local_roundtrip_sd_ns=249.12
+local_roundtrip_median_ns=14971.20
+local_roundtrip_trimmed_ns=15027.32
+competitor_roundtrip_mean_ns=44460.11
+competitor_roundtrip_sd_ns=78.23
+competitor_roundtrip_median_ns=44466.24
+competitor_roundtrip_trimmed_ns=44459.52
+selected_local_roundtrip_ns=14971.20
+selected_competitor_roundtrip_ns=44466.24
+local_ns_div_competitor_ns=0.337x
+local_speedup_vs_competitor=2.970x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5684.72
+keygen_local_median_ns=5641.53
+keygen_competitor_mean_ns=14059.61
+keygen_competitor_median_ns=14051.33
+keygen_speedup_ratio_of_medians=2.4907x
+keygen_speedup_gmean=2.4736x
+keygen_speedup_ci95_low=2.4493x
+keygen_speedup_ci95_high=2.4928x
+keygen_speedup_median=2.4898x
+keygen_wins=15/15
+keygen_local_first_median=2.4959x
+keygen_competitor_first_median=2.4895x
+encaps_runs=15
+encaps_local_mean_ns=4512.47
+encaps_local_median_ns=4500.88
+encaps_competitor_mean_ns=12932.74
+encaps_competitor_median_ns=12926.35
+encaps_speedup_ratio_of_medians=2.8720x
+encaps_speedup_gmean=2.8660x
+encaps_speedup_ci95_low=2.8560x
+encaps_speedup_ci95_high=2.8742x
+encaps_speedup_median=2.8700x
+encaps_wins=15/15
+encaps_local_first_median=2.8684x
+encaps_competitor_first_median=2.8700x
+decaps_runs=15
+decaps_local_mean_ns=4533.54
+decaps_local_median_ns=4476.36
+decaps_competitor_mean_ns=17320.57
+decaps_competitor_median_ns=17312.65
+decaps_speedup_ratio_of_medians=3.8676x
+decaps_speedup_gmean=3.8221x
+decaps_speedup_ci95_low=3.7606x
+decaps_speedup_ci95_high=3.8672x
+decaps_speedup_median=3.8632x
+decaps_wins=15/15
+decaps_local_first_median=3.8581x
+decaps_competitor_first_median=3.8632x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15077.23
+roundtrip_local_median_ns=14971.20
+roundtrip_competitor_mean_ns=44460.11
+roundtrip_competitor_median_ns=44466.24
+roundtrip_speedup_ratio_of_medians=2.9701x
+roundtrip_speedup_gmean=2.9492x
+roundtrip_speedup_ci95_low=2.9232x
+roundtrip_speedup_ci95_high=2.9685x
+roundtrip_speedup_median=2.9694x
+roundtrip_wins=15/15
+roundtrip_local_first_median=2.9688x
+roundtrip_competitor_first_median=2.9695x
+
+[libcrux_rust] warmup=1/3 order=local-first
+[libcrux_rust] warmup=2/3 order=competitor-first
+[libcrux_rust] warmup=3/3 order=local-first
+[libcrux_rust] run=1/15 order=local-first
+[libcrux_rust] run=1 keygen=5613.49/7979.04 encaps=4491.02/8425.72 decaps=4479.35/9220.71 roundtrip=14929.85/25778.70
+[libcrux_rust] run=2/15 order=competitor-first
+[libcrux_rust] run=2 keygen=5626.83/7949.36 encaps=4488.37/8439.69 decaps=4469.92/9253.07 roundtrip=14922.22/25827.92
+[libcrux_rust] run=3/15 order=local-first
+[libcrux_rust] run=3 keygen=5603.87/7961.09 encaps=4490.94/8444.84 decaps=4582.41/9256.22 roundtrip=15019.62/25798.28
+[libcrux_rust] run=4/15 order=competitor-first
+[libcrux_rust] run=4 keygen=5637.63/7985.59 encaps=4565.94/8423.64 decaps=4471.86/9260.31 roundtrip=15040.35/25780.15
+[libcrux_rust] run=5/15 order=local-first
+[libcrux_rust] run=5 keygen=5601.53/8015.97 encaps=4496.10/8464.98 decaps=4474.01/9218.06 roundtrip=14982.43/25739.34
+[libcrux_rust] run=6/15 order=competitor-first
+[libcrux_rust] run=6 keygen=5626.47/7962.15 encaps=4509.59/8409.26 decaps=4474.67/9219.69 roundtrip=14930.80/25754.18
+[libcrux_rust] run=7/15 order=local-first
+[libcrux_rust] run=7 keygen=5607.45/7960.46 encaps=4489.84/8454.48 decaps=4472.01/9219.23 roundtrip=14946.42/25737.13
+[libcrux_rust] run=8/15 order=competitor-first
+[libcrux_rust] run=8 keygen=5624.98/7970.57 encaps=4499.52/8477.09 decaps=4467.79/9298.55 roundtrip=14918.59/25915.78
+[libcrux_rust] run=9/15 order=local-first
+[libcrux_rust] run=9 keygen=5605.48/8005.89 encaps=4496.12/8439.28 decaps=4504.09/9279.72 roundtrip=14908.73/25834.30
+[libcrux_rust] run=10/15 order=competitor-first
+[libcrux_rust] run=10 keygen=5631.63/7930.82 encaps=4498.50/8432.35 decaps=4470.77/9218.34 roundtrip=14919.46/25742.22
+[libcrux_rust] run=11/15 order=local-first
+[libcrux_rust] run=11 keygen=5607.15/7977.85 encaps=4490.85/8435.44 decaps=4471.44/9253.62 roundtrip=14950.40/25803.60
+[libcrux_rust] run=12/15 order=competitor-first
+[libcrux_rust] run=12 keygen=5621.94/7969.93 encaps=4493.59/8473.46 decaps=4479.80/9252.12 roundtrip=14924.46/25836.98
+[libcrux_rust] run=13/15 order=local-first
+[libcrux_rust] run=13 keygen=5768.30/7960.01 encaps=4647.70/8473.52 decaps=4467.31/9238.06 roundtrip=15201.32/25810.32
+[libcrux_rust] run=14/15 order=competitor-first
+[libcrux_rust] run=14 keygen=5613.46/7940.63 encaps=4496.03/8409.08 decaps=4468.22/9205.39 roundtrip=14899.67/25707.84
+[libcrux_rust] run=15/15 order=local-first
+[libcrux_rust] run=15 keygen=5606.25/7953.47 encaps=4495.60/8402.49 decaps=4465.28/9306.30 roundtrip=14899.54/25795.44
+[libcrux_rust]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=14959.59
+local_roundtrip_sd_ns=78.72
+local_roundtrip_median_ns=14929.85
+local_roundtrip_trimmed_ns=14945.62
+competitor_roundtrip_mean_ns=25790.81
+competitor_roundtrip_sd_ns=52.11
+competitor_roundtrip_median_ns=25795.44
+competitor_roundtrip_trimmed_ns=25787.58
+selected_local_roundtrip_ns=14929.85
+selected_competitor_roundtrip_ns=25795.44
+local_ns_div_competitor_ns=0.579x
+local_speedup_vs_competitor=1.728x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5626.43
+keygen_local_median_ns=5613.49
+keygen_competitor_mean_ns=7968.19
+keygen_competitor_median_ns=7962.15
+keygen_speedup_ratio_of_medians=1.4184x
+keygen_speedup_gmean=1.4162x
+keygen_speedup_ci95_low=1.4098x
+keygen_speedup_ci95_high=1.4210x
+keygen_speedup_median=1.4176x
+keygen_wins=15/15
+keygen_local_first_median=1.4210x
+keygen_competitor_first_median=1.4151x
+encaps_runs=15
+encaps_local_mean_ns=4509.98
+encaps_local_median_ns=4496.03
+encaps_competitor_mean_ns=8440.35
+encaps_competitor_median_ns=8439.28
+encaps_speedup_ratio_of_medians=1.8771x
+encaps_speedup_gmean=1.8716x
+encaps_speedup_ci95_low=1.8625x
+encaps_speedup_ci95_high=1.8787x
+encaps_speedup_median=1.8770x
+encaps_wins=15/15
+encaps_local_first_median=1.8777x
+encaps_competitor_first_median=1.8745x
+decaps_runs=15
+decaps_local_mean_ns=4481.26
+decaps_local_median_ns=4471.86
+decaps_competitor_mean_ns=9246.63
+decaps_competitor_median_ns=9252.12
+decaps_speedup_ratio_of_medians=2.0690x
+decaps_speedup_gmean=2.0634x
+decaps_speedup_ci95_low=2.0555x
+decaps_speedup_ci95_high=2.0695x
+decaps_speedup_median=2.0619x
+decaps_wins=15/15
+decaps_local_first_median=2.0609x
+decaps_competitor_first_median=2.0653x
+roundtrip_runs=15
+roundtrip_local_mean_ns=14959.59
+roundtrip_local_median_ns=14929.85
+roundtrip_competitor_mean_ns=25790.81
+roundtrip_competitor_median_ns=25795.44
+roundtrip_speedup_ratio_of_medians=1.7278x
+roundtrip_speedup_gmean=1.7241x
+roundtrip_speedup_ci95_low=1.7190x
+roundtrip_speedup_ci95_high=1.7283x
+roundtrip_speedup_median=1.7254x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.7240x
+roundtrip_competitor_first_median=1.7254x
+
+[libjade_kyber768_avx2] warmup=1/3 order=local-first
+[libjade_kyber768_avx2] warmup=2/3 order=competitor-first
+[libjade_kyber768_avx2] warmup=3/3 order=local-first
+[libjade_kyber768_avx2] run=1/15 order=local-first
+[libjade_kyber768_avx2] run=1 keygen=5783.26/6222.46 encaps=4485.79/8319.84 decaps=4471.42/6628.25 roundtrip=15060.46/21483.16
+[libjade_kyber768_avx2] run=2/15 order=competitor-first
+[libjade_kyber768_avx2] run=2 keygen=5626.84/6239.14 encaps=4499.84/8310.10 decaps=4468.72/6635.71 roundtrip=14899.58/21508.07
+[libjade_kyber768_avx2] run=3/15 order=local-first
+[libjade_kyber768_avx2] run=3 keygen=5611.34/6226.26 encaps=4548.04/8299.85 decaps=4578.83/6640.59 roundtrip=15141.08/21457.31
+[libjade_kyber768_avx2] run=4/15 order=competitor-first
+[libjade_kyber768_avx2] run=4 keygen=5621.20/6209.30 encaps=4491.77/8306.55 decaps=4464.12/6626.48 roundtrip=14901.14/21461.77
+[libjade_kyber768_avx2] run=5/15 order=local-first
+[libjade_kyber768_avx2] run=5 keygen=5656.99/6221.42 encaps=4495.46/8296.93 decaps=4470.74/6719.54 roundtrip=14954.59/21458.05
+[libjade_kyber768_avx2] run=6/15 order=competitor-first
+[libjade_kyber768_avx2] run=6 keygen=5625.14/6233.12 encaps=4499.72/8302.52 decaps=4466.99/6640.20 roundtrip=14911.92/21469.40
+[libjade_kyber768_avx2] run=7/15 order=local-first
+[libjade_kyber768_avx2] run=7 keygen=5624.25/6219.68 encaps=4497.52/8303.02 decaps=4466.43/6628.51 roundtrip=14919.35/21439.33
+[libjade_kyber768_avx2] run=8/15 order=competitor-first
+[libjade_kyber768_avx2] run=8 keygen=5618.45/6214.13 encaps=4528.40/8298.68 decaps=4484.39/6650.98 roundtrip=14982.28/21458.28
+[libjade_kyber768_avx2] run=9/15 order=local-first
+[libjade_kyber768_avx2] run=9 keygen=5613.80/6223.65 encaps=4499.91/8305.25 decaps=4628.00/6638.04 roundtrip=15067.70/21451.32
+[libjade_kyber768_avx2] run=10/15 order=competitor-first
+[libjade_kyber768_avx2] run=10 keygen=5639.08/6219.98 encaps=4571.56/8305.95 decaps=4478.10/6632.40 roundtrip=14998.58/21457.90
+[libjade_kyber768_avx2] run=11/15 order=local-first
+[libjade_kyber768_avx2] run=11 keygen=5602.67/6222.14 encaps=4499.84/8337.13 decaps=4463.88/6641.94 roundtrip=14904.85/21545.80
+[libjade_kyber768_avx2] run=12/15 order=competitor-first
+[libjade_kyber768_avx2] run=12 keygen=5620.63/6220.49 encaps=4507.40/8301.94 decaps=4508.66/6649.50 roundtrip=14983.02/21446.86
+[libjade_kyber768_avx2] run=13/15 order=local-first
+[libjade_kyber768_avx2] run=13 keygen=5614.95/6218.46 encaps=4502.02/8299.53 decaps=4588.68/6625.15 roundtrip=15061.58/21454.01
+[libjade_kyber768_avx2] run=14/15 order=competitor-first
+[libjade_kyber768_avx2] run=14 keygen=5632.11/6215.87 encaps=4507.97/8305.97 decaps=4485.01/6634.43 roundtrip=14952.15/21443.93
+[libjade_kyber768_avx2] run=15/15 order=local-first
+[libjade_kyber768_avx2] run=15 keygen=5630.22/6309.86 encaps=4490.54/8345.83 decaps=4484.35/6674.11 roundtrip=14947.02/21486.67
+[libjade_kyber768_avx2]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=14979.02
+local_roundtrip_sd_ns=73.81
+local_roundtrip_median_ns=14954.59
+local_roundtrip_trimmed_ns=14972.66
+competitor_roundtrip_mean_ns=21468.12
+competitor_roundtrip_sd_ns=28.04
+competitor_roundtrip_median_ns=21458.05
+competitor_roundtrip_trimmed_ns=21464.36
+selected_local_roundtrip_ns=14954.59
+selected_competitor_roundtrip_ns=21458.05
+local_ns_div_competitor_ns=0.697x
+local_speedup_vs_competitor=1.435x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5634.73
+keygen_local_median_ns=5624.25
+keygen_competitor_mean_ns=6227.73
+keygen_competitor_median_ns=6221.42
+keygen_speedup_ratio_of_medians=1.1062x
+keygen_speedup_gmean=1.1053x
+keygen_speedup_ci95_low=1.1002x
+keygen_speedup_ci95_high=1.1093x
+keygen_speedup_median=1.1067x
+keygen_wins=15/15
+keygen_local_first_median=1.1081x
+keygen_competitor_first_median=1.1060x
+encaps_runs=15
+encaps_local_mean_ns=4508.39
+encaps_local_median_ns=4499.84
+encaps_competitor_mean_ns=8309.27
+encaps_competitor_median_ns=8305.25
+encaps_speedup_ratio_of_medians=1.8457x
+encaps_speedup_gmean=1.8431x
+encaps_speedup_ci95_low=1.8374x
+encaps_speedup_ci95_high=1.8482x
+encaps_speedup_median=1.8456x
+encaps_wins=15/15
+encaps_local_first_median=1.8459x
+encaps_competitor_first_median=1.8425x
+decaps_runs=15
+decaps_local_mean_ns=4500.55
+decaps_local_median_ns=4478.10
+decaps_competitor_mean_ns=6644.39
+decaps_competitor_median_ns=6638.04
+decaps_speedup_ratio_of_medians=1.4823x
+decaps_speedup_gmean=1.4764x
+decaps_speedup_ci95_low=1.4665x
+decaps_speedup_ci95_high=1.4850x
+decaps_speedup_median=1.4831x
+decaps_wins=15/15
+decaps_local_first_median=1.4832x
+decaps_competitor_first_median=1.4831x
+roundtrip_runs=15
+roundtrip_local_mean_ns=14979.02
+roundtrip_local_median_ns=14954.59
+roundtrip_competitor_mean_ns=21468.12
+roundtrip_competitor_median_ns=21458.05
+roundtrip_speedup_ratio_of_medians=1.4349x
+roundtrip_speedup_gmean=1.4332x
+roundtrip_speedup_ci95_low=1.4293x
+roundtrip_speedup_ci95_high=1.4370x
+roundtrip_speedup_median=1.4342x
+roundtrip_wins=15/15
+roundtrip_local_first_median=1.4307x
+roundtrip_competitor_first_median=1.4342x
+
+[botan_mlkem] warmup=1/3 order=local-first
+[botan_mlkem] warmup=2/3 order=competitor-first
+[botan_mlkem] warmup=3/3 order=local-first
+[botan_mlkem] run=1/15 order=local-first
+[botan_mlkem] run=1 keygen=5625.92/31733.72 encaps=4519.13/24599.37 decaps=4526.20/31113.72 roundtrip=14977.68/89327.59
+[botan_mlkem] run=2/15 order=competitor-first
+[botan_mlkem] run=2 keygen=5618.93/31774.51 encaps=4504.83/24533.80 decaps=4477.69/31075.25 roundtrip=14930.00/89222.41
+[botan_mlkem] run=3/15 order=local-first
+[botan_mlkem] run=3 keygen=5726.98/31731.26 encaps=4739.34/24500.91 decaps=4483.22/31040.39 roundtrip=15276.30/89061.14
+[botan_mlkem] run=4/15 order=competitor-first
+[botan_mlkem] run=4 keygen=5621.64/31790.91 encaps=4499.06/24554.99 decaps=4470.64/31034.96 roundtrip=14934.25/89053.22
+[botan_mlkem] run=5/15 order=local-first
+[botan_mlkem] run=5 keygen=5621.33/31852.43 encaps=4521.38/24588.69 decaps=4484.79/31186.81 roundtrip=14979.09/89524.02
+[botan_mlkem] run=6/15 order=competitor-first
+[botan_mlkem] run=6 keygen=5643.54/31863.49 encaps=4513.07/24547.55 decaps=4474.07/31080.48 roundtrip=14966.78/89303.01
+[botan_mlkem] run=7/15 order=local-first
+[botan_mlkem] run=7 keygen=5651.29/31861.33 encaps=4494.53/24537.11 decaps=4473.38/31056.01 roundtrip=15017.45/89258.23
+[botan_mlkem] run=8/15 order=competitor-first
+[botan_mlkem] run=8 keygen=5630.01/31831.03 encaps=4490.41/24597.19 decaps=4469.29/31083.58 roundtrip=14926.68/89292.39
+[botan_mlkem] run=9/15 order=local-first
+[botan_mlkem] run=9 keygen=5866.69/31919.36 encaps=4501.92/24587.73 decaps=4471.10/31165.74 roundtrip=15208.87/89471.71
+[botan_mlkem] run=10/15 order=competitor-first
+[botan_mlkem] run=10 keygen=5627.19/31814.40 encaps=4493.90/24516.18 decaps=4471.11/31030.19 roundtrip=14929.87/89238.11
+[botan_mlkem] run=11/15 order=local-first
+[botan_mlkem] run=11 keygen=5771.34/31796.42 encaps=4558.70/24586.90 decaps=4638.33/31175.02 roundtrip=15286.88/89312.72
+[botan_mlkem] run=12/15 order=competitor-first
+[botan_mlkem] run=12 keygen=5626.74/31781.42 encaps=4489.07/24615.82 decaps=4488.04/31195.49 roundtrip=14938.38/89297.26
+[botan_mlkem] run=13/15 order=local-first
+[botan_mlkem] run=13 keygen=5624.27/31718.08 encaps=4499.15/24521.09 decaps=4479.59/31035.14 roundtrip=14941.43/89107.76
+[botan_mlkem] run=14/15 order=competitor-first
+[botan_mlkem] run=14 keygen=5632.32/31851.79 encaps=4498.96/24524.41 decaps=4475.31/31128.05 roundtrip=14945.36/89325.76
+[botan_mlkem] run=15/15 order=local-first
+[botan_mlkem] run=15 keygen=5631.08/31778.72 encaps=4503.66/24623.51 decaps=4468.36/31211.54 roundtrip=14947.31/89066.29
+[botan_mlkem]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15013.76
+local_roundtrip_sd_ns=129.36
+local_roundtrip_median_ns=14947.31
+local_roundtrip_trimmed_ns=14999.44
+competitor_roundtrip_mean_ns=89257.44
+competitor_roundtrip_sd_ns=140.23
+competitor_roundtrip_median_ns=89292.39
+competitor_roundtrip_trimmed_ns=89252.64
+selected_local_roundtrip_ns=14947.31
+selected_competitor_roundtrip_ns=89292.39
+local_ns_div_competitor_ns=0.167x
+local_speedup_vs_competitor=5.974x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5661.28
+keygen_local_median_ns=5630.01
+keygen_competitor_mean_ns=31806.59
+keygen_competitor_median_ns=31796.42
+keygen_speedup_ratio_of_medians=5.6477x
+keygen_speedup_gmean=5.6187x
+keygen_speedup_ci95_low=5.5824x
+keygen_speedup_ci95_high=5.6484x
+keygen_speedup_median=5.6460x
+keygen_wins=15/15
+keygen_local_first_median=5.6387x
+keygen_competitor_first_median=5.6538x
+encaps_runs=15
+encaps_local_mean_ns=4521.81
+encaps_local_median_ns=4501.92
+encaps_competitor_mean_ns=24562.35
+encaps_competitor_median_ns=24554.99
+encaps_speedup_ratio_of_medians=5.4543x
+encaps_speedup_gmean=5.4324x
+encaps_speedup_ci95_low=5.3900x
+encaps_speedup_ci95_high=5.4592x
+encaps_speedup_median=5.4511x
+encaps_wins=15/15
+encaps_local_first_median=5.4468x
+encaps_competitor_first_median=5.4554x
+decaps_runs=15
+decaps_local_mean_ns=4490.07
+decaps_local_median_ns=4475.31
+decaps_competitor_mean_ns=31107.49
+decaps_competitor_median_ns=31083.58
+decaps_speedup_ratio_of_medians=6.9456x
+decaps_speedup_gmean=6.9283x
+decaps_speedup_ci95_low=6.8926x
+decaps_speedup_ci95_high=6.9524x
+decaps_speedup_median=6.9424x
+decaps_wins=15/15
+decaps_local_first_median=6.9353x
+decaps_competitor_first_median=6.9468x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15013.76
+roundtrip_local_median_ns=14947.31
+roundtrip_competitor_mean_ns=89257.44
+roundtrip_competitor_median_ns=89292.39
+roundtrip_speedup_ratio_of_medians=5.9738x
+roundtrip_speedup_gmean=5.9452x
+roundtrip_speedup_ci95_low=5.9182x
+roundtrip_speedup_ci95_high=5.9679x
+roundtrip_speedup_median=5.9640x
+roundtrip_wins=15/15
+roundtrip_local_first_median=5.9512x
+roundtrip_competitor_first_median=5.9768x
+
+[openssl_mlkem] warmup=1/3 order=local-first
+[openssl_mlkem] warmup=2/3 order=competitor-first
+[openssl_mlkem] warmup=3/3 order=local-first
+[openssl_mlkem] run=1/15 order=local-first
+[openssl_mlkem] run=1 keygen=5804.82/20737.55 encaps=4628.21/12822.69 decaps=4491.50/19132.02 roundtrip=15227.68/52834.54
+[openssl_mlkem] run=2/15 order=competitor-first
+[openssl_mlkem] run=2 keygen=5654.18/20798.06 encaps=4509.52/12831.83 decaps=4480.37/19272.26 roundtrip=14984.18/52828.86
+[openssl_mlkem] run=3/15 order=local-first
+[openssl_mlkem] run=3 keygen=5731.84/20863.18 encaps=4532.16/12752.38 decaps=4527.11/19225.42 roundtrip=15095.38/52903.87
+[openssl_mlkem] run=4/15 order=competitor-first
+[openssl_mlkem] run=4 keygen=5654.63/20827.19 encaps=4512.42/12813.74 decaps=4480.86/19351.76 roundtrip=15054.35/52945.84
+[openssl_mlkem] run=5/15 order=local-first
+[openssl_mlkem] run=5 keygen=5688.54/20788.80 encaps=4537.10/12777.93 decaps=4530.98/19317.50 roundtrip=15069.15/53069.90
+[openssl_mlkem] run=6/15 order=competitor-first
+[openssl_mlkem] run=6 keygen=5670.53/21119.71 encaps=4524.37/12879.47 decaps=4489.99/19341.94 roundtrip=14993.86/53294.04
+[openssl_mlkem] run=7/15 order=local-first
+[openssl_mlkem] run=7 keygen=5903.04/20845.15 encaps=4574.87/12839.50 decaps=4495.90/19233.62 roundtrip=15269.27/52903.15
+[openssl_mlkem] run=8/15 order=competitor-first
+[openssl_mlkem] run=8 keygen=5677.59/20874.87 encaps=4515.33/12840.71 decaps=4492.37/19317.05 roundtrip=14994.18/52936.78
+[openssl_mlkem] run=9/15 order=local-first
+[openssl_mlkem] run=9 keygen=5690.58/20810.87 encaps=4531.48/12851.79 decaps=4514.85/19217.20 roundtrip=15036.84/52864.14
+[openssl_mlkem] run=10/15 order=competitor-first
+[openssl_mlkem] run=10 keygen=5659.27/20818.43 encaps=4516.68/12811.61 decaps=4481.91/19281.40 roundtrip=14982.71/52960.28
+[openssl_mlkem] run=11/15 order=local-first
+[openssl_mlkem] run=11 keygen=5687.90/20758.58 encaps=4538.92/12839.71 decaps=4498.35/19272.31 roundtrip=15035.07/53010.80
+[openssl_mlkem] run=12/15 order=competitor-first
+[openssl_mlkem] run=12 keygen=5733.11/20909.43 encaps=4511.58/12825.82 decaps=4480.31/19418.37 roundtrip=14962.48/53059.33
+[openssl_mlkem] run=13/15 order=local-first
+[openssl_mlkem] run=13 keygen=5695.31/20736.73 encaps=4552.70/12939.09 decaps=4503.12/19266.32 roundtrip=15043.35/53003.92
+[openssl_mlkem] run=14/15 order=competitor-first
+[openssl_mlkem] run=14 keygen=5659.34/20798.88 encaps=4519.77/12815.30 decaps=4502.89/19289.68 roundtrip=14982.91/52913.77
+[openssl_mlkem] run=15/15 order=local-first
+[openssl_mlkem] run=15 keygen=5693.76/20785.38 encaps=4532.98/12848.40 decaps=4495.55/19200.60 roundtrip=15035.71/52853.50
+[openssl_mlkem]
+runs=15
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=15051.14
+local_roundtrip_sd_ns=88.64
+local_roundtrip_median_ns=15035.71
+local_roundtrip_trimmed_ns=15041.18
+competitor_roundtrip_mean_ns=52958.85
+competitor_roundtrip_sd_ns=119.75
+competitor_roundtrip_median_ns=52936.78
+competitor_roundtrip_trimmed_ns=52943.06
+selected_local_roundtrip_ns=15035.71
+selected_competitor_roundtrip_ns=52936.78
+local_ns_div_competitor_ns=0.284x
+local_speedup_vs_competitor=3.521x
+paired_bootstrap_samples=20000
+keygen_runs=15
+keygen_local_mean_ns=5706.96
+keygen_local_median_ns=5688.54
+keygen_competitor_mean_ns=20831.52
+keygen_competitor_median_ns=20810.87
+keygen_speedup_ratio_of_medians=3.6584x
+keygen_speedup_gmean=3.6504x
+keygen_speedup_ci95_low=3.6261x
+keygen_speedup_ci95_high=3.6714x
+keygen_speedup_median=3.6545x
+keygen_wins=15/15
+keygen_local_first_median=3.6453x
+keygen_competitor_first_median=3.6784x
+encaps_runs=15
+encaps_local_mean_ns=4535.87
+encaps_local_median_ns=4531.48
+encaps_competitor_mean_ns=12832.66
+encaps_competitor_median_ns=12831.83
+encaps_speedup_ratio_of_medians=2.8317x
+encaps_speedup_gmean=2.8292x
+encaps_speedup_ci95_low=2.8182x
+encaps_speedup_ci95_high=2.8379x
+encaps_speedup_median=2.8361x
+encaps_wins=15/15
+encaps_local_first_median=2.8226x
+encaps_competitor_first_median=2.8429x
+decaps_runs=15
+decaps_local_mean_ns=4497.74
+decaps_local_median_ns=4495.55
+decaps_competitor_mean_ns=19275.83
+decaps_competitor_median_ns=19272.31
+decaps_speedup_ratio_of_medians=4.2870x
+decaps_speedup_gmean=4.2857x
+decaps_speedup_ci95_low=4.2736x
+decaps_speedup_ci95_high=4.2980x
+decaps_speedup_median=4.2838x
+decaps_wins=15/15
+decaps_local_first_median=4.2672x
+decaps_competitor_first_median=4.3020x
+roundtrip_runs=15
+roundtrip_local_mean_ns=15051.14
+roundtrip_local_median_ns=15035.71
+roundtrip_competitor_mean_ns=52958.85
+roundtrip_competitor_median_ns=52936.78
+roundtrip_speedup_ratio_of_medians=3.5207x
+roundtrip_speedup_gmean=3.5186x
+roundtrip_speedup_ci95_low=3.5063x
+roundtrip_speedup_ci95_high=3.5297x
+roundtrip_speedup_median=3.5234x
+roundtrip_wins=15/15
+roundtrip_local_first_median=3.5154x
+roundtrip_competitor_first_median=3.5316x
+

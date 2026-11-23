@@ -1,0 +1,14 @@
+baseline_ref=b0f4d0f3b5c824ad1fe3ead76e62267e6c9af8d5
+candidate_ref=d6eada53621ffc1dc907e4a5ae7a83b922df1042
+protocol=9 pairs, 3 warmup pairs, alternating order, 30000 iterations, CPU 0
+ratios=baseline time / candidate time
+
+metric                                                        paired_gmean paired_median wins
+encrypt_rhat_acc4_fused_lazy512_avx512                        0.9987       0.9992        4/9
+kpke_encrypt_cached                                            0.9929       0.9982        1/9
+kpke_encrypt_uncached                                          1.0013       0.9981        4/9
+kpke_keygen_full                                               0.9944       0.9971        4/9
+kpke_prepare_public_no_cache                                   1.0049       1.0019        7/9
+
+diagnostic_only=yes
+formal_decision_source=native-ab-combined.txt

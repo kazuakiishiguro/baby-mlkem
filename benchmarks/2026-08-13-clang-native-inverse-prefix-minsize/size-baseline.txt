@@ -1,0 +1,14 @@
+artifact=/tmp/baby-mlkem-native-candidate-eta2-minsize.F2ZSK1/baby_mlkem768_product.o
+artifact_sha256=c65269e0cad402632c8f861093b703bd277933ebafcbc69d53e6dca557f23cf5
+artifact_file_bytes=91096
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=2
+code_bytes=47739
+readonly_data_bytes=15814
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=63553
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001
+max_stack_bytes=unmeasured

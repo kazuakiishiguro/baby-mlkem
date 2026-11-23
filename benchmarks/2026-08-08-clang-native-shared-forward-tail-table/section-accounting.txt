@@ -1,0 +1,14 @@
+baseline_ref=50b54e5d6fabf345779b93f65c7bf1b3025e58d3
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+section baseline candidate delta
+code_total 53409 53409 +0
+readonly_total 19639 16567 -3072
+primary_total 73048 69976 -3072
+compiler_rodata 11520 5376 -6144
+shared_tail_low 0 1536 +1536
+shared_tail_high 0 1536 +1536
+writable_total 18001 18001 +0
+artifact_file_bytes 102848 100144 -2704
+native_mlkem_native_pinned_bytes=51186
+baseline_native_gap_bytes=21862
+candidate_native_gap_bytes=18790

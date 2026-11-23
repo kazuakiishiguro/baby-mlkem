@@ -1,0 +1,40 @@
+candidate_ref=7f03bcce40c3b5ee80c9292730d0d21aa454883c
+compiler=clang
+flags=-O1 -g -fprofile-instr-generate -fcoverage-mapping -march=native
+run_tag=2
+== KAT coverage around scalar refill ==
+ 6964|      0|      (const uint8_t *)stream, sizeof(stream), out, 0);
+ 6965|      0|  if (__builtin_expect(count < N, 0)) {
+ 6966|      0|    for (int lane = 0; lane < 25; lane++) {
+ 6967|      0|      stream[lane] = keccak_lane1_u64(st[lane]);
+ 6968|      0|    }
+ 6969|      0|  }
+ 6970|      0|  while (__builtin_expect(count < N, 0)) {
+ 6971|      0|    keccakf(stream);
+ 6972|      0|    count = sample_ntt_parse_stream_avx2_ready(
+ 6973|      0|        (const uint8_t *)stream, 21 * sizeof(uint64_t), out, count);
+ 6974|      0|  }
+ 6975|       |
+ 6976|      0|  if (__builtin_expect(public_key_hash, 1)) {
+ 6977|      0|    for (int block = 3; block < 8; block++) {
+ 6978|      0|      const uint8_t *p = in0 + (size_t)block * 136;
+ 6979|      0|      keccak_xor_lanes16_avx512(hst, p);
+ 6980|      0|      hst[16] ^= load64_le(p + 128);
+== KEM bench coverage around scalar refill ==
+ 6964|  4.00k|      (const uint8_t *)stream, sizeof(stream), out, 0);
+ 6965|  4.00k|  if (__builtin_expect(count < N, 0)) {
+ 6966|    468|    for (int lane = 0; lane < 25; lane++) {
+ 6967|    450|      stream[lane] = keccak_lane1_u64(st[lane]);
+ 6968|    450|    }
+ 6969|     18|  }
+ 6970|  4.01k|  while (__builtin_expect(count < N, 0)) {
+ 6971|     18|    keccakf(stream);
+ 6972|     18|    count = sample_ntt_parse_stream_avx2_ready(
+ 6973|     18|        (const uint8_t *)stream, 21 * sizeof(uint64_t), out, count);
+ 6974|     18|  }
+ 6975|       |
+ 6976|  4.00k|  if (__builtin_expect(public_key_hash, 1)) {
+ 6977|  12.0k|    for (int block = 3; block < 8; block++) {
+ 6978|  10.0k|      const uint8_t *p = in0 + (size_t)block * 136;
+ 6979|  10.0k|      keccak_xor_lanes16_avx512(hst, p);
+ 6980|  10.0k|      hst[16] ^= load64_le(p + 128);

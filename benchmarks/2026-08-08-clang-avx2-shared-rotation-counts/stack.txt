@@ -1,0 +1,18 @@
+baseline_ref=baece39
+candidate_ref=66bfaaa
+compiler=clang
+profile=AVX2-only
+flags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+method=guarded alternate stack touched high-water
+runs=8
+usable_bytes=1048576
+artifact_baseline_sha256=760ff0cac1954f5bb63d72fa1962910d338a57a9d276be5ea0a82798b0aa4d78
+artifact_candidate_sha256=86f0f636e8cf18b7db4e8c74fb4b8f3ae258a0450eead10f3c683bcd1d655d45
+operation baseline candidate delta
+keygen 4512 4512 0
+encaps 4144 4144 0
+decaps_valid 4512 4512 0
+decaps_invalid 4512 4512 0
+maximum 4512 4512 0
+correctness_smoke=pass
+maximum_stack_nonincrease=PASS

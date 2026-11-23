@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-ntt6-products/clang-avx2.o
+artifact_sha256=1fbd2356a5c10467ff896e31b7b5dcb46a8c12f131975cffd9c23051246c704a
+artifact_file_bytes=88512
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=6
+code_bytes=47242
+readonly_data_bytes=12065
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=59307
+initialized_writable_bytes=0
+zero_fill_bytes=26593
+writable_bytes=26593
+max_stack_bytes=unmeasured

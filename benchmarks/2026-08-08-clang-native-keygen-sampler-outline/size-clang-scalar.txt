@@ -1,0 +1,14 @@
+artifact=/tmp/keygen-outline-products/clang-scalar.o
+artifact_sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c
+artifact_file_bytes=80680
+required_symbols=baby_mlkem768_keypair_derand baby_mlkem768_encaps_derand baby_mlkem768_decaps
+undefined_symbol_count=5
+code_bytes=60160
+readonly_data_bytes=2033
+unwind_bytes=0
+exception_table_bytes=0
+primary_bytes=62193
+initialized_writable_bytes=0
+zero_fill_bytes=18944
+writable_bytes=18944
+max_stack_bytes=unmeasured

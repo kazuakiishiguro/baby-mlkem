@@ -1,0 +1,4 @@
+command=ASAN_OPTIONS=detect_leaks=0 make -B CC=clang ARCH_CFLAGS=-march=native test
+result=pass
+diagnostics=none
+leak_sanitizer=disabled because ptrace environment

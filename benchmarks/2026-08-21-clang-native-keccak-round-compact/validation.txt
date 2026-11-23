@@ -1,0 +1,9 @@
+PASS: make -B -s test CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-march=native"
+PASS: make -B -s check-ntt-roots CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-march=native"
+PASS: make -B -s test-product product-size CC=clang AVX2_BACKEND=core ARCH_CFLAGS="-march=native"
+PASS: product KAT for native GCC, Clang/GCC AVX2-only, and Clang/GCC scalar profiles
+PASS: git diff --check
+PASS: candidate product symbols are exactly baby_mlkem768_keypair_derand, baby_mlkem768_encaps_derand, baby_mlkem768_decaps
+PASS: candidate native undefined symbol count is 2
+PASS: native sha3_sample_ntt_tail_shared_clang_avx512 size is 0xc41 bytes
+PASS: baseline native sha3_sample_ntt_tail_shared_clang_avx512 size is 0x1521 bytes

@@ -1,0 +1,19 @@
+baseline_ref=50b54e5d6fabf345779b93f65c7bf1b3025e58d3
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+artifact_baseline_sha256=7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e
+artifact_candidate_sha256=0bdc8790a1f44a2f1e20244155dffe07930547a15a708d88d799770d512c0f9e
+compiler=clang
+flags=-O2 -march=native -fomit-frame-pointer -fno-stack-protector
+method=guarded alternate stack touched high-water
+runs=8
+usable_bytes=1048576
+
+operation baseline candidate delta
+keygen 6648 6648 0
+encaps 6776 6776 0
+decaps_valid 8056 8056 0
+decaps_invalid 8056 8056 0
+maximum 8056 8056 0
+
+correctness_smoke=pass
+stack_identity=PASS

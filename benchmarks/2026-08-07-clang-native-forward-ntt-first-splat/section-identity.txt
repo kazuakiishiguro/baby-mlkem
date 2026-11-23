@@ -1,0 +1,35 @@
+profile=clang-native
+base_ref=d36b685e55f3da84a61a1c8baaadc8a80525f6cf
+candidate_ref=2420c08aa35c1f44bed8b70a110e6fe7c2a180bf
+text_section content_identity size_bytes
+.text identical 10794
+.text.baby_mlkem768_keypair_derand identical 11259
+.text.baby_mlkem768_encaps_derand identical 267
+.text.baby_mlkem768_decaps identical 14275
+.text.sha3_512 identical 1379
+.text.sample_ntt8_matrix identical 544
+.text.sample_ntt_parse_stream_avx2_ready identical 556
+.text.sample_ntt8_refill_lanes identical 585
+.text.sample_ntt8_refill_lane_clang identical 244
+.text.ntt_head_mont_lazy_raw_avx512 different 1089
+.text.kpke_prepare_public_no_cache identical 1436
+.text.kpke_encrypt_prepared_public identical 6150
+.text.sha3_sample_ntt_tail_shared_clang_avx512 identical 8443
+.text.ntt3_mul_acc4_fused_final_lazy512_clang_avx512 identical 6418
+.text.ntt_inv_add4_eta2_i8_mont_final_shared_avx512 identical 4621
+.text.keccakf8_sparse_eta2x7_32 identical 3289
+.text.ntt_before_final_l1_avx512 identical 2771
+base_head_factor_low_bytes=960
+base_head_factor_high_bytes=960
+candidate_head_dense_low_bytes=896
+candidate_head_dense_high_bytes=896
+candidate_head_scalar_low_bytes=2
+candidate_head_scalar_high_bytes=2
+candidate_shared_scalar_pool_low_bytes=14
+candidate_shared_scalar_pool_high_bytes=14
+base_product_vpbroadcastw_count=64
+candidate_product_vpbroadcastw_count=64
+base_head_instruction_count=169
+candidate_head_instruction_count=169
+base_section_count=73
+candidate_section_count=73

@@ -1,0 +1,11 @@
+96333461707a516ad004903cca6f44148afd5158411ee8203a815cf2508efb72  benchmarks/2026-08-21-clang-native-inverse-factor-compact/environment.txt
+6e59a02f692c482c8dbef4e08dcf28f4287aec5379c1d162e669543e04e5eac0  benchmarks/2026-08-21-clang-native-inverse-factor-compact/instruction-audit.txt
+fb38d032c61ce7c0bee7209249bb4b3f74e4294bddc44a303a977cb3973a406e  benchmarks/2026-08-21-clang-native-inverse-factor-compact/product-ab-15x100k.txt
+fedfd5f989d85521154e0bdf0d528fb5aa80e6f810df810421f0aa37ece529d0  benchmarks/2026-08-21-clang-native-inverse-factor-compact/product-ab-summary.txt
+59fafc56c3bae8bfdc210b3965a380e142e938ac86143daa99655ab0764399a9  benchmarks/2026-08-21-clang-native-inverse-factor-compact/profile-identity.txt
+c759bea5c0a8eefbc74445c733872786c4f7721f88512839833c06f5a3b8e0a1  benchmarks/2026-08-21-clang-native-inverse-factor-compact/README.md
+5c1457c15ae7fd8f5c1db325e8f13bea06397b151157755de76a12767e99b233  benchmarks/2026-08-21-clang-native-inverse-factor-compact/size-baseline.txt
+64281f74eab1b72f8f728f7c648c61139fc0c9d232e39e76d816e12ca0b1cd2d  benchmarks/2026-08-21-clang-native-inverse-factor-compact/size-candidate.txt
+3971f4f6667ce25f01a81cd777ab3406baf27ce9dd9d55fb885cdb6e94a72988  benchmarks/2026-08-21-clang-native-inverse-factor-compact/source-audit.txt
+e2e07b4fc6edc9894f91e0a88706779d563c5c3d673ba2922099ab8c567e01d8  benchmarks/2026-08-21-clang-native-inverse-factor-compact/stack-candidate.txt
+8947dd21a1055960b4467393dfe0a04200f55d2d6679e6dea1089d92f675c90b  benchmarks/2026-08-21-clang-native-inverse-factor-compact/validation.txt

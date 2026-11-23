@@ -1,0 +1,8 @@
+candidate_ref=7219cad508ae199475d8b1cc2a2f0404479991b7
+kat=PASS
+product_api=PASS
+complete_stage_iterations=1000
+complete_stage_sink=4297556503821386549
+artifact_sha256=827f362023df33ba047637df373b28eee9349448e9becc419b882570fabb792a
+primary_bytes=49712
+postcommit_reproduction=PASS

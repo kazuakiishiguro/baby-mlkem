@@ -1,0 +1,17 @@
+artifact=/tmp/baby-mlkem-ntt-root-reuse.IjIocS/candidate-lane-order/baby_mlkem768_product.o
+artifact_sha256=6d2f660ef7a830827b5e35aa8cbde0d13f90aebda481a1f69ac94f8df949bb91
+api_kind=local
+compiler=clang
+stack_cflags=-O2 -march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f -fomit-frame-pointer -fno-stack-protector
+stack_linker=clang
+stack_ldflags=<none>
+stack_probe_method=guarded_alternate_stack_touched_high_water
+stack_probe_runs=8
+stack_probe_markers=0xa5,0x5a
+stack_usable_bytes=1048576
+keygen_stack_bytes=4512
+encaps_stack_bytes=4144
+decaps_valid_stack_bytes=4512
+decaps_invalid_stack_bytes=4512
+max_stack_bytes=4512
+correctness_smoke=pass

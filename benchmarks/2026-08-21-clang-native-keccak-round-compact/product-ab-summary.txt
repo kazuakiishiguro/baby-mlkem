@@ -1,0 +1,12 @@
+compiler=clang
+arch_cflags=-march=native
+cpu=0
+warmup_runs=3
+runs=15
+iterations=100000
+run_order=alternating
+ratio=baseline_ns_per_op/candidate_ns_per_op
+mlkem_keygen gmean=1.003378x median=1.001333x wins=9/15
+mlkem_encaps gmean=1.002328x median=1.002666x wins=10/15
+mlkem_decaps gmean=0.996470x median=0.998002x wins=4/15
+mlkem_roundtrip gmean=0.998976x median=0.999110x wins=7/15

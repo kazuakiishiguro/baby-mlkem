@@ -1,0 +1,73 @@
+[clang-native]
+compiler=clang
+flags=-march=native
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=5236638352469415403
+product_sha256=7e881e02eb4bd5ba75cfdb00afd34c16a70131d8d941484d0a798ec60e5f2e3e
+code_bytes=53409
+readonly_data_bytes=19639
+primary_bytes=73048
+writable_bytes=18001
+
+[clang-avx2]
+compiler=clang
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=8086079251842987743
+product_sha256=b995a643dc4b884f5202f79213d6c70fcb77bfe5f3411224f81e7aaa75e2f704
+code_bytes=44607
+readonly_data_bytes=11721
+primary_bytes=56328
+writable_bytes=26593
+
+[clang-scalar]
+compiler=clang
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=3075663932904715540
+product_sha256=34b87fe2f6d7431e81530df71d0d1ecc8cb14e1cf1845673536508e2b0ecc47c
+code_bytes=60160
+readonly_data_bytes=2033
+primary_bytes=62193
+writable_bytes=18944
+
+[gcc-native]
+compiler=gcc
+flags=-march=native
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=5236638352469415403
+product_sha256=76cb2e25b1f7860268de66a191534f677ec44655a07444e94b7d9cb93e9377c0
+code_bytes=56006
+readonly_data_bytes=3565
+primary_bytes=59571
+writable_bytes=33728
+
+[gcc-avx2]
+compiler=gcc
+flags=-march=x86-64-v3 -mavx2 -mbmi2 -mpopcnt -mno-avx512f
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=8086079251842987743
+product_sha256=baa60f056156bfbf6d02262854fc6a9f9019610b9d6d2cea81b3b507acbb59d5
+code_bytes=49829
+readonly_data_bytes=3785
+primary_bytes=53614
+writable_bytes=34920
+
+[gcc-scalar]
+compiler=gcc
+flags=-mno-avx -mno-avx2 -mno-avx512f -mno-avx512bw -mno-bmi2
+kat=pass
+product=pass
+stage=pass mlkem_core_stage_bench_sink=3075663932904715540
+product_sha256=3de518852288d473072e59d7eba81931733b7511ab584db80ac8cb012bf81390
+code_bytes=21530
+readonly_data_bytes=1737
+primary_bytes=23267
+writable_bytes=19488
+
+correctness_matrix=PASS

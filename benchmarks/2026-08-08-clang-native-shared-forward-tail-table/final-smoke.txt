@@ -1,0 +1,12 @@
+candidate_ref=62111bcc9562509bda6a72e71c1582205f806534
+compiler=clang
+flags=normal native production speed flags
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+product_sha256=0bdc8790a1f44a2f1e20244155dffe07930547a15a708d88d799770d512c0f9e
+code_bytes=53409
+readonly_bytes=16567
+primary_bytes=69976
+writable_bytes=18001
+postcommit_smoke=PASS

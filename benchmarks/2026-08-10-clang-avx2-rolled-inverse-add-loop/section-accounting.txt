@@ -1,0 +1,27 @@
+baseline_sha256=668bc7877907af53e849dcf85693f15600142c9f6a7ed965d39a094548bcf98c
+candidate_sha256=bdf2c0a541ff857137991666d08f904e9952664fdf192ad75053aa60502f3a8d
+metric baseline candidate delta
+code_bytes 42191 41546 -645
+readonly_data_bytes 5955 5955 +0
+primary_bytes 48146 47501 -645
+writable_bytes 26593 26593 +0
+artifact_file_bytes 74272 73152 -1120
+section=.text.kpke_encrypt_finish_avx2 baseline_bytes=3841 candidate_bytes=3196 delta=-645 status=changed
+text_sections_baseline=23
+text_sections_candidate=23
+changed_text_sections=1
+unchanged_text_sections=22
+unchanged_text_raw_bytes_identical=PASS
+readonly_sections_baseline=14
+readonly_sections_candidate=14
+changed_readonly_sections=1
+unchanged_readonly_sections=13
+changed_readonly_section=.rodata
+section=.rodata baseline_bytes=115 candidate_bytes=115 delta=+0 status=compiler_pool_reordered
+rodata_baseline_sha256=7fc03b64d2966a618cb8000b4641ea01935e8860976fcf9d9283706c658a123d
+rodata_candidate_sha256=5a8807303602169c4ff1c12a6e8b9e3eba93d63f8cd47a6d72aaa751064b30b1
+rodata_differing_bytes=12
+rodata_permuted_window=0x40..0x4f
+rodata_permuted_u16_multiset_identical=PASS
+readonly_data_size_unchanged=PASS
+section_isolation=PASS

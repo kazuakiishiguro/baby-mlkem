@@ -1,0 +1,13 @@
+candidate_ref=424a14181f08559e55749be5f9eb4601d94f7252
+changed_files=Makefile,baby-mlkem.c,avx2_shared_constants.S
+new_external_crypto_dependency=none
+new_runtime_library_dependency=none
+new_persistent_cache=none
+new_algorithm_dependency=none
+new_wire_format_dependency=none
+shared_constant_bytes=64
+shared_callsite_1=sha3_256_sample_matrix_x3_avx2
+shared_callsite_2=mlkem_encrypt_keccakf4_mem_parity_avx2
+local_mask_hot_path_1=sample_ntt4
+local_mask_hot_path_2=mlkem_prf_cbd_eta2x4_32
+source_isolation=PASS

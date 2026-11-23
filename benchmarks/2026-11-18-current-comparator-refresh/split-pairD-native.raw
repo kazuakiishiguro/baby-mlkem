@@ -1,0 +1,141 @@
+iters=100000 runs=4
+warmup_runs=1
+bootstrap_samples=5000
+bench_suites=kyber_upstream_avx2
+local_AVX2_BACKEND=core (Makefile default)
+PIN_CPU=0
+C_COMPILER=clang
+CXX_COMPILER=/usr/bin/clang++
+gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+UPDATE_REPOS=1
+git_repos_preupdated=1
+allow_cached_comparator=0
+stats_mode=median
+trim_count=1
+local_bench_reuse=0
+skip_local_build=1
+local_bench_bin=/home/kishiguro/fun/baby-mlkem/.verify-work/speed/bench_productc_native
+local_roundtrip_metric=mlkem_roundtrip_core_ns_per_op
+bench_isa_profile=native
+bench_profile_tag=goal-native
+local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+local_ARCH_CFLAGS=-march=native
+local_ASFLAGS=-Wa,--noexecstack
+mlkem_native_auto=1
+mlkem_native_cflags=-march=native -mavx2 -mbmi2 -mpopcnt -maes
+mlkem_native_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -maes -fomit-frame-pointer -std=c99
+upstream_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+pqclean_clean_cflags=-O3 -march=native -std=c99
+pqclean_avx2_cflags=-mavx2 -mbmi2 -mpopcnt -O3 -Wall -Wextra -Wpedantic -Werror -Wmissing-prototypes -Wredundant-decls -Wpointer-arith -Wshadow -std=c99 -I../../../common
+pqclean_harness_cflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -std=c99
+liboqs_dist_build=OFF
+liboqs_opt_target=native
+liboqs_cflags=-O3 -march=native
+liboqs_harness_cflags=-O3 -march=native
+boringssl_c_flags=-O3 -march=native
+boringssl_cxx_flags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+boringssl_harness_flags=-O3 -march=native
+libcrux_rustflags=-C target-cpu=native -C codegen-units=1
+libcrux_crate_version=0.0.11
+libcrux_harness_cflags=-O3 -march=native
+libjade_harness_cflags=-D_GNU_SOURCE -O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -std=c99
+botan_adapter_mode=internal-core-direct
+botan_cache_policy=wire-key-parse-and-operation-rebuild-per-call
+botan_modules=ml_kem,keccak_perm_bmi2
+botan_cxx=/usr/bin/clang++
+botan_cc_family=clang
+botan_compiler_pairing=required
+botan_allow_compiler_fallback=0
+botan_cxxflags=-O3 -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-semantic-interposition --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+botan_disabled_modules=<none>
+botan_harness_cflags=-O3 <profile ARCH_CFLAGS> -fomit-frame-pointer -fno-stack-protector -std=c11
+botan_harness_cxxflags=-O3 -march=native --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+openssl_cflags=-O3 -fno-semantic-interposition -march=native -mavx2 -mbmi2 -mpopcnt
+openssl_harness_cflags=-O3 -march=native
+openssl_ia32cap=<unset>
+effective_local_OPT_CFLAGS=-O3 -fno-semantic-interposition -fvisibility=hidden
+effective_local_EXTRA_CFLAGS=-fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing
+fair_upstream_cflags=-O3 -fno-semantic-interposition -fvisibility=hidden -march=native -mavx2 -mbmi2 -mpopcnt -fomit-frame-pointer -fno-stack-protector -falign-loops=32 -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-strict-aliasing -std=c99
+
+[kyber_upstream_avx2] warmup=1/1 order=local-first
+[kyber_upstream_avx2] run=1/4 order=local-first
+[kyber_upstream_avx2] run=1 keygen=3905.85/5255.94 encaps=3488.64/5056.15 decaps=2761.16/5635.78 roundtrip=10313.25/16149.12
+[kyber_upstream_avx2] run=2/4 order=competitor-first
+[kyber_upstream_avx2] run=2 keygen=3910.52/5151.94 encaps=3503.15/5071.54 decaps=2778.64/5643.76 roundtrip=10307.95/16104.24
+[kyber_upstream_avx2] run=3/4 order=local-first
+[kyber_upstream_avx2] run=3 keygen=3909.91/5178.87 encaps=3488.96/5060.05 decaps=2813.02/5649.44 roundtrip=10355.61/16083.52
+[kyber_upstream_avx2] run=4/4 order=competitor-first
+[kyber_upstream_avx2] run=4 keygen=3915.65/5173.81 encaps=3487.02/5153.72 decaps=2777.47/5640.89 roundtrip=10302.47/16116.58
+[kyber_upstream_avx2]
+runs=4
+stats_mode_requested=median
+stats_mode_effective=median
+trim_count_requested=1
+trim_count_effective=1
+local_roundtrip_mean_ns=10319.82
+local_roundtrip_sd_ns=24.26
+local_roundtrip_median_ns=10310.60
+local_roundtrip_trimmed_ns=10310.60
+competitor_roundtrip_mean_ns=16113.37
+competitor_roundtrip_sd_ns=27.46
+competitor_roundtrip_median_ns=16110.41
+competitor_roundtrip_trimmed_ns=16110.41
+selected_local_roundtrip_ns=10310.60
+selected_competitor_roundtrip_ns=16110.41
+local_ns_div_competitor_ns=0.640x
+local_speedup_vs_competitor=1.563x
+paired_bootstrap_samples=5000
+keygen_runs=4
+keygen_local_mean_ns=3910.48
+keygen_local_median_ns=3910.22
+keygen_competitor_mean_ns=5190.14
+keygen_competitor_median_ns=5176.34
+keygen_speedup_ratio_of_medians=1.3238x
+keygen_speedup_gmean=1.3272x
+keygen_speedup_ci95_low=1.3192x
+keygen_speedup_ci95_high=1.3395x
+keygen_speedup_median=1.3229x
+keygen_wins=4/4
+keygen_local_first_median=1.3351x
+keygen_competitor_first_median=1.3194x
+encaps_runs=4
+encaps_local_mean_ns=3491.94
+encaps_local_median_ns=3488.80
+encaps_competitor_mean_ns=5085.36
+encaps_competitor_median_ns=5065.80
+encaps_speedup_ratio_of_medians=1.4520x
+encaps_speedup_gmean=1.4563x
+encaps_speedup_ci95_low=1.4484x
+encaps_speedup_ci95_high=1.4708x
+encaps_speedup_median=1.4498x
+encaps_wins=4/4
+encaps_local_first_median=1.4498x
+encaps_competitor_first_median=1.4628x
+decaps_runs=4
+decaps_local_mean_ns=2782.57
+decaps_local_median_ns=2778.05
+decaps_competitor_mean_ns=5642.47
+decaps_competitor_median_ns=5642.33
+decaps_speedup_ratio_of_medians=2.0310x
+decaps_speedup_gmean=2.0278x
+decaps_speedup_ci95_low=2.0140x
+decaps_speedup_ci95_high=2.0386x
+decaps_speedup_median=2.0310x
+decaps_wins=4/4
+decaps_local_first_median=2.0247x
+decaps_competitor_first_median=2.0310x
+roundtrip_runs=4
+roundtrip_local_mean_ns=10319.82
+roundtrip_local_median_ns=10310.60
+roundtrip_competitor_mean_ns=16113.36
+roundtrip_competitor_median_ns=16110.41
+roundtrip_speedup_ratio_of_medians=1.5625x
+roundtrip_speedup_gmean=1.5614x
+roundtrip_speedup_ci95_low=1.5559x
+roundtrip_speedup_ci95_high=1.5651x
+roundtrip_speedup_median=1.5633x
+roundtrip_wins=4/4
+roundtrip_local_first_median=1.5595x
+roundtrip_competitor_first_median=1.5633x
+

@@ -1,0 +1,14 @@
+baseline_ref=ed3b9dc73b9ed7ccd2fda4b63bb985e1fc3c7a46
+candidate_ref=db9a20853e05a78110fc585ce7414f91f96bb6e2
+component baseline_bytes candidate_bytes delta_bytes
+baby_mlkem768_decaps 4397 3949 -448
+decompress_decode_poly_d10_ct_x3_avx2 0 139 +139
+code 43234 42925 -309
+readonly_data 7556 7555 -1
+primary 50790 50480 -310
+writable 26593 26593 0
+baseline_open_ssl_gap_bytes=5741
+candidate_open_ssl_gap_bytes=5431
+native_mlkem_native_gap_bytes=18425
+primary_size_reduction=PASS
+goal_complete=no

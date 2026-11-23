@@ -1,0 +1,17 @@
+candidate: Clang AVX2 shared scalar matrix refill
+baseline: 3a3e9d0
+protocol: 2 independent batches x 16 paired runs x 100000 iterations
+combination: geometric mean of two equal-size rounded batch gmeans
+metric                       batch1     batch2     combined decision
+mlkem_decaps                1.0073x    1.0002x    1.003744x PASS
+mlkem_decaps_core           1.0126x    1.0015x    1.007035x PASS
+mlkem_encaps                0.9959x    1.0064x    1.001136x PASS
+mlkem_encaps_core           0.9949x    1.0100x    1.002422x PASS
+mlkem_keygen                0.9978x    1.0036x    1.000696x PASS
+mlkem_keygen_core           0.9991x    1.0044x    1.001746x PASS
+mlkem_roundtrip             0.9998x    1.0025x    1.001149x PASS
+mlkem_roundtrip_core        1.0037x    1.0059x    1.004799x PASS
+minimum_combined_ratio=mlkem_keygen 1.000696
+operation_regression_floor=0.995000
+formal_gate=PASS
+speed_gain_credited=no

@@ -1,0 +1,16 @@
+candidate_ref=626da41d4fbfa165e17e11aad86d2dcc87ebbdf9
+sanitizer_product_method=direct-link-without-relocatable-clang-r
+asan_options=detect_leaks=0:halt_on_error=1
+compiler=clang
+flags=-D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -fno-semantic-interposition -Wall -Wextra -std=c99 -fno-omit-frame-pointer -fno-stack-protector -march=native
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+clang_native_asan_ubsan=PASS
+
+compiler=gcc
+flags=-D_GNU_SOURCE -O1 -g -fsanitize=undefined -fno-semantic-interposition -Wall -Wextra -std=c99 -fno-omit-frame-pointer -fno-stack-protector -march=native
+kat=pass
+product_direct=pass
+stage=pass sink=5236638352469415403
+gcc_native_ubsan=PASS

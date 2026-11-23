@@ -1,0 +1,12 @@
+compiler=clang
+arch_cflags=-march=native
+revision=53b5e81
+artifact=baby_mlkem768_product.o
+artifact_sha256=6d4f41309bbb8cbdf38b2acd4bff35bba4eec854ef18600454c17079ec0f6732
+artifact_file_bytes=81616
+code_bytes=44677
+readonly_data_bytes=10758
+primary_bytes=55435
+initialized_writable_bytes=0
+zero_fill_bytes=18001
+writable_bytes=18001

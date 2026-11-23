@@ -1,0 +1,19 @@
+candidate: Clang encryption forward-NTT batch outline
+baseline: b0f4d0f
+protocol: 3 independent batches x 16 paired runs x 100000 iterations
+acceptance floor: candidate/baseline >= 0.995
+combination: geometric mean of the three equal-size rounded batch gmeans
+
+metric                 batch1     batch2     batch3     combined decision
+decaps                 0.9973     1.0030     1.0002     1.000164 PASS
+decaps_core            1.0039     0.9966     1.0039     1.001461 PASS
+encaps                 1.0001     1.0028     0.9997     1.000866 PASS
+encaps_core            0.9936     1.0016     0.9986     0.997928 PASS
+keygen                 0.9985     1.0027     1.0023     1.001165 PASS
+keygen_core            1.0000     1.0036     1.0041     1.002565 PASS
+roundtrip              0.9967     1.0010     0.9991     0.998932 PASS
+roundtrip_core         0.9986     1.0020     0.9998     1.000132 PASS
+
+minimum_combined_ratio=encaps_core 0.997928
+overall=PASS
+speed_gain_credited=none

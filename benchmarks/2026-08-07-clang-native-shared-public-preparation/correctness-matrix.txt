@@ -1,0 +1,25 @@
+candidate_ref=13b3ea1227ce2892e8ac89dd967d888628affa40
+[clang-native]
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+[clang-avx2]
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+[clang-scalar]
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
+[gcc-native]
+kat=pass
+product=pass
+stage=pass sink=5236638352469415403
+[gcc-avx2]
+kat=pass
+product=pass
+stage=pass sink=8086079251842987743
+[gcc-scalar]
+kat=pass
+product=pass
+stage=pass sink=3075663932904715540
